@@ -58,8 +58,8 @@ const ja = {
     eyebrow: "Loreのために設計",
     title: "すべてのLoreリポジトリの共同開発ホーム。",
     intro: [
-      "リポジトリデータを複製せず、コードレビュー、Issue、",
-      "アクセス方針、自動化をLoreのそばで管理します。",
+      "リポジトリデータを複製せず、コードレビュー、Issue、アクセス方針、",
+      "自動化をLoreのそばで管理します。",
     ].join(""),
     architecture: "アーキテクチャを読む",
     repositories: "公開リポジトリ",
@@ -71,41 +71,42 @@ const ja = {
     searchEmptyTitle: "一致するリポジトリはありません",
     searchEmptyBody: "所有者名、リポジトリ名、説明を変えて試してください。",
     apiUnavailableTitle: "LoreHub APIを利用できません",
-    /* prettier-ignore */
     apiUnavailableBody: [
       "リポジトリサービスに接続できません。サービスが復旧してから",
+      // Keep the translated source lines bounded without changing the copy.
       "再読み込みしてください。",
     ].join(""),
     dashboardTitle: "ダッシュボード",
     dashboardGreeting: "おかえりなさい、{name}さん",
-    /* prettier-ignore */
     dashboardDescription: [
-      "このアカウントで利用できるLoreHubのリポジトリと活動を",
-      "確認します。",
+      "このアカウントで利用できるLoreHubのリポジトリと",
+      // Keep the translated source lines bounded without changing the copy.
+      "活動を確認します。",
     ].join(""),
     availablePublicRepositories: "利用可能な公開リポジトリ",
-    /* prettier-ignore */
     availablePublicRepositoriesDescription: [
-      "現在の公開検索APIから利用できる公開リポジトリです。",
+      "現在の公開検索APIから利用できる",
+      // Keep the translated source lines bounded without changing the copy.
+      "公開リポジトリです。",
     ].join(""),
     availablePublicRepositoriesEmptyTitle: "表示できる公開リポジトリはありません",
-    /* prettier-ignore */
     availablePublicRepositoriesEmptyBody: [
-      "このLoreHubに登録された公開リポジトリがここに表示されます。",
+      "このLoreHubに登録された公開リポジトリが",
+      // Keep the translated source lines bounded without changing the copy.
+      "ここに表示されます。",
     ].join(""),
     activityTitle: "活動",
     activityEmptyTitle: "活動記録はありません",
-    /* prettier-ignore */
     activityEmptyBody: [
       "このアカウントの活動フィードはAPIで提供されていないため、",
       "推測した情報は表示していません。",
     ].join(""),
     discoverTitle: "公開リポジトリを探す",
     discoverDescription: "このLoreHubが公開している実際のリポジトリ情報を閲覧します。",
-    /* prettier-ignore */
     publicDashboardNote: [
-      "非公開リポジトリや組織専用リポジトリは、APIが提供する場合だけ",
-      "表示されます。",
+      "非公開リポジトリや組織専用リポジトリは、",
+      // Keep the translated source lines bounded without changing the copy.
+      "APIが提供する場合だけ表示されます。",
     ].join(""),
   },
   repository: {
@@ -125,8 +126,8 @@ const ja = {
     noBranches: "Loreからブランチが返されませんでした。",
     noFileTree: "このAPIレスポンスにファイルツリーはありません",
     fileTreeDescription: [
-      "LoreHubではLoreを正本として扱います。リポジトリ情報からファイル一覧を",
-      "作って表示することはありません。",
+      "LoreHubではLoreを正本として扱います。",
+      "リポジトリ情報からファイル一覧を作って表示することはありません。",
     ].join(""),
     issuesTitle: "オープンなIssue",
     issuesDescription: "このLoreHubで管理している作業です。",
@@ -146,10 +147,49 @@ const ja = {
     lastUpdated: "最終更新",
     unavailable: "リポジトリ情報を一時的に取得できません。",
     readOnlyNote: [
-      "このページはLoreHubが現在提供している情報だけを表示します。Loreや",
-      "リポジトリ方針は変更しません。",
+      "このページはLoreHubが現在提供している情報だけを表示します。",
+      "Loreやリポジトリ方針は変更しません。",
     ].join(""),
     navigationLabel: "リポジトリのナビゲーション",
+  },
+  codeBrowser: {
+    history: "リビジョン履歴",
+    compare: "リビジョンを比較",
+    parentDirectory: "親ディレクトリ",
+    treeTitle: "リポジトリのファイル",
+    breadcrumbLabel: "リポジトリのパス",
+    revision: "リビジョン",
+    name: "名前",
+    kind: "種類",
+    action: "操作",
+    size: "サイズ",
+    emptyTree: "このLoreディレクトリは空です。",
+    emptyHistory: "このパスのリビジョン履歴はありません。",
+    treeTruncated: [
+      "先頭の項目だけを表示しています。",
+      // Keep the translated source lines bounded without changing the copy.
+      "ディレクトリを絞り込んでください。",
+    ].join(""),
+    diffTruncated: "差分は応答サイズの上限で省略されています。",
+    unavailable: "Loreのコードブラウザーを一時的に利用できません。",
+    fileTitle: "ファイル",
+    raw: "生データ",
+    fileHistory: "ファイル履歴",
+    binary: "バイナリ内容は表示しません。",
+    tooLarge: "このファイルは安全な表示上限を超えています。",
+    bytes: "バイト",
+    actions: {
+      added: "追加",
+      deleted: "削除",
+      modified: "変更",
+      moved: "移動",
+      copied: "コピー",
+    },
+    kinds: {
+      directory: "ディレクトリ",
+      file: "ファイル",
+      link: "リンク",
+    },
   },
   issuesPage: {
     title: "Issue",
@@ -162,16 +202,81 @@ const ja = {
   },
   pullRequestsPage: {
     title: "プルリクエスト",
-    /* prettier-ignore */
     description: [
-      "現在のリビジョンを確認しながら、Loreブランチ間の変更を",
-      "レビューします。",
+      "現在のリビジョンを確認しながら、",
+      // Keep the translated source lines bounded without changing the copy.
+      "Loreブランチ間の変更をレビューします。",
     ].join(""),
     filterLabel: "プルリクエストの状態",
     newPullRequest: "プルリクエストを作成",
     emptyTitle: "この表示条件のプルリクエストはありません",
     emptyBody: "レビューする変更がソースブランチにあるときに作成してください。",
     createdNotice: "プルリクエストを作成しました。",
+  },
+  pullRequestDetail: {
+    conversation: "会話",
+    commits: "コミット",
+    filesChanged: "変更されたファイル",
+    reviewSummary: "レビュー概要",
+    approvals: "現在の承認",
+    changesRequested: "変更要求",
+    ci: "CIの状態",
+    ciPassed: "現在の対象リビジョンでCIが成功しています",
+    ciMissing: "成功したCI実行が必要です",
+    ready: "マージ可能",
+    blocked: "マージできません",
+    merge: "プルリクエストをマージ",
+    startMerge: "マージを開始",
+    continueMerge: "マージを続ける",
+    abortMerge: "マージを中止",
+    restartMerge: "マージを再開",
+    resolveMine: "対象側の版を使う",
+    resolveTheirs: "ソース側の版を使う",
+    resolveSelected: "選択した競合を解決",
+    pushMerge: "プッシュしてマージ",
+    conflictTitle: "Loreの競合を解決",
+    conflictBody: "プッシュする前に、一覧のすべてのパスで版を選択してください。",
+    noConflicts: "未解決のLore競合はありません。",
+    noReviews: "このリビジョンへのレビューはまだありません。",
+    noChangedFiles: "変更されたファイルは返されませんでした。",
+    changedFiles: "変更されたファイル",
+    source: "ソース",
+    target: "対象",
+    currentRevision: "現在のリビジョン",
+    staleSource: "ソースブランチが変更されました。",
+    staleTarget: "対象ブランチが変更されました。",
+    operationState: "マージ操作",
+    operationRecovery: [
+      "Loreのプッシュが完了したか、処理中の可能性があります。",
+      // Keep the translated source lines bounded without changing the copy.
+      "再試行して状態を照合してください。",
+    ].join(""),
+    mutationFailed: "マージ操作を完了できませんでした。",
+    policyBlocked: "マージ前に一覧の条件を満たしてください。",
+    alreadyMerged: "このプルリクエストはすでにマージされています。",
+    review: "レビュー",
+    approved: "承認",
+    changesRequestedLabel: "変更要求",
+    commented: "コメント",
+    states: {
+      created: "作成済み",
+      started: "開始済み",
+      conflicts: "競合あり",
+      readyToPush: "プッシュ可能",
+      pushing: "プッシュ中",
+      pushed: "プッシュ済み",
+      aborted: "中止済み",
+      merged: "マージ済み",
+    },
+    blockers: {
+      writePermission: "マージにはwrite権限が必要です。",
+      stateNotOpen: "オープン状態のプルリクエストだけをマージできます。",
+      staleSource: "ソースブランチのリビジョンが変更されました。",
+      staleTarget: "対象ブランチのリビジョンが変更されました。",
+      changesRequested: "現在のレビューで変更が求められています。",
+      approvals: "現在のリビジョンへの必要な承認が不足しています。",
+      ci: "現在の対象リビジョンで成功したCI実行が必要です。",
+    },
   },
   actionsPage: {
     title: "Actions",
@@ -256,10 +361,10 @@ const ja = {
     title: "セキュリティ",
     description: "このLoreリポジトリで利用できるセキュリティ情報を確認します。",
     emptyTitle: "セキュリティの検出結果はありません",
-    /* prettier-ignore */
     emptyBody: [
-      "このインストールでは、このリポジトリのアラートやスキャン結果を",
-      "提供していません。",
+      "このインストールでは、このリポジトリの",
+      // Keep the translated source lines bounded without changing the copy.
+      "アラートやスキャン結果を提供していません。",
     ].join(""),
     accessTitle: "リポジトリへのアクセス",
     accessBody: "現在のリポジトリ情報から確認できるアクセス属性は公開範囲だけです。",
@@ -303,10 +408,10 @@ const ja = {
     email: "メールアドレス",
     locale: "言語",
     sessionTitle: "セッション",
-    /* prettier-ignore */
     sessionBody: [
-      "OAuthトークンはサーバーに留まり、ブラウザには画面に必要な",
-      "セッション状態だけが渡されます。",
+      "OAuthトークンはサーバーに留まり、ブラウザには",
+      // Keep the translated source lines bounded without changing the copy.
+      "画面に必要なセッション状態だけが渡されます。",
     ].join(""),
     active: "有効なセッション",
   },
@@ -314,10 +419,10 @@ const ja = {
     title: "アカウント設定",
     description: "このLoreHubが利用できるアカウント情報を確認します。",
     identityTitle: "本人情報",
-    /* prettier-ignore */
     identityBody: [
-      "プロフィールの変更はIDプロバイダーが管理するため、ここでは",
-      "仮の成功表示を行いません。",
+      "プロフィールの変更はIDプロバイダーが管理するため、",
+      // Keep the translated source lines bounded without changing the copy.
+      "ここでは仮の成功表示を行いません。",
     ].join(""),
     localeTitle: "表示言語",
     localeBody: "ヘッダーの言語切り替えからこのブラウザの表示言語を変更できます。",
@@ -360,24 +465,24 @@ const ja = {
   auth: {
     providerErrorTitle: "ログインを完了できませんでした",
     providerErrorBody: [
-      "IDプロバイダーからエラーが返りました。もう一度ログインするか、",
-      "LoreHub管理者へ連絡してください。",
+      "IDプロバイダーからエラーが返りました。",
+      "もう一度ログインするか、LoreHub管理者へ連絡してください。",
     ].join(""),
     sessionExpiredTitle: "セッションの有効期限が切れました",
     sessionExpiredBody: "保護された操作を続けるには、もう一度ログインしてください。",
     sessionUnavailableTitle: "認証を一時的に利用できません",
     sessionUnavailableBody: [
-      "セッションサービスに接続できません。可能な場合は公開リポジトリを",
-      "引き続き閲覧できます。",
+      "セッションサービスに接続できません。",
+      "可能な場合は公開リポジトリを引き続き閲覧できます。",
     ].join(""),
     requiredTitle: "ログインが必要です",
     requiredBody: "この操作にはLoreHubへのログインが必要です。",
     loginToContinue: "ログインして続ける",
     logoutFailed: "ログアウトを完了できませんでした。もう一度試してください。",
-    /* prettier-ignore */
     csrfMissing: [
-      "セッションからCSRFトークンを取得できませんでした。再読み込みして",
-      "試してください。",
+      "セッションからCSRFトークンを取得できませんでした。",
+      // Keep the translated source lines bounded without changing the copy.
+      "再読み込みして試してください。",
     ].join(""),
     signupHint: "アカウント登録は設定済みのIDプロバイダーで行います。",
   },

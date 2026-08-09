@@ -12,6 +12,7 @@ import (
 
 	"github.com/lorehub/lorehub/services/api/internal/auth"
 	"github.com/lorehub/lorehub/services/api/internal/collab"
+	loreclient "github.com/lorehub/lorehub/services/api/internal/lore"
 	"github.com/lorehub/lorehub/services/api/internal/platform"
 )
 
@@ -33,7 +34,8 @@ func (store *authCollabStore) LookupRepository(
 	}
 	return collab.Repository{
 		ID: "private-repo", OrganizationID: "org-1", Owner: owner, Slug: slug,
-		Visibility: "private",
+		Visibility: "private", LoreRepositoryID: "0123456789abcdef0123456789abcdef",
+		LoreURL: "lore://private", DefaultBranch: "main",
 	}, nil
 }
 
@@ -172,6 +174,7 @@ func newCollabAuthTestHandler(
 				Name: "lorehub_session", Path: "/",
 			},
 		}),
+		WithDevelopmentLoreCredentials("fixture"),
 		WithCollaboration(collabStore),
 	)
 }
@@ -284,5 +287,115 @@ func TestCollaborationPrivateReadAnonymousAndBearerCompatible(t *testing.T) {
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
 		t.Fatalf("bearer mutation compatibility: status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+type authCodeLore struct{ fakeLore }
+
+func (authCodeLore) Tree(
+	context.Context, loreclient.RepositoryRef, string, string, loreclient.Credential, int,
+) (loreclient.Tree, error) {
+	return loreclient.Tree{Revision: testRevision, Entries: []loreclient.TreeEntry{{
+		Name: "README.md", Path: "README.md", Kind: "file", Size: 12,
+	}}}, nil
+}
+
+func (authCodeLore) File(
+	context.Context, loreclient.RepositoryRef, string, string, loreclient.Credential, int64,
+) (loreclient.File, []byte, error) {
+	body := []byte("# private\n")
+	return loreclient.File{Path: "README.md", Revision: testRevision, Kind: "file", Size: uint64(len(body))}, body, nil
+}
+
+func (authCodeLore) RevisionHistory(
+	context.Context, loreclient.RepositoryRef, string, string, loreclient.Credential, int,
+) ([]loreclient.RevisionHistoryEntry, error) {
+	return []loreclient.RevisionHistoryEntry{{Revision: testRevision}}, nil
+}
+
+func (authCodeLore) FileHistory(
+	context.Context, loreclient.RepositoryRef, string, string, string, loreclient.Credential, int,
+) ([]loreclient.FileHistoryEntry, error) {
+	return []loreclient.FileHistoryEntry{{Path: "README.md", Revision: testRevision}}, nil
+}
+
+func (authCodeLore) RevisionInfo(
+	context.Context, loreclient.RepositoryRef, string, loreclient.Credential,
+) (loreclient.Revision, error) {
+	return loreclient.Revision{Revision: testRevision, Number: 1}, nil
+}
+
+func (authCodeLore) RevisionDiff(
+	context.Context, loreclient.RepositoryRef, string, string, []string, loreclient.Credential, int, int,
+) (loreclient.Diff, error) {
+	return loreclient.Diff{Source: testRevision, Target: testRevision}, nil
+}
+
+const testRevision = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+func TestCodeBrowserUsesPrivateSessionAndKeepsAnonymousNotFound(t *testing.T) {
+	t.Parallel()
+	codec, err := auth.NewSecretCodec("test-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	authenticationStore := &fakeAuthenticationStore{}
+	collabStore := &authCollabStore{}
+	handler := New(
+		fakeStore{user: platform.User{ID: "user-1", Username: "alice"}}, authCodeLore{},
+		auth.DisabledAuthenticator{}, healthy{}, "",
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		WithAuthentication(AuthOptions{
+			SessionStore: authenticationStore, Secrets: codec, PublicOrigin: "https://app.example",
+			SessionCookie: SessionCookieOptions{Name: "lorehub_session", Path: "/"},
+		}),
+		WithDevelopmentLoreCredentials("fixture"),
+		WithCollaboration(collabStore),
+	)
+	target := "/api/v1/repositories/acme/private/tree?revision=" + testRevision
+	request := httptest.NewRequest(http.MethodGet, target, nil)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("anonymous private code read leaked: status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	cookie, _ := prepareSessionCookie(t, authenticationStore, codec)
+	request = httptest.NewRequest(http.MethodGet, target, nil)
+	request.AddCookie(cookie)
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || response.Header().Get("Content-Type") != "application/json; charset=utf-8" {
+		t.Fatalf("cookie private code read: status=%d content-type=%q body=%s", response.Code,
+			response.Header().Get("Content-Type"), response.Body.String())
+	}
+}
+
+func TestCodeBrowserBearerReadRemainsCompatible(t *testing.T) {
+	codec, err := auth.NewSecretCodec("test-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := New(
+		fakeStore{user: platform.User{ID: "user-1", Username: "alice"}}, authCodeLore{},
+		staticAuthenticator{principal: auth.Principal{Issuer: "issuer", Subject: "subject", Username: "alice"}},
+		healthy{}, "", slog.New(slog.NewTextHandler(io.Discard, nil)),
+		WithAuthentication(AuthOptions{
+			SessionStore: &fakeAuthenticationStore{}, Secrets: codec, PublicOrigin: "https://app.example",
+			SessionCookie: SessionCookieOptions{Name: "lorehub_session", Path: "/"},
+		}),
+		WithDevelopmentLoreCredentials("fixture"),
+		WithCollaboration(&authCollabStore{}),
+	)
+	request := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/repositories/acme/private/file?revision="+testRevision+"&path=README.md",
+		nil,
+	)
+	request.Header.Set("Authorization", "Bearer token")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("bearer private code read: status=%d body=%s", response.Code, response.Body.String())
 	}
 }

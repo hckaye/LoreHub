@@ -62,7 +62,13 @@ export default async function PullRequestsPage({ params, searchParams }: PullReq
         title={dictionary.repository.pullRequestsTitle}
       >
         {mergeRequests.ok ? (
-          <MergeRequestList dictionary={dictionary} mergeRequests={mergeRequests.data} />
+          <MergeRequestList
+            dictionary={dictionary}
+            locale={locale}
+            mergeRequests={mergeRequests.data}
+            owner={owner}
+            repository={repository}
+          />
         ) : (
           <EmptyState
             body={dictionary.home.apiUnavailableBody}

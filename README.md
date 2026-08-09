@@ -11,7 +11,8 @@ LoreHubは、Loreリポジトリ向けの共同開発基盤です。LoreをVCS�
 
 ## 現在実装されている範囲
 
-- Lore公式Go SDKを使ったリポジトリ確認とbranch一覧取得
+- Lore公式Go SDKを使ったリポジトリ確認、branch一覧、revision tree、ファイル、履歴、差分取得
+- Loreのbranch merge、競合解決、abort、restart、pushを含むプルリクエストのmerge lifecycle
 - PostgreSQLのmigration、組織、権限、リポジトリ登録、Issue、レビュー、CI、監査用schema
 - OIDCトークンを検証するGo API
 - 公開リポジトリ、branch、Issueを表示する英語／日本語UI
@@ -160,6 +161,12 @@ secret fileへだけ注入します。secretと`::add-mask::`出力は保存前�
 実行を開始せず、secretファイルも全終了経路で削除します。本番resolverとToken issuerはcontrol planeから注入し、固定値の
 開発用adapterは明示的なdevelopment/local設定でだけ利用できます。
 
+コード閲覧とmerge操作も同じcredential provider境界を使い、ブラウザ利用者のLore tokenをLoreへ転送しません。
+本番のissuerは利用者またはサービスprincipal、repository partition、要求scopeを受け取り、要求subjectと一致する
+短命のToken、AuthURL、Identity、有効期限を返す必要があります。`LOREHUB_LORE_AUTHORITY`と3つのservice subject
+は本番で明示し、issuer未接続時はAPIとrunnerをfail closedにします。`LOREHUB_LORE_IDENTITY`と静的credentialは
+development/testだけの明示的なfallbackであり、本番のtrust identityやproduction credentialではありません。
+
 Keycloakを使う場合、ローカルのissuerは
 `http://keycloak.localhost:8280/realms/lorehub`、audienceは`lorehub-api`です。本番では公開HTTPSのissuerを設定します。
 APIをDockerコンテナで起動する場合のdiscovery到達性については
@@ -179,8 +186,13 @@ APIをDockerコンテナで起動する場合のdiscovery到達性について�
 | `POST` | `/api/v1/organizations`                        | OIDC | 組織作成               |
 | `POST` | `/api/v1/organizations/{org}/repositories`     | OIDC | Loreリポジトリ登録     |
 | `GET`  | `/api/v1/repositories/{owner}/{repo}/branches` | 不要 | Lore branch一覧        |
+| `GET`  | `/api/v1/repositories/{owner}/{repo}/tree`、`/file` | 任意認証 | Loreのツリーとファイル |
+| `GET`  | `/api/v1/repositories/{owner}/{repo}/revisions`、`/diff` | 任意認証 | 履歴と差分 |
 | `GET`  | `/api/v1/repositories/{owner}/{repo}/issues`   | 不要 | 公開Issue一覧          |
 | `POST` | `/api/v1/repositories/{owner}/{repo}/issues`   | OIDC | Issue作成              |
+| `GET`  | `/api/v1/repositories/{owner}/{repo}/merge-requests/{number}/merge-readiness` | 任意認証 | merge条件確認 |
+| `POST` | `/api/v1/repositories/{owner}/{repo}/merge-requests/{number}/merge/start` | CSRF/write | Lore merge開始 |
+| `POST` | `/api/v1/repositories/{owner}/{repo}/merge-requests/{number}/merge` | CSRF/write | Lore pushとDB確定 |
 
 更新APIは、既存クライアントからは`Authorization: Bearer <token>`で利用できます。ブラウザセッションで利用する場合は、
 `GET /api/v1/auth/session`が返すCSRF tokenを`X-CSRF-Token`ヘッダーに付けます。APIはOIDCのissuer、audience、署名、

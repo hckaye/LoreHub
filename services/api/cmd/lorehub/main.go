@@ -6,8 +6,11 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
+	"path"
+	"strings"
 	"syscall"
 	"time"
 
@@ -58,12 +61,28 @@ func run(logger *slog.Logger) error {
 		logger.Info("PostgreSQL migrations are current")
 		return nil
 	}
-	lore, err := loreclient.NewSDKClient(settings.LoreCacheDir)
+	var lore *loreclient.SDKClient
+	var loreCredentials loreclient.CredentialProvider
+	if settings.Environment == "development" || settings.Environment == "local" || settings.Environment == "test" {
+		loreCredentials, err = loreclient.NewCredentialProvider(settings.Environment, settings.LoreCredentials,
+			settings.LoreIdentity, settings.LoreAllowDevelopmentFallback)
+	} else {
+		// Production receives an issuer through the control-plane integration boundary.
+		loreCredentials, err = loreclient.NewProductionCredentialProvider(nil, settings.LoreAuthAuthority)
+	}
+	if err != nil {
+		return err
+	}
+	if settings.Environment == "development" || settings.Environment == "local" || settings.Environment == "test" {
+		lore, err = loreclient.NewDevelopmentSDKClient(settings.LoreCacheDir)
+	} else {
+		lore, err = loreclient.NewSDKClientWithAuthAuthority(settings.LoreCacheDir, settings.LoreAuthAuthority)
+	}
 	if err != nil {
 		return err
 	}
 	if command == "runner" {
-		return runRunner(rootContext, pool, lore, settings, logger)
+		return runRunner(rootContext, pool, lore, loreCredentials, settings, logger)
 	}
 
 	var authenticator auth.Authenticator
@@ -129,6 +148,12 @@ func run(logger *slog.Logger) error {
 		}),
 		httpapi.WithActions(actionsStore),
 		httpapi.WithCollaboration(collab.NewStore(pool)),
+		httpapi.WithLoreCredentials(loreCredentials),
+		httpapi.WithLoreServiceSubjects(loreclient.ServiceSubjects{
+			PublicReader:           settings.LorePublicReaderSubject,
+			ActionsRunner:          settings.LoreActionsRunnerSubject,
+			RepositoryRegistration: settings.LoreRepositoryRegistrationSubject,
+		}),
 	)
 	server := &http.Server{
 		Addr:              settings.HTTPAddress,
@@ -166,6 +191,7 @@ func runRunner(
 	ctx context.Context,
 	pool *pgxpool.Pool,
 	lore *loreclient.SDKClient,
+	credentials loreclient.CredentialProvider,
 	settings config.Config,
 	logger *slog.Logger,
 ) error {
@@ -212,15 +238,9 @@ func runRunner(
 	if err != nil {
 		return err
 	}
-	poller := runner.NewPoller(
-		store,
-		lore,
-		credentialIssuer,
-		credentialPrincipal,
-		settings.BranchPollPeriod,
-		logger,
-		settings.RunnerPlatformImages,
-	)
+	poller := runner.NewPoller(store, runnerLoreClient{
+		client: lore, credentials: credentials, actionsRunnerSubject: settings.LoreActionsRunnerSubject,
+	}, credentialIssuer, credentialPrincipal, settings.BranchPollPeriod, logger, settings.RunnerPlatformImages)
 	errorsChannel := make(chan error, 2)
 	go func() { errorsChannel <- poller.Run(ctx) }()
 	go func() { errorsChannel <- worker.Run(ctx) }()
@@ -229,6 +249,41 @@ func runRunner(
 		return nil
 	}
 	return err
+}
+
+type runnerLoreClient struct {
+	client               *loreclient.SDKClient
+	credentials          loreclient.CredentialProvider
+	actionsRunnerSubject string
+}
+
+func (adapter runnerLoreClient) Branches(
+	ctx context.Context,
+	repository loreclient.RepositoryRef,
+	identity string,
+) ([]loreclient.Branch, error) {
+	partition := repository.CanonicalPartition()
+	if partition == "" {
+		parsed, err := url.Parse(repository.URL)
+		if err != nil || parsed.Host == "" {
+			return nil, errors.New("runner Lore repository URL is invalid")
+		}
+		partition = strings.TrimSpace(path.Base(parsed.Path))
+	}
+	if partition == "" || adapter.credentials == nil {
+		return nil, loreclient.ErrCredentialUnavailable
+	}
+	repository.LoreRepositoryID = partition
+	credential, err := adapter.credentials.ForRepository(ctx, loreclient.CredentialRequest{
+		Principal:  loreclient.ServicePrincipal(loreclient.ServicePurposeActionsRunner, adapter.actionsRunnerSubject),
+		Repository: repository,
+		Partition:  repository.CanonicalPartition(),
+		Scope:      loreclient.ScopeRead,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return adapter.client.Branches(ctx, repository, credential)
 }
 
 func configuredExecutionContextResolver(settings config.Config) runner.ExecutionContextResolver {

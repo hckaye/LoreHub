@@ -189,6 +189,30 @@ func TestLoadRejectsUnboundedRunnerTimeout(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsProductionStaticLoreCredentials(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("LOREHUB_ENV", "production")
+	t.Setenv("LOREHUB_LORE_CREDENTIALS", `{"partition":{"identity":"shared","token":"token",`+
+		`"authUrl":"https://auth.example/login"}}`)
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "only allowed in development or test") {
+		t.Fatalf("expected static production credential rejection, got %v", err)
+	}
+}
+
+func TestLoadRequiresProductionLoreServiceSubjects(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("LOREHUB_ENV", "production")
+	t.Setenv("LOREHUB_PUBLIC_ORIGIN", "https://actions.example")
+	t.Setenv("LOREHUB_PUBLIC_API_URL", "https://actions.example/api/v1")
+	t.Setenv("LOREHUB_PUBLIC_GRAPHQL_URL", "https://actions.example/api/graphql")
+	t.Setenv("LOREHUB_LORE_PUBLIC_READER_SUBJECT", "")
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "LOREHUB_LORE_PUBLIC_READER_SUBJECT") {
+		t.Fatalf("expected missing production service subject rejection, got %v", err)
+	}
+}
+
 func setRequiredEnvironment(t *testing.T) {
 	t.Helper()
 	t.Setenv("DATABASE_URL", "postgres://localhost/lorehub")
@@ -196,6 +220,16 @@ func setRequiredEnvironment(t *testing.T) {
 	t.Setenv("LOREHUB_RUNNER_SUBJECT", "")
 	t.Setenv("LOREHUB_DEV_ALLOW_LORE_IDENTITY_FALLBACK", "")
 	t.Setenv("LOREHUB_DEV_LORE_IDENTITY", "")
+	t.Setenv("LOREHUB_LORE_IDENTITY", "")
+	t.Setenv("LOREHUB_LORE_CREDENTIALS", "")
+	t.Setenv("LOREHUB_LORE_AUTHORITY", "")
+	t.Setenv("LOREHUB_LORE_PUBLIC_READER_SUBJECT", "")
+	t.Setenv("LOREHUB_LORE_ACTIONS_RUNNER_SUBJECT", "")
+	t.Setenv("LOREHUB_LORE_REPOSITORY_REGISTRATION_SUBJECT", "")
+	t.Setenv("LOREHUB_LORE_ALLOW_DEVELOPMENT_FALLBACK", "")
+	t.Setenv("LOREHUB_LORE_PUBLIC_READER_SUBJECT", "public-reader-subject")
+	t.Setenv("LOREHUB_LORE_ACTIONS_RUNNER_SUBJECT", "actions-runner-subject")
+	t.Setenv("LOREHUB_LORE_REPOSITORY_REGISTRATION_SUBJECT", "registration-subject")
 	t.Setenv("LOREHUB_OIDC_ISSUER", "")
 	t.Setenv("LOREHUB_OIDC_AUDIENCE", "")
 	t.Setenv("LOREHUB_OIDC_CLIENT_ID", "")

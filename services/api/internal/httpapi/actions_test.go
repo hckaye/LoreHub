@@ -203,10 +203,14 @@ type actionsLore struct {
 	branches []loreclient.Branch
 }
 
-func (actionsLore) RepositoryInfo(context.Context, string, string) (loreclient.Repository, error) {
+func (actionsLore) RepositoryInfo(context.Context, string, loreclient.Credential) (loreclient.Repository, error) {
 	return loreclient.Repository{}, nil
 }
 
-func (lore actionsLore) Branches(context.Context, loreclient.RepositoryRef, string) ([]loreclient.Branch, error) {
+func (lore actionsLore) Branches(
+	context.Context,
+	loreclient.RepositoryRef,
+	loreclient.Credential,
+) ([]loreclient.Branch, error) {
 	return lore.branches, nil
 }

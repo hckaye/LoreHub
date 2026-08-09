@@ -13,12 +13,19 @@ import "time"
 // identifiers needed by collaboration endpoints without exposing persistence
 // details.
 type Repository struct {
-	ID             string    `json:"id"`
-	OrganizationID string    `json:"organizationId"`
-	Owner          string    `json:"owner"`
-	Slug           string    `json:"slug"`
-	Visibility     string    `json:"visibility"`
-	UpdatedAt      time.Time `json:"updatedAt"`
+	ID                string    `json:"id"`
+	OrganizationID    string    `json:"organizationId"`
+	Owner             string    `json:"owner"`
+	Slug              string    `json:"slug"`
+	DisplayName       string    `json:"displayName"`
+	Description       string    `json:"description"`
+	Visibility        string    `json:"visibility"`
+	LoreRepositoryID  string    `json:"loreRepositoryId"`
+	LoreURL           string    `json:"loreUrl"`
+	DefaultBranch     string    `json:"defaultBranch"`
+	IssueCount        int64     `json:"issueCount"`
+	MergeRequestCount int64     `json:"mergeRequestCount"`
+	UpdatedAt         time.Time `json:"updatedAt"`
 }
 
 // Issue is a single issue record returned by the detail endpoint.
@@ -78,7 +85,6 @@ type LabelInput struct {
 }
 
 // MergeRequest is the collab projection of a merge_request (UI "pull request").
-// Merge execution is not exposed by this API.
 type MergeRequest struct {
 	ID             string     `json:"id"`
 	Number         int64      `json:"number"`
@@ -91,9 +97,68 @@ type MergeRequest struct {
 	TargetRevision string     `json:"targetRevision"`
 	Author         string     `json:"author"`
 	AuthorID       string     `json:"-"`
+	ApprovalCount  int64      `json:"approvalCount"`
+	MergedBy       *string    `json:"mergedBy"`
+	MergedRevision *string    `json:"mergedRevision"`
+	MergedAt       *time.Time `json:"mergedAt"`
 	CreatedAt      time.Time  `json:"createdAt"`
 	UpdatedAt      time.Time  `json:"updatedAt"`
 	ClosedAt       *time.Time `json:"closedAt"`
+}
+
+// MergeOperation records durable progress through a Lore merge workspace.
+// Repository contents are never stored here; only operation metadata is.
+type MergeOperation struct {
+	ID              string            `json:"id"`
+	MergeRequestID  string            `json:"mergeRequestId"`
+	RepositoryID    string            `json:"repositoryId"`
+	ActorID         string            `json:"-"`
+	SourceRevision  string            `json:"sourceRevision"`
+	TargetRevision  string            `json:"targetRevision"`
+	StagedRevision  string            `json:"stagedRevision,omitempty"`
+	PushedRevision  string            `json:"pushedRevision,omitempty"`
+	ParentRevisions []string          `json:"parentRevisions"`
+	Resolutions     []MergeResolution `json:"resolutions"`
+	State           string            `json:"state"`
+	ConflictPaths   []string          `json:"conflictPaths"`
+	ErrorCode       string            `json:"errorCode,omitempty"`
+	ErrorDetail     string            `json:"errorDetail,omitempty"`
+	LeaseOwner      string            `json:"-"`
+	LeaseExpiresAt  *time.Time        `json:"leaseExpiresAt,omitempty"`
+	Version         int64             `json:"version"`
+	StartedAt       *time.Time        `json:"startedAt,omitempty"`
+	CompletedAt     *time.Time        `json:"completedAt,omitempty"`
+	CreatedAt       time.Time         `json:"createdAt"`
+	UpdatedAt       time.Time         `json:"updatedAt"`
+}
+
+type MergeResolution struct {
+	Path      string    `json:"path"`
+	Strategy  string    `json:"strategy"`
+	Actor     string    `json:"actor,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+type MergeBlocker struct {
+	Code   string `json:"code"`
+	Detail string `json:"detail"`
+}
+
+type MergeReadiness struct {
+	MergeRequest          MergeRequest    `json:"mergeRequest"`
+	CurrentSourceRevision string          `json:"currentSourceRevision"`
+	CurrentTargetRevision string          `json:"currentTargetRevision"`
+	SourceStale           bool            `json:"sourceStale"`
+	TargetStale           bool            `json:"targetStale"`
+	CanMerge              bool            `json:"canMerge"`
+	Ready                 bool            `json:"ready"`
+	Blockers              []MergeBlocker  `json:"blockers"`
+	Reviews               ReviewSummary   `json:"reviews"`
+	CISuccess             bool            `json:"ciSuccess"`
+	DirectPushBlocked     bool            `json:"directPushBlocked"`
+	Rules                 []BranchRule    `json:"rules"`
+	Operation             *MergeOperation `json:"operation,omitempty"`
 }
 
 // UpdateMergeRequestInput captures mutable merge_request fields.
@@ -133,8 +198,7 @@ type ReviewInput struct {
 	Body     string
 }
 
-// BranchRule is a branch protection rule. The configuration is descriptive for
-// the current product and does not claim enforcement beyond existing behavior.
+// BranchRule is a branch protection rule enforced by the Lore merge workflow.
 type BranchRule struct {
 	ID                string    `json:"id"`
 	RepositoryID      string    `json:"repositoryId"`

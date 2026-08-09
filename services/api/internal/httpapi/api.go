@@ -13,8 +13,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lorehub/lorehub/services/api/internal/auth"
+	codeapi "github.com/lorehub/lorehub/services/api/internal/code"
 	"github.com/lorehub/lorehub/services/api/internal/collab"
 	loreclient "github.com/lorehub/lorehub/services/api/internal/lore"
+	mergeapi "github.com/lorehub/lorehub/services/api/internal/merge"
 	"github.com/lorehub/lorehub/services/api/internal/platform"
 )
 
@@ -70,23 +72,25 @@ type HealthChecker interface {
 }
 
 type API struct {
-	store          Store
-	actions        ActionsStore
-	lore           loreclient.Client
-	authenticator  auth.Authenticator
-	health         HealthChecker
-	loreIdentity   string
-	logger         *slog.Logger
-	collabStore    collab.Store
-	loginProvider  auth.LoginProvider
-	loginStore     auth.LoginTransactionStore
-	sessionStore   auth.SessionStore
-	cleanupStore   auth.CleanupStore
-	secrets        *auth.SecretCodec
-	publicOrigin   string
-	cookie         sessionCookieConfig
-	sessionTTL     time.Duration
-	transactionTTL time.Duration
+	store           Store
+	actions         ActionsStore
+	lore            loreclient.Client
+	authenticator   auth.Authenticator
+	health          HealthChecker
+	loreIdentity    string
+	serviceSubjects loreclient.ServiceSubjects
+	loreCredentials loreclient.CredentialProvider
+	logger          *slog.Logger
+	collabStore     collab.Store
+	loginProvider   auth.LoginProvider
+	loginStore      auth.LoginTransactionStore
+	sessionStore    auth.SessionStore
+	cleanupStore    auth.CleanupStore
+	secrets         *auth.SecretCodec
+	publicOrigin    string
+	cookie          sessionCookieConfig
+	sessionTTL      time.Duration
+	transactionTTL  time.Duration
 }
 
 func New(
@@ -146,6 +150,17 @@ func New(
 		api.actionArtifact)
 	if api.collabStore != nil {
 		collab.Register(mux, api.collabStore, api, logger)
+		if codeClient, ok := api.lore.(loreclient.CodeClient); ok {
+			codeapi.Register(mux, api.collabStore, api.lore, codeClient, api, api.loreCredentials,
+				api.serviceSubjects.PublicReader, logger)
+		}
+		if workflow, ok := api.collabStore.(collab.MergeWorkflowStore); ok {
+			if mergeClient, mergeOK := api.lore.(loreclient.MergeClient); mergeOK {
+				pushAuthorizer, _ := api.collabStore.(loreclient.PushAuthorizer)
+				mergeapi.Register(mux, api.collabStore, workflow, api.lore, mergeClient, api,
+					api.loreCredentials, pushAuthorizer, logger)
+			}
+		}
 	}
 	return api.recoverPanic(api.securityHeaders(api.requestLog(mux)))
 }
@@ -155,6 +170,28 @@ func New(
 func WithCollaboration(store collab.Store) Option {
 	return func(api *API) {
 		api.collabStore = store
+	}
+}
+
+func WithLoreCredentials(provider loreclient.CredentialProvider) Option {
+	return func(api *API) {
+		api.loreCredentials = provider
+	}
+}
+
+// WithLoreServiceSubjects supplies the immutable JWT subjects for service
+// purposes. An empty subject remains invalid and fails credential resolution.
+func WithLoreServiceSubjects(subjects loreclient.ServiceSubjects) Option {
+	return func(api *API) {
+		api.serviceSubjects = subjects
+	}
+}
+
+// WithDevelopmentLoreCredentials is explicit and intended only for local
+// development. Production wiring must provide partition-scoped credentials.
+func WithDevelopmentLoreCredentials(identity string) Option {
+	return func(api *API) {
+		api.loreCredentials = loreclient.NewDevelopmentCredentialProvider(identity)
 	}
 }
 
@@ -195,6 +232,23 @@ func (api *API) ResolveOptionalActor(
 	return &user, true
 }
 
+func (api *API) loreCredential(
+	ctx context.Context,
+	repository loreclient.RepositoryRef,
+	principal loreclient.Principal,
+	scope loreclient.Scope,
+) (loreclient.Credential, error) {
+	if api.loreCredentials == nil {
+		return loreclient.Credential{}, loreclient.ErrCredentialUnavailable
+	}
+	return api.loreCredentials.ForRepository(ctx, loreclient.CredentialRequest{
+		Principal:  principal,
+		Repository: repository,
+		Partition:  repository.CanonicalPartition(),
+		Scope:      scope,
+	})
+}
+
 func (api *API) live(writer http.ResponseWriter, _ *http.Request) {
 	writeJSON(writer, http.StatusOK, map[string]string{"status": "ok"})
 }
@@ -220,6 +274,20 @@ func (api *API) exploreRepositories(writer http.ResponseWriter, request *http.Re
 }
 
 func (api *API) publicRepository(writer http.ResponseWriter, request *http.Request) {
+	if api.collabStore != nil {
+		actor, ok := api.ResolveOptionalActor(writer, request)
+		if !ok {
+			return
+		}
+		repository, err := api.collabStore.LookupRepository(request.Context(), actor,
+			request.PathValue("owner"), request.PathValue("repository"))
+		if err != nil {
+			api.platformError(writer, request, "get repository", err)
+			return
+		}
+		writeJSON(writer, http.StatusOK, repository)
+		return
+	}
 	repository, err := api.store.PublicRepository(
 		request.Context(),
 		request.PathValue("owner"),
@@ -233,19 +301,50 @@ func (api *API) publicRepository(writer http.ResponseWriter, request *http.Reque
 }
 
 func (api *API) repositoryBranches(writer http.ResponseWriter, request *http.Request) {
-	repository, err := api.store.PublicRepository(
-		request.Context(),
-		request.PathValue("owner"),
-		request.PathValue("repository"),
-	)
+	var repositoryLoreURL, repositoryID, repositoryLoreID string
+	principal := loreclient.ServicePrincipal(loreclient.ServicePurposePublicReader,
+		api.serviceSubjects.PublicReader)
+	if api.collabStore != nil {
+		actor, ok := api.ResolveOptionalActor(writer, request)
+		if !ok {
+			return
+		}
+		repository, err := api.collabStore.LookupRepository(request.Context(), actor,
+			request.PathValue("owner"), request.PathValue("repository"))
+		if err != nil {
+			api.platformError(writer, request, "get repository branches", err)
+			return
+		}
+		repositoryLoreURL = repository.LoreURL
+		repositoryLoreID = repository.LoreRepositoryID
+		repositoryID = repository.ID
+		if actor != nil {
+			principal = loreclient.UserPrincipal(actor.ID)
+		}
+	} else {
+		repository, err := api.store.PublicRepository(
+			request.Context(),
+			request.PathValue("owner"),
+			request.PathValue("repository"),
+		)
+		if err != nil {
+			api.platformError(writer, request, "get repository branches", err)
+			return
+		}
+		repositoryLoreURL = repository.LoreURL
+		repositoryID = repository.ID
+	}
+	ref := loreclient.RepositoryRef{
+		CacheKey:         repositoryID,
+		URL:              repositoryLoreURL,
+		LoreRepositoryID: repositoryLoreID,
+	}
+	credential, err := api.loreCredential(request.Context(), ref, principal, loreclient.ScopeRead)
 	if err != nil {
-		api.platformError(writer, request, "get repository branches", err)
+		api.internalError(writer, request, "get Lore read credential", err)
 		return
 	}
-	branches, err := api.lore.Branches(request.Context(), loreclient.RepositoryRef{
-		CacheKey: repository.ID,
-		URL:      repository.LoreURL,
-	}, api.loreIdentity)
+	branches, err := api.lore.Branches(request.Context(), ref, credential)
 	if err != nil {
 		api.internalError(writer, request, "list Lore branches", err)
 		return
@@ -307,7 +406,15 @@ func (api *API) registerRepository(writer http.ResponseWriter, request *http.Req
 		writeProblem(writer, http.StatusBadRequest, "invalid_input", "Repository fields are invalid")
 		return
 	}
-	loreRepository, err := api.lore.RepositoryInfo(request.Context(), input.LoreURL, api.loreIdentity)
+	credential, credentialErr := api.loreCredential(request.Context(), loreclient.RepositoryRef{
+		URL: input.LoreURL,
+	}, loreclient.ServicePrincipal(loreclient.ServicePurposeRepositoryRegistration,
+		api.serviceSubjects.RepositoryRegistration), loreclient.ScopeRead)
+	if credentialErr != nil {
+		writeProblem(writer, http.StatusBadGateway, "lore_unavailable", "Lore credentials are not configured")
+		return
+	}
+	loreRepository, err := api.lore.RepositoryInfo(request.Context(), input.LoreURL, credential)
 	if err != nil {
 		writeProblem(writer, http.StatusBadGateway, "lore_unavailable", "Lore repository could not be verified")
 		return
@@ -340,6 +447,27 @@ func (api *API) registerRepository(writer http.ResponseWriter, request *http.Req
 }
 
 func (api *API) listIssues(writer http.ResponseWriter, request *http.Request) {
+	if api.collabStore != nil {
+		if reader, ok := api.collabStore.(collab.RepositoryReadStore); ok {
+			actor, actorOK := api.ResolveOptionalActor(writer, request)
+			if !actorOK {
+				return
+			}
+			repository, err := api.collabStore.LookupRepository(request.Context(), actor,
+				request.PathValue("owner"), request.PathValue("repository"))
+			if err != nil {
+				api.platformError(writer, request, "list issues", err)
+				return
+			}
+			issues, err := reader.ListIssuesForRepository(request.Context(), repository.ID, request.URL.Query().Get("state"))
+			if err != nil {
+				api.internalError(writer, request, "list issues", err)
+				return
+			}
+			writeJSON(writer, http.StatusOK, map[string]any{"issues": issues})
+			return
+		}
+	}
 	issues, err := api.store.ListPublicIssues(
 		request.Context(),
 		request.PathValue("owner"),
@@ -385,6 +513,28 @@ func (api *API) createIssue(writer http.ResponseWriter, request *http.Request) {
 }
 
 func (api *API) listMergeRequests(writer http.ResponseWriter, request *http.Request) {
+	if api.collabStore != nil {
+		if reader, ok := api.collabStore.(collab.RepositoryReadStore); ok {
+			actor, actorOK := api.ResolveOptionalActor(writer, request)
+			if !actorOK {
+				return
+			}
+			repository, err := api.collabStore.LookupRepository(request.Context(), actor,
+				request.PathValue("owner"), request.PathValue("repository"))
+			if err != nil {
+				api.platformError(writer, request, "list merge requests", err)
+				return
+			}
+			mergeRequests, err := reader.ListMergeRequestsForRepository(request.Context(), repository.ID,
+				request.URL.Query().Get("state"))
+			if err != nil {
+				api.internalError(writer, request, "list merge requests", err)
+				return
+			}
+			writeJSON(writer, http.StatusOK, map[string]any{"mergeRequests": mergeRequests})
+			return
+		}
+	}
 	mergeRequests, err := api.store.ListPublicMergeRequests(
 		request.Context(),
 		request.PathValue("owner"),
@@ -428,10 +578,18 @@ func (api *API) createMergeRequest(writer http.ResponseWriter, request *http.Req
 		api.platformError(writer, request, "check merge request permission", err)
 		return
 	}
-	branches, err := api.lore.Branches(request.Context(), loreclient.RepositoryRef{
-		CacheKey: repository.ID,
-		URL:      repository.LoreURL,
-	}, api.loreIdentity)
+	ref := loreclient.RepositoryRef{
+		CacheKey:         repository.ID,
+		URL:              repository.LoreURL,
+		LoreRepositoryID: repository.LoreRepositoryID,
+	}
+	credential, credentialErr := api.loreCredential(request.Context(), ref, loreclient.UserPrincipal(actor.ID),
+		loreclient.ScopeRead)
+	if credentialErr != nil {
+		writeProblem(writer, http.StatusBadGateway, "lore_unavailable", "Lore credentials are not configured")
+		return
+	}
+	branches, err := api.lore.Branches(request.Context(), ref, credential)
 	if err != nil {
 		writeProblem(writer, http.StatusBadGateway, "lore_unavailable", "Lore branches could not be verified")
 		return
@@ -467,6 +625,27 @@ func (api *API) listCIRuns(writer http.ResponseWriter, request *http.Request) {
 	if api.actions != nil {
 		api.actionRuns(writer, request)
 		return
+	}
+	if api.collabStore != nil {
+		if reader, ok := api.collabStore.(collab.RepositoryReadStore); ok {
+			actor, actorOK := api.ResolveOptionalActor(writer, request)
+			if !actorOK {
+				return
+			}
+			repository, err := api.collabStore.LookupRepository(request.Context(), actor,
+				request.PathValue("owner"), request.PathValue("repository"))
+			if err != nil {
+				api.platformError(writer, request, "list CI runs", err)
+				return
+			}
+			runs, err := reader.ListCIRunsForRepository(request.Context(), repository.ID)
+			if err != nil {
+				api.internalError(writer, request, "list CI runs", err)
+				return
+			}
+			writeJSON(writer, http.StatusOK, map[string]any{"runs": runs})
+			return
+		}
 	}
 	runs, err := api.store.ListPublicCIRuns(
 		request.Context(),

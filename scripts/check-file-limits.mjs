@@ -13,6 +13,8 @@ const checkedExtensions = new Set([
   ".json",
   ".md",
   ".mjs",
+  ".proto",
+  ".rs",
   ".sh",
   ".sql",
   ".toml",
