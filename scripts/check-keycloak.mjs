@@ -37,11 +37,36 @@ expect(/keycloak-postgres-data:/.test(compose), "compose must declare a keycloak
 expect(/keycloak-data:/.test(compose), "compose must declare a keycloak-data volume");
 expect(/\$\{KEYCLOAK_HOST_PORT:-8280\}:8080/.test(compose), "Keycloak host port default must be 8280");
 expect(/condition: service_healthy/.test(compose), "Keycloak must wait for its Postgres healthcheck");
+expect(/LOREHUB_AUTH_MODE: \$\{LOREHUB_AUTH_MODE:-interactive\}/.test(compose), "API must default to interactive auth");
+expect(
+  /LOREHUB_OIDC_ISSUER: \$\{LOREHUB_OIDC_ISSUER:-http:\/\/keycloak\.localhost:8280\/realms\/lorehub\}/.test(compose),
+  "API must use the local Keycloak issuer",
+);
+expect(
+  /LOREHUB_OIDC_AUDIENCE: \$\{LOREHUB_OIDC_AUDIENCE:-lorehub-api\}/.test(compose),
+  "API audience must be lorehub-api",
+);
+expect(
+  /LOREHUB_OIDC_CLIENT_ID: \$\{LOREHUB_OIDC_CLIENT_ID:-lorehub-web\}/.test(compose),
+  "API client ID must be lorehub-web",
+);
+expect(/LOREHUB_OIDC_REDIRECT_URL:/.test(compose), "API must receive the OIDC redirect URL");
+expect(/LOREHUB_PUBLIC_ORIGIN:/.test(compose), "API must receive the public origin");
+expect(/LOREHUB_AUTH_SECRET:/.test(compose), "API must receive the session secret");
+expect(/LOREHUB_SESSION_COOKIE_SECURE:/.test(compose), "API must receive local cookie settings");
+expect(
+  /keycloak\.localhost:host-gateway/.test(compose),
+  "API must resolve the public Keycloak hostname through the host",
+);
+expect(/keycloak:\s*\n\s*condition: service_healthy/.test(compose), "API must wait for Keycloak health");
+expect(!compose.includes("LOREHUB_OIDC_PUBLIC_ORIGIN"), "the obsolete OIDC public-origin variable must be absent");
 expect(/--import-realm/.test(compose), "Keycloak must start with --import-realm");
 expect(/--http-enabled=true/.test(compose), "Keycloak must explicitly enable HTTP for local");
 expect(/--hostname-strict=false/.test(compose), "Keycloak must relax hostname strict mode for local");
 expect(/--optimized/.test(compose), "Keycloak must start in optimized/production mode");
 expect(/KC_BOOTSTRAP_ADMIN_PASSWORD/.test(compose), "Keycloak admin password must come from env, not the image");
+expect(/KC_DB_PASSWORD:/.test(compose), "Keycloak DB password must come from the runtime environment");
+expect(!/--db-password=/.test(compose), "Keycloak DB password must not be exposed in the process arguments");
 expect(/LOREHUB_OIDC_CLIENT_SECRET/.test(compose), "Keycloak must receive LOREHUB_OIDC_CLIENT_SECRET for realm import");
 expect(
   /KEYCLOAK_DB_PASSWORD:\?KEYCLOAK_DB_PASSWORD is required/.test(compose),
@@ -77,12 +102,23 @@ expect(realm.registrationAllowed === true, "self-registration must be allowed");
 expect(realm.registrationEmailAsUsername === true, "email must be used as username");
 expect(realm.loginWithEmailAllowed === true, "email login must be allowed");
 expect(realm.resetPasswordAllowed === true, "password reset must be allowed");
-expect(realm.verifyEmail === true, "email verification must be required");
+expect(realm.verifyEmail === false, "development realm import must not require unavailable SMTP");
+expect(realm.sslRequired === "external", "realm must require TLS outside local/private addresses");
+expect(realm.internationalizationEnabled === true, "realm internationalization must be enabled");
+expect(
+  realm.defaultLocale === "en" &&
+    Array.isArray(realm.supportedLocales) &&
+    realm.supportedLocales.includes("en") &&
+    realm.supportedLocales.includes("ja"),
+  "realm must support English and Japanese",
+);
 expect(realm.bruteForceProtected === true, "brute-force protection must be enabled");
 expect(typeof realm.passwordPolicy === "string" && realm.passwordPolicy.length > 0, "password policy must be set");
 expect(/length\(12\)/.test(realm.passwordPolicy), "password policy must require at least 12 characters");
 expect(/specialChars/.test(realm.passwordPolicy), "password policy must require special characters");
 expect(/digits/.test(realm.passwordPolicy), "password policy must require digits");
+expect(/notUsername/.test(realm.passwordPolicy), "password policy must reject the username");
+expect(/notEmail/.test(realm.passwordPolicy), "password policy must reject the email");
 expect(
   realm.accessTokenLifespan > 0 && realm.accessTokenLifespan <= 600,
   "access token lifespan must be <= 10 minutes",
@@ -106,9 +142,23 @@ if (webClient) {
   expect(webClient.attributes?.pkceCodeChallengeMethod === "S256", "lorehub-web must require PKCE S256");
   expect(webClient.secret === "${LOREHUB_OIDC_CLIENT_SECRET}", "lorehub-web secret must be an env placeholder");
   expect(
-    Array.isArray(webClient.redirectUris) && webClient.redirectUris.length > 0,
-    "lorehub-web must have redirect URIs",
+    Array.isArray(webClient.redirectUris) &&
+      webClient.redirectUris.length === 1 &&
+      webClient.redirectUris[0] === "http://localhost:3000/auth/callback",
+    "lorehub-web must allow only the API callback",
   );
+  expect(
+    Array.isArray(webClient.webOrigins) &&
+      webClient.webOrigins.length === 1 &&
+      webClient.webOrigins[0] === "http://localhost:3000",
+    "lorehub-web must allow only the local web origin",
+  );
+  expect(
+    webClient.attributes?.["post.logout.redirect.uris"] === "http://localhost:3000/",
+    "lorehub-web must have an exact local logout URI",
+  );
+  expect(!JSON.stringify(webClient).includes("/api/auth/callback/lorehub"), "NextAuth callback must be absent");
+  expect(!JSON.stringify(webClient).includes('"+"'), "lorehub-web must not use permissive origins");
   const audienceMapper = webClient.protocolMappers?.find((m) => m.protocolMapper === "oidc-audience-mapper");
   expect(
     audienceMapper?.config?.["included.client.audience"] === "lorehub-api",
@@ -139,13 +189,21 @@ for (const provider of ["google", "github", "facebook", "x"]) {
   expect(new RegExp(`upsert_provider ${provider}`).test(bootstrap), `bootstrap must provision ${provider}`);
 }
 expect(bootstrap.includes("provider_exists"), "bootstrap must check provider existence (idempotent)");
+expect(bootstrap.includes("disable_provider"), "bootstrap must disable providers whose credentials were removed");
+expect(bootstrap.includes("storeToken=false"), "bootstrap must not store upstream provider tokens");
+expect(bootstrap.includes("trustEmail=false"), "bootstrap must not trust upstream email claims");
+expect(bootstrap.includes("enabled=true"), "bootstrap must enable configured providers");
+expect(bootstrap.includes("passwordHistory(3)"), "bootstrap must apply password history");
+expect(bootstrap.includes("LOREHUB_VERIFY_EMAIL"), "bootstrap must configure email verification");
+expect(bootstrap.includes("KEYCLOAK_SMTP_HOST"), "bootstrap must configure SMTP from environment");
+expect(bootstrap.includes("production requires LOREHUB_VERIFY_EMAIL=true"), "production must require verification");
+expect(bootstrap.includes("post.logout.redirect.uris"), "bootstrap must update the logout URI");
+expect(bootstrap.includes('redirectUris=[\\"${REDIRECT_URL}\\"]'), "bootstrap must update only the API callback");
+expect(!bootstrap.includes("offline.access"), "X must not request unnecessary offline access");
 expect(bootstrap.includes("x oauth2"), "X must use the generic oauth2 provider");
-expect(
-  bootstrap.includes("https://twitter.com/i/oauth2/authorize"),
-  "bootstrap must use X's real authorization endpoint",
-);
-expect(bootstrap.includes("https://api.twitter.com/2/oauth2/token"), "bootstrap must use X's real token endpoint");
-expect(bootstrap.includes("https://api.twitter.com/2/users/me"), "bootstrap must use X's real userinfo endpoint");
+expect(bootstrap.includes("https://x.com/i/oauth2/authorize"), "bootstrap must use X's real authorization endpoint");
+expect(bootstrap.includes("https://api.x.com/2/oauth2/token"), "bootstrap must use X's real token endpoint");
+expect(bootstrap.includes("https://api.x.com/2/users/me"), "bootstrap must use X's real userinfo endpoint");
 expect(bootstrap.includes("data.id") && bootstrap.includes("data.username"), "bootstrap must map X nested data claims");
 expect(!/echo .*SECRET/.test(bootstrap), "bootstrap must not echo secret values");
 
@@ -153,11 +211,17 @@ expect(!/echo .*SECRET/.test(bootstrap), "bootstrap must not echo secret values"
 const envExample = read(".env.example");
 const requiredEnvVars = [
   "POSTGRES_PASSWORD",
+  "LOREHUB_ENV",
+  "LOREHUB_AUTH_MODE",
   "LOREHUB_OIDC_ISSUER",
   "LOREHUB_OIDC_AUDIENCE",
   "LOREHUB_OIDC_CLIENT_ID",
-  "LOREHUB_OIDC_PUBLIC_ORIGIN",
   "LOREHUB_OIDC_CLIENT_SECRET",
+  "LOREHUB_OIDC_REDIRECT_URL",
+  "LOREHUB_OIDC_LOGOUT_REDIRECT_URL",
+  "LOREHUB_PUBLIC_ORIGIN",
+  "LOREHUB_AUTH_SECRET",
+  "LOREHUB_SESSION_COOKIE_SECURE",
   "KEYCLOAK_REALM",
   "KEYCLOAK_HOST_PORT",
   "KEYCLOAK_HOSTNAME",
@@ -166,6 +230,15 @@ const requiredEnvVars = [
   "KEYCLOAK_DB_USER",
   "KEYCLOAK_DB_NAME",
   "KEYCLOAK_DB_PASSWORD",
+  "LOREHUB_VERIFY_EMAIL",
+  "KEYCLOAK_SMTP_HOST",
+  "KEYCLOAK_SMTP_PORT",
+  "KEYCLOAK_SMTP_FROM",
+  "KEYCLOAK_SMTP_AUTH",
+  "KEYCLOAK_SMTP_USER",
+  "KEYCLOAK_SMTP_PASSWORD",
+  "KEYCLOAK_SMTP_STARTTLS",
+  "KEYCLOAK_SMTP_SSL",
   "LOREHUB_IDP_GOOGLE_CLIENT_ID",
   "LOREHUB_IDP_GOOGLE_CLIENT_SECRET",
   "LOREHUB_IDP_GITHUB_CLIENT_ID",
@@ -179,9 +252,12 @@ for (const name of requiredEnvVars) {
   expect(new RegExp(`^${name}=`, "m").test(envExample), `.env.example must define ${name}`);
 }
 const secretEnvVars = [
+  "POSTGRES_PASSWORD",
   "KEYCLOAK_ADMIN_PASSWORD",
   "KEYCLOAK_DB_PASSWORD",
   "LOREHUB_OIDC_CLIENT_SECRET",
+  "LOREHUB_AUTH_SECRET",
+  "KEYCLOAK_SMTP_PASSWORD",
   "LOREHUB_IDP_GOOGLE_CLIENT_SECRET",
   "LOREHUB_IDP_GITHUB_CLIENT_SECRET",
   "LOREHUB_IDP_FACEBOOK_CLIENT_SECRET",
@@ -197,7 +273,14 @@ try {
   execFileSync("docker", ["compose", "-f", "infra/compose.yaml", "config", "-q"], {
     cwd: root,
     stdio: "pipe",
-    env: { ...process.env, KEYCLOAK_DB_PASSWORD: "check", KEYCLOAK_ADMIN_PASSWORD: "check" },
+    env: {
+      ...process.env,
+      POSTGRES_PASSWORD: "check",
+      KEYCLOAK_DB_PASSWORD: "check",
+      KEYCLOAK_ADMIN_PASSWORD: "check",
+      LOREHUB_OIDC_CLIENT_SECRET: "check",
+      LOREHUB_AUTH_SECRET: "check-check-check-check-check-check-check-check",
+    },
   });
 } catch (error) {
   const detail = error.stderr ? error.stderr.toString().trim() : error.message;

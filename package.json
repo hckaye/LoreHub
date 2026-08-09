@@ -23,6 +23,7 @@
     "security": "npm audit --audit-level=high && npm run api:security",
     "limits": "node scripts/check-file-limits.mjs",
     "keycloak:check": "node scripts/check-keycloak.mjs",
+    "keycloak:test": "sh scripts/test-keycloak-secrets.sh",
     "compose:config": "docker compose -f infra/compose.yaml config -q",
     "check": "sh scripts/check.sh"
   },

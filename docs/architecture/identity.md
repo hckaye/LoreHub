@@ -44,14 +44,16 @@ Keycloakは専用のPostgreSQL（`keycloak-postgres`）を使い、LoreHubアプ
 - パスワードポリシー: 12文字以上、大文字・小文字・数字・記号を含む、ユーザー名とメールを含まない、
   過去3世代の再利用禁止。
 - 総当たり保護: 有効。失敗5回でロック、待機時間を段階的に延長（最大900秒）。
-- ログインIDはメールアドレス。自己登録を許可し、登録後にメール検証を必須化しています。
+- ログインIDはメールアドレス。自己登録を許可しています。メール検証は開発では無効、本番ではSMTPを設定したうえで
+  有効にします。
 
 ## ソーシャルプロバイダーの条件付きプロビジョニング
 
 ソーシャルIDプロバイダーはレルムJSONに固定で書き込まず、`infra/keycloak/bootstrap.sh` が資格情報の有無に
 応じて条件付きで作成します。資格情報が両方揃ったプロバイダーだけがログイン画面に表示され、欠落した
-プロバイダーは壊れたボタンとして現れません。プロビジョニングは冪等で、再起動後に既存プロバイダーを
-更新するだけです。
+プロバイダーは壊れたボタンとして現れません。起動後に資格情報を削除すると既存プロバイダーも無効化され、
+戻すと設定を更新して再び有効になります。プロビジョニングは冪等で、外部アクセストークンは保存せず、
+外部メールも信頼しません。
 
 X（旧Twitter）は、Keycloak 26.7で非推奨になった組み込みTwitterブローカーを使わず、X公式のOAuth 2.0
 エンドポイントに対する汎用OAuth v2プロバイダーとして設定します。詳細は
@@ -59,6 +61,6 @@ X（旧Twitter）は、Keycloak 26.7で非推奨になった組み込みTwitter�
 
 ## APIのbearer-only無効状態
 
-`LOREHUB_OIDC_ISSUER` が空のとき、Go APIはOIDC検証を無効化した現在の挙動を維持します。Keycloakを起動しない
-構成（サービスを明示的に指定して `docker compose up postgres lore api web` を実行）でも、APIは従来通り
-動作します。Keycloakを既定スタックに含めた場合でも、issuerを空のままにすればAPIの認証は有効化されません。
+`LOREHUB_AUTH_MODE=disabled` を明示したとき、Go APIはOIDC検証を無効化した現在の挙動を維持します。既存の
+Bearerクライアントだけを使う場合は `LOREHUB_AUTH_MODE=bearer` にします。既定のCompose構成は
+`LOREHUB_AUTH_MODE=interactive`、issuerは `http://keycloak.localhost:8280/realms/lorehub` です。
