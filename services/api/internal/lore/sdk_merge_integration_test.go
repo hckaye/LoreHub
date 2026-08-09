@@ -8,11 +8,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
 
 func TestSDKMergeLifecycleAgainstLoreServer(t *testing.T) {
+	// This fixture is unauthenticated component coverage, not production auth or hook evidence.
 	if os.Getenv("LOREHUB_TEST_LORE_MERGE") != "1" {
 		t.Skip("LOREHUB_TEST_LORE_MERGE is not set to 1")
 	}
@@ -26,9 +28,13 @@ func TestSDKMergeLifecycleAgainstLoreServer(t *testing.T) {
 	if identity == "" {
 		identity = "fixture"
 	}
-	bootstrapCredential := Credential{Identity: identity, Scope: ScopeRead}
-	cacheDirectory := t.TempDir()
-	client, err := NewSDKClient(cacheDirectory)
+	bootstrapCredential := Credential{
+		Partition: repositoryURLPartition(repositoryURL), Identity: identity, Scope: ScopeRead,
+		Principal:           ServicePrincipal(ServicePurposeRepositoryRegistration),
+		InsecureDevelopment: true,
+	}
+	cacheDirectory := loreTestTempDir(t)
+	client, err := NewDevelopmentSDKClient(cacheDirectory)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,8 +51,8 @@ func TestSDKMergeLifecycleAgainstLoreServer(t *testing.T) {
 		DefaultBranch:    repository.DefaultBranch,
 	}
 	merge := MergeClient(client)
-	readCredential := Credential{Partition: repository.ID, Identity: identity, Scope: ScopeRead}
-	writeCredential := Credential{Partition: repository.ID, Identity: identity, Scope: ScopeWrite}
+	readCredential := developmentCredential(repository.ID, identity, ScopeRead)
+	writeCredential := developmentCredential(repository.ID, identity, ScopeWrite)
 
 	cleanSource, err := fixtureBranchRevision(ctx, client, ref, "feature-clean", identity)
 	if err != nil {
@@ -64,34 +70,73 @@ func TestSDKMergeLifecycleAgainstLoreServer(t *testing.T) {
 	if len(clean.Conflicts) != 0 || clean.StagedRevision == "" {
 		t.Fatalf("clean merge did not stage a revision: %#v", clean)
 	}
+	var authorizationCalls atomic.Int32
+	authorizer := PushAuthorizerFunc(func(_ context.Context, input PushAuthorization) error {
+		authorizationCalls.Add(1)
+		if input.RepositoryPartition != repository.ID || input.OperationID == "" || input.TargetBranchID == "" ||
+			input.TargetBranchName == "" || input.ExpectedTargetRevision == "" || input.ProposedRevision == "" ||
+			input.SourceRevision == "" || !sameMergeParents(input.ParentRevisions, input.SourceRevision,
+			input.ExpectedTargetRevision) {
+			return fmt.Errorf("unexpected push authorization tuple: %+v", input)
+		}
+		if input.OperationID == "merge-lifecycle-clean" &&
+			(input.ActorUserID != "" || input.RepositoryID != "" || input.TargetBranchName != "main" ||
+				input.ExpectedTargetRevision != cleanTarget || input.SourceRevision != cleanSource ||
+				input.ProposedRevision != clean.StagedRevision) {
+			return fmt.Errorf("unexpected clean push authorization tuple: %+v", input)
+		}
+		return nil
+	})
+	if _, err := merge.PushMerge(ctx, ref, "merge-lifecycle-clean", MergeWorkspace{
+		SourceBranch: "feature-clean", TargetBranch: "main", SourceRevision: cleanSource,
+		TargetRevision: cleanTarget, Message: "Merge clean feature",
+	}, clean.StagedRevision, readCredential, writeCredential,
+		PushAuthorizerFunc(func(context.Context, PushAuthorization) error {
+			return fmt.Errorf("%w: deliberately denied", ErrPushAuthorizationDenied)
+		})); !errors.Is(err, ErrPushAuthorizationDenied) {
+		t.Fatalf("denied clean push error = %v, want ErrPushAuthorizationDenied", err)
+	}
+	unchangedTarget, err := fixtureBranchRevision(ctx, client, ref, "main", identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unchangedTarget != cleanTarget {
+		t.Fatalf("Lore remote changed after authorization denial: %s != %s", unchangedTarget, cleanTarget)
+	}
 	assertMergeParents(t, clean.Parents, cleanSource, cleanTarget)
 	cleanPush, err := merge.PushMerge(ctx, ref, "merge-lifecycle-clean", MergeWorkspace{
 		SourceBranch: "feature-clean", TargetBranch: "main", SourceRevision: cleanSource,
 		TargetRevision: cleanTarget, Message: "Merge clean feature",
-	}, clean.StagedRevision, readCredential, writeCredential)
+	}, clean.StagedRevision, readCredential, writeCredential, authorizer)
 	if err != nil {
 		t.Fatalf("clean PushMerge returned an error: %v", err)
 	}
 	if cleanPush.RemoteRevision == "" {
 		t.Fatalf("clean push returned no remote revision: %#v", cleanPush)
 	}
+	if got := authorizationCalls.Load(); got != 1 {
+		t.Fatalf("clean authorization callback count = %d, want 1", got)
+	}
 	duplicatePush, err := merge.PushMerge(ctx, ref, "merge-lifecycle-clean", MergeWorkspace{
 		SourceBranch: "feature-clean", TargetBranch: "main", SourceRevision: cleanSource,
 		TargetRevision: cleanTarget, Message: "Merge clean feature",
-	}, clean.StagedRevision, readCredential, writeCredential)
+	}, clean.StagedRevision, readCredential, writeCredential, authorizer)
 	if err != nil {
 		t.Fatalf("duplicate clean PushMerge returned an error: %v", err)
 	}
 	if duplicatePush.RemoteRevision != cleanPush.RemoteRevision {
 		t.Fatalf("duplicate clean push changed remote revision: first=%#v second=%#v", cleanPush, duplicatePush)
 	}
+	if got := authorizationCalls.Load(); got != 1 {
+		t.Fatalf("already-pushed authorization callback count = %d, want 1", got)
+	}
 	if err := merge.CleanupMergeWorkspace(ctx, ref, "merge-lifecycle-clean"); err != nil {
 		t.Fatalf("clean workspace cleanup returned an error: %v", err)
 	}
 
-	testSourceAndTargetRaces(t, ctx, merge, client, ref, readCredential, writeCredential, cliPath, worktree,
-		identity)
-	testWorkspaceRecovery(t, ctx, cacheDirectory, client, ref, readCredential, writeCredential, identity)
+	testSourceAndTargetRaces(t, ctx, merge, client, ref, readCredential, writeCredential, authorizer, cliPath,
+		worktree, identity)
+	testWorkspaceRecovery(t, ctx, cacheDirectory, client, ref, readCredential, writeCredential, authorizer, identity)
 
 	conflictSource, err := fixtureBranchRevision(ctx, client, ref, "feature-conflict", identity)
 	if err != nil {
@@ -159,7 +204,8 @@ func TestSDKMergeLifecycleAgainstLoreServer(t *testing.T) {
 		t.Fatalf("RestartMerge lost the expected conflict: %#v", restartResult)
 	}
 	restartWorkspace := MergeWorkspace{SourceBranch: "feature-conflict", TargetBranch: "conflict-target",
-		SourceRevision: restartSource, TargetRevision: newTarget, Message: "Conflict restart"}
+		SourceRevision: restartSource, TargetRevision: newTarget, Message: "Conflict restart",
+		Resolutions: []MergeResolution{{Path: restartResult.Conflicts[0], Strategy: "theirs"}}}
 	if _, err := merge.ResolveMerge(ctx, ref, restartOperation, restartWorkspace, restartResult.Conflicts,
 		"theirs", writeCredential); err != nil {
 		t.Fatalf("ResolveMerge returned an error: %v", err)
@@ -172,7 +218,7 @@ func TestSDKMergeLifecycleAgainstLoreServer(t *testing.T) {
 		t.Fatalf("resolved merge still has conflicts: %#v", remaining)
 	}
 	restartedPush, err := merge.PushMerge(ctx, ref, restartOperation, restartWorkspace,
-		restartResult.StagedRevision, readCredential, writeCredential)
+		restartResult.StagedRevision, readCredential, writeCredential, authorizer)
 	if err != nil {
 		t.Fatalf("restarted PushMerge returned an error: %v", err)
 	}
@@ -192,6 +238,7 @@ func testSourceAndTargetRaces(
 	ref RepositoryRef,
 	readCredential Credential,
 	writeCredential Credential,
+	authorizer PushAuthorizer,
 	cliPath string,
 	worktree string,
 	identity string,
@@ -217,7 +264,7 @@ func testSourceAndTargetRaces(
 	advanceFixtureBranch(t, ctx, cliPath, worktree, identity, "race-source", "race-source-next.txt",
 		"source advanced", "advance race source")
 	if _, err := merge.PushMerge(ctx, ref, operation, workspace, started.StagedRevision,
-		readCredential, writeCredential); !errors.Is(err, ErrMergeStale) {
+		readCredential, writeCredential, authorizer); !errors.Is(err, ErrMergeStale) {
 		t.Fatalf("source race PushMerge error = %v, want ErrMergeStale", err)
 	}
 	if err := merge.CleanupMergeWorkspace(ctx, ref, operation); err != nil {
@@ -244,7 +291,7 @@ func testSourceAndTargetRaces(
 	advanceFixtureBranch(t, ctx, cliPath, worktree, identity, "race-target", "race-target-next.txt",
 		"target advanced", "advance race target")
 	if _, err := merge.PushMerge(ctx, ref, operation, workspace, started.StagedRevision,
-		readCredential, writeCredential); !errors.Is(err, ErrMergeStale) {
+		readCredential, writeCredential, authorizer); !errors.Is(err, ErrMergeStale) {
 		t.Fatalf("target race PushMerge error = %v, want ErrMergeStale", err)
 	}
 	if err := merge.CleanupMergeWorkspace(ctx, ref, operation); err != nil {
@@ -260,6 +307,7 @@ func testWorkspaceRecovery(
 	ref RepositoryRef,
 	readCredential Credential,
 	writeCredential Credential,
+	authorizer PushAuthorizer,
 	identity string,
 ) {
 	t.Helper()
@@ -282,10 +330,13 @@ func testWorkspaceRecovery(
 	if len(started.Conflicts) == 0 {
 		t.Fatalf("recovery StartMerge did not report conflicts: %#v", started)
 	}
-	resolvedRevision, err := client.ResolveMerge(ctx, ref, operation, workspace, started.Conflicts,
+	resolution, err := client.ResolveMerge(ctx, ref, operation, workspace, started.Conflicts,
 		"theirs", writeCredential)
 	if err != nil {
 		t.Fatalf("recovery ResolveMerge returned an error: %v", err)
+	}
+	if resolution.StagedRevision == "" || !sameMergeParents(resolution.Parents, source, target) {
+		t.Fatalf("resolved merge did not persist the exact merge commit parents: %#v", resolution)
 	}
 	workspace.Resolutions = make([]MergeResolution, 0, len(started.Conflicts))
 	for _, path := range started.Conflicts {
@@ -298,7 +349,7 @@ func testWorkspaceRecovery(
 	if err := removeMergeWorkspace(ctx, path); err != nil {
 		t.Fatalf("delete recovery workspace: %v", err)
 	}
-	recoveredClient, err := NewSDKClient(cacheDirectory)
+	recoveredClient, err := NewDevelopmentSDKClient(cacheDirectory)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -310,8 +361,8 @@ func testWorkspaceRecovery(
 	if len(remaining) != 0 {
 		t.Fatalf("stored conflict resolutions were not replayed: %#v", remaining)
 	}
-	pushed, err := recoveredMerge.PushMerge(ctx, ref, operation, workspace, resolvedRevision,
-		readCredential, writeCredential)
+	pushed, err := recoveredMerge.PushMerge(ctx, ref, operation, workspace, resolution.StagedRevision,
+		readCredential, writeCredential, authorizer)
 	if err != nil {
 		t.Fatalf("recovered PushMerge returned an error: %v", err)
 	}
@@ -337,8 +388,7 @@ func fixtureBranchRevision(
 	branch string,
 	identity string,
 ) (string, error) {
-	branches, err := client.Branches(ctx, ref, Credential{Partition: ref.LoreRepositoryID, Identity: identity,
-		Scope: ScopeRead})
+	branches, err := client.Branches(ctx, ref, developmentCredential(ref.LoreRepositoryID, identity, ScopeRead))
 	if err != nil {
 		return "", fmt.Errorf("list fixture branches: %w", err)
 	}

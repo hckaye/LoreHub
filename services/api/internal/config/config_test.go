@@ -70,7 +70,9 @@ func TestLoadInteractiveAuthenticationUsesSecureProductionCookie(t *testing.T) {
 	t.Setenv("LOREHUB_AUTH_SECRET", strings.Repeat("a", 32))
 	t.Setenv("LOREHUB_SESSION_TTL", "24h")
 	t.Setenv("LOREHUB_LOGIN_TRANSACTION_TTL", "10m")
-	t.Setenv("LOREHUB_LORE_CREDENTIALS", `{"lore-partition":"service-identity"}`)
+	t.Setenv("LOREHUB_LORE_CREDENTIALS",
+		`{"lore-partition":{"identity":"service-identity","token":"short-lived-token",`+
+			`"authUrl":"https://auth.example/login"}}`)
 
 	settings, err := Load()
 	if err != nil {
@@ -93,6 +95,20 @@ func TestLoadRejectsInvalidLoginBindingCookieName(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsProductionIdentityFallback(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("LOREHUB_ENV", "production")
+	t.Setenv("LOREHUB_LORE_IDENTITY", "legacy-shared-identity")
+	t.Setenv("LOREHUB_LORE_CREDENTIALS",
+		`{"lore-partition":{"identity":"service-identity","token":"short-lived-token",`+
+			`"authUrl":"https://auth.example/login"}}`)
+
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "LOREHUB_LORE_IDENTITY") {
+		t.Fatalf("expected production identity fallback error, got %v", err)
+	}
+}
+
 func setRequiredEnvironment(t *testing.T) {
 	t.Helper()
 	t.Setenv("DATABASE_URL", "postgres://localhost/lorehub")
@@ -105,6 +121,8 @@ func setRequiredEnvironment(t *testing.T) {
 	t.Setenv("LOREHUB_AUTH_SECRET", "")
 	t.Setenv("LOREHUB_SESSION_TTL", "")
 	t.Setenv("LOREHUB_LOGIN_TRANSACTION_TTL", "")
+	t.Setenv("LOREHUB_LORE_IDENTITY", "")
+	t.Setenv("LOREHUB_LORE_CREDENTIALS", "")
 	t.Setenv("LOREHUB_SESSION_COOKIE_SECURE", "")
 	t.Setenv("LOREHUB_SESSION_COOKIE_NAME", "")
 	t.Setenv("LOREHUB_LOGIN_BINDING_COOKIE_NAME", "")

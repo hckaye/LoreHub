@@ -3,6 +3,9 @@ package lore
 import (
 	"context"
 	"errors"
+	"net/url"
+	"path"
+	"strings"
 	"time"
 )
 
@@ -23,6 +26,27 @@ type RepositoryRef struct {
 	URL              string
 	LoreRepositoryID string
 	DefaultBranch    string
+}
+
+func (repository RepositoryRef) CanonicalPartition() string {
+	idPartition := strings.TrimSpace(repository.LoreRepositoryID)
+	urlPartition := repositoryURLPartition(repository.URL)
+	if idPartition != "" {
+		return idPartition
+	}
+	return urlPartition
+}
+
+func repositoryURLPartition(repositoryURL string) string {
+	parsed, err := url.Parse(repositoryURL)
+	if err != nil || parsed.Host == "" || parsed.User != nil || strings.ContainsRune(parsed.Path, '\x00') {
+		return ""
+	}
+	partition := strings.TrimSpace(path.Base(parsed.Path))
+	if partition == "." || partition == ".." || partition == "/" {
+		return ""
+	}
+	return partition
 }
 
 type Branch struct {
@@ -123,7 +147,42 @@ type MergePushResult struct {
 	RemoteRevision       string
 	RemoteSourceRevision string
 	RemoteTargetRevision string
+	TargetBranchID       string
 	Parents              []string
+}
+
+var (
+	ErrPushAuthorizationRequired = errors.New("Lore merge push authorization is required")
+	ErrPushAuthorizationDenied   = errors.New("Lore merge push authorization was denied")
+)
+
+type PushAuthorization struct {
+	ActorUserID            string
+	RepositoryID           string
+	RepositoryPartition    string
+	OperationID            string
+	TargetBranchID         string
+	TargetBranchName       string
+	ExpectedTargetRevision string
+	ProposedRevision       string
+	SourceRevision         string
+	ParentRevisions        []string
+}
+
+type PushAuthorizer interface {
+	AuthorizeLoreMergePush(context.Context, PushAuthorization) error
+}
+
+type PushAuthorizerFunc func(context.Context, PushAuthorization) error
+
+func (authorizer PushAuthorizerFunc) AuthorizeLoreMergePush(
+	ctx context.Context,
+	authorization PushAuthorization,
+) error {
+	if authorizer == nil {
+		return ErrPushAuthorizationRequired
+	}
+	return authorizer(ctx, authorization)
 }
 
 type MergeResolution struct {
@@ -166,7 +225,7 @@ type MergeClient interface {
 	EnsureMergeWorkspace(ctx context.Context, repository RepositoryRef, operationID string, workspace MergeWorkspace,
 		credential Credential) error
 	ResolveMerge(ctx context.Context, repository RepositoryRef, operationID string, workspace MergeWorkspace,
-		paths []string, strategy string, credential Credential) (string, error)
+		paths []string, strategy string, credential Credential) (MergeStartResult, error)
 	ListConflicts(
 		ctx context.Context, repository RepositoryRef, operationID string, workspace MergeWorkspace, paths []string,
 		credential Credential,
@@ -176,7 +235,7 @@ type MergeClient interface {
 		paths []string, credential Credential) (MergeStartResult, error)
 	PushMerge(
 		ctx context.Context, repository RepositoryRef, operationID string, workspace MergeWorkspace,
-		stagedRevision string, readCredential Credential, writeCredential Credential,
+		stagedRevision string, readCredential Credential, writeCredential Credential, authorizer PushAuthorizer,
 	) (MergePushResult, error)
 	CleanupMergeWorkspace(ctx context.Context, repository RepositoryRef, operationID string) error
 	MergeInto(

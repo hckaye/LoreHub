@@ -2,6 +2,7 @@ package lore
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -15,18 +16,31 @@ import (
 )
 
 type SDKClient struct {
-	cacheDirectory string
-	locks          sync.Map
+	cacheDirectory           string
+	allowInsecureDevelopment bool
+	authLock                 sync.Mutex
+	locks                    sync.Map
 }
 
 func NewSDKClient(cacheDirectory string) (*SDKClient, error) {
+	return newSDKClient(cacheDirectory, false)
+}
+
+func NewDevelopmentSDKClient(cacheDirectory string) (*SDKClient, error) {
+	return newSDKClient(cacheDirectory, true)
+}
+
+func newSDKClient(cacheDirectory string, allowInsecureDevelopment bool) (*SDKClient, error) {
 	if cacheDirectory == "" {
 		return nil, errors.New("Lore cache directory is required")
 	}
 	if err := os.MkdirAll(cacheDirectory, 0o750); err != nil {
 		return nil, fmt.Errorf("create Lore cache directory: %w", err)
 	}
-	return &SDKClient{cacheDirectory: cacheDirectory}, nil
+	return &SDKClient{
+		cacheDirectory:           cacheDirectory,
+		allowInsecureDevelopment: allowInsecureDevelopment,
+	}, nil
 }
 
 func (client *SDKClient) RepositoryInfo(
@@ -40,7 +54,11 @@ func (client *SDKClient) RepositoryInfo(
 	if !strings.HasPrefix(repositoryURL, "lore://") {
 		return Repository{}, errors.New("repository URL must use the lore scheme")
 	}
-	if err := ValidateCredential(RepositoryRef{}, credential, ScopeRead); err != nil {
+	repositoryRef := RepositoryRef{URL: repositoryURL}
+	if err := ValidateCredential(repositoryRef, credential, ScopeRead); err != nil {
+		return Repository{}, err
+	}
+	if err := client.authenticate(ctx, "", repositoryURL, credential); err != nil {
 		return Repository{}, err
 	}
 	globals, cleanupGlobals := types.NewLoreGlobalArgs(types.LoreGlobalArgs{
@@ -89,7 +107,7 @@ func (client *SDKClient) Branches(
 	if err := ValidateCredential(repository, credential, ScopeRead); err != nil {
 		return nil, err
 	}
-	cachePath, err := client.cachePath(repository.CacheKey)
+	cachePath, err := client.credentialCachePath(repository, credential)
 	if err != nil {
 		return nil, err
 	}
@@ -98,6 +116,9 @@ func (client *SDKClient) Branches(
 	lock.Lock()
 	defer lock.Unlock()
 
+	if err := client.authenticate(ctx, cachePath, repository.URL, credential); err != nil {
+		return nil, err
+	}
 	if err := client.ensureBareClone(repository.URL, cachePath, credential.Identity); err != nil {
 		return nil, err
 	}
@@ -174,4 +195,76 @@ func (client *SDKClient) cachePath(key string) (string, error) {
 		return "", errors.New("Lore cache path escapes cache directory")
 	}
 	return path, nil
+}
+
+func (client *SDKClient) credentialCachePath(
+	repository RepositoryRef,
+	credential Credential,
+) (string, error) {
+	base, err := client.cachePath(repository.CacheKey)
+	if err != nil {
+		return "", err
+	}
+	if !credential.Principal.valid() {
+		return "", ErrInvalidPrincipal
+	}
+	principal := credential.Principal.UserID
+	if principal == "" {
+		principal = "service:" + credential.Principal.ServicePurpose
+	}
+	key := hex.EncodeToString([]byte(principal))
+	if key == "" {
+		return "", ErrInvalidPrincipal
+	}
+	return filepath.Join(base, "principals", key), nil
+}
+
+func (client *SDKClient) authenticate(
+	ctx context.Context,
+	repositoryPath string,
+	remoteURL string,
+	credential Credential,
+) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if credential.InsecureDevelopment {
+		if !client.allowInsecureDevelopment {
+			return errors.New("insecure development Lore credential is not accepted by this client")
+		}
+		return nil
+	}
+	if err := validateProductionCredential(credential); err != nil {
+		return err
+	}
+	lockKey := repositoryPath + "\x00" + credential.Principal.UserID + "\x00" +
+		credential.Principal.ServicePurpose
+	lockValue, _ := client.locks.LoadOrStore("auth:"+lockKey, &sync.Mutex{})
+	lock := lockValue.(*sync.Mutex)
+	lock.Lock()
+	defer lock.Unlock()
+	client.authLock.Lock()
+	defer client.authLock.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	globals, cleanupGlobals := types.NewLoreGlobalArgs(types.LoreGlobalArgs{
+		RepositoryPath: repositoryPath,
+		Identity:       credential.Identity,
+		Remote:         true,
+		Cache:          repositoryPath != "",
+		InMemory:       repositoryPath == "",
+	})
+	defer cleanupGlobals()
+	args, cleanupArgs := types.NewLoreAuthLoginWithTokenArgs(types.LoreAuthLoginWithTokenArgs{
+		RemoteUrl: remoteURL,
+		Token:     credential.Token,
+		TokenType: "lore",
+		AuthUrl:   credential.AuthURL,
+	})
+	defer cleanupArgs()
+	if _, err := loresdk.AuthLoginWithToken(&globals, &args).Wait(); err != nil {
+		return ErrLoreAuthentication
+	}
+	return nil
 }

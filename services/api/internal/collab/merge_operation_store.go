@@ -125,7 +125,10 @@ func (s *store) RecordMergeResolutions(
 	updated, err := scanMergeOperation(tx.QueryRow(ctx, `
 		UPDATE merge_operations
 		SET state = CASE WHEN state = 'started' THEN 'conflicts' ELSE state END,
-			error_code = NULL, error_detail = NULL, version = version + 1, updated_at = now()
+			error_code = NULL, error_detail = NULL, lease_expires_at = now() + interval '5 minutes',
+			version = version + 1, updated_at = now(),
+			push_authorized_revision = NULL, push_authorized_actor_id = NULL,
+			push_authorized_target_branch_id = NULL, push_authorized_at = NULL
 		WHERE id = $1 AND version = $2
 		RETURNING id, merge_request_id, repository_id, actor_id,
 			source_revision, target_revision, staged_revision, pushed_revision, parent_revisions,
@@ -341,11 +344,21 @@ func (s *store) AcquireMergeOperation(
 		operation.SourceRevision = sourceRevision
 		operation.TargetRevision = targetRevision
 	}
-	if retryFailedStart {
+	if reset {
 		if _, err := tx.Exec(ctx, `
 			DELETE FROM merge_operation_resolutions WHERE operation_id = $1
 		`, operation.ID); err != nil {
-			return MergeOperation{}, fmt.Errorf("clear stale merge resolutions: %w", err)
+			return MergeOperation{}, fmt.Errorf("clear reset merge resolutions: %w", err)
+		}
+	}
+	if reset {
+		if _, err := tx.Exec(ctx, `
+			UPDATE merge_operations
+			SET push_authorized_revision = NULL, push_authorized_actor_id = NULL,
+			    push_authorized_target_branch_id = NULL, push_authorized_at = NULL
+			WHERE id = $1
+		`, operation.ID); err != nil {
+			return MergeOperation{}, fmt.Errorf("clear stale Lore push authorization: %w", err)
 		}
 	}
 	updateRow := tx.QueryRow(ctx, `
@@ -429,12 +442,19 @@ func (s *store) RestartMergeOperation(
 		operation.LeaseOwner != owner {
 		return MergeOperation{}, ErrMergeBusy
 	}
+	if _, err := tx.Exec(ctx, `
+		DELETE FROM merge_operation_resolutions WHERE operation_id = $1
+	`, operation.ID); err != nil {
+		return MergeOperation{}, fmt.Errorf("clear restarted merge resolutions: %w", err)
+	}
 	row := tx.QueryRow(ctx, `
 		UPDATE merge_operations
 		SET actor_id = $2, source_revision = $3, target_revision = $4,
 		    staged_revision = NULL, pushed_revision = NULL, parent_revisions = '[]'::jsonb,
 		    state = 'started', conflict_paths = '[]'::jsonb, error_code = NULL,
 		    error_detail = NULL, lease_owner = $5, lease_expires_at = $6,
+		    push_authorized_revision = NULL, push_authorized_actor_id = NULL,
+		    push_authorized_target_branch_id = NULL, push_authorized_at = NULL,
 		    started_at = $7, completed_at = NULL, version = version + 1, updated_at = $7
 		WHERE id = $1
 		RETURNING id, merge_request_id, repository_id, actor_id,
@@ -491,6 +511,11 @@ func (s *store) updateMergeOperation(
 		    pushed_revision = NULLIF($5, ''), parent_revisions = $6, state = $7, conflict_paths = $8,
 		    error_code = NULLIF($9, ''), error_detail = NULLIF($10, ''),
 		    lease_owner = NULLIF($11, ''), lease_expires_at = $12,
+		    push_authorized_revision = CASE WHEN state = 'pushing' THEN push_authorized_revision ELSE NULL END,
+		    push_authorized_actor_id = CASE WHEN state = 'pushing' THEN push_authorized_actor_id ELSE NULL END,
+		    push_authorized_target_branch_id = CASE WHEN state = 'pushing'
+		        THEN push_authorized_target_branch_id ELSE NULL END,
+		    push_authorized_at = CASE WHEN state = 'pushing' THEN push_authorized_at ELSE NULL END,
 		    started_at = $13, completed_at = $14, version = version + 1, updated_at = $15
 		WHERE id = $1 AND version = $16
 		  AND ($17 = '' OR (lease_owner = $17 AND lease_expires_at > $18))

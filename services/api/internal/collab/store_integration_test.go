@@ -680,6 +680,9 @@ func TestIntegrationMergeOperationResolutionLeaseAndRestartRaces(t *testing.T) {
 	if resolved.State != "conflicts" || len(resolved.Resolutions) != 1 || resolved.Resolutions[0].Strategy != "theirs" {
 		t.Fatalf("durable resolution = %#v", resolved.Resolutions)
 	}
+	if resolved.LeaseExpiresAt == nil || !resolved.LeaseExpiresAt.After(nowUTC()) {
+		t.Fatalf("resolution transaction did not retain an active lease: %v", resolved.LeaseExpiresAt)
+	}
 
 	mustExec(t, ctx, pool, `UPDATE merge_operations SET lease_expires_at = now() - interval '1 second' WHERE id = $1`,
 		resolved.ID)
@@ -767,6 +770,9 @@ func TestIntegrationMergeOperationResolutionLeaseAndRestartRaces(t *testing.T) {
 	if final.State != "aborted" && final.State != "started" {
 		t.Fatalf("raced operation state = %q, want aborted or started", final.State)
 	}
+	if final.State == "started" && len(final.Resolutions) != 0 {
+		t.Fatalf("restart reused stale conflict resolutions: %#v", final.Resolutions)
+	}
 	if got := countAuditAction(t, ctx, pool, "merge_operation.resolution_recorded"); got < 1 {
 		t.Fatalf("resolution audit count = %d, want at least 1", got)
 	}
@@ -790,6 +796,10 @@ func TestIntegrationMergeOperationRetriesStaleStartWithNewRevisions(t *testing.T
 	operation.LeaseOwner = ""
 	operation.LeaseExpiresAt = nil
 	operation = mustUpdateMergeOperation(t, ctx, s, operation)
+	mustExec(t, ctx, pool, `
+		INSERT INTO merge_operation_resolutions (operation_id, path, strategy, actor_id)
+		VALUES ($1, 'old-conflict.txt', 'theirs', $2)
+	`, operation.ID, fix.alice.ID)
 
 	retried, err := s.AcquireMergeOperation(ctx, fix.alice.ID, fix.repoID, number,
 		"source-new", "target-new", "retry-owner", time.Minute)

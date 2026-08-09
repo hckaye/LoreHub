@@ -6,8 +6,11 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
+	"path"
+	"strings"
 	"syscall"
 	"time"
 
@@ -58,7 +61,12 @@ func run(logger *slog.Logger) error {
 		logger.Info("PostgreSQL migrations are current")
 		return nil
 	}
-	lore, err := loreclient.NewSDKClient(settings.LoreCacheDir)
+	var lore *loreclient.SDKClient
+	if settings.Environment == "development" && settings.LoreAllowDevelopmentFallback {
+		lore, err = loreclient.NewDevelopmentSDKClient(settings.LoreCacheDir)
+	} else {
+		lore, err = loreclient.NewSDKClient(settings.LoreCacheDir)
+	}
 	if err != nil {
 		return err
 	}
@@ -68,7 +76,7 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	if command == "runner" {
-		return runRunner(rootContext, pool, lore, settings, logger)
+		return runRunner(rootContext, pool, lore, loreCredentials, settings, logger)
 	}
 
 	var authenticator auth.Authenticator
@@ -166,6 +174,7 @@ func runRunner(
 	ctx context.Context,
 	pool *pgxpool.Pool,
 	lore *loreclient.SDKClient,
+	credentials loreclient.CredentialProvider,
 	settings config.Config,
 	logger *slog.Logger,
 ) error {
@@ -182,7 +191,7 @@ func runRunner(
 	if err != nil {
 		return err
 	}
-	poller := runner.NewPoller(store, runnerLoreClient{client: lore}, settings.LoreIdentity,
+	poller := runner.NewPoller(store, runnerLoreClient{client: lore, credentials: credentials}, settings.LoreIdentity,
 		settings.BranchPollPeriod, logger)
 	errorsChannel := make(chan error, 2)
 	go func() { errorsChannel <- poller.Run(ctx) }()
@@ -195,7 +204,8 @@ func runRunner(
 }
 
 type runnerLoreClient struct {
-	client *loreclient.SDKClient
+	client      *loreclient.SDKClient
+	credentials loreclient.CredentialProvider
 }
 
 func (adapter runnerLoreClient) Branches(
@@ -203,9 +213,25 @@ func (adapter runnerLoreClient) Branches(
 	repository loreclient.RepositoryRef,
 	identity string,
 ) ([]loreclient.Branch, error) {
-	return adapter.client.Branches(ctx, repository, loreclient.Credential{
-		Partition: repository.LoreRepositoryID,
-		Identity:  identity,
-		Scope:     loreclient.ScopeRead,
+	partition := repository.LoreRepositoryID
+	if partition == "" {
+		parsed, err := url.Parse(repository.URL)
+		if err != nil || parsed.Host == "" {
+			return nil, errors.New("runner Lore repository URL is invalid")
+		}
+		partition = strings.TrimSpace(path.Base(parsed.Path))
+	}
+	if partition == "" || adapter.credentials == nil {
+		return nil, loreclient.ErrCredentialUnavailable
+	}
+	repository.LoreRepositoryID = partition
+	credential, err := adapter.credentials.ForRepository(ctx, loreclient.CredentialRequest{
+		Principal:  loreclient.ServicePrincipal(loreclient.ServicePurposeActionsRunner),
+		Repository: repository,
+		Scope:      loreclient.ScopeRead,
 	})
+	if err != nil {
+		return nil, err
+	}
+	return adapter.client.Branches(ctx, repository, credential)
 }

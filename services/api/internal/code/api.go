@@ -45,30 +45,33 @@ func Register(
 	mux.HandleFunc("GET "+base+"/diff", api.diff)
 }
 
-func (api *API) visibleRepository(writer http.ResponseWriter, request *http.Request) (collab.Repository, bool) {
+func (api *API) visibleRepository(
+	writer http.ResponseWriter,
+	request *http.Request,
+) (collab.Repository, *platform.User, bool) {
 	actor, ok := api.actors.ResolveOptionalActor(writer, request)
 	if !ok {
-		return collab.Repository{}, false
+		return collab.Repository{}, nil, false
 	}
 	repository, err := api.store.LookupRepository(request.Context(), actor,
 		request.PathValue("owner"), request.PathValue("repository"))
 	if err != nil {
 		api.storeError(writer, request, "lookup repository", err)
-		return collab.Repository{}, false
+		return collab.Repository{}, nil, false
 	}
 	if repository.LoreURL == "" || repository.LoreRepositoryID == "" {
 		api.problem(writer, http.StatusBadGateway, "lore_unavailable", "The Lore repository is not configured")
-		return collab.Repository{}, false
+		return collab.Repository{}, nil, false
 	}
-	return repository, true
+	return repository, actor, true
 }
 
 func (api *API) tree(writer http.ResponseWriter, request *http.Request) {
-	repository, ok := api.visibleRepository(writer, request)
+	repository, actor, ok := api.visibleRepository(writer, request)
 	if !ok {
 		return
 	}
-	revision, ok := api.resolveRevision(writer, request, repository)
+	revision, ok := api.resolveRevision(writer, request, repository, actor)
 	if !ok {
 		return
 	}
@@ -81,7 +84,7 @@ func (api *API) tree(writer http.ResponseWriter, request *http.Request) {
 		api.problem(writer, http.StatusServiceUnavailable, "lore_unavailable", "Lore code browsing is unavailable")
 		return
 	}
-	credential, err := api.credential(request, repository, loreclient.ScopeRead)
+	credential, err := api.credential(request, repository, actor, loreclient.ScopeRead)
 	if err != nil {
 		api.loreError(writer, request, "get Lore read credential", err)
 		return
@@ -96,11 +99,11 @@ func (api *API) tree(writer http.ResponseWriter, request *http.Request) {
 }
 
 func (api *API) file(writer http.ResponseWriter, request *http.Request) {
-	repository, ok := api.visibleRepository(writer, request)
+	repository, actor, ok := api.visibleRepository(writer, request)
 	if !ok {
 		return
 	}
-	revision, ok := api.resolveRevision(writer, request, repository)
+	revision, ok := api.resolveRevision(writer, request, repository, actor)
 	if !ok {
 		return
 	}
@@ -113,7 +116,7 @@ func (api *API) file(writer http.ResponseWriter, request *http.Request) {
 		api.problem(writer, http.StatusServiceUnavailable, "lore_unavailable", "Lore code browsing is unavailable")
 		return
 	}
-	credential, err := api.credential(request, repository, loreclient.ScopeRead)
+	credential, err := api.credential(request, repository, actor, loreclient.ScopeRead)
 	if err != nil {
 		api.loreError(writer, request, "get Lore read credential", err)
 		return
@@ -129,11 +132,11 @@ func (api *API) file(writer http.ResponseWriter, request *http.Request) {
 }
 
 func (api *API) fileHistory(writer http.ResponseWriter, request *http.Request) {
-	repository, ok := api.visibleRepository(writer, request)
+	repository, actor, ok := api.visibleRepository(writer, request)
 	if !ok {
 		return
 	}
-	revision, ok := api.resolveRevision(writer, request, repository)
+	revision, ok := api.resolveRevision(writer, request, repository, actor)
 	if !ok {
 		return
 	}
@@ -158,7 +161,7 @@ func (api *API) fileHistory(writer http.ResponseWriter, request *http.Request) {
 		api.problem(writer, http.StatusServiceUnavailable, "lore_unavailable", "Lore file history is unavailable")
 		return
 	}
-	credential, err := api.credential(request, repository, loreclient.ScopeRead)
+	credential, err := api.credential(request, repository, actor, loreclient.ScopeRead)
 	if err != nil {
 		api.loreError(writer, request, "get Lore read credential", err)
 		return
@@ -177,11 +180,11 @@ func (api *API) fileHistory(writer http.ResponseWriter, request *http.Request) {
 }
 
 func (api *API) raw(writer http.ResponseWriter, request *http.Request) {
-	repository, ok := api.visibleRepository(writer, request)
+	repository, actor, ok := api.visibleRepository(writer, request)
 	if !ok {
 		return
 	}
-	revision, ok := api.resolveRevision(writer, request, repository)
+	revision, ok := api.resolveRevision(writer, request, repository, actor)
 	if !ok {
 		return
 	}
@@ -194,7 +197,7 @@ func (api *API) raw(writer http.ResponseWriter, request *http.Request) {
 		api.problem(writer, http.StatusServiceUnavailable, "lore_unavailable", "Lore code browsing is unavailable")
 		return
 	}
-	credential, err := api.credential(request, repository, loreclient.ScopeRead)
+	credential, err := api.credential(request, repository, actor, loreclient.ScopeRead)
 	if err != nil {
 		api.loreError(writer, request, "get Lore read credential", err)
 		return
@@ -225,11 +228,11 @@ func (api *API) raw(writer http.ResponseWriter, request *http.Request) {
 }
 
 func (api *API) history(writer http.ResponseWriter, request *http.Request) {
-	repository, ok := api.visibleRepository(writer, request)
+	repository, actor, ok := api.visibleRepository(writer, request)
 	if !ok {
 		return
 	}
-	revision, ok := api.resolveRevision(writer, request, repository)
+	revision, ok := api.resolveRevision(writer, request, repository, actor)
 	if !ok {
 		return
 	}
@@ -249,7 +252,7 @@ func (api *API) history(writer http.ResponseWriter, request *http.Request) {
 		api.problem(writer, http.StatusServiceUnavailable, "lore_unavailable", "Lore history is unavailable")
 		return
 	}
-	credential, err := api.credential(request, repository, loreclient.ScopeRead)
+	credential, err := api.credential(request, repository, actor, loreclient.ScopeRead)
 	if err != nil {
 		api.loreError(writer, request, "get Lore read credential", err)
 		return
@@ -285,7 +288,7 @@ func historyWindow[T any](entries []T, limit int) ([]T, bool) {
 }
 
 func (api *API) revision(writer http.ResponseWriter, request *http.Request) {
-	repository, ok := api.visibleRepository(writer, request)
+	repository, actor, ok := api.visibleRepository(writer, request)
 	if !ok {
 		return
 	}
@@ -298,7 +301,7 @@ func (api *API) revision(writer http.ResponseWriter, request *http.Request) {
 		api.problem(writer, http.StatusServiceUnavailable, "lore_unavailable", "Lore revision details are unavailable")
 		return
 	}
-	credential, err := api.credential(request, repository, loreclient.ScopeRead)
+	credential, err := api.credential(request, repository, actor, loreclient.ScopeRead)
 	if err != nil {
 		api.loreError(writer, request, "get Lore read credential", err)
 		return
@@ -312,7 +315,7 @@ func (api *API) revision(writer http.ResponseWriter, request *http.Request) {
 }
 
 func (api *API) diff(writer http.ResponseWriter, request *http.Request) {
-	repository, ok := api.visibleRepository(writer, request)
+	repository, actor, ok := api.visibleRepository(writer, request)
 	if !ok {
 		return
 	}
@@ -335,7 +338,7 @@ func (api *API) diff(writer http.ResponseWriter, request *http.Request) {
 		api.problem(writer, http.StatusServiceUnavailable, "lore_unavailable", "Lore diffs are unavailable")
 		return
 	}
-	credential, err := api.credential(request, repository, loreclient.ScopeRead)
+	credential, err := api.credential(request, repository, actor, loreclient.ScopeRead)
 	if err != nil {
 		api.loreError(writer, request, "get Lore read credential", err)
 		return
@@ -355,6 +358,7 @@ func (api *API) resolveRevision(
 	writer http.ResponseWriter,
 	request *http.Request,
 	repository collab.Repository,
+	actor *platform.User,
 ) (string, bool) {
 	if revision := request.URL.Query().Get("revision"); revision != "" {
 		value, err := normalizeRevision(revision)
@@ -373,7 +377,7 @@ func (api *API) resolveRevision(
 		api.problem(writer, http.StatusBadRequest, "invalid_branch", "The Lore branch is invalid")
 		return "", false
 	}
-	credential, err := api.credential(request, repository, loreclient.ScopeRead)
+	credential, err := api.credential(request, repository, actor, loreclient.ScopeRead)
 	if err != nil {
 		api.loreError(writer, request, "get Lore read credential", err)
 		return "", false
@@ -429,12 +433,21 @@ func (api *API) repositoryRef(repository collab.Repository) loreclient.Repositor
 func (api *API) credential(
 	request *http.Request,
 	repository collab.Repository,
+	actor *platform.User,
 	scope loreclient.Scope,
 ) (loreclient.Credential, error) {
 	if api.credentials == nil {
 		return loreclient.Credential{}, loreclient.ErrCredentialUnavailable
 	}
-	return api.credentials.ForRepository(request.Context(), api.repositoryRef(repository), scope)
+	principal := loreclient.ServicePrincipal(loreclient.ServicePurposePublicReader)
+	if actor != nil {
+		principal = loreclient.UserPrincipal(actor.ID)
+	}
+	return api.credentials.ForRepository(request.Context(), loreclient.CredentialRequest{
+		Principal:  principal,
+		Repository: api.repositoryRef(repository),
+		Scope:      scope,
+	})
 }
 
 func (api *API) storeError(writer http.ResponseWriter, request *http.Request, operation string, err error) {

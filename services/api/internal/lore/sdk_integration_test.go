@@ -8,17 +8,22 @@ import (
 )
 
 func TestSDKClientAgainstLoreServer(t *testing.T) {
+	// This fixture is unauthenticated component coverage, not production auth evidence.
 	repositoryURL := os.Getenv("LOREHUB_TEST_LORE_URL")
 	if repositoryURL == "" {
 		t.Skip("LOREHUB_TEST_LORE_URL is not set")
 	}
-	client, err := NewSDKClient(t.TempDir())
+	client, err := NewDevelopmentSDKClient(loreTestTempDir(t))
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	bootstrapCredential := Credential{Identity: "fixture", Scope: ScopeRead}
+	bootstrapCredential := Credential{
+		Partition: repositoryURLPartition(repositoryURL), Identity: "fixture", Scope: ScopeRead,
+		Principal:           ServicePrincipal(ServicePurposeRepositoryRegistration),
+		InsecureDevelopment: true,
+	}
 	repository, err := client.RepositoryInfo(ctx, repositoryURL, bootstrapCredential)
 	if err != nil {
 		t.Fatalf("RepositoryInfo returned an error: %v", err)
@@ -32,7 +37,7 @@ func TestSDKClientAgainstLoreServer(t *testing.T) {
 		LoreRepositoryID: repository.ID,
 		DefaultBranch:    repository.DefaultBranch,
 	}
-	readCredential := Credential{Partition: repository.ID, Identity: "fixture", Scope: ScopeRead}
+	readCredential := developmentCredential(repository.ID, "fixture", ScopeRead)
 	branches, err := client.Branches(ctx, ref, readCredential)
 	if err != nil {
 		t.Fatalf("Branches returned an error: %v", err)
@@ -89,6 +94,13 @@ func TestSDKClientAgainstLoreServer(t *testing.T) {
 	}
 	if diff.Source != history[1].Revision || diff.Target != latest || len(diff.Files) == 0 {
 		t.Fatalf("revision diff did not contain a changed file: %#v", diff)
+	}
+}
+
+func developmentCredential(partition, identity string, scope Scope) Credential {
+	return Credential{
+		Partition: partition, Identity: identity, Scope: scope,
+		Principal: ServicePrincipal(ServicePurposePublicReader), InsecureDevelopment: true,
 	}
 }
 

@@ -1,0 +1,81 @@
+package lore
+
+import (
+	"errors"
+	"os"
+	"strings"
+	"testing"
+	"time"
+)
+
+func loreTestTempDir(t *testing.T) string {
+	t.Helper()
+	directory, err := os.MkdirTemp("", "lorehub-sdk-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			removeErr := os.RemoveAll(directory)
+			_, statErr := os.Stat(directory)
+			if removeErr == nil && errors.Is(statErr, os.ErrNotExist) {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Errorf("Lore test cache cleanup failed: remove=%v stat=%v", removeErr, statErr)
+				return
+			}
+			time.Sleep(25 * time.Millisecond)
+		}
+	})
+	return directory
+}
+
+func TestCredentialCachePathSeparatesUserAndServiceState(t *testing.T) {
+	client, err := NewSDKClient(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := RepositoryRef{CacheKey: "repository-1", LoreRepositoryID: "partition-1"}
+	userA := Credential{Principal: UserPrincipal("user-a")}
+	userB := Credential{Principal: UserPrincipal("user-b")}
+	service := Credential{Principal: ServicePrincipal(ServicePurposePublicReader)}
+	pathA, err := client.credentialCachePath(repository, userA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pathB, err := client.credentialCachePath(repository, userB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	servicePath, err := client.credentialCachePath(repository, service)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pathA == pathB || pathA == servicePath || pathB == servicePath {
+		t.Fatalf("credential cache paths are not isolated: %q %q %q", pathA, pathB, servicePath)
+	}
+	for _, value := range []string{pathA, pathB, servicePath} {
+		if strings.Contains(value, "short-lived-token") || strings.Contains(value, "auth.example") {
+			t.Fatalf("credential cache path contains auth material: %q", value)
+		}
+	}
+}
+
+func TestProductionSDKRejectsInsecureDevelopmentCredential(t *testing.T) {
+	client, err := NewSDKClient(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	credential := Credential{
+		Partition:           "partition-1",
+		Scope:               ScopeRead,
+		Identity:            "fixture",
+		Principal:           UserPrincipal("user-a"),
+		InsecureDevelopment: true,
+	}
+	if err := client.authenticate(t.Context(), "", "lore://lore.example/partition-1", credential); err == nil {
+		t.Fatal("production SDK accepted an insecure development credential")
+	}
+}

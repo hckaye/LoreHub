@@ -106,6 +106,8 @@ services:
       DOCKER_HOST: unix:///var/run/docker.sock
       LOREHUB_ENV: development
       LOREHUB_LORE_IDENTITY: ${LOREHUB_LORE_IDENTITY:-}
+      LOREHUB_LORE_CREDENTIALS: ${LOREHUB_LORE_CREDENTIALS:-}
+      LOREHUB_LORE_ALLOW_DEVELOPMENT_FALLBACK: ${LOREHUB_LORE_ALLOW_DEVELOPMENT_FALLBACK:-false}
     depends_on:
       postgres:
         condition: service_healthy

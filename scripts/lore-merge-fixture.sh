@@ -1,12 +1,13 @@
 #!/bin/sh
 set -eu
 
+# This is an unauthenticated component fixture for Lore SDK behavior only; it
+# is not evidence for production authentication or push authorization hooks.
 repository_url=$1
 worktree=$2
 identity=fixture
 lore=/usr/local/bin/lore
 
-rm -rf "$worktree"
 mkdir -p "$worktree/src"
 
 run_lore() {

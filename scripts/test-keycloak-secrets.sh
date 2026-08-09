@@ -4,7 +4,9 @@
 set -eu
 
 root=$(cd "$(dirname "$0")/.." && pwd)
-sandbox=$(mktemp -d "${TMPDIR:-/tmp}/lorehub-keycloak-secrets.XXXXXX")
+sandbox=$(mktemp -d \
+  "${TMPDIR:-/tmp}/lorehub-keycloak-secrets.XXXXXX"
+)
 trap 'rm -rf "$sandbox"' EXIT HUP INT TERM
 env_file="${sandbox}/.env"
 

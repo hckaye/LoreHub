@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	loreclient "github.com/lorehub/lorehub/services/api/internal/lore"
 )
 
 const (
@@ -43,7 +45,7 @@ type Config struct {
 	LoginTransactionTTL          time.Duration
 	LoreCacheDir                 string
 	LoreIdentity                 string
-	LoreCredentials              map[string]string
+	LoreCredentials              map[string]loreclient.CredentialMaterial
 	LoreAllowDevelopmentFallback bool
 	LoreBinary                   string
 	ActBinary                    string
@@ -193,11 +195,23 @@ func validate(config Config) error {
 			return err
 		}
 	}
-	if config.Environment != "development" && len(config.LoreCredentials) == 0 {
+	if config.Environment != "development" && config.Environment != "test" && len(config.LoreCredentials) == 0 {
 		return errors.New("LOREHUB_LORE_CREDENTIALS is required outside development")
 	}
-	if config.Environment != "development" && config.LoreAllowDevelopmentFallback {
-		return errors.New("LOREHUB_LORE_ALLOW_DEVELOPMENT_FALLBACK is only allowed in development")
+	if config.Environment != "development" && config.Environment != "test" && config.LoreAllowDevelopmentFallback {
+		return errors.New("LOREHUB_LORE_ALLOW_DEVELOPMENT_FALLBACK is only allowed in development or test")
+	}
+	if config.Environment != "development" && config.Environment != "test" &&
+		strings.TrimSpace(config.LoreIdentity) != "" {
+		return errors.New("LOREHUB_LORE_IDENTITY is only allowed in development or test")
+	}
+	if config.Environment != "development" && config.Environment != "test" {
+		for partition, material := range config.LoreCredentials {
+			if _, err := loreclient.NewCredentialProvider(config.Environment,
+				map[string]loreclient.CredentialMaterial{partition: material}, "", false); err != nil {
+				return fmt.Errorf("invalid Lore credential configuration: %w", err)
+			}
+		}
 	}
 	if config.AuthMode != AuthModeInteractive {
 		return nil
@@ -230,17 +244,22 @@ func validate(config Config) error {
 	return nil
 }
 
-func parseLoreCredentials(value string) (map[string]string, error) {
+func parseLoreCredentials(value string) (map[string]loreclient.CredentialMaterial, error) {
 	if strings.TrimSpace(value) == "" {
-		return map[string]string{}, nil
+		return map[string]loreclient.CredentialMaterial{}, nil
 	}
-	var result map[string]string
+	var result map[string]loreclient.CredentialMaterial
 	if err := json.Unmarshal([]byte(value), &result); err != nil || result == nil {
 		return nil, errors.New("LOREHUB_LORE_CREDENTIALS must be a JSON object keyed by repository partition")
 	}
-	for partition, identity := range result {
-		if strings.TrimSpace(partition) == "" || strings.TrimSpace(identity) == "" {
-			return nil, errors.New("LOREHUB_LORE_CREDENTIALS contains an empty partition or identity")
+	for partition, material := range result {
+		if strings.TrimSpace(partition) == "" {
+			return nil, errors.New("LOREHUB_LORE_CREDENTIALS contains an empty partition")
+		}
+		result[partition] = loreclient.CredentialMaterial{
+			Identity: strings.TrimSpace(material.Identity),
+			Token:    strings.TrimSpace(material.Token),
+			AuthURL:  strings.TrimSpace(material.AuthURL),
 		}
 	}
 	return result, nil

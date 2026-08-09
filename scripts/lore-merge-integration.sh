@@ -1,6 +1,8 @@
 #!/bin/sh
 set -eu
 
+# This fixture is an unauthenticated Lore component integration. It validates
+# SDK tree/history/diff and merge behavior, not production auth or hook wiring.
 root_dir=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 compose_file=$root_dir/infra/lore/integration-compose.yaml
 project="lorehub-lore-integration-$(date -u +%Y%m%d%H%M%S)-$$"

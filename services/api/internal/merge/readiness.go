@@ -35,7 +35,7 @@ func (api *API) buildReadiness(
 	if err != nil {
 		return collab.MergeReadiness{}, err
 	}
-	readCredential, err := api.credentialFromContext(ctx, repository, loreclient.ScopeRead)
+	readCredential, err := api.credentialFromContext(ctx, repository, actor, loreclient.ScopeRead)
 	if err != nil {
 		return collab.MergeReadiness{}, err
 	}
@@ -139,20 +139,29 @@ func (api *API) repositoryRef(repository collab.Repository) loreclient.Repositor
 func (api *API) credentialFromContext(
 	ctx context.Context,
 	repository collab.Repository,
+	actor *platform.User,
 	scope loreclient.Scope,
 ) (loreclient.Credential, error) {
 	if api.credentials == nil {
 		return loreclient.Credential{}, loreclient.ErrCredentialUnavailable
 	}
-	return api.credentials.ForRepository(ctx, api.repositoryRef(repository), scope)
+	if actor == nil {
+		return loreclient.Credential{}, loreclient.ErrInvalidPrincipal
+	}
+	return api.credentials.ForRepository(ctx, loreclient.CredentialRequest{
+		Principal:  loreclient.UserPrincipal(actor.ID),
+		Repository: api.repositoryRef(repository),
+		Scope:      scope,
+	})
 }
 
 func (api *API) credential(
 	request *http.Request,
 	repository collab.Repository,
+	actor *platform.User,
 	scope loreclient.Scope,
 ) (loreclient.Credential, error) {
-	return api.credentialFromContext(request.Context(), repository, scope)
+	return api.credentialFromContext(request.Context(), repository, actor, scope)
 }
 
 func (api *API) verifyPushedRemote(

@@ -38,11 +38,10 @@ func (client *SDKClient) Tree(
 	if err := ValidateCredential(repository, credential, ScopeRead); err != nil {
 		return Tree{}, err
 	}
-	identity := credential.Identity
 	if limit < 1 || limit >= maxTreeEntries {
 		limit = maxTreeEntries - 1
 	}
-	session, err := client.openTree(ctx, repository, revision, identity)
+	session, err := client.openTree(ctx, repository, revision, credential)
 	if err != nil {
 		return Tree{}, err
 	}
@@ -86,11 +85,10 @@ func (client *SDKClient) File(
 	if err := ValidateCredential(repository, credential, ScopeRead); err != nil {
 		return File{}, nil, err
 	}
-	identity := credential.Identity
 	if maxBytes < 1 {
 		return File{}, nil, errors.New("file size limit must be positive")
 	}
-	session, err := client.openTree(ctx, repository, revision, identity)
+	session, err := client.openTree(ctx, repository, revision, credential)
 	if err != nil {
 		return File{}, nil, err
 	}
@@ -123,7 +121,8 @@ func (client *SDKClient) File(
 		file.Truncated = true
 		return file, nil, nil
 	}
-	body, err := readAddress(ctx, session.store, session.partition, node.Address, maxBytes)
+	body, err := readAddress(ctx, session.store, session.partition, node.Address, maxBytes,
+		session.cachePath, session.identity)
 	if err != nil {
 		return File{}, nil, err
 	}
@@ -149,18 +148,18 @@ func (client *SDKClient) RevisionHistory(
 	if err := ValidateCredential(repository, credential, ScopeRead); err != nil {
 		return nil, err
 	}
-	identity := credential.Identity
 	if limit < 1 {
 		limit = 1
 	}
 	if limit >= maxRevisionFiles {
 		limit = maxRevisionFiles - 1
 	}
-	cachePath, err := client.prepareReadRepository(ctx, repository, identity)
+	cachePath, err := client.prepareReadRepository(ctx, repository, credential)
 	if err != nil {
 		return nil, err
 	}
 	entries := make([]RevisionHistoryEntry, 0, limit+1)
+	identity := credential.Identity
 	globals, cleanupGlobals := readGlobals(cachePath, identity)
 	defer cleanupGlobals()
 	historyArgs := types.LoreRevisionHistoryArgs{Revision: revision, Length: uint32(limit + 1)}
@@ -206,17 +205,17 @@ func (client *SDKClient) FileHistory(
 	if err := ValidateCredential(repository, credential, ScopeRead); err != nil {
 		return nil, err
 	}
-	identity := credential.Identity
 	if limit < 1 {
 		limit = 1
 	}
 	if limit >= maxRevisionFiles {
 		limit = maxRevisionFiles - 1
 	}
-	cachePath, err := client.prepareReadRepository(ctx, repository, identity)
+	cachePath, err := client.prepareReadRepository(ctx, repository, credential)
 	if err != nil {
 		return nil, err
 	}
+	identity := credential.Identity
 	globals, cleanupGlobals := readGlobals(cachePath, identity)
 	defer cleanupGlobals()
 	historyArgs := types.LoreFileHistoryArgs{
@@ -264,12 +263,12 @@ func (client *SDKClient) RevisionInfo(
 	if err := ValidateCredential(repository, credential, ScopeRead); err != nil {
 		return Revision{}, err
 	}
-	identity := credential.Identity
-	cachePath, err := client.prepareReadRepository(ctx, repository, identity)
+	cachePath, err := client.prepareReadRepository(ctx, repository, credential)
 	if err != nil {
 		return Revision{}, err
 	}
 	var result Revision
+	identity := credential.Identity
 	globals, cleanupGlobals := readGlobals(cachePath, identity)
 	defer cleanupGlobals()
 	args, cleanupArgs := types.NewLoreRevisionInfoArgs(types.LoreRevisionInfoArgs{
@@ -317,18 +316,18 @@ func (client *SDKClient) RevisionDiff(
 	if err := ValidateCredential(repository, credential, ScopeRead); err != nil {
 		return Diff{}, err
 	}
-	identity := credential.Identity
 	if maxFiles < 1 || maxFiles >= maxRevisionFiles {
 		maxFiles = maxRevisionFiles - 1
 	}
 	if maxPatchBytes < 1 {
 		return Diff{}, errors.New("diff size limit must be positive")
 	}
-	cachePath, err := client.prepareReadRepository(ctx, repository, identity)
+	cachePath, err := client.prepareReadRepository(ctx, repository, credential)
 	if err != nil {
 		return Diff{}, err
 	}
 	var changed []types.LoreRevisionDiffFileEventData
+	identity := credential.Identity
 	globals, cleanupGlobals := readGlobals(cachePath, identity)
 	defer cleanupGlobals()
 	args, cleanupArgs := types.NewLoreRevisionDiffArgs(types.LoreRevisionDiffArgs{
@@ -441,9 +440,9 @@ func (client *SDKClient) openTree(
 	ctx context.Context,
 	repository RepositoryRef,
 	revision string,
-	identity string,
+	credential Credential,
 ) (*treeSession, error) {
-	cachePath, err := client.prepareReadRepository(ctx, repository, identity)
+	cachePath, err := client.prepareReadRepository(ctx, repository, credential)
 	if err != nil {
 		return nil, err
 	}
@@ -459,6 +458,7 @@ func (client *SDKClient) openTree(
 	if err != nil {
 		return nil, err
 	}
+	identity := credential.Identity
 	store, err := client.openStorage(ctx, cachePath, remoteURL, identity)
 	if err != nil {
 		return nil, err
@@ -707,8 +707,10 @@ func readAddress(
 	partition types.LorePartition,
 	address types.LoreAddress,
 	maxBytes int64,
+	cachePath string,
+	identity string,
 ) ([]byte, error) {
-	globals, cleanupGlobals := types.NewLoreGlobalArgs(types.LoreGlobalArgs{Remote: true, Cache: true})
+	globals, cleanupGlobals := readGlobals(cachePath, identity)
 	defer cleanupGlobals()
 	args, cleanupArgs := types.NewLoreStorageGetArgs(types.LoreStorageGetArgs{
 		Handle: store,
@@ -755,9 +757,9 @@ func readAddress(
 func (client *SDKClient) prepareReadRepository(
 	ctx context.Context,
 	repository RepositoryRef,
-	identity string,
+	credential Credential,
 ) (string, error) {
-	cachePath, err := client.cachePath(repository.CacheKey)
+	cachePath, err := client.credentialCachePath(repository, credential)
 	if err != nil {
 		return "", err
 	}
@@ -765,7 +767,10 @@ func (client *SDKClient) prepareReadRepository(
 	lock := lockValue.(*sync.Mutex)
 	lock.Lock()
 	defer lock.Unlock()
-	if err := client.ensureBareClone(repository.URL, cachePath, identity); err != nil {
+	if err := client.authenticate(ctx, cachePath, repository.URL, credential); err != nil {
+		return "", err
+	}
+	if err := client.ensureBareClone(repository.URL, cachePath, credential.Identity); err != nil {
 		return "", err
 	}
 	return cachePath, nil

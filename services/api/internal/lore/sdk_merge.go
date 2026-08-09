@@ -9,7 +9,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	loresdk "github.com/EpicGames/lore-go"
 	"github.com/EpicGames/lore-go/types"
@@ -87,7 +86,6 @@ func (client *SDKClient) cloneWorkspace(
 	defer cleanupGlobals()
 	args, cleanupArgs := types.NewLoreRepositoryCloneArgs(types.LoreRepositoryCloneArgs{
 		RepositoryUrl: repository.URL,
-		Revision:      targetRevision,
 		Bare:          false,
 	})
 	defer cleanupArgs()
@@ -113,6 +111,9 @@ func (client *SDKClient) withWorkspace(
 	lock := lockValue.(*sync.Mutex)
 	lock.Lock()
 	defer lock.Unlock()
+	if err := client.authenticate(ctx, path, repository.URL, credential); err != nil {
+		return err
+	}
 	if _, err := client.ensureWorkingClone(ctx, repository, operationID, targetRevision, credential); err != nil {
 		return err
 	}
@@ -133,6 +134,17 @@ func (client *SDKClient) StartMerge(
 	if err := ValidateCredential(repository, credential, ScopeWrite); err != nil {
 		return MergeStartResult{}, err
 	}
+	readCredential := credential
+	readCredential.Scope = ScopeRead
+	branches, err := client.Branches(ctx, repository, readCredential)
+	if err != nil {
+		return MergeStartResult{}, err
+	}
+	currentSource, sourceFound := branchLatestRevision(branches, sourceBranch)
+	currentTarget, targetFound := branchLatestRevision(branches, targetBranch)
+	if !sourceFound || !targetFound || currentSource != sourceRevision || currentTarget != targetRevision {
+		return MergeStartResult{}, ErrMergeStale
+	}
 	if err := client.CleanupMergeWorkspace(ctx, repository, operationID); err != nil {
 		return MergeStartResult{}, err
 	}
@@ -141,7 +153,7 @@ func (client *SDKClient) StartMerge(
 		SourceRevision: sourceRevision, TargetRevision: targetRevision, Message: message,
 	}
 	var result MergeStartResult
-	err := client.withWorkspace(ctx, repository, operationID, targetRevision, credential, func(path string) error {
+	err = client.withWorkspace(ctx, repository, operationID, targetRevision, credential, func(path string) error {
 		var err error
 		result, err = client.mergeInWorkspace(ctx, path, workspace, nil, credential)
 		return err
@@ -176,6 +188,9 @@ func (client *SDKClient) EnsureMergeWorkspace(
 	lock := lockValue.(*sync.Mutex)
 	lock.Lock()
 	defer lock.Unlock()
+	if err := client.authenticate(ctx, path, repository.URL, credential); err != nil {
+		return err
+	}
 	if exists, err := client.workspaceExists(repository, operationID); err != nil {
 		return err
 	} else if exists {
@@ -328,9 +343,17 @@ func switchExactRevision(ctx context.Context, path, branch, revision, identity s
 	args, cleanupArgs := types.NewLoreBranchSwitchArgs(types.LoreBranchSwitchArgs{
 		Branch: branch, Revision: revision, Reset: true,
 	})
-	defer cleanupArgs()
 	if err := waitLore(ctx, loresdk.BranchSwitch(&globals, &args).Wait); err != nil {
+		cleanupArgs()
 		return err
+	}
+	cleanupArgs()
+	resetArgs, cleanupResetArgs := types.NewLoreBranchResetArgs(types.LoreBranchResetArgs{
+		Branch: branch, Revision: revision,
+	})
+	defer cleanupResetArgs()
+	if err := waitLore(ctx, loresdk.BranchReset(&globals, &resetArgs).Wait); err != nil {
+		return fmt.Errorf("reset Lore merge branch anchor: %w", err)
 	}
 	return nil
 }
@@ -356,23 +379,50 @@ func (client *SDKClient) ResolveMerge(
 	paths []string,
 	strategy string,
 	credential Credential,
-) (string, error) {
+) (MergeStartResult, error) {
 	if err := ValidateCredential(repository, credential, ScopeWrite); err != nil {
-		return "", err
+		return MergeStartResult{}, err
 	}
 	if err := validateMergeWorkspacePaths(paths); err != nil {
-		return "", err
+		return MergeStartResult{}, err
 	}
 	if err := client.EnsureMergeWorkspace(ctx, repository, operationID, workspace, credential); err != nil {
-		return "", err
+		return MergeStartResult{}, err
 	}
-	var revision string
+	result := MergeStartResult{
+		SourceRevision: workspace.SourceRevision,
+		TargetRevision: workspace.TargetRevision,
+	}
 	err := client.withWorkspace(ctx, repository, operationID, "", credential, func(path string) error {
-		var err error
-		revision, err = resolveWorkspacePaths(ctx, path, strings.Join(paths, "\x00"), strategy, credential.Identity)
-		return err
+		revision, err := resolveWorkspacePaths(ctx, path, strings.Join(paths, "\x00"), strategy, credential.Identity)
+		if err != nil {
+			return err
+		}
+		result.StagedRevision = revision
+		conflicts, err := listWorkspaceConflicts(ctx, path, credential.Identity)
+		if err != nil {
+			return err
+		}
+		result.Conflicts = conflicts
+		if len(conflicts) > 0 {
+			return nil
+		}
+		committed, err := commitWorkspace(ctx, path, credential.Identity, workspace.Message)
+		if err != nil {
+			return err
+		}
+		result.StagedRevision = committed
+		parents, err := workspaceRevisionParents(ctx, path, committed, credential.Identity)
+		if err != nil {
+			return err
+		}
+		result.Parents = parents
+		if !sameMergeParents(parents, workspace.SourceRevision, workspace.TargetRevision) {
+			return fmt.Errorf("%w: got %v", ErrMergeParentCheck, parents)
+		}
+		return nil
 	})
-	return revision, err
+	return result, err
 }
 
 func resolveWorkspacePaths(ctx context.Context, path, encodedPaths, strategy, identity string) (string, error) {
@@ -524,6 +574,9 @@ func (client *SDKClient) RestartMerge(
 	lock := lockValue.(*sync.Mutex)
 	lock.Lock()
 	defer lock.Unlock()
+	if err := client.authenticate(ctx, path, repository.URL, credential); err != nil {
+		return MergeStartResult{}, err
+	}
 	if err := os.MkdirAll(path, 0o750); err != nil {
 		return MergeStartResult{}, err
 	}
@@ -551,6 +604,7 @@ func (client *SDKClient) PushMerge(
 	stagedRevision string,
 	readCredential Credential,
 	writeCredential Credential,
+	authorizer PushAuthorizer,
 ) (MergePushResult, error) {
 	if err := ValidateCredential(repository, readCredential, ScopeRead); err != nil {
 		return MergePushResult{}, err
@@ -612,21 +666,60 @@ func (client *SDKClient) PushMerge(
 		if !sameMergeParents(parents, workspace.SourceRevision, workspace.TargetRevision) {
 			return fmt.Errorf("%w: got %v", ErrMergeParentCheck, parents)
 		}
+		if stagedRevision != "" && localRevision != stagedRevision && len(workspace.Resolutions) == 0 {
+			return fmt.Errorf("%w: local proposed revision is %s, expected %s", ErrMergeParentCheck,
+				localRevision, stagedRevision)
+		}
 		result.LocalRevision = localRevision
 		result.Parents = parents
+		remoteRecoveryRevision := ""
+		if localRevision == stagedRevision {
+			remoteRecoveryRevision = stagedRevision
+		}
 		if err := client.checkRemoteMergeRevisions(
-			ctx, repository, workspace, localRevision, readCredential, &result,
+			ctx, repository, workspace, remoteRecoveryRevision, readCredential, &result,
 		); err != nil {
 			return err
 		}
-		if result.RemoteTargetRevision == localRevision {
+		if remoteRecoveryRevision != "" && result.RemoteTargetRevision == localRevision {
 			result.RemoteRevision = localRevision
 			return nil
+		}
+		if result.TargetBranchID == "" {
+			return fmt.Errorf("%w: Lore target branch has no stable ID", ErrPushAuthorizationDenied)
+		}
+		branchID, branchName, branchRevision, err := workspaceBranchState(
+			ctx, path, writeCredential.Identity,
+		)
+		if err != nil {
+			return err
+		}
+		if branchID != result.TargetBranchID || branchName != workspace.TargetBranch || branchRevision != localRevision {
+			return fmt.Errorf("%w: local branch does not match target", ErrMergeParentCheck)
+		}
+		if authorizer == nil {
+			return ErrPushAuthorizationRequired
+		}
+		authorization := PushAuthorization{
+			RepositoryPartition:    repository.CanonicalPartition(),
+			OperationID:            operationID,
+			TargetBranchID:         result.TargetBranchID,
+			TargetBranchName:       workspace.TargetBranch,
+			ExpectedTargetRevision: workspace.TargetRevision,
+			ProposedRevision:       localRevision,
+			SourceRevision:         workspace.SourceRevision,
+			ParentRevisions:        append([]string(nil), parents...),
+		}
+		if err := authorizer.AuthorizeLoreMergePush(ctx, authorization); err != nil {
+			if errors.Is(err, ErrPushAuthorizationDenied) {
+				return ErrPushAuthorizationDenied
+			}
+			return fmt.Errorf("authorize Lore merge push: %w", err)
 		}
 		globals, cleanupGlobals := readGlobals(path, writeCredential.Identity)
 		defer cleanupGlobals()
 		args, cleanupArgs := types.NewLoreBranchPushArgs(types.LoreBranchPushArgs{
-			Branch: "", FastForwardMerge: false,
+			FastForwardMerge: false,
 		})
 		defer cleanupArgs()
 		op := loresdk.BranchPush(&globals, &args)
@@ -672,6 +765,7 @@ func (client *SDKClient) checkRemoteMergeRevisions(
 		}
 		if branch.Name == workspace.TargetBranch {
 			result.RemoteTargetRevision = branch.LatestRevision
+			result.TargetBranchID = branch.ID
 		}
 	}
 	result.RemoteRevision = result.RemoteTargetRevision
@@ -730,80 +824,6 @@ func removeMergeWorkspace(ctx context.Context, path string) error {
 		}
 	}
 	return lastErr
-}
-
-func (client *SDKClient) MergeInto(
-	ctx context.Context,
-	repository RepositoryRef,
-	sourceBranch string,
-	targetBranch string,
-	message string,
-	credential Credential,
-) (MergeStartResult, error) {
-	if err := ValidateCredential(repository, credential, ScopeWrite); err != nil {
-		return MergeStartResult{}, err
-	}
-	readCredential := credential
-	readCredential.Scope = ScopeRead
-	branches, err := client.Branches(ctx, repository, readCredential)
-	if err != nil {
-		return MergeStartResult{}, err
-	}
-	sourceRevision, sourceFound := branchLatestRevision(branches, sourceBranch)
-	targetRevision, targetFound := branchLatestRevision(branches, targetBranch)
-	if !sourceFound || !targetFound {
-		return MergeStartResult{}, ErrMergeStale
-	}
-	operationID := "into-" + safeOperationPart(sourceBranch) + "-" + safeOperationPart(targetBranch)
-	if err := client.CleanupMergeWorkspace(ctx, repository, operationID); err != nil {
-		return MergeStartResult{}, err
-	}
-	var result MergeStartResult
-	result.SourceRevision = sourceRevision
-	result.TargetRevision = targetRevision
-	err = client.withWorkspace(ctx, repository, operationID, targetRevision, credential, func(path string) error {
-		identity := credential.Identity
-		if err := switchExactRevision(ctx, path, sourceBranch, sourceRevision, identity); err != nil {
-			return err
-		}
-		globals, cleanupGlobals := readGlobals(path, identity)
-		defer cleanupGlobals()
-		args, cleanupArgs := types.NewLoreBranchMergeIntoArgs(types.LoreBranchMergeIntoArgs{
-			Branch: targetBranch, Message: message,
-		})
-		defer cleanupArgs()
-		op := loresdk.BranchMergeInto(&globals, &args)
-		op.Callback(func(event *types.LoreEventFFI, _ uint64) {
-			switch event.Tag {
-			case types.LoreEventTag_BRANCH_MERGE_CONFLICT_FILE:
-				if data, ok := event.GetData().(*types.LoreBranchMergeConflictFileEventDataFFI); ok {
-					result.Conflicts = appendUnique(result.Conflicts, data.Path.String())
-				}
-			case types.LoreEventTag_BRANCH_MERGE_INTO_REVISION:
-				if data, ok := event.GetData().(*types.LoreBranchMergeIntoRevisionEventDataFFI); ok {
-					result.StagedRevision = data.Revision.String()
-				}
-			}
-		})
-		if err := waitLore(ctx, op.Wait); err != nil {
-			return err
-		}
-		if len(result.Conflicts) == 0 {
-			parents, err := workspaceRevisionParents(ctx, path, result.StagedRevision, identity)
-			if err != nil {
-				return err
-			}
-			result.Parents = parents
-			if !sameMergeParents(parents, sourceRevision, targetRevision) {
-				return fmt.Errorf("%w: got %v", ErrMergeParentCheck, parents)
-			}
-		}
-		return nil
-	})
-	if errors.Is(err, ErrMergeParentCheck) {
-		_ = client.CleanupMergeWorkspace(context.WithoutCancel(ctx), repository, operationID)
-	}
-	return result, err
 }
 
 func commitWorkspace(ctx context.Context, path, identity, message string) (string, error) {
@@ -884,77 +904,4 @@ func workspaceCurrentRevision(ctx context.Context, path, identity string) (strin
 func workspaceStagedRevision(ctx context.Context, path, identity string) (string, error) {
 	_, staged, err := workspaceRevision(ctx, path, identity, true)
 	return staged, err
-}
-
-func isZeroRevision(value string) bool {
-	return value == "" || value == strings.Repeat("0", 64)
-}
-
-func sameMergeParents(parents []string, sourceRevision, targetRevision string) bool {
-	if len(parents) != 2 {
-		return false
-	}
-	return (parents[0] == sourceRevision && parents[1] == targetRevision) ||
-		(parents[0] == targetRevision && parents[1] == sourceRevision)
-}
-
-func mergeWorkspacePaths(workspace string, paths []string) []string {
-	resolved := make([]string, 0, len(paths))
-	for _, path := range paths {
-		if filepath.IsAbs(path) {
-			resolved = append(resolved, path)
-			continue
-		}
-		resolved = append(resolved, filepath.Join(workspace, path))
-	}
-	return resolved
-}
-
-func validateMergeWorkspacePaths(paths []string) error {
-	if len(paths) > maxConflictPaths-1 {
-		return errors.New("too many Lore merge paths")
-	}
-	for _, path := range paths {
-		if path == "" || len(path) > 2_048 || !utf8.ValidString(path) || strings.IndexByte(path, 0) >= 0 ||
-			strings.ContainsRune(path, '\\') || filepath.IsAbs(path) {
-			return errors.New("invalid Lore merge path")
-		}
-		for _, part := range strings.Split(path, "/") {
-			if part == "" || part == "." || part == ".." {
-				return errors.New("invalid Lore merge path")
-			}
-		}
-	}
-	return nil
-}
-
-func appendUnique(values []string, value string) []string {
-	if value == "" {
-		return values
-	}
-	for _, existing := range values {
-		if existing == value {
-			return values
-		}
-	}
-	return append(values, value)
-}
-
-func safeOperationPart(value string) string {
-	value = strings.Map(func(r rune) rune {
-		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' {
-			return r
-		}
-		return '-'
-	}, value)
-	return strings.Trim(value, "-")
-}
-
-func branchLatestRevision(branches []Branch, name string) (string, bool) {
-	for _, branch := range branches {
-		if branch.Name == name && !branch.Archived && branch.LatestRevision != "" {
-			return branch.LatestRevision, true
-		}
-	}
-	return "", false
 }

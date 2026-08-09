@@ -139,8 +139,9 @@ func New(
 		}
 		if workflow, ok := api.collabStore.(collab.MergeWorkflowStore); ok {
 			if mergeClient, mergeOK := api.lore.(loreclient.MergeClient); mergeOK {
+				pushAuthorizer, _ := api.collabStore.(loreclient.PushAuthorizer)
 				mergeapi.Register(mux, api.collabStore, workflow, api.lore, mergeClient, api,
-					api.loreCredentials, logger)
+					api.loreCredentials, pushAuthorizer, logger)
 			}
 		}
 	}
@@ -209,12 +210,17 @@ func (api *API) ResolveOptionalActor(
 func (api *API) loreCredential(
 	ctx context.Context,
 	repository loreclient.RepositoryRef,
+	principal loreclient.Principal,
 	scope loreclient.Scope,
 ) (loreclient.Credential, error) {
 	if api.loreCredentials == nil {
 		return loreclient.Credential{}, loreclient.ErrCredentialUnavailable
 	}
-	return api.loreCredentials.ForRepository(ctx, repository, scope)
+	return api.loreCredentials.ForRepository(ctx, loreclient.CredentialRequest{
+		Principal:  principal,
+		Repository: repository,
+		Scope:      scope,
+	})
 }
 
 func (api *API) live(writer http.ResponseWriter, _ *http.Request) {
@@ -270,6 +276,7 @@ func (api *API) publicRepository(writer http.ResponseWriter, request *http.Reque
 
 func (api *API) repositoryBranches(writer http.ResponseWriter, request *http.Request) {
 	var repositoryLoreURL, repositoryID, repositoryLoreID string
+	principal := loreclient.ServicePrincipal(loreclient.ServicePurposePublicReader)
 	if api.collabStore != nil {
 		actor, ok := api.ResolveOptionalActor(writer, request)
 		if !ok {
@@ -284,6 +291,9 @@ func (api *API) repositoryBranches(writer http.ResponseWriter, request *http.Req
 		repositoryLoreURL = repository.LoreURL
 		repositoryLoreID = repository.LoreRepositoryID
 		repositoryID = repository.ID
+		if actor != nil {
+			principal = loreclient.UserPrincipal(actor.ID)
+		}
 	} else {
 		repository, err := api.store.PublicRepository(
 			request.Context(),
@@ -302,7 +312,7 @@ func (api *API) repositoryBranches(writer http.ResponseWriter, request *http.Req
 		URL:              repositoryLoreURL,
 		LoreRepositoryID: repositoryLoreID,
 	}
-	credential, err := api.loreCredential(request.Context(), ref, loreclient.ScopeRead)
+	credential, err := api.loreCredential(request.Context(), ref, principal, loreclient.ScopeRead)
 	if err != nil {
 		api.internalError(writer, request, "get Lore read credential", err)
 		return
@@ -371,7 +381,7 @@ func (api *API) registerRepository(writer http.ResponseWriter, request *http.Req
 	}
 	credential, credentialErr := api.loreCredential(request.Context(), loreclient.RepositoryRef{
 		URL: input.LoreURL,
-	}, loreclient.ScopeRead)
+	}, loreclient.ServicePrincipal(loreclient.ServicePurposeRepositoryRegistration), loreclient.ScopeRead)
 	if credentialErr != nil {
 		writeProblem(writer, http.StatusBadGateway, "lore_unavailable", "Lore credentials are not configured")
 		return
@@ -545,7 +555,8 @@ func (api *API) createMergeRequest(writer http.ResponseWriter, request *http.Req
 		URL:              repository.LoreURL,
 		LoreRepositoryID: repository.LoreRepositoryID,
 	}
-	credential, credentialErr := api.loreCredential(request.Context(), ref, loreclient.ScopeRead)
+	credential, credentialErr := api.loreCredential(request.Context(), ref, loreclient.UserPrincipal(actor.ID),
+		loreclient.ScopeRead)
 	if credentialErr != nil {
 		writeProblem(writer, http.StatusBadGateway, "lore_unavailable", "Lore credentials are not configured")
 		return
