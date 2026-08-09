@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -97,8 +98,25 @@ type RunFilter struct {
 	EventName string
 	Branch    string
 	Status    string
-	Page      int
-	PerPage   int
+	Page      int64
+	PerPage   int64
+}
+
+type PageRequest struct {
+	Page    int64
+	PerPage int64
+}
+
+type WorkflowPage struct {
+	Workflows []WorkflowRecord
+	Total     int64
+	HasMore   bool
+}
+
+type RunPage struct {
+	Runs    []RunRecord
+	Total   int64
+	HasMore bool
 }
 
 type FileDownload struct {
@@ -119,28 +137,87 @@ func (store *Store) RepositoryForActions(
 	slug string,
 	actorID string,
 ) (RepositoryAccess, error) {
+	if actorID != "" {
+		if _, err := uuid.Parse(actorID); err != nil {
+			actorID = ""
+		}
+	}
 	var repository RepositoryAccess
 	err := store.pool.QueryRow(ctx, `
 		SELECT r.id, r.organization_id, o.slug, r.slug, r.lore_url, r.default_branch, r.visibility,
-		       r.visibility = 'public' OR EXISTS (
-		           SELECT 1 FROM repository_memberships rm
-		           WHERE rm.repository_id = r.id AND rm.user_id = NULLIF($3, '')::uuid
-		       ) OR EXISTS (
-		           SELECT 1 FROM organization_memberships om
-		           WHERE om.organization_id = r.organization_id AND om.user_id = NULLIF($3, '')::uuid
+		       r.visibility = 'public'
+		       OR EXISTS (
+		           SELECT 1
+		           FROM users u
+		           JOIN repository_memberships rm ON rm.user_id = u.id
+		           WHERE u.id = NULLIF($3, '')::uuid AND u.status = 'active'
+		             AND rm.repository_id = r.id AND rm.active
+		       )
+		       OR EXISTS (
+		           SELECT 1
+		           FROM users u
+		           JOIN organization_memberships om ON om.user_id = u.id
+		           WHERE u.id = NULLIF($3, '')::uuid AND u.status = 'active'
+		             AND om.organization_id = r.organization_id AND om.active
+		             AND r.visibility = 'internal'
+		       )
+		       OR EXISTS (
+		           SELECT 1
+		           FROM users u
+		           JOIN teams t ON t.organization_id = r.organization_id AND t.active
+		           JOIN team_memberships tm ON tm.team_id = t.id AND tm.user_id = u.id AND tm.active
+		           JOIN team_repositories tr ON tr.team_id = t.id AND tr.repository_id = r.id AND tr.active
+		           JOIN organization_memberships om
+		             ON om.organization_id = r.organization_id AND om.user_id = u.id AND om.active
+		           WHERE u.id = NULLIF($3, '')::uuid AND u.status = 'active'
+		       )
+		       OR EXISTS (
+		           SELECT 1
+		           FROM users u
+		           WHERE u.id = NULLIF($3, '')::uuid AND u.status = 'active'
+		             AND (r.created_by = u.id OR o.created_by = u.id)
+		       )
+		       OR EXISTS (
+		           SELECT 1
+		           FROM users u
+		           JOIN organization_memberships om ON om.user_id = u.id
+		           WHERE u.id = NULLIF($3, '')::uuid AND u.status = 'active'
+		             AND om.organization_id = r.organization_id AND om.active AND om.role = 'owner'
 		       ),
 		       EXISTS (
-		           SELECT 1 FROM repository_memberships rm
-		           WHERE rm.repository_id = r.id AND rm.user_id = NULLIF($3, '')::uuid
-				 AND rm.role IN ('admin', 'write')
-		       ) OR EXISTS (
-		           SELECT 1 FROM organization_memberships om
-		           WHERE om.organization_id = r.organization_id AND om.user_id = NULLIF($3, '')::uuid
-				 AND om.role IN ('owner', 'maintainer')
+		           SELECT 1
+		           FROM users u
+		           WHERE u.id = NULLIF($3, '')::uuid AND u.status = 'active'
+		             AND (r.created_by = u.id OR o.created_by = u.id)
+		       )
+		       OR EXISTS (
+		           SELECT 1
+		           FROM users u
+		           JOIN repository_memberships rm ON rm.user_id = u.id
+		           WHERE u.id = NULLIF($3, '')::uuid AND u.status = 'active'
+		             AND rm.repository_id = r.id AND rm.active AND rm.role IN ('admin', 'write')
+		       )
+		       OR EXISTS (
+		           SELECT 1
+		           FROM users u
+		           JOIN organization_memberships om ON om.user_id = u.id
+		           WHERE u.id = NULLIF($3, '')::uuid AND u.status = 'active'
+		             AND om.organization_id = r.organization_id AND om.active AND om.role = 'owner'
+		       )
+	       OR EXISTS (
+	           SELECT 1
+	           FROM users u
+	           JOIN teams t ON t.organization_id = r.organization_id AND t.active
+	           JOIN team_memberships tm ON tm.team_id = t.id AND tm.user_id = u.id AND tm.active
+	           JOIN team_repositories tr ON tr.team_id = t.id AND tr.repository_id = r.id AND tr.active
+	           JOIN organization_memberships om
+	             ON om.organization_id = r.organization_id AND om.user_id = u.id AND om.active
+	           WHERE u.id = NULLIF($3, '')::uuid AND u.status = 'active'
+	             AND tr.role IN ('admin', 'write')
 		       )
 		FROM repositories r
 		JOIN organizations o ON o.id = r.organization_id
-		WHERE o.slug = $1 AND r.slug = $2 AND r.archived_at IS NULL
+		WHERE o.slug = $1 AND r.slug = $2 AND r.archived_at IS NULL AND o.active
 	`, owner, slug, actorID).Scan(
 		&repository.ID,
 		&repository.OrganizationID,
@@ -159,7 +236,7 @@ func (store *Store) RepositoryForActions(
 		return RepositoryAccess{}, fmt.Errorf("find Actions repository: %w", err)
 	}
 	if !repository.CanRead {
-		return RepositoryAccess{}, ErrActionForbidden
+		return RepositoryAccess{}, ErrActionNotFound
 	}
 	return repository, nil
 }
@@ -169,9 +246,24 @@ func (store *Store) ListWorkflows(
 	owner string,
 	slug string,
 	actorID string,
-) ([]WorkflowRecord, error) {
+	page PageRequest,
+) (WorkflowPage, error) {
 	if _, err := store.RepositoryForActions(ctx, owner, slug, actorID); err != nil {
-		return nil, err
+		return WorkflowPage{}, err
+	}
+	page, offset, err := normalizePage(page)
+	if err != nil {
+		return WorkflowPage{}, err
+	}
+	var total int64
+	if err := store.pool.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM ci_workflows workflow
+		JOIN repositories r ON r.id = workflow.repository_id
+		JOIN organizations o ON o.id = r.organization_id
+		WHERE o.slug = $1 AND r.slug = $2
+	`, owner, slug).Scan(&total); err != nil {
+		return WorkflowPage{}, fmt.Errorf("count Actions workflows: %w", err)
 	}
 	rows, err := store.pool.Query(ctx, `
 		SELECT workflow.id, workflow.path, workflow.name, workflow.enabled, workflow.state,
@@ -182,23 +274,28 @@ func (store *Store) ListWorkflows(
 		JOIN organizations o ON o.id = r.organization_id
 		WHERE o.slug = $1 AND r.slug = $2
 		ORDER BY workflow.path
-	`, owner, slug)
+		LIMIT $3 OFFSET $4
+	`, owner, slug, page.PerPage+1, offset)
 	if err != nil {
-		return nil, fmt.Errorf("list Actions workflows: %w", err)
+		return WorkflowPage{}, fmt.Errorf("list Actions workflows: %w", err)
 	}
 	defer rows.Close()
 	workflows := make([]WorkflowRecord, 0)
 	for rows.Next() {
 		workflow, err := scanWorkflow(rows)
 		if err != nil {
-			return nil, fmt.Errorf("scan Actions workflow: %w", err)
+			return WorkflowPage{}, fmt.Errorf("scan Actions workflow: %w", err)
 		}
 		workflows = append(workflows, workflow)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate Actions workflows: %w", err)
+		return WorkflowPage{}, fmt.Errorf("iterate Actions workflows: %w", err)
 	}
-	return workflows, nil
+	hasMore := len(workflows) > int(page.PerPage)
+	if hasMore {
+		workflows = workflows[:int(page.PerPage)]
+	}
+	return WorkflowPage{Workflows: workflows, Total: total, HasMore: hasMore}, nil
 }
 
 func (store *Store) ListActionRuns(
@@ -207,56 +304,70 @@ func (store *Store) ListActionRuns(
 	slug string,
 	actorID string,
 	filter RunFilter,
-) ([]RunRecord, int, error) {
+) (RunPage, error) {
 	if _, err := store.RepositoryForActions(ctx, owner, slug, actorID); err != nil {
-		return nil, 0, err
+		return RunPage{}, err
 	}
-	if filter.Page < 1 {
-		filter.Page = 1
+	page, offset, err := normalizePage(PageRequest{Page: filter.Page, PerPage: filter.PerPage})
+	if err != nil {
+		return RunPage{}, err
 	}
-	if filter.PerPage < 1 || filter.PerPage > 100 {
-		filter.PerPage = 30
-	}
-	var total int
+	var total int64
 	if err := store.pool.QueryRow(ctx, `
 		SELECT COUNT(*)
 		FROM ci_runs run
 		JOIN repositories r ON r.id = run.repository_id
 		JOIN organizations o ON o.id = r.organization_id
 		WHERE o.slug = $1 AND r.slug = $2
-		  AND run.workflow_id IS NOT NULL
+		  AND (run.workflow_id IS NOT NULL OR run.workflow_revision_id IS NOT NULL)
 		  AND ($3 = '' OR run.event_name = $3)
 		  AND ($4 = '' OR run.branch = $4)
 		  AND ($5 = '' OR run.status = $5)
 	`, owner, slug, filter.EventName, filter.Branch, filter.Status).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("count Actions runs: %w", err)
+		return RunPage{}, fmt.Errorf("count Actions runs: %w", err)
 	}
 	rows, err := store.pool.Query(ctx, actionRunQuery+`
 		WHERE o.slug = $1 AND r.slug = $2
-		  AND run.workflow_id IS NOT NULL
+		  AND (run.workflow_id IS NOT NULL OR run.workflow_revision_id IS NOT NULL)
 		  AND ($3 = '' OR run.event_name = $3)
 		  AND ($4 = '' OR run.branch = $4)
 		  AND ($5 = '' OR run.status = $5)
 		ORDER BY run.run_number DESC
 		LIMIT $6 OFFSET $7
-	`, owner, slug, filter.EventName, filter.Branch, filter.Status, filter.PerPage,
-		(filter.Page-1)*filter.PerPage)
+	`, owner, slug, filter.EventName, filter.Branch, filter.Status, page.PerPage+1, offset)
 	if err != nil {
-		return nil, 0, fmt.Errorf("list Actions runs: %w", err)
+		return RunPage{}, fmt.Errorf("list Actions runs: %w", err)
 	}
 	defer rows.Close()
 	runs := make([]RunRecord, 0)
 	for rows.Next() {
 		run, err := scanActionRun(rows)
 		if err != nil {
-			return nil, 0, fmt.Errorf("scan Actions run: %w", err)
+			return RunPage{}, fmt.Errorf("scan Actions run: %w", err)
 		}
 		runs = append(runs, run)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, 0, fmt.Errorf("iterate Actions runs: %w", err)
+		return RunPage{}, fmt.Errorf("iterate Actions runs: %w", err)
 	}
-	return runs, total, nil
+	hasMore := len(runs) > int(page.PerPage)
+	if hasMore {
+		runs = runs[:int(page.PerPage)]
+	}
+	return RunPage{Runs: runs, Total: total, HasMore: hasMore}, nil
+}
+
+func normalizePage(page PageRequest) (PageRequest, int64, error) {
+	if page.Page < 1 {
+		page.Page = 1
+	}
+	if page.PerPage < 1 || page.PerPage > 100 {
+		page.PerPage = 30
+	}
+	if page.Page-1 > math.MaxInt64/page.PerPage {
+		return PageRequest{}, 0, ErrActionInvalid
+	}
+	return page, (page.Page - 1) * page.PerPage, nil
 }
 
 func (store *Store) ActionRunDetail(
@@ -270,7 +381,9 @@ func (store *Store) ActionRunDetail(
 		return RunDetail{}, err
 	}
 	row := store.pool.QueryRow(ctx, actionRunQuery+`
-		WHERE o.slug = $1 AND r.slug = $2 AND run.workflow_id IS NOT NULL AND run.run_number = $3
+		WHERE o.slug = $1 AND r.slug = $2
+		  AND (run.workflow_id IS NOT NULL OR run.workflow_revision_id IS NOT NULL)
+		  AND run.run_number = $3
 	`, owner, slug, runNumber)
 	run, err := scanActionRun(row)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -342,7 +455,7 @@ func (store *Store) DispatchWorkflow(
 	}
 	runID, err := store.enqueueRun(ctx, transaction, Repository{
 		ID: access.ID, Owner: access.Owner, Slug: access.Slug, LoreURL: access.LoreURL,
-	}, workflowID, workflowName, workflowPath, "workflow_dispatch", branch, revision, payload, actorID, nil)
+	}, workflowID, nil, workflowName, workflowPath, "workflow_dispatch", branch, revision, payload, actorID, nil)
 	if err != nil {
 		return RunRecord{}, err
 	}
@@ -372,8 +485,10 @@ func (store *Store) CancelActionRun(
 	defer func() { _ = transaction.Rollback(context.WithoutCancel(ctx)) }()
 	var runID, status string
 	err = transaction.QueryRow(ctx, `
-		SELECT id, status FROM ci_runs
-		WHERE repository_id = $1 AND workflow_id IS NOT NULL AND run_number = $2
+	SELECT id, status FROM ci_runs
+		WHERE repository_id = $1
+		  AND (workflow_id IS NOT NULL OR workflow_revision_id IS NOT NULL)
+		  AND run_number = $2
 		FOR UPDATE
 	`, access.ID, runNumber).Scan(&runID, &status)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -430,16 +545,22 @@ func (store *Store) RerunActionRun(
 		return RunRecord{}, fmt.Errorf("begin run rerun: %w", err)
 	}
 	defer func() { _ = transaction.Rollback(context.WithoutCancel(ctx)) }()
-	var originalID, workflowID, workflowName, workflowPath, eventName, branch, revision, status string
+	var originalID, workflowID, workflowRevisionID, workflowName, workflowPath, eventName, branch, revision, status string
 	var payload []byte
 	err = transaction.QueryRow(ctx, `
-		SELECT run.id, run.workflow_id, workflow.name, workflow.path, run.event_name, run.branch,
+		SELECT run.id, COALESCE(run.workflow_id::text, ''), COALESCE(run.workflow_revision_id::text, ''),
+		       COALESCE(workflow.name, revision_workflow.name), COALESCE(workflow.path, revision_workflow.path),
+		       run.event_name, run.branch,
 		       run.revision, run.status, run.event_payload
-		FROM ci_runs run JOIN ci_workflows workflow ON workflow.id = run.workflow_id
-		WHERE run.repository_id = $1 AND run.run_number = $2
-		FOR UPDATE
-	`, access.ID, runNumber).Scan(&originalID, &workflowID, &workflowName, &workflowPath, &eventName, &branch,
-		&revision, &status, &payload)
+		FROM ci_runs run
+		LEFT JOIN ci_workflows workflow ON workflow.id = run.workflow_id
+		LEFT JOIN ci_workflow_revisions revision_workflow ON revision_workflow.id = run.workflow_revision_id
+		WHERE run.repository_id = $1
+		  AND (run.workflow_id IS NOT NULL OR run.workflow_revision_id IS NOT NULL)
+		  AND run.run_number = $2
+		FOR UPDATE OF run
+	`, access.ID, runNumber).Scan(&originalID, &workflowID, &workflowRevisionID, &workflowName, &workflowPath,
+		&eventName, &branch, &revision, &status, &payload)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return RunRecord{}, ErrActionNotFound
 	}
@@ -450,9 +571,18 @@ func (store *Store) RerunActionRun(
 		return RunRecord{}, ErrActionConflict
 	}
 	rerunID := originalID
+	var revisionWorkflowID *uuid.UUID
+	if workflowRevisionID != "" {
+		parsed, parseErr := uuid.Parse(workflowRevisionID)
+		if parseErr != nil {
+			return RunRecord{}, fmt.Errorf("parse workflow revision %q: %w", workflowRevisionID, parseErr)
+		}
+		revisionWorkflowID = &parsed
+	}
 	newID, err := store.enqueueRun(ctx, transaction, Repository{
 		ID: access.ID, Owner: access.Owner, Slug: access.Slug, LoreURL: access.LoreURL,
-	}, workflowID, workflowName, workflowPath, eventName, branch, revision, payload, actorID, &rerunID)
+	}, workflowID, revisionWorkflowID, workflowName, workflowPath, eventName, branch, revision, payload,
+		actorID, &rerunID)
 	if err != nil {
 		return RunRecord{}, err
 	}
@@ -481,7 +611,8 @@ func (store *Store) OpenActionJobLog(
 	err = store.pool.QueryRow(ctx, `
 		SELECT COALESCE(job.log_object_key, '')
 		FROM ci_jobs job JOIN ci_runs run ON run.id = job.run_id
-		WHERE job.id = $1 AND run.repository_id = $2 AND run.workflow_id IS NOT NULL
+		WHERE job.id = $1 AND run.repository_id = $2
+		  AND (run.workflow_id IS NOT NULL OR run.workflow_revision_id IS NOT NULL)
 	`, jobID, access.ID).Scan(&objectKey)
 	if errors.Is(err, pgx.ErrNoRows) || objectKey == "" {
 		return FileDownload{}, ErrActionNotFound
@@ -510,7 +641,8 @@ func (store *Store) OpenActionArtifact(
 		FROM ci_artifacts artifact
 		JOIN ci_jobs job ON job.id = artifact.job_id
 		JOIN ci_runs run ON run.id = job.run_id
-		WHERE artifact.id = $1 AND run.repository_id = $2 AND run.workflow_id IS NOT NULL
+		WHERE artifact.id = $1 AND run.repository_id = $2
+		  AND (run.workflow_id IS NOT NULL OR run.workflow_revision_id IS NOT NULL)
 	`, artifactID, access.ID).Scan(&objectKey, &name, &size)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return FileDownload{}, ErrActionNotFound
@@ -540,7 +672,15 @@ func (store *Store) workflowByID(ctx context.Context, workflowID string) (Workfl
 	`, workflowID)
 	workflow, err := scanWorkflow(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return WorkflowRecord{}, ErrActionNotFound
+		row = store.pool.QueryRow(ctx, `
+			SELECT id, path, name, enabled, state, COALESCE(error_code, ''), COALESCE(error_message, ''),
+			       revision, trigger_config, created_at
+			FROM ci_workflow_revisions WHERE id = $1
+		`, workflowID)
+		workflow, err = scanWorkflow(row)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return WorkflowRecord{}, ErrActionNotFound
+		}
 	}
 	if err != nil {
 		return WorkflowRecord{}, fmt.Errorf("get CI workflow: %w", err)
@@ -722,11 +862,14 @@ func recordActionEvent(
 }
 
 const actionRunQuery = `
-	SELECT run.id, COALESCE(run.workflow_id::text, ''), COALESCE(workflow.name, ''), COALESCE(workflow.path, ''),
+	SELECT run.id, COALESCE(run.workflow_id::text, run.workflow_revision_id::text, ''),
+	       COALESCE(workflow.name, revision_workflow.name, ''),
+	       COALESCE(workflow.path, revision_workflow.path, ''),
 	       run.run_number, run.run_attempt, run.rerun_of, run.event_name, run.branch, run.revision,
 	       run.actor_id, run.status, run.conclusion, run.queued_at, run.started_at, run.completed_at
 	FROM ci_runs run
 	LEFT JOIN ci_workflows workflow ON workflow.id = run.workflow_id
+	LEFT JOIN ci_workflow_revisions revision_workflow ON revision_workflow.id = run.workflow_revision_id
 	JOIN repositories r ON r.id = run.repository_id
 	JOIN organizations o ON o.id = r.organization_id
 `

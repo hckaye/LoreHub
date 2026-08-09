@@ -60,13 +60,18 @@ outboxへ記録し、workerが再送する。重複通知は外部イベントID
 対応範囲をAPIと画面で明示し、GitHub公開のワークフロー例を使った実行テストで差を検出する。
 
 任意コードを実行するrunnerはAPIと同じホストへ置かない。本番では信頼ドメインごとに専用・短命なrunner基盤を
-使い、ホストのDocker socketを直接渡さない。Composeの明示的なprofileは`docker:29.4.0-dind`へmTLS（2376）で
-接続する。rootless版はnested bridgeからホスト側のサービスネットワークへ到達できるため採用しない。
-runner-data（runner／PostgreSQL／Lore／API）、runner-control（runner／engine）、
-runner-egress（engineのみ）を分離し、API／Webはrunner-controlへ接続しない。engine境界の権限とjob containerの
-CPU、メモリ、PID、capability、namespace制限を分けて管理する。`LOREHUB_LORE_IDENTITY`は現在信頼ドメイン全体で
-共有されるLore identityであり、jobごとの最小権限credentialではない。credential providerの接続はcontrol-plane
-auth unitに委ねる。
+使い、ホストのDocker socketを直接渡さない。Composeのprofileは`docker:29.4.0-dind-rootless`へmTLS（2376）で
+接続する。runner-data（runner／PostgreSQL／Lore／API）とrunner-control（runner／engine）をinternal network
+として分離し、engineはrunner-dataへ接続しない。runner-egressもinternalとし、engineとforward proxyだけを
+接続する。proxyだけがuplinkを持ち、runner-action経由のact/action downloadもproxyを通る。API／Webは
+runner-controlへ接続しない。job containerは専用internal networkと使い捨てproxy gatewayを使い、外向きの
+直接経路を持たない。
+
+engine境界の権限とjob containerのCPU、メモリ、PID、capability、namespace制限を分けて管理する。Docker
+Desktopでcgroupが使えない場合、Composeの上限はouter engine全体の上限であり、jobごとのsecurity limitではない。
+本番の各trust domainにはAPIから分離した専用・使い捨てrunner node／podと、gVisor、Kata等の検証済み隔離層を
+必須とする。Lore読み取りはrepository partitionとread scopeを受けるcredential providerを必須とし、production
+で共有identityへfallbackしない。開発環境だけ明示的なfallbackを許可する。
 
 ### 画面と翻訳
 

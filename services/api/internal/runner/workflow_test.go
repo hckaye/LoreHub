@@ -230,3 +230,20 @@ jobs:
 		t.Fatalf("empty runtime options were not accepted: %#v", workflows)
 	}
 }
+
+func TestDiscoverWorkflowsRejectsSymlinkedWorkflowDirectory(t *testing.T) {
+	workspace := t.TempDir()
+	target := filepath.Join(t.TempDir(), "workflows")
+	if err := os.MkdirAll(target, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(workspace, ".github"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(workspace, ".github", "workflows")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DiscoverWorkflows(workspace); err == nil {
+		t.Fatal("symlinked workflow directory was inspected")
+	}
+}

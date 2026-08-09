@@ -31,14 +31,16 @@ func (store *fakeActionsStore) RepositoryForActions(
 	return store.access, nil
 }
 
-func (store *fakeActionsStore) ListWorkflows(context.Context, string, string, string) ([]runner.WorkflowRecord, error) {
-	return store.workflows, nil
+func (store *fakeActionsStore) ListWorkflows(
+	context.Context, string, string, string, runner.PageRequest,
+) (runner.WorkflowPage, error) {
+	return runner.WorkflowPage{Workflows: store.workflows, Total: int64(len(store.workflows))}, nil
 }
 
 func (store *fakeActionsStore) ListActionRuns(
 	context.Context, string, string, string, runner.RunFilter,
-) ([]runner.RunRecord, int, error) {
-	return store.runs, len(store.runs), nil
+) (runner.RunPage, error) {
+	return runner.RunPage{Runs: store.runs, Total: int64(len(store.runs))}, nil
 }
 
 func (store *fakeActionsStore) ActionRunDetail(

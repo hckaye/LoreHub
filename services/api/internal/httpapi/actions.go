@@ -22,14 +22,20 @@ type ActionsStore interface {
 		repository string,
 		actorID string,
 	) (runner.RepositoryAccess, error)
-	ListWorkflows(ctx context.Context, owner string, repository string, actorID string) ([]runner.WorkflowRecord, error)
+	ListWorkflows(
+		ctx context.Context,
+		owner string,
+		repository string,
+		actorID string,
+		page runner.PageRequest,
+	) (runner.WorkflowPage, error)
 	ListActionRuns(
 		ctx context.Context,
 		owner string,
 		repository string,
 		actorID string,
 		filter runner.RunFilter,
-	) ([]runner.RunRecord, int, error)
+	) (runner.RunPage, error)
 	ActionRunDetail(
 		ctx context.Context,
 		owner string,
@@ -94,13 +100,25 @@ func (api *API) listActionWorkflows(writer http.ResponseWriter, request *http.Re
 		api.actionsError(writer, request, "check Actions read permission", err)
 		return
 	}
-	workflows, err := api.actions.ListWorkflows(request.Context(), owner,
-		repository, actorID)
+	page, err := actionPageRequest(request)
+	if err != nil {
+		writeProblem(writer, http.StatusBadRequest, "actions_invalid_pagination", err.Error())
+		return
+	}
+	workflowPage, err := api.actions.ListWorkflows(request.Context(), owner,
+		repository, actorID, page)
 	if err != nil {
 		api.actionsError(writer, request, "list Actions workflows", err)
 		return
 	}
-	writeJSON(writer, http.StatusOK, map[string]any{"workflows": workflows, "canWrite": access.CanWrite})
+	writeJSON(writer, http.StatusOK, map[string]any{
+		"workflows":  workflowPage.Workflows,
+		"totalCount": workflowPage.Total,
+		"page":       page.Page,
+		"perPage":    page.PerPage,
+		"hasMore":    workflowPage.HasMore,
+		"canWrite":   access.CanWrite,
+	})
 }
 
 func (api *API) actionRuns(writer http.ResponseWriter, request *http.Request) {
@@ -117,14 +135,19 @@ func (api *API) actionRuns(writer http.ResponseWriter, request *http.Request) {
 		writeProblem(writer, http.StatusBadRequest, "actions_invalid_filter", err.Error())
 		return
 	}
-	runs, total, err := api.actions.ListActionRuns(request.Context(), request.PathValue("owner"),
+	runPage, err := api.actions.ListActionRuns(request.Context(), request.PathValue("owner"),
 		request.PathValue("repository"), actorID, filter)
 	if err != nil {
 		api.actionsError(writer, request, "list Actions runs", err)
 		return
 	}
-	writeJSON(writer, http.StatusOK, map[string]any{"totalCount": total, "runs": runs, "page": filter.Page,
-		"perPage": filter.PerPage})
+	writeJSON(writer, http.StatusOK, map[string]any{
+		"totalCount": runPage.Total,
+		"runs":       runPage.Runs,
+		"page":       filter.Page,
+		"perPage":    filter.PerPage,
+		"hasMore":    runPage.HasMore,
+	})
 }
 
 func (api *API) actionRunDetail(writer http.ResponseWriter, request *http.Request) {
@@ -313,14 +336,14 @@ func actionRunFilter(request *http.Request) (runner.RunFilter, error) {
 		PerPage:   30,
 	}
 	if raw := query.Get("page"); raw != "" {
-		page, err := strconv.Atoi(raw)
+		page, err := strconv.ParseInt(raw, 10, 64)
 		if err != nil || page < 1 {
 			return runner.RunFilter{}, errors.New("page must be a positive integer")
 		}
 		filter.Page = page
 	}
 	if raw := query.Get("per_page"); raw != "" {
-		perPage, err := strconv.Atoi(raw)
+		perPage, err := strconv.ParseInt(raw, 10, 64)
 		if err != nil || perPage < 1 || perPage > 100 {
 			return runner.RunFilter{}, errors.New("per_page must be between 1 and 100")
 		}
@@ -331,6 +354,14 @@ func actionRunFilter(request *http.Request) (runner.RunFilter, error) {
 		return runner.RunFilter{}, errors.New("status is not supported")
 	}
 	return filter, nil
+}
+
+func actionPageRequest(request *http.Request) (runner.PageRequest, error) {
+	filter, err := actionRunFilter(request)
+	if err != nil {
+		return runner.PageRequest{}, err
+	}
+	return runner.PageRequest{Page: filter.Page, PerPage: filter.PerPage}, nil
 }
 
 func parseActionRunNumber(request *http.Request) (int64, error) {

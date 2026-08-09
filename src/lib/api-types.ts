@@ -122,6 +122,23 @@ export type CIWorkflow = {
   updatedAt: string;
 };
 
+export type CIWorkflowPage = {
+  workflows: CIWorkflow[];
+  totalCount: number;
+  page: number;
+  perPage: number;
+  hasMore: boolean;
+  canWrite: boolean;
+};
+
+export type CIRunPage = {
+  runs: CIRun[];
+  totalCount: number;
+  page: number;
+  perPage: number;
+  hasMore: boolean;
+};
+
 export type CIJob = {
   id: string;
   name: string;

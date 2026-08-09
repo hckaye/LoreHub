@@ -2,7 +2,17 @@ import "server-only";
 
 import { cookies } from "next/headers";
 
-import type { APIResult, Branch, CIRun, CIRunDetail, CIWorkflow, Issue, MergeRequest, Repository } from "./api-types";
+import type {
+  APIResult,
+  Branch,
+  CIRun,
+  CIRunDetail,
+  CIRunPage,
+  CIWorkflowPage,
+  Issue,
+  MergeRequest,
+  Repository,
+} from "./api-types";
 
 const apiOrigin = process.env.LOREHUB_API_URL ?? "http://127.0.0.1:8080";
 
@@ -35,20 +45,16 @@ export async function getOpenMergeRequests(owner: string, repository: string): P
 }
 
 export async function getCIRuns(owner: string, repository: string): Promise<APIResult<CIRun[]>> {
-  const result = await request<{ runs: CIRun[] }>(repositoryPath(owner, repository, "/actions/runs"));
+  const result = await getActionRuns(owner, repository);
   return result.ok ? { ok: true, data: result.data.runs } : result;
 }
 
-export async function getActionWorkflows(
-  owner: string,
-  repository: string,
-): Promise<APIResult<{ workflows: CIWorkflow[]; canWrite: boolean }>> {
+export async function getActionWorkflows(owner: string, repository: string): Promise<APIResult<CIWorkflowPage>> {
   return request(repositoryPath(owner, repository, "/actions/workflows"));
 }
 
-export async function getActionRuns(owner: string, repository: string): Promise<APIResult<CIRun[]>> {
-  const result = await request<{ runs: CIRun[] }>(repositoryPath(owner, repository, "/actions/runs?per_page=50"));
-  return result.ok ? { ok: true, data: result.data.runs } : result;
+export async function getActionRuns(owner: string, repository: string): Promise<APIResult<CIRunPage>> {
+  return request(repositoryPath(owner, repository, "/actions/runs?per_page=50"));
 }
 
 export function getActionRun(owner: string, repository: string, runNumber: number): Promise<APIResult<CIRunDetail>> {

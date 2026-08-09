@@ -99,12 +99,16 @@ func run(logger *slog.Logger) error {
 	default:
 		return fmt.Errorf("unsupported authentication mode %q", settings.AuthMode)
 	}
+	loreIdentity := ""
+	if settings.DevLoreIdentityFallback && (settings.Environment == "development" || settings.Environment == "local") {
+		loreIdentity = settings.DevLoreIdentity
+	}
 	handler := httpapi.New(
 		store,
 		lore,
 		authenticator,
 		pool,
-		settings.LoreIdentity,
+		loreIdentity,
 		logger,
 		httpapi.WithAuthentication(httpapi.AuthOptions{
 			LoginProvider:  loginProvider,
@@ -166,9 +170,13 @@ func runRunner(
 	logger *slog.Logger,
 ) error {
 	store := runner.NewStoreWithFiles(pool, settings.RunnerLogDir, settings.RunnerArtifactDir)
+	credentialProvider, err := configuredLoreCredentialProvider(settings)
+	if err != nil {
+		return err
+	}
 	worker, err := runner.NewWorker(store, runner.WorkerConfig{
 		LoreBinary:            settings.LoreBinary,
-		LoreIdentity:          settings.LoreIdentity,
+		CredentialProvider:    credentialProvider,
 		RevisionClient:        lore,
 		ActBinary:             settings.ActBinary,
 		WorkDir:               settings.RunnerWorkDir,
@@ -181,11 +189,13 @@ func runRunner(
 		ArtifactMaxCount:      settings.RunnerArtifactMaxCount,
 		ArtifactMaxFileBytes:  settings.RunnerArtifactMaxFile,
 		ArtifactMaxTotalBytes: settings.RunnerArtifactMaxTotal,
+		ProxyURL:              settings.RunnerProxyURL,
+		EngineProxyURL:        settings.RunnerEngineProxyURL,
 	}, logger)
 	if err != nil {
 		return err
 	}
-	poller := runner.NewPoller(store, lore, settings.LoreIdentity, settings.BranchPollPeriod, logger)
+	poller := runner.NewPoller(store, lore, credentialProvider, settings.BranchPollPeriod, logger)
 	errorsChannel := make(chan error, 2)
 	go func() { errorsChannel <- poller.Run(ctx) }()
 	go func() { errorsChannel <- worker.Run(ctx) }()
@@ -194,4 +204,16 @@ func runRunner(
 		return nil
 	}
 	return err
+}
+
+func configuredLoreCredentialProvider(settings config.Config) (runner.CredentialProvider, error) {
+	if settings.LoreCredentialDir != "" {
+		return runner.NewFileCredentialProvider(settings.LoreCredentialDir)
+	}
+	if settings.Environment == "development" || settings.Environment == "local" {
+		if settings.DevLoreIdentityFallback {
+			return runner.NewDevelopmentCredentialProvider(settings.DevLoreIdentity), nil
+		}
+	}
+	return nil, fmt.Errorf("repository-scoped Lore credential provider is required for %s", settings.Environment)
 }

@@ -33,7 +33,7 @@ export default async function ActionsPage({ params }: ActionsPageProps) {
           locale={locale}
           owner={owner}
           repository={repository}
-          runs={runs.data}
+          runs={runs.data.runs}
           session={session}
           workflows={workflows.data.workflows}
         />

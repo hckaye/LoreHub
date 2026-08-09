@@ -31,11 +31,14 @@ type WorkflowDefinition struct {
 }
 
 func DiscoverWorkflows(workspace string) ([]WorkflowDefinition, error) {
-	directory := filepath.Join(workspace, ".github", "workflows")
-	entries, err := os.ReadDir(directory)
+	directory, err := findWorkflowDirectory(workspace)
 	if errors.Is(err, fs.ErrNotExist) {
 		return []WorkflowDefinition{}, nil
 	}
+	if err != nil {
+		return nil, err
+	}
+	entries, err := os.ReadDir(directory)
 	if err != nil {
 		return nil, fmt.Errorf("read workflow directory: %w", err)
 	}
@@ -73,6 +76,9 @@ func AdaptWorkflow(workspace string, workflowPath string) (int, error) {
 	if err := validateWorkflowPath(workflowPath); err != nil {
 		return 0, err
 	}
+	if _, err := findWorkflowDirectory(workspace); err != nil {
+		return 0, err
+	}
 	path := filepath.Join(workspace, filepath.FromSlash(workflowPath))
 	if err := validateWorkflowFile(path); err != nil {
 		return 0, err
@@ -81,11 +87,14 @@ func AdaptWorkflow(workspace string, workflowPath string) (int, error) {
 }
 
 func AdaptWorkflows(workspace string) (int, error) {
-	directory := filepath.Join(workspace, ".github", "workflows")
-	entries, err := os.ReadDir(directory)
+	directory, err := findWorkflowDirectory(workspace)
 	if errors.Is(err, fs.ErrNotExist) {
 		return 0, nil
 	}
+	if err != nil {
+		return 0, err
+	}
+	entries, err := os.ReadDir(directory)
 	if err != nil {
 		return 0, fmt.Errorf("read workflow directory: %w", err)
 	}
@@ -103,6 +112,24 @@ func AdaptWorkflows(workspace string) (int, error) {
 		adapted += count
 	}
 	return adapted, nil
+}
+
+func findWorkflowDirectory(workspace string) (string, error) {
+	githubDirectory := filepath.Join(workspace, ".github")
+	workflowDirectory := filepath.Join(githubDirectory, "workflows")
+	for _, directory := range []string{githubDirectory, workflowDirectory} {
+		info, err := os.Lstat(directory)
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return "", fs.ErrNotExist
+			}
+			return "", fmt.Errorf("inspect workflow directory: %w", err)
+		}
+		if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+			return "", errors.New("workflow directory is not a real directory")
+		}
+	}
+	return workflowDirectory, nil
 }
 
 func parseWorkflowFile(filePath string, workflowPath string) (WorkflowDefinition, error) {

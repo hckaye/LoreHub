@@ -21,7 +21,7 @@ import (
 
 type WorkerConfig struct {
 	LoreBinary            string
-	LoreIdentity          string
+	CredentialProvider    CredentialProvider
 	RevisionClient        loreclient.RevisionClient
 	ActBinary             string
 	WorkDir               string
@@ -34,10 +34,15 @@ type WorkerConfig struct {
 	ArtifactMaxCount      int
 	ArtifactMaxFileBytes  int64
 	ArtifactMaxTotalBytes int64
+	ProxyURL              string
+	EngineProxyURL        string
 }
 
 const containerOptions = "--privileged=false --cpus=1 --memory=1g --pids-limit=256 " +
-	"--cap-drop=ALL --security-opt=no-new-privileges:true"
+	"--cap-drop=ALL --security-opt=no-new-privileges:true " +
+	"--add-host=host.docker.internal:host-gateway " +
+	"--add-host=postgres:172.28.239.2 --add-host=lore:172.28.239.3 " +
+	"--add-host=runner-engine:172.28.240.3"
 
 type Worker struct {
 	store    *Store
@@ -47,6 +52,15 @@ type Worker struct {
 }
 
 func NewWorker(store *Store, config WorkerConfig, logger *slog.Logger) (*Worker, error) {
+	if config.CredentialProvider == nil {
+		return nil, errors.New("repository-scoped Lore credential provider is required")
+	}
+	if strings.TrimSpace(config.ProxyURL) == "" {
+		return nil, errors.New("runner forward proxy URL is required")
+	}
+	if strings.TrimSpace(config.EngineProxyURL) == "" {
+		return nil, errors.New("engine forward proxy URL is required")
+	}
 	for _, directory := range []string{config.WorkDir, config.LogDir, config.ArtifactDir} {
 		if err := os.MkdirAll(directory, 0o750); err != nil {
 			return nil, fmt.Errorf("create runner directory %q: %w", directory, err)
@@ -231,6 +245,11 @@ func (worker *Worker) runJob(ctx context.Context, job Job, logKey string) (strin
 	if err := validateWorkflowFile(workflowPath); err != nil {
 		return logKey, nil, err
 	}
+	jobNetwork, err := worker.createJobNetwork(ctx, job.ID)
+	if err != nil {
+		return logKey, nil, err
+	}
+	defer cleanupJobNetwork(jobNetwork)
 	arguments := []string{
 		job.EventName,
 		"--directory", repositoryPath,
@@ -240,13 +259,23 @@ func (worker *Worker) runJob(ctx context.Context, job Job, logKey string) (strin
 		"--artifact-server-addr", "0.0.0.0",
 		"--container-daemon-socket", "-",
 		"--container-architecture", "linux/amd64",
-		"--network", "bridge",
+		"--network", jobNetwork.networkName,
 		"--no-cache-server",
 		"--platform", "ubuntu-latest=node:22-bookworm-slim",
 		"--rm",
 		"--env", "LOREHUB_LORE_REVISION=" + job.Revision,
 	}
 	arguments = append(arguments, "--container-options", containerOptions)
+	for _, variable := range []string{
+		"HTTP_PROXY=" + jobNetwork.proxyURL,
+		"HTTPS_PROXY=" + jobNetwork.proxyURL,
+		"http_proxy=" + jobNetwork.proxyURL,
+		"https_proxy=" + jobNetwork.proxyURL,
+		"NO_PROXY=",
+		"no_proxy=",
+	} {
+		arguments = append(arguments, "--env", variable)
+	}
 	act := exec.CommandContext(ctx, worker.config.ActBinary, arguments...)
 	act.Stdout = logWriter
 	act.Stderr = logWriter
@@ -294,11 +323,18 @@ func runAct(ctx context.Context, act *exec.Cmd) error {
 }
 
 func (worker *Worker) cloneRevision(ctx context.Context, job Job, destination string, output io.Writer) error {
+	identity, err := worker.config.CredentialProvider.Read(ctx, CredentialSubject{
+		RepositoryID: job.RepositoryID,
+		LoreURL:      job.LoreURL,
+	}, ReadLoreScope)
+	if err != nil {
+		return fmt.Errorf("read repository Lore credential: %w", err)
+	}
 	if worker.config.RevisionClient != nil {
 		err := worker.config.RevisionClient.CloneRevision(ctx, loreclient.RepositoryRef{
 			CacheKey: job.RepositoryID,
 			URL:      job.LoreURL,
-		}, worker.config.LoreIdentity, job.Revision, destination)
+		}, identity, job.Revision, destination)
 		if err != nil {
 			return fmt.Errorf("clone Lore revision: %w", err)
 		}
@@ -478,6 +514,12 @@ func safeEnvironment() []string {
 		"DOCKER_CONFIG",
 		"XDG_RUNTIME_DIR",
 		"TMPDIR",
+		"HTTP_PROXY",
+		"HTTPS_PROXY",
+		"http_proxy",
+		"https_proxy",
+		"NO_PROXY",
+		"no_proxy",
 	}
 	environment := make([]string, 0, len(allowed))
 	for _, key := range allowed {

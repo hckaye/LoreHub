@@ -70,6 +70,7 @@ func TestLoadInteractiveAuthenticationUsesSecureProductionCookie(t *testing.T) {
 	t.Setenv("LOREHUB_AUTH_SECRET", strings.Repeat("a", 32))
 	t.Setenv("LOREHUB_SESSION_TTL", "24h")
 	t.Setenv("LOREHUB_LOGIN_TRANSACTION_TTL", "10m")
+	t.Setenv("LOREHUB_LORE_CREDENTIAL_DIR", t.TempDir())
 
 	settings, err := Load()
 	if err != nil {
@@ -92,9 +93,36 @@ func TestLoadRejectsInvalidLoginBindingCookieName(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsDevelopmentLoreIdentityOutsideDevelopment(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("LOREHUB_ENV", "production")
+	t.Setenv("LOREHUB_DEV_ALLOW_LORE_IDENTITY_FALLBACK", "true")
+	t.Setenv("LOREHUB_DEV_LORE_IDENTITY", "development-only")
+
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "development-only Lore identity fallback") {
+		t.Fatalf("expected development-only Lore identity to fail closed, got %v", err)
+	}
+}
+
+func TestLoadRequiresExplicitDevelopmentLoreIdentity(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("LOREHUB_DEV_ALLOW_LORE_IDENTITY_FALLBACK", "true")
+	t.Setenv("LOREHUB_DEV_LORE_IDENTITY", "")
+
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "LOREHUB_DEV_LORE_IDENTITY") {
+		t.Fatalf("expected an explicit development Lore identity, got %v", err)
+	}
+}
+
 func setRequiredEnvironment(t *testing.T) {
 	t.Helper()
 	t.Setenv("DATABASE_URL", "postgres://localhost/lorehub")
+	t.Setenv("LOREHUB_ENV", "development")
+	t.Setenv("LOREHUB_LORE_CREDENTIAL_DIR", "")
+	t.Setenv("LOREHUB_DEV_ALLOW_LORE_IDENTITY_FALLBACK", "")
+	t.Setenv("LOREHUB_DEV_LORE_IDENTITY", "")
 	t.Setenv("LOREHUB_OIDC_ISSUER", "")
 	t.Setenv("LOREHUB_OIDC_AUDIENCE", "")
 	t.Setenv("LOREHUB_OIDC_CLIENT_ID", "")

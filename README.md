@@ -94,14 +94,16 @@ Keycloakの構成、ソーシャルプロバイダー、SMTP、本番のTLSと�
 docker compose -f infra/compose.yaml --profile runner up --build
 ```
 
-runner profileは、ホストのDocker socketを使わず、runner専用のDocker-in-Docker engine（`docker:29.4.0-dind`）へ
-mTLS（2376）で接続します。rootless版はnested bridgeからホスト側のサービスネットワークへ到達できることを確認したため、
-この構成では採用していません。
-runner-dataにはrunner、PostgreSQL、Lore、APIだけを接続し、
-runner-controlにはrunnerとengineだけを接続します。engineだけがrunner-egressへ接続し、API／Webは
-runner-controlへ接続しません。job containerには特権、host network、host mount、Docker client証明書を渡しません。
-任意コードを実行するため、信頼ドメインごとにAPIとは別の専用・短命なrunner基盤へ配置し、CPU、メモリ、PID、ログ、
-成果物の制限を維持してください。検証方法は[runner運用ドキュメント](docs/runner-actions.md)を参照してください。
+runner profileは、ホストのDocker socketを使わず、runner専用のrootless Docker-in-Docker engine
+（`docker:29.4.0-dind-rootless`）へmTLS（2376）で接続します。runner-data、runner-control、runner-egressを
+internal networkとして分離し、engineはrunner-dataへ接続しません。外向きのuplinkを持つのは専用forward
+proxyだけで、engine、runner、jobのimage pull、action download、HTTP/HTTPSはproxyを通ります。job container
+には特権、host network、host mount、Docker client証明書を渡しません。
+
+Docker Desktopなどcgroupがない環境では、ComposeのCPU、メモリ、PID上限はouter engine全体の上限であり、job
+ごとのsecurity limitではありません。任意コードを実行するため、本番では信頼ドメインごとにAPIとは別の専用・
+使い捨てrunner node／podと、gVisor、Kata等の検証済み隔離層を必須にしてください。検証方法は
+[runner運用ドキュメント](docs/runner-actions.md)を参照してください。
 
 ## ホスト上での開発
 
@@ -144,8 +146,9 @@ transactionは最大15分）。
 `GET /auth/login?prompt=create`を使います。互換性のため`kc_action=register`も受け付けますが、値は厳密に検証し、
 認証プロバイダーへは`prompt=create`だけを渡します。その他の`prompt`や`kc_action`は400を返します。
 
-Lore側の読み取りidentityは現在`LOREHUB_LORE_IDENTITY`で指定します。これはjobごとの最小権限credentialではありません。
-control-plane auth unitがcredential providerを接続するまで、設定したidentityを信頼ドメイン全体の権限として扱ってください。
+Lore側の読み取りはrepository partitionと`read` scopeを受けるcredential providerを通します。本番では
+`LOREHUB_LORE_CREDENTIAL_DIR`が必須で、`<repository-id>/read`だけを読み取ります。開発用identity fallbackは
+development/local以外では拒否し、明示的なopt-inとidentityの両方がある場合だけ許可します。
 
 Keycloakを使う場合、ローカルのissuerは
 `http://keycloak.localhost:8280/realms/lorehub`、audienceは`lorehub-api`です。本番では公開HTTPSのissuerを設定します。

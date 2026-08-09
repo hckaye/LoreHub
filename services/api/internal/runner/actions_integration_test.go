@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -37,7 +38,8 @@ func TestActionsLifecyclePostgres(t *testing.T) {
 	artifactDirectory := t.TempDir()
 	store := NewStoreWithFiles(pool, logDirectory, artifactDirectory)
 	repository := Repository{
-		ID: fixture.repositoryID, Owner: fixture.owner, Slug: fixture.repositorySlug, LoreURL: "lore://fixture/repository",
+		ID: fixture.repositoryID, Owner: fixture.owner, Slug: fixture.repositorySlug,
+		LoreURL: "lore://fixture/repository", DefaultBranch: "main",
 	}
 	initial := []WorkflowDefinition{
 		workflowDefinition(".github/workflows/checks.yml", "Checks", []string{"main"}, false),
@@ -83,15 +85,17 @@ func TestActionsLifecyclePostgres(t *testing.T) {
 	if !queued {
 		t.Fatal("revision update did not queue a matching push run")
 	}
-	runs, total, err := store.ListActionRuns(ctx, fixture.owner, fixture.repositorySlug, fixture.userID, RunFilter{
+	runPage, err := store.ListActionRuns(ctx, fixture.owner, fixture.repositorySlug, fixture.userID, RunFilter{
 		Status: "queued", PerPage: 10,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if total != 1 || len(runs) != 1 || runs[0].WorkflowPath != ".github/workflows/checks.yml" {
-		t.Fatalf("unexpected workflow-specific push run: total=%d runs=%#v", total, runs)
+	if runPage.Total != 1 || len(runPage.Runs) != 1 ||
+		runPage.Runs[0].WorkflowPath != ".github/workflows/checks.yml" {
+		t.Fatalf("unexpected workflow-specific push run: total=%d runs=%#v", runPage.Total, runPage.Runs)
 	}
+	pushRun := runPage.Runs[0]
 	var disabled bool
 	if err := pool.QueryRow(ctx, `
 		SELECT state = 'disabled' FROM ci_workflows
@@ -107,6 +111,11 @@ func TestActionsLifecyclePostgres(t *testing.T) {
 	} else if workflowCount != 3 {
 		t.Fatalf("invalid workflow was not synchronized: %d workflows", workflowCount)
 	}
+	workflowPage, err := store.ListWorkflows(ctx, fixture.owner, fixture.repositorySlug, fixture.userID,
+		PageRequest{Page: 1, PerPage: 1})
+	if err != nil || len(workflowPage.Workflows) != 1 || workflowPage.Total != 3 || !workflowPage.HasMore {
+		t.Fatalf("workflow pagination was incorrect: %#v, %v", workflowPage, err)
+	}
 
 	access, err := store.RepositoryForActions(ctx, fixture.owner, fixture.repositorySlug, fixture.userID)
 	if err != nil || !access.CanRead || !access.CanWrite {
@@ -117,6 +126,12 @@ func TestActionsLifecyclePostgres(t *testing.T) {
 		fixture.userID)
 	if err != nil {
 		t.Fatal(err)
+	}
+	runPage, err = store.ListActionRuns(ctx, fixture.owner, fixture.repositorySlug, fixture.userID, RunFilter{
+		PerPage: 1,
+	})
+	if err != nil || len(runPage.Runs) != 1 || runPage.Total != 2 || !runPage.HasMore {
+		t.Fatalf("run pagination was incorrect: %#v, %v", runPage, err)
 	}
 	if dispatched.EventName != "workflow_dispatch" || dispatched.RunAttempt != 1 {
 		t.Fatalf("unexpected dispatch run: %#v", dispatched)
@@ -137,7 +152,7 @@ func TestActionsLifecyclePostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	preloaded, err := store.ClaimJob(ctx, "preloaded-worker", time.Minute)
-	if err != nil || preloaded == nil || preloaded.RunID != runs[0].ID {
+	if err != nil || preloaded == nil || preloaded.RunID != pushRun.ID {
 		t.Fatalf("could not prepare the first queued job: job=%#v error=%v", preloaded, err)
 	}
 	raceJob, err := store.ClaimJob(ctx, "race-worker", time.Minute)
@@ -177,7 +192,7 @@ func TestActionsLifecyclePostgres(t *testing.T) {
 		t.Fatalf("cancellation race left an invalid aggregate state: %s/%s", raceStatus, raceConclusion)
 	}
 
-	original := runs[0]
+	original := pushRun
 	if _, err := pool.Exec(ctx, `
 		UPDATE ci_jobs SET status = 'completed', conclusion = 'success', completed_at = now()
 		WHERE run_id = $1
@@ -280,7 +295,7 @@ func TestActionsLifecyclePostgres(t *testing.T) {
 		"UPDATE repositories SET visibility = 'public' WHERE id = $1", fixture.repositoryID); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := store.ListActionRuns(ctx, fixture.owner, fixture.repositorySlug, "", RunFilter{}); err != nil {
+	if _, err := store.ListActionRuns(ctx, fixture.owner, fixture.repositorySlug, "", RunFilter{}); err != nil {
 		t.Fatalf("public run metadata was not readable anonymously: %v", err)
 	}
 	publicLog, err := store.OpenActionJobLog(ctx, fixture.owner, fixture.repositorySlug, recovered.ID, "")
@@ -321,6 +336,271 @@ func TestActionsLifecyclePostgres(t *testing.T) {
 	if _, err := store.OpenActionArtifact(ctx, fixture.owner, fixture.repositorySlug,
 		unsafeArtifactID, fixture.userID); err == nil {
 		t.Fatal("artifact path escape was accepted")
+	}
+}
+
+func TestFeatureBranchCannotChangeActionsCatalogPostgres(t *testing.T) {
+	databaseURL := os.Getenv("LOREHUB_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("LOREHUB_TEST_DATABASE_URL is not configured")
+	}
+	ctx := context.Background()
+	pool, err := database.Open(ctx, databaseURL, 10*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if err := database.Migrate(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	fixture := newActionsFixture(t, pool)
+	defer fixture.cleanup(t)
+	store := NewStoreWithFiles(pool, t.TempDir(), t.TempDir())
+	repository := Repository{
+		ID: fixture.repositoryID, Owner: fixture.owner, Slug: fixture.repositorySlug,
+		LoreURL: "lore://fixture/repository", DefaultBranch: "main",
+	}
+	canonical := workflowDefinition(".github/workflows/checks.yml", "Checks", []string{"main"}, true)
+	defaultOnly := workflowDefinition(".github/workflows/default.yml", "Default", []string{"main"}, false)
+	if _, err := store.ObserveBranch(ctx, repository, ObservedBranch{
+		ID: "main", Name: "main", LatestRevision: "default-1",
+	}, canonical, defaultOnly); err != nil {
+		t.Fatal(err)
+	}
+	featureAdded := workflowDefinition(".github/workflows/feature.yml", "Feature", []string{"feature"}, false)
+	featureInvalid := WorkflowDefinition{
+		Path: ".github/workflows/invalid.yml", Name: "Invalid", Enabled: false, State: "error",
+		ErrorCode: "unsupported_trigger", ErrorMessage: "pull_request is not supported",
+		TriggerConfig: json.RawMessage(`{}`),
+	}
+	featureCanonical := workflowDefinition(".github/workflows/checks.yml", "Feature Checks", []string{"feature"}, true)
+	if queued, err := store.ObserveBranch(ctx, repository, ObservedBranch{
+		ID: "feature", Name: "feature", LatestRevision: "feature-1",
+	}, featureCanonical, featureAdded, featureInvalid); err != nil {
+		t.Fatal(err)
+	} else if queued {
+		t.Fatal("initial feature observation invented a push run")
+	}
+	var catalogCount int
+	if err := pool.QueryRow(ctx, "SELECT COUNT(*) FROM ci_workflows WHERE repository_id = $1", fixture.repositoryID).
+		Scan(&catalogCount); err != nil {
+		t.Fatal(err)
+	}
+	if catalogCount != 2 {
+		t.Fatalf("feature branch changed canonical catalog: %d", catalogCount)
+	}
+	featureCanonical.Name = "Feature Checks v2"
+	if queued, err := store.ObserveBranch(ctx, repository, ObservedBranch{
+		ID: "feature", Name: "feature", LatestRevision: "feature-2",
+	}, featureCanonical, featureAdded); err != nil {
+		t.Fatal(err)
+	} else if !queued {
+		t.Fatal("feature revision did not queue supported workflows")
+	}
+	var catalogName string
+	if err := pool.QueryRow(ctx, `
+		SELECT name FROM ci_workflows WHERE repository_id = $1 AND path = '.github/workflows/checks.yml'
+	`, fixture.repositoryID).Scan(&catalogName); err != nil {
+		t.Fatal(err)
+	}
+	if catalogName != "Checks" {
+		t.Fatalf("feature workflow overwrote canonical name: %q", catalogName)
+	}
+	page, err := store.ListActionRuns(ctx, fixture.owner, fixture.repositorySlug, fixture.userID, RunFilter{
+		PerPage: 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 2 || len(page.Runs) != 2 {
+		t.Fatalf("feature workflow runs were not independent: %#v", page)
+	}
+	var revisionRunCount int
+	if err := pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM ci_runs WHERE repository_id = $1 AND workflow_revision_id IS NOT NULL
+	`, fixture.repositoryID).Scan(&revisionRunCount); err != nil {
+		t.Fatal(err)
+	}
+	if revisionRunCount != 2 {
+		t.Fatalf("feature runs did not retain exact workflow revisions: %d", revisionRunCount)
+	}
+	access, err := store.RepositoryForActions(ctx, fixture.owner, fixture.repositorySlug, fixture.userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DispatchWorkflow(ctx, access, featureAdded.Path, "feature", "feature-2", []byte(`{}`),
+		fixture.userID); err != ErrActionNotFound {
+		t.Fatalf("feature-only workflow was dispatchable from catalog: %v", err)
+	}
+	if _, err := store.ObserveBranch(ctx, repository, ObservedBranch{
+		ID: "main", Name: "main", LatestRevision: "default-2",
+	}, canonical); err != nil {
+		t.Fatal(err)
+	}
+	var disabled bool
+	if err := pool.QueryRow(ctx, `
+		SELECT state = 'disabled' FROM ci_workflows
+		WHERE repository_id = $1 AND path = '.github/workflows/default.yml'
+	`, fixture.repositoryID).Scan(&disabled); err != nil {
+		t.Fatal(err)
+	}
+	if !disabled {
+		t.Fatal("default branch removal did not disable canonical workflow")
+	}
+}
+
+func TestActionsPermissionMatrixPostgres(t *testing.T) {
+	databaseURL := os.Getenv("LOREHUB_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("LOREHUB_TEST_DATABASE_URL is not configured")
+	}
+	ctx := context.Background()
+	pool, err := database.Open(ctx, databaseURL, 10*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if err := database.Migrate(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	fixture := newActionsFixture(t, pool)
+	defer fixture.cleanup(t)
+	store := NewStore(pool)
+	readUser := uuid.NewString()
+	writeUser := uuid.NewString()
+	teamUser := uuid.NewString()
+	orgMember := uuid.NewString()
+	suspendedUser := uuid.NewString()
+	inactiveRepositoryUser := uuid.NewString()
+	inactiveTeamUser := uuid.NewString()
+	inactiveOrgUser := uuid.NewString()
+	for _, userID := range []string{
+		readUser, writeUser, teamUser, orgMember, suspendedUser,
+		inactiveRepositoryUser, inactiveTeamUser, inactiveOrgUser,
+	} {
+		_, err := pool.Exec(ctx, `
+			INSERT INTO users (id, username, display_name, status)
+			VALUES ($1, $2, 'Actions Matrix', $3)
+		`, userID, "matrix-"+strings.ToLower(uuid.NewString()[:8]),
+			map[bool]string{true: "suspended", false: "active"}[userID == suspendedUser])
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	defer func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM users WHERE id = ANY($1::uuid[])`,
+			[]string{readUser, writeUser, teamUser, orgMember, suspendedUser,
+				inactiveRepositoryUser, inactiveTeamUser, inactiveOrgUser})
+	}()
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO repository_memberships (repository_id, user_id, role) VALUES
+		($1, $2, 'read'), ($1, $3, 'write'), ($1, $4, 'admin'), ($1, $5, 'read')
+	`, fixture.repositoryID, readUser, writeUser, suspendedUser, inactiveRepositoryUser); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `
+		UPDATE repository_memberships SET active = false WHERE repository_id = $1 AND user_id = $2
+	`, fixture.repositoryID, inactiveRepositoryUser); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO organization_memberships (organization_id, user_id, role)
+		VALUES ($1, $2, 'maintainer'), ($1, $3, 'member'), ($1, $4, 'member'), ($1, $5, 'member')
+	`, fixture.organizationID, orgMember, teamUser, inactiveTeamUser, inactiveOrgUser); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `
+		UPDATE organization_memberships SET active = false WHERE organization_id = $1 AND user_id = $2
+	`, fixture.organizationID, inactiveOrgUser); err != nil {
+		t.Fatal(err)
+	}
+	teamID := uuid.NewString()
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO teams (id, organization_id, slug, display_name) VALUES ($1, $2, 'actions-team', 'Actions Team')
+	`, teamID, fixture.organizationID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO team_memberships (team_id, user_id, role) VALUES
+		($1, $2, 'member'), ($1, $3, 'member')
+	`, teamID, teamUser, inactiveTeamUser); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `
+		UPDATE team_memberships SET active = false WHERE team_id = $1 AND user_id = $2
+	`, teamID, inactiveTeamUser); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO team_repositories (team_id, repository_id, role) VALUES ($1, $2, 'write')
+	`, teamID, fixture.repositoryID); err != nil {
+		t.Fatal(err)
+	}
+	privateCases := []struct {
+		name     string
+		actorID  string
+		read     bool
+		write    bool
+		notFound bool
+	}{
+		{name: "anonymous private", actorID: "", notFound: true},
+		{name: "outsider private", actorID: uuid.NewString(), notFound: true},
+		{name: "direct read", actorID: readUser, read: true},
+		{name: "direct write", actorID: writeUser, read: true, write: true},
+		{name: "team write", actorID: teamUser, read: true, write: true},
+		{name: "active org member private", actorID: orgMember, notFound: true},
+		{name: "suspended direct member", actorID: suspendedUser, notFound: true},
+		{name: "inactive repository membership", actorID: inactiveRepositoryUser, notFound: true},
+		{name: "inactive team membership", actorID: inactiveTeamUser, notFound: true},
+		{name: "inactive organization membership", actorID: inactiveOrgUser, notFound: true},
+		{name: "repository owner", actorID: fixture.userID, read: true, write: true},
+	}
+	for _, testCase := range privateCases {
+		access, accessErr := store.RepositoryForActions(ctx, fixture.owner, fixture.repositorySlug, testCase.actorID)
+		if testCase.notFound {
+			if !errors.Is(accessErr, ErrActionNotFound) {
+				t.Fatalf("%s: error=%v, want 404-equivalent", testCase.name, accessErr)
+			}
+			continue
+		}
+		if accessErr != nil || access.CanRead != testCase.read || access.CanWrite != testCase.write {
+			t.Fatalf("%s: access=%#v error=%v", testCase.name, access, accessErr)
+		}
+	}
+	internalSlug := "internal-" + strings.ToLower(uuid.NewString()[:8])
+	internalID := uuid.NewString()
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO repositories (
+			id, organization_id, slug, display_name, visibility, lore_repository_id, lore_url, default_branch, created_by
+		) VALUES ($1, $2, $3, 'Internal', 'internal', $4, $5, 'main', $6)
+		`, internalID, fixture.organizationID, internalSlug, "lore-"+internalID,
+		"lore://"+internalID, fixture.userID); err != nil {
+		t.Fatal(err)
+	}
+	access, err := store.RepositoryForActions(ctx, fixture.owner, internalSlug, "")
+	if !errors.Is(err, ErrActionNotFound) || access.CanRead {
+		t.Fatalf("anonymous internal repository was readable: %#v, %v", access, err)
+	}
+	access, err = store.RepositoryForActions(ctx, fixture.owner, internalSlug, orgMember)
+	if err != nil || !access.CanRead || access.CanWrite {
+		t.Fatalf("active org member internal access was wrong: %#v, %v", access, err)
+	}
+	access, err = store.RepositoryForActions(ctx, fixture.owner, internalSlug, inactiveOrgUser)
+	if !errors.Is(err, ErrActionNotFound) || access.CanRead {
+		t.Fatalf("inactive org member internal access was readable: %#v, %v", access, err)
+	}
+	publicSlug := "public-" + strings.ToLower(uuid.NewString()[:8])
+	publicID := uuid.NewString()
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO repositories (
+			id, organization_id, slug, display_name, visibility, lore_repository_id, lore_url, default_branch, created_by
+		) VALUES ($1, $2, $3, 'Public', 'public', $4, $5, 'main', $6)
+	`, publicID, fixture.organizationID, publicSlug, "lore-"+publicID, "lore://"+publicID, fixture.userID); err != nil {
+		t.Fatal(err)
+	}
+	access, err = store.RepositoryForActions(ctx, fixture.owner, publicSlug, "")
+	if err != nil || !access.CanRead || access.CanWrite {
+		t.Fatalf("anonymous public access was wrong: %#v, %v", access, err)
 	}
 }
 

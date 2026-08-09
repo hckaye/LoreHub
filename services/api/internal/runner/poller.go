@@ -15,21 +15,30 @@ type BranchClient interface {
 }
 
 type Poller struct {
-	store    *Store
-	lore     BranchClient
-	identity string
-	period   time.Duration
-	logger   *slog.Logger
+	store       *Store
+	lore        BranchClient
+	credentials CredentialProvider
+	period      time.Duration
+	logger      *slog.Logger
 }
 
 func NewPoller(
 	store *Store,
 	lore BranchClient,
-	identity string,
+	credentials CredentialProvider,
 	period time.Duration,
 	logger *slog.Logger,
 ) *Poller {
-	return &Poller{store: store, lore: lore, identity: identity, period: period, logger: logger}
+	if credentials == nil {
+		credentials = missingCredentialProvider{}
+	}
+	return &Poller{store: store, lore: lore, credentials: credentials, period: period, logger: logger}
+}
+
+type missingCredentialProvider struct{}
+
+func (missingCredentialProvider) Read(context.Context, CredentialSubject, string) (string, error) {
+	return "", fmt.Errorf("repository-scoped Lore credential provider is not configured")
 }
 
 func (poller *Poller) Run(ctx context.Context) error {
@@ -56,10 +65,22 @@ func (poller *Poller) poll(ctx context.Context) error {
 		return err
 	}
 	for _, repository := range repositories {
+		identity, err := poller.credentials.Read(ctx, CredentialSubject{
+			RepositoryID: repository.ID,
+			LoreURL:      repository.LoreURL,
+		}, ReadLoreScope)
+		if err != nil {
+			poller.logger.Error(
+				"could not read repository Lore credential",
+				"repository", repository.Owner+"/"+repository.Slug,
+				"error", err,
+			)
+			continue
+		}
 		branches, err := poller.lore.Branches(ctx, loreclient.RepositoryRef{
 			CacheKey: repository.ID,
 			URL:      repository.LoreURL,
-		}, poller.identity)
+		}, identity)
 		if err != nil {
 			poller.logger.Error(
 				"could not read Lore branches",
@@ -74,29 +95,26 @@ func (poller *Poller) poll(ctx context.Context) error {
 			}
 			var workflows []WorkflowDefinition
 			revisionClient, canInspectRevision := poller.lore.(loreclient.RevisionClient)
-			if canInspectRevision {
-				workspace, err := os.MkdirTemp("", "lorehub-workflow-")
-				if err != nil {
-					return fmt.Errorf("create workflow inspection workspace: %w", err)
-				}
-				cloneErr := revisionClient.CloneRevision(ctx, loreclient.RepositoryRef{
-					CacheKey: repository.ID,
-					URL:      repository.LoreURL,
-				}, poller.identity, branch.LatestRevision, workspace)
-				if cloneErr == nil {
-					workflows, cloneErr = DiscoverWorkflows(workspace)
-				}
-				removeErr := os.RemoveAll(workspace)
-				if cloneErr != nil {
-					return fmt.Errorf("inspect workflows at Lore revision %s: %w", branch.LatestRevision, cloneErr)
-				}
-				if removeErr != nil {
-					return fmt.Errorf("remove workflow inspection workspace: %w", removeErr)
-				}
-			} else {
-				poller.logger.Warn("Lore client cannot inspect revision workflows; branch state was not scheduled",
-					"repository", repository.Owner+"/"+repository.Slug, "branch", branch.Name)
-				workflows = nil
+			if !canInspectRevision {
+				return fmt.Errorf("Lore client cannot inspect workflows at exact revisions")
+			}
+			workspace, err := os.MkdirTemp("", "lorehub-workflow-")
+			if err != nil {
+				return fmt.Errorf("create workflow inspection workspace: %w", err)
+			}
+			cloneErr := revisionClient.CloneRevision(ctx, loreclient.RepositoryRef{
+				CacheKey: repository.ID,
+				URL:      repository.LoreURL,
+			}, identity, branch.LatestRevision, workspace)
+			if cloneErr == nil {
+				workflows, cloneErr = DiscoverWorkflows(workspace)
+			}
+			removeErr := os.RemoveAll(workspace)
+			if cloneErr != nil {
+				return fmt.Errorf("inspect workflows at Lore revision %s: %w", branch.LatestRevision, cloneErr)
+			}
+			if removeErr != nil {
+				return fmt.Errorf("remove workflow inspection workspace: %w", removeErr)
 			}
 			queued, err := poller.store.ObserveBranch(ctx, repository, ObservedBranch{
 				ID:             branch.ID,

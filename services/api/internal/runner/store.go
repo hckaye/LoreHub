@@ -13,10 +13,11 @@ import (
 )
 
 type Repository struct {
-	ID      string
-	Owner   string
-	Slug    string
-	LoreURL string
+	ID            string
+	Owner         string
+	Slug          string
+	LoreURL       string
+	DefaultBranch string
 }
 
 type ObservedBranch struct {
@@ -66,7 +67,7 @@ func NewStoreWithFiles(pool *pgxpool.Pool, logDirectory string, artifactDirector
 
 func (store *Store) Repositories(ctx context.Context) ([]Repository, error) {
 	rows, err := store.pool.Query(ctx, `
-		SELECT r.id, o.slug, r.slug, r.lore_url
+		SELECT r.id, o.slug, r.slug, r.lore_url, r.default_branch
 		FROM repositories r
 		JOIN organizations o ON o.id = r.organization_id
 		WHERE r.archived_at IS NULL
@@ -79,7 +80,8 @@ func (store *Store) Repositories(ctx context.Context) ([]Repository, error) {
 	repositories := make([]Repository, 0)
 	for rows.Next() {
 		var repository Repository
-		if err := rows.Scan(&repository.ID, &repository.Owner, &repository.Slug, &repository.LoreURL); err != nil {
+		if err := rows.Scan(&repository.ID, &repository.Owner, &repository.Slug, &repository.LoreURL,
+			&repository.DefaultBranch); err != nil {
 			return nil, fmt.Errorf("scan repository for branch polling: %w", err)
 		}
 		repositories = append(repositories, repository)
@@ -96,6 +98,7 @@ func (store *Store) ObserveBranch(
 	branch ObservedBranch,
 	workflows ...WorkflowDefinition,
 ) (bool, error) {
+	canonical := branch.Name == repository.DefaultBranch
 	transaction, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return false, fmt.Errorf("begin branch observation: %w", err)
@@ -119,7 +122,13 @@ func (store *Store) ObserveBranch(
 			return false, fmt.Errorf("record initial branch state: %w", err)
 		}
 		if workflows != nil {
-			if err := store.syncWorkflows(ctx, transaction, repository, branch.LatestRevision, workflows); err != nil {
+			if canonical {
+				if err := store.syncWorkflows(ctx, transaction, repository, branch.LatestRevision, workflows); err != nil {
+					return false, err
+				}
+			} else if _, err := store.syncWorkflowRevisions(
+				ctx, transaction, repository, branch.LatestRevision, workflows,
+			); err != nil {
 				return false, err
 			}
 		}
@@ -155,10 +164,22 @@ func (store *Store) ObserveBranch(
 		return false, fmt.Errorf("update branch state: %w", err)
 	}
 	if workflows != nil {
-		if err := store.syncWorkflows(ctx, transaction, repository, branch.LatestRevision, workflows); err != nil {
-			return false, err
+		var revisionWorkflowIDs map[string]uuid.UUID
+		if canonical {
+			if err := store.syncWorkflows(ctx, transaction, repository, branch.LatestRevision, workflows); err != nil {
+				return false, err
+			}
+		} else {
+			revisionWorkflowIDs, err = store.syncWorkflowRevisions(
+				ctx, transaction, repository, branch.LatestRevision, workflows,
+			)
+			if err != nil {
+				return false, err
+			}
 		}
-		if err := store.enqueuePushes(ctx, transaction, repository, branch, previous, workflows); err != nil {
+		if err := store.enqueuePushes(
+			ctx, transaction, repository, branch, previous, workflows, canonical, revisionWorkflowIDs,
+		); err != nil {
 			return false, err
 		}
 	}
@@ -166,6 +187,52 @@ func (store *Store) ObserveBranch(
 		return false, fmt.Errorf("commit branch observation: %w", err)
 	}
 	return true, nil
+}
+
+func (store *Store) syncWorkflowRevisions(
+	ctx context.Context,
+	transaction pgx.Tx,
+	repository Repository,
+	revision string,
+	workflows []WorkflowDefinition,
+) (map[string]uuid.UUID, error) {
+	workflowIDs := make(map[string]uuid.UUID, len(workflows))
+	for _, workflow := range workflows {
+		if workflow.Path == "" {
+			continue
+		}
+		state := workflow.State
+		if state == "" {
+			state = "active"
+			if !workflow.Enabled {
+				state = "disabled"
+			}
+		}
+		triggerConfig := workflow.TriggerConfig
+		if len(triggerConfig) == 0 {
+			triggerConfig = json.RawMessage(`{}`)
+		}
+		id := uuid.New()
+		err := transaction.QueryRow(ctx, `
+			INSERT INTO ci_workflow_revisions (
+				id, repository_id, revision, path, name, enabled, state, error_code, error_message, trigger_config
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, NULLIF($8, ''), NULLIF($9, ''), $10)
+			ON CONFLICT (repository_id, revision, path) DO UPDATE SET
+				name = EXCLUDED.name,
+				enabled = EXCLUDED.enabled,
+				state = EXCLUDED.state,
+				error_code = EXCLUDED.error_code,
+				error_message = EXCLUDED.error_message,
+				trigger_config = EXCLUDED.trigger_config
+			RETURNING id
+		`, id, repository.ID, revision, workflow.Path, workflow.Name, workflow.Enabled, state,
+			workflow.ErrorCode, workflow.ErrorMessage, triggerConfig).Scan(&id)
+		if err != nil {
+			return nil, fmt.Errorf("upsert Lore workflow revision %q: %w", workflow.Path, err)
+		}
+		workflowIDs[workflow.Path] = id
+	}
+	return workflowIDs, nil
 }
 
 func (store *Store) syncWorkflows(
@@ -233,6 +300,8 @@ func (store *Store) enqueuePushes(
 	branch ObservedBranch,
 	previousRevision string,
 	workflows []WorkflowDefinition,
+	canonical bool,
+	revisionWorkflowIDs map[string]uuid.UUID,
 ) error {
 	payload, err := json.Marshal(map[string]any{
 		"ref":    "refs/heads/" + branch.Name,
@@ -251,14 +320,25 @@ func (store *Store) enqueuePushes(
 			continue
 		}
 		var workflowID string
-		err := transaction.QueryRow(ctx, `
-			SELECT id FROM ci_workflows WHERE repository_id = $1 AND path = $2
-		`, repository.ID, workflow.Path).Scan(&workflowID)
-		if err != nil {
-			return fmt.Errorf("find CI workflow %q: %w", workflow.Path, err)
+		var revisionWorkflowID *uuid.UUID
+		if canonical {
+			if err := transaction.QueryRow(ctx, `
+				SELECT id FROM ci_workflows WHERE repository_id = $1 AND path = $2
+			`, repository.ID, workflow.Path).Scan(&workflowID); err != nil {
+				return fmt.Errorf("find CI workflow %q: %w", workflow.Path, err)
+			}
+		} else {
+			id, ok := revisionWorkflowIDs[workflow.Path]
+			if !ok {
+				return fmt.Errorf("find Lore workflow revision %q", workflow.Path)
+			}
+			revisionWorkflowID = &id
+			_ = transaction.QueryRow(ctx, `
+				SELECT id FROM ci_workflows WHERE repository_id = $1 AND path = $2
+			`, repository.ID, workflow.Path).Scan(&workflowID)
 		}
-		if _, err := store.enqueueRun(ctx, transaction, repository, workflowID, workflow.Name, workflow.Path,
-			"push", branch.Name, branch.LatestRevision, payload, "", nil); err != nil {
+		if _, err := store.enqueueRun(ctx, transaction, repository, workflowID, revisionWorkflowID,
+			workflow.Name, workflow.Path, "push", branch.Name, branch.LatestRevision, payload, "", nil); err != nil {
 			return err
 		}
 	}
@@ -270,6 +350,7 @@ func (store *Store) enqueueRun(
 	transaction pgx.Tx,
 	repository Repository,
 	workflowID string,
+	workflowRevisionID *uuid.UUID,
 	workflowName string,
 	workflowPath string,
 	eventName string,
@@ -301,11 +382,12 @@ func (store *Store) enqueueRun(
 	}
 	_, err = transaction.Exec(ctx, `
 		INSERT INTO ci_runs (
-			id, repository_id, workflow_id, run_number, run_attempt, rerun_of, event_name,
+			id, repository_id, workflow_id, workflow_revision_id, run_number, run_attempt, rerun_of, event_name,
 			branch, revision, actor_id, status, event_payload
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULLIF($10, '')::uuid, 'queued', $11)
-	`, runID, repository.ID, workflowID, runNumber, runAttempt, rerunOf, eventName, branch, revision,
-		actorID, payload)
+		) VALUES ($1, $2, NULLIF($3, '')::uuid, $4, $5, $6, $7, $8, $9, $10,
+			NULLIF($11, '')::uuid, 'queued', $12)
+	`, runID, repository.ID, workflowID, workflowRevisionID, runNumber, runAttempt, rerunOf,
+		eventName, branch, revision, actorID, payload)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("enqueue CI run: %w", err)
 	}
@@ -366,11 +448,12 @@ func (store *Store) ClaimJob(ctx context.Context, workerID string, lease time.Du
 
 	var job Job
 	err = transaction.QueryRow(ctx, `
-		SELECT j.id, j.attempt, run.id, COALESCE(workflow.path, ''), r.id,
+		SELECT j.id, j.attempt, run.id, COALESCE(workflow.path, workflow_revision.path, ''), r.id,
 		       o.slug, r.slug, r.lore_url, run.revision, run.branch, run.event_name, run.event_payload
 		FROM ci_jobs j
 		JOIN ci_runs run ON run.id = j.run_id
 		LEFT JOIN ci_workflows workflow ON workflow.id = run.workflow_id
+		LEFT JOIN ci_workflow_revisions workflow_revision ON workflow_revision.id = run.workflow_revision_id
 		JOIN repositories r ON r.id = run.repository_id
 		JOIN organizations o ON o.id = r.organization_id
 		WHERE j.id = $1

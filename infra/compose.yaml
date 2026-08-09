@@ -14,7 +14,9 @@ services:
       retries: 20
     ports:
       - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
-    networks: [runner-data]
+    networks:
+      runner-data:
+        ipv4_address: 172.28.239.2
     volumes:
       - postgres-data:/var/lib/postgresql
     restart: unless-stopped
@@ -33,7 +35,9 @@ services:
       - "127.0.0.1:${LORE_P2P_HOST_PORT:-41337}:41337/tcp"
       - "127.0.0.1:${LORE_P2P_HOST_PORT:-41337}:41337/udp"
       - "127.0.0.1:${LORE_HTTP_HOST_PORT:-41339}:41339"
-    networks: [runner-data]
+    networks:
+      runner-data:
+        ipv4_address: 172.28.239.3
     volumes:
       - lore-data:/data
     restart: unless-stopped
@@ -48,7 +52,8 @@ services:
       LOREHUB_ENV: ${LOREHUB_ENV:-development}
       LOREHUB_AUTH_MODE: ${LOREHUB_AUTH_MODE:-interactive}
       LOREHUB_HTTP_ADDRESS: :8080
-      LOREHUB_LORE_IDENTITY: ${LOREHUB_LORE_IDENTITY:-}
+      LOREHUB_DEV_ALLOW_LORE_IDENTITY_FALLBACK: ${LOREHUB_DEV_ALLOW_LORE_IDENTITY_FALLBACK:-false}
+      LOREHUB_DEV_LORE_IDENTITY: ${LOREHUB_DEV_LORE_IDENTITY:-}
       LOREHUB_OIDC_ISSUER: ${LOREHUB_OIDC_ISSUER:-http://keycloak.localhost:8280/realms/lorehub}
       LOREHUB_OIDC_AUDIENCE: ${LOREHUB_OIDC_AUDIENCE:-lorehub-api}
       LOREHUB_OIDC_CLIENT_ID: ${LOREHUB_OIDC_CLIENT_ID:-lorehub-web}
@@ -109,8 +114,18 @@ services:
       DOCKER_HOST: tcp://runner-engine:2376
       DOCKER_TLS_VERIFY: "1"
       DOCKER_CERT_PATH: /etc/lorehub/docker-client
-      LOREHUB_ENV: development
-      LOREHUB_LORE_IDENTITY: ${LOREHUB_LORE_IDENTITY:-}
+      LOREHUB_ENV: ${LOREHUB_ENV:-development}
+      LOREHUB_DEV_ALLOW_LORE_IDENTITY_FALLBACK: ${LOREHUB_DEV_ALLOW_LORE_IDENTITY_FALLBACK:-false}
+      LOREHUB_DEV_LORE_IDENTITY: ${LOREHUB_DEV_LORE_IDENTITY:-}
+      LOREHUB_LORE_CREDENTIAL_DIR: ${LOREHUB_LORE_CREDENTIAL_DIR:-}
+      LOREHUB_RUNNER_PROXY_URL: http://172.28.244.10:3128
+      LOREHUB_RUNNER_ENGINE_PROXY_URL: http://172.28.241.10:3128
+      HTTP_PROXY: http://172.28.244.10:3128
+      HTTPS_PROXY: http://172.28.244.10:3128
+      http_proxy: http://172.28.244.10:3128
+      https_proxy: http://172.28.244.10:3128
+      NO_PROXY: postgres,lore,runner-engine,172.28.239.0/24,172.28.240.0/24
+      no_proxy: postgres,lore,runner-engine,172.28.239.0/24,172.28.240.0/24
       LOREHUB_LORE_CACHE_DIR: /var/lib/lorehub/runner-data/repositories
       LOREHUB_RUNNER_ARTIFACT_DIR: /var/lib/lorehub/runner-data/runner-artifacts
       LOREHUB_RUNNER_LOG_DIR: /var/lib/lorehub/runner-data/runner-logs
@@ -131,7 +146,11 @@ services:
     pids_limit: 512
     cap_drop: ["ALL"]
     security_opt: ["no-new-privileges:true"]
-    networks: [runner-data, runner-control]
+    networks:
+      runner-data: {}
+      runner-control: {}
+      runner-action:
+        ipv4_address: 172.28.244.2
     volumes:
       - runner-data:/var/lib/lorehub/runner-data
       - runner-engine-client-certs:/etc/lorehub/docker-client:ro
@@ -157,10 +176,17 @@ services:
   runner-engine:
     profiles: ["runner"]
     platform: linux/amd64
-    image: docker:29.4.0-dind
+    image: docker:29.4.0-dind-rootless
     environment:
       DOCKER_TLS_CERTDIR: /certs
       DOCKER_TLS_SAN: DNS:runner-engine
+      HTTP_PROXY: http://172.28.241.10:3128
+      HTTPS_PROXY: http://172.28.241.10:3128
+      http_proxy: http://172.28.241.10:3128
+      https_proxy: http://172.28.241.10:3128
+      NO_PROXY: runner-engine,172.28.241.10
+      no_proxy: runner-engine,172.28.241.10
+      DOCKERD_ROOTLESS_ROOTLESSKIT_NET: slirp4netns
     privileged: true
     cpus: 3
     mem_limit: 4g
@@ -172,14 +198,58 @@ services:
           docker -H tcp://127.0.0.1:2376 --tlsverify
           --tlscacert=/certs/client/ca.pem
           --tlscert=/certs/client/cert.pem
-          --tlskey=/certs/client/key.pem info >/dev/null 2>&1
+          --tlskey=/certs/client/key.pem info
+          | grep -q 'rootless'
       interval: 5s
       timeout: 5s
       retries: 30
-    networks: [runner-control, runner-egress]
+    networks:
+      runner-control:
+        ipv4_address: 172.28.240.3
+      runner-egress:
+        ipv4_address: 172.28.241.2
     volumes:
-      - runner-engine-data:/var/lib/docker
+      - runner-engine-data:/home/rootless/.local/share/docker
       - runner-engine-certs:/certs
+    depends_on:
+      runner-proxy:
+        condition: service_healthy
+
+  runner-proxy:
+    profiles: ["runner"]
+    image: ubuntu/squid:7.2-26.04_edge
+    entrypoint: ["/usr/local/bin/entrypoint.sh"]
+    command: ["-f", "/etc/squid/squid.conf", "-NYC"]
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs:
+      - /run:uid=584792,gid=584792,mode=1770
+      - /var/cache/squid:uid=584792,gid=584792,mode=1770
+      - /var/log/squid:uid=584792,gid=584792,mode=1770
+    healthcheck:
+      test: ["CMD-SHELL", "/usr/sbin/squid-gnutls -k parse -f /etc/squid/squid.conf >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      runner-egress:
+        ipv4_address: 172.28.241.10
+      runner-uplink:
+        ipv4_address: 172.28.242.10
+      runner-action:
+        ipv4_address: 172.28.244.10
+    volumes:
+      - ./runner/squid.conf:/etc/squid/squid.conf:ro
+
+  runner-canary:
+    profiles: ["runner-smoke"]
+    image: python:3.13-alpine
+    command: ["python", "-m", "http.server", "8080", "--bind", "0.0.0.0"]
+    ports:
+      - "${RUNNER_CANARY_HOST_PORT:-41337}:8080"
+    networks: [runner-canary]
+    restart: "no"
 
   runner-cert-init:
     profiles: ["runner"]
@@ -332,6 +402,29 @@ volumes:
 networks:
   runner-data:
     internal: true
+    ipam:
+      config:
+        - subnet: 172.28.239.0/24
   runner-control:
     internal: true
+    ipam:
+      config:
+        - subnet: 172.28.240.0/24
   runner-egress:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.28.241.0/24
+  runner-uplink:
+    ipam:
+      config:
+        - subnet: 172.28.242.0/24
+  runner-action:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.28.244.0/24
+  runner-canary:
+    ipam:
+      config:
+        - subnet: 172.28.243.0/24

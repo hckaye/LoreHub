@@ -1,80 +1,100 @@
 # Actions runner operations
 
-LoreHub Actions keeps `act` as the workflow engine. The runner clones the exact Lore revision, discovers the workflow
-files from that revision, validates `actions/checkout` for the Lore workspace adapter,
-and invokes `act` with one workflow file and the stored event JSON. Act's local checkout path copies the already-cloned
-Lore workspace into the remote job;
-the runner deletes the temporary workspace after every job.
+LoreHub Actions keeps `act` as the workflow engine. The runner clones the exact Lore revision, discovers only
+`.github/workflows/*.yml` and `.yaml` at that revision, validates the supported trigger and runtime definitions, and
+invokes `act` with exactly one workflow file and the stored event JSON. `actions/checkout` remains in the workflow;
+the prepared Lore workspace is copied into the remote job by the runner adapter, without Git.
 
 ## Trust boundary
 
-The default Compose profile does not start a runner and never mounts `/var/run/docker.sock`. The `runner` profile starts
-an isolated Docker-in-Docker engine using the exact `docker:29.4.0-dind` image. The engine boundary is the only
-privileged part of this setup; the runner itself is not privileged. Job containers receive fixed CPU, memory, PID,
-capability, and `no-new-privileges` limits. Jobs do not receive host mounts, host networking, or the API/web Docker
-daemon socket. The runner passes `--privileged=false` and `act --rm` so job containers are non-privileged and removed
-after the workflow.
+The default Compose profile does not start a runner and never mounts `/var/run/docker.sock`. The `runner` profile uses
+the exact `docker:29.4.0-dind-rootless` image. The engine boundary is the only privileged part of this Compose setup;
+job containers are created with `--privileged=false`, one CPU, 1 GiB memory, 256 PIDs, dropped capabilities, and
+`no-new-privileges`. These are runtime limits, not a claim that arbitrary job code is harmless.
 
-Compose uses three separate runner networks. `runner-data` contains the runner, PostgreSQL, Lore, and the trusted API;
-`runner-control` contains only the runner and the Docker engine; and `runner-egress` contains only the engine. Web stays
-on the application network. API and web do not join `runner-control`, and the engine does not join `runner-data`. Act
-job containers use the engine's disposable bridge network, so they cannot route to PostgreSQL or Lore on `runner-data`.
-Development-only PostgreSQL and Lore host ports bind to loopback; production deployments should not publish them.
+The engine exposes only Docker mTLS on 2376. The runner receives a read-only copy of the client certificate directory
+and uses `DOCKER_HOST=tcp://runner-engine:2376`, `DOCKER_TLS_VERIFY=1`, and
+`DOCKER_CERT_PATH=/etc/lorehub/docker-client` for its engine client and `act`. Job containers receive none of those
+variables or files. A job cannot call the Docker API without a client certificate, and job options cannot add daemon
+credentials, host mounts, devices, capabilities, or host namespaces.
 
-The engine listens on `2376` with Docker mTLS. The runner receives only the read-only client certificate volume and
-passes `DOCKER_HOST=tcp://runner-engine:2376`, `DOCKER_TLS_VERIFY=1`, and `DOCKER_CERT_PATH=/etc/lorehub/docker-client`
-to act. Job containers receive none of these variables or certificates. Non-empty `jobs.<job>.container.options` and
-`jobs.<job>.services.<name>.options` are unsupported and disable the workflow; other container/service fields that could
-introduce host mounts, devices, capabilities, host namespaces, or credentials are rejected as well.
+Networks are deliberately separate:
 
-The rootful engine boundary is not a claim that arbitrary job code is harmless. The rootless 29.4.0 variant was tested
-but its nested bridge could reach a host-connected service network in this environment, so it is not used here. Each
-production trust domain must use dedicated, disposable runner infrastructure separate from the LoreHub API and web
-services. Operators must apply the same network, resource, image, and host policy to that infrastructure and verify the
-engine image before promotion. The Compose engine has a separate egress network for pulling approved workflow images;
-it is not shared with the API or job data network. This is a Docker/OCI boundary, not a claim of a stronger sandbox.
+- `runner-data` is internal and contains the runner, PostgreSQL, Lore, and API.
+- `runner-control` is internal and contains only the runner and engine.
+- `runner-egress` is internal and contains only the engine and the forward proxy.
+- `runner-action` is internal and connects the runner to the same forward proxy for action downloads.
+- `runner-uplink` is the proxy's only uplink network.
 
-Lore reads currently use the shared `LOREHUB_LORE_IDENTITY` setting. This is not yet a least-privilege per-job Lore
-credential. The control-plane authentication unit will integrate the credential provider later; until then operators
-must treat the configured identity as the trust-domain identity.
+API and Web do not join `runner-control`. The engine does not join `runner-data`, and the runner has no uplink network.
+The engine pulls images through the proxy. Each job gets a disposable internal network. A small proxy gateway sidecar
+is attached to that internal network and to the engine's disposable bridge; the job sees only the sidecar's HTTP proxy
+port. The job itself has no default route. Job HTTP and HTTPS therefore pass through Squid.
+
+Squid uses the canonical `ubuntu/squid:7.2-26.04_edge` tag. It permits safe HTTP/HTTPS ports and CONNECT to 443 only.
+Its destination ACL rejects loopback, RFC1918, link-local, CGNAT, documentation and test ranges, multicast/reserved
+ranges, and IPv6 private/link-local ranges. The destination ACL is applied after Squid resolves hostnames, so a public
+hostname that resolves to a private address is rejected. This is a Docker/OCI network boundary, not a claim of a
+stronger sandbox.
+
+Docker Desktop can run without cgroup enforcement. In that case Compose CPU, memory, and PID values limit the outer
+engine container as a whole; they are not per-job security limits. Production requires each trust domain to use a
+dedicated, disposable runner node or pod separate from LoreHub API/Web, and gVisor, Kata Containers, or an equivalent
+verified workload isolation layer is a required production condition. This repository's Compose smoke does not claim
+to verify that stronger layer.
+
+## Lore credentials
+
+The runner and poller request the `read` scope from a `CredentialProvider` with both the repository partition and Lore
+URL. Production requires `LOREHUB_LORE_CREDENTIAL_DIR`; the file provider reads only
+`<repository-id>/read`, rejects symlinks and path escapes, and fails closed when the partition is absent. A development
+identity fallback is rejected outside development/local and requires both explicit opt-in and a non-empty identity.
+
+## Workflow catalog and branches
+
+The default branch is the canonical Actions catalog. Its initial observation records the branch and synchronizes
+workflow records without inventing a push. Every later default-branch revision synchronizes the catalog and queues one
+run per matching supported workflow. Missing workflows become disabled; invalid or unsupported workflows are retained
+with an error state and are never treated as successful.
+
+Feature branches never update, remove, or disable the catalog. Their exact revision workflow definitions are stored in a
+revision table and can enqueue push runs for that revision only. They cannot become a dispatch target until their
+workflow exists in the default-branch catalog.
 
 ## Resource and output limits
 
-The runner has a bounded job timeout and a short renewable lease. It polls cancellation while the workflow runs and
-stops the `act` process when cancellation is requested or the lease is lost. A job cannot publish completion after its
-lease is lost. Workspaces and uncommitted artifact directories are removed during cleanup.
+The runner has a bounded job timeout and a renewable lease. It polls cancellation while `act` runs, sends a graceful
+termination signal, and force-stops after the grace period. A lost lease prevents completion publication. Workspaces,
+partial artifact trees, disposable job networks, proxy gateways, and `act --rm` containers are cleaned up.
 
 Logs are capped by `LOREHUB_RUNNER_LOG_MAX_BYTES` (10 MiB by default). Artifacts are limited to 100 files, 100 MiB per
-file, and 500 MiB per job by default. Artifact persistence rejects symlinks, special files, and paths outside the staged
-artifact directory. Files are published only after the complete staged tree is renamed into place. A persistence failure
-does not produce successful artifact records.
+file, and 500 MiB per job by default. Persistence rejects symlinks, special files, and paths outside the staging tree.
+The complete staged tree is renamed into place only after all files pass validation. A persistence failure cannot claim
+artifact success.
 
 ## API visibility policy
 
-For public repositories, workflow and run metadata and bounded job logs are readable without a session. Private and
-internal repositories require repository or organization read membership. Artifact downloads require the same repository
-read check. Dispatch, cancellation, and rerun require repository write permission and a browser CSRF token when the
-request uses a LoreHub session cookie; bearer authentication remains supported.
-
-An initial branch observation records the branch revision and synchronizes workflow records without creating a push run.
-Later revisions create one run per matching supported workflow. A rerun is a new run number with `runAttempt`
-incremented and `rerunOf` pointing to the original run; it does not reuse the original job record.
+Public repositories expose workflow/run metadata and bounded job logs anonymously. Internal repositories require an
+active user with active organization membership. Private repositories require an active user with an active direct
+repository membership, an active organization team membership plus repository team permission, or an owner exception.
+Artifact downloads always require repository read permission. Dispatch, cancellation, and rerun require repository write
+permission. Browser session mutations require the finalized cookie CSRF check; bearer authentication remains compatible.
+Unauthorized private/internal repository access returns 404 so repository existence is not disclosed.
 
 ## Compose smoke test
 
-Use a unique Compose project name so unrelated Docker projects are untouched:
+Use a unique project name so unrelated Docker projects are untouched. The adversarial smoke uses both `runner` and
+`runner-smoke` profiles and starts a temporary canary on a separate network with a host-published port. It must verify
+from an actual `act` job that:
 
-```sh
-docker compose -p lorehub-actions-smoke -f infra/compose.yaml --profile runner config
-docker compose -p lorehub-actions-smoke -f infra/compose.yaml --profile runner up -d --build --wait
-docker compose -p lorehub-actions-smoke -f infra/compose.yaml --profile runner down --volumes
-```
+- the exact contents of a Lore file outside `.github` are present after `actions/checkout`;
+- resolved PostgreSQL and Lore service IPs are unreachable;
+- the outer `runner-egress` gateway, `host.docker.internal`, the canary, and existing host-published ports are
+  unreachable;
+- private/local destinations are rejected through the proxy, public HTTPS succeeds through the proxy, and raw public TCP
+  fails;
+- `docker info` reports `rootless`, the unauthenticated 2375 endpoint fails, and 2376 requires the client certificate;
+- the job cannot see the Docker client certificate directory or variables; and
+- no `act` containers or disposable job networks remain after completion.
 
-Before calling the smoke test successful, inspect the rendered configuration and confirm that no service has a
-`/var/run/docker.sock` bind mount and that `DOCKER_HOST` uses `2376` with TLS. Run a Lore workflow through `act` that
-reads a repository file outside `.github`, asserts its exact contents, checks the resolved PostgreSQL and Lore IPs are
-unreachable, confirms the Docker client certificate directory is absent, and confirms an unauthenticated engine
-connection cannot be made. Verify the job log contains `lore-checkout-ok`, `network-isolation-ok`,
-`docker-client-certs-absent`,
-and `docker-api-denied`. Also verify the engine has no remaining act containers. The cleanup command above removes only
-the named smoke project and its volumes.
+Clean only the named smoke project and its volumes. Do not run a global Docker cleanup command.
