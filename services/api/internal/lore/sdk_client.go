@@ -222,7 +222,7 @@ func (client *SDKClient) credentialCachePath(
 	}
 	principal := credential.Principal.UserID
 	if principal == "" {
-		principal = "service:" + credential.Principal.ServicePurpose
+		principal = "service:" + credential.Principal.ServicePurpose + ":" + credential.Principal.Subject
 	}
 	key := hex.EncodeToString([]byte(principal))
 	if key == "" {
@@ -256,7 +256,7 @@ func (client *SDKClient) authenticate(
 		return err
 	}
 	lockKey := repositoryPath + "\x00" + credential.Principal.UserID + "\x00" +
-		credential.Principal.ServicePurpose
+		credential.Principal.ServicePurpose + "\x00" + credential.Principal.Subject
 	lockValue, _ := client.locks.LoadOrStore("auth:"+lockKey, &sync.Mutex{})
 	lock := lockValue.(*sync.Mutex)
 	lock.Lock()

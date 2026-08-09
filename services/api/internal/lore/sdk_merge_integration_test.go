@@ -30,7 +30,7 @@ func TestSDKMergeLifecycleAgainstLoreServer(t *testing.T) {
 	}
 	bootstrapCredential := Credential{
 		Partition: repositoryURLPartition(repositoryURL), Identity: identity, Scope: ScopeRead,
-		Principal:           ServicePrincipal(ServicePurposeRepositoryRegistration),
+		Principal:           ServicePrincipal(ServicePurposeRepositoryRegistration, "fixture-registration"),
 		InsecureDevelopment: true,
 	}
 	cacheDirectory := loreTestTempDir(t)

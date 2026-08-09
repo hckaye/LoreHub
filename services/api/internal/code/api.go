@@ -14,12 +14,13 @@ import (
 )
 
 type API struct {
-	store       collab.Store
-	lore        loreclient.Client
-	code        loreclient.CodeClient
-	actors      collab.ActorResolver
-	credentials loreclient.CredentialProvider
-	logger      *slog.Logger
+	store               collab.Store
+	lore                loreclient.Client
+	code                loreclient.CodeClient
+	actors              collab.ActorResolver
+	credentials         loreclient.CredentialProvider
+	publicReaderSubject string
+	logger              *slog.Logger
 }
 
 // Register mounts read-only repository browsing endpoints. Authentication is
@@ -32,9 +33,11 @@ func Register(
 	codeClient loreclient.CodeClient,
 	actors collab.ActorResolver,
 	credentials loreclient.CredentialProvider,
+	publicReaderSubject string,
 	logger *slog.Logger,
 ) {
 	api := &API{store: store, lore: lore, code: codeClient, actors: actors, credentials: credentials, logger: logger}
+	api.publicReaderSubject = publicReaderSubject
 	base := "/api/v1/repositories/{owner}/{repository}"
 	mux.HandleFunc("GET "+base+"/tree", api.tree)
 	mux.HandleFunc("GET "+base+"/file", api.file)
@@ -439,7 +442,7 @@ func (api *API) credential(
 	if api.credentials == nil {
 		return loreclient.Credential{}, loreclient.ErrCredentialUnavailable
 	}
-	principal := loreclient.ServicePrincipal(loreclient.ServicePurposePublicReader)
+	principal := loreclient.ServicePrincipal(loreclient.ServicePurposePublicReader, api.publicReaderSubject)
 	if actor != nil {
 		principal = loreclient.UserPrincipal(actor.ID)
 	}

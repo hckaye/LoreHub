@@ -40,7 +40,9 @@ func TestCredentialCachePathSeparatesUserAndServiceState(t *testing.T) {
 	repository := RepositoryRef{CacheKey: "repository-1", LoreRepositoryID: "partition-1"}
 	userA := Credential{Principal: UserPrincipal("user-a")}
 	userB := Credential{Principal: UserPrincipal("user-b")}
-	service := Credential{Principal: ServicePrincipal(ServicePurposePublicReader)}
+	service := Credential{Principal: ServicePrincipal(ServicePurposePublicReader, "public-reader-subject")}
+	serviceSamePurpose := Credential{Principal: ServicePrincipal(ServicePurposePublicReader, "other-subject")}
+	serviceOtherPurpose := Credential{Principal: ServicePrincipal(ServicePurposeActionsRunner, "actions-subject")}
 	pathA, err := client.credentialCachePath(repository, userA)
 	if err != nil {
 		t.Fatal(err)
@@ -53,10 +55,20 @@ func TestCredentialCachePathSeparatesUserAndServiceState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pathA == pathB || pathA == servicePath || pathB == servicePath {
-		t.Fatalf("credential cache paths are not isolated: %q %q %q", pathA, pathB, servicePath)
+	serviceSamePurposePath, err := client.credentialCachePath(repository, serviceSamePurpose)
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, value := range []string{pathA, pathB, servicePath} {
+	serviceOtherPurposePath, err := client.credentialCachePath(repository, serviceOtherPurpose)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pathA == pathB || pathA == servicePath || pathB == servicePath || servicePath == serviceSamePurposePath ||
+		servicePath == serviceOtherPurposePath {
+		t.Fatalf("credential cache paths are not isolated: %q %q %q %q %q", pathA, pathB, servicePath,
+			serviceSamePurposePath, serviceOtherPurposePath)
+	}
+	for _, value := range []string{pathA, pathB, servicePath, serviceSamePurposePath, serviceOtherPurposePath} {
 		if strings.Contains(value, "short-lived-token") || strings.Contains(value, "auth.example") {
 			t.Fatalf("credential cache path contains auth material: %q", value)
 		}

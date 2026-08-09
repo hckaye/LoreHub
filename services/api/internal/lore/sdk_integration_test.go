@@ -21,7 +21,7 @@ func TestSDKClientAgainstLoreServer(t *testing.T) {
 	defer cancel()
 	bootstrapCredential := Credential{
 		Partition: repositoryURLPartition(repositoryURL), Identity: "fixture", Scope: ScopeRead,
-		Principal:           ServicePrincipal(ServicePurposeRepositoryRegistration),
+		Principal:           ServicePrincipal(ServicePurposeRepositoryRegistration, "fixture-registration"),
 		InsecureDevelopment: true,
 	}
 	repository, err := client.RepositoryInfo(ctx, repositoryURL, bootstrapCredential)
@@ -100,7 +100,7 @@ func TestSDKClientAgainstLoreServer(t *testing.T) {
 func developmentCredential(partition, identity string, scope Scope) Credential {
 	return Credential{
 		Partition: partition, Identity: identity, Scope: scope,
-		Principal: ServicePrincipal(ServicePurposePublicReader), InsecureDevelopment: true,
+		Principal: ServicePrincipal(ServicePurposePublicReader, "fixture-public-reader"), InsecureDevelopment: true,
 	}
 }
 

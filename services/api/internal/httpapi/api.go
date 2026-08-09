@@ -77,6 +77,7 @@ type API struct {
 	authenticator   auth.Authenticator
 	health          HealthChecker
 	loreIdentity    string
+	serviceSubjects loreclient.ServiceSubjects
 	loreCredentials loreclient.CredentialProvider
 	logger          *slog.Logger
 	collabStore     collab.Store
@@ -133,7 +134,8 @@ func New(
 	if api.collabStore != nil {
 		collab.Register(mux, api.collabStore, api, logger)
 		if codeClient, ok := api.lore.(loreclient.CodeClient); ok {
-			codeapi.Register(mux, api.collabStore, api.lore, codeClient, api, api.loreCredentials, logger)
+			codeapi.Register(mux, api.collabStore, api.lore, codeClient, api, api.loreCredentials,
+				api.serviceSubjects.PublicReader, logger)
 		}
 		if workflow, ok := api.collabStore.(collab.MergeWorkflowStore); ok {
 			if mergeClient, mergeOK := api.lore.(loreclient.MergeClient); mergeOK {
@@ -157,6 +159,14 @@ func WithCollaboration(store collab.Store) Option {
 func WithLoreCredentials(provider loreclient.CredentialProvider) Option {
 	return func(api *API) {
 		api.loreCredentials = provider
+	}
+}
+
+// WithLoreServiceSubjects supplies the immutable JWT subjects for service
+// purposes. An empty subject remains invalid and fails credential resolution.
+func WithLoreServiceSubjects(subjects loreclient.ServiceSubjects) Option {
+	return func(api *API) {
+		api.serviceSubjects = subjects
 	}
 }
 
@@ -275,7 +285,8 @@ func (api *API) publicRepository(writer http.ResponseWriter, request *http.Reque
 
 func (api *API) repositoryBranches(writer http.ResponseWriter, request *http.Request) {
 	var repositoryLoreURL, repositoryID, repositoryLoreID string
-	principal := loreclient.ServicePrincipal(loreclient.ServicePurposePublicReader)
+	principal := loreclient.ServicePrincipal(loreclient.ServicePurposePublicReader,
+		api.serviceSubjects.PublicReader)
 	if api.collabStore != nil {
 		actor, ok := api.ResolveOptionalActor(writer, request)
 		if !ok {
@@ -380,7 +391,8 @@ func (api *API) registerRepository(writer http.ResponseWriter, request *http.Req
 	}
 	credential, credentialErr := api.loreCredential(request.Context(), loreclient.RepositoryRef{
 		URL: input.LoreURL,
-	}, loreclient.ServicePrincipal(loreclient.ServicePurposeRepositoryRegistration), loreclient.ScopeRead)
+	}, loreclient.ServicePrincipal(loreclient.ServicePurposeRepositoryRegistration,
+		api.serviceSubjects.RepositoryRegistration), loreclient.ScopeRead)
 	if credentialErr != nil {
 		writeProblem(writer, http.StatusBadGateway, "lore_unavailable", "Lore credentials are not configured")
 		return

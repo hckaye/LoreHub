@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 const maxCredentialLifetime = 15 * time.Minute
@@ -26,6 +27,15 @@ const (
 	ServicePurposeRepositoryRegistration = "repository-registration"
 )
 
+// ServiceSubjects are configured JWT subjects for the service-purpose
+// boundaries used by LoreHub. A purpose without its configured subject is not
+// a valid production principal.
+type ServiceSubjects struct {
+	PublicReader           string
+	ActionsRunner          string
+	RepositoryRegistration string
+}
+
 var (
 	ErrCredentialUnavailable    = errors.New("Lore repository credential is unavailable")
 	ErrCredentialIssuerRequired = errors.New("production Lore credential issuer is required")
@@ -34,27 +44,39 @@ var (
 	ErrCredentialContract       = errors.New("Lore credential contract is invalid")
 )
 
-// Principal identifies the caller that the control plane authorized. Exactly one
-// of UserID and ServicePurpose must be set; bearer tokens are never principals.
+// Principal identifies the caller that the control plane authorized. Users have
+// only UserID; services have both a purpose and an immutable JWT subject.
 type Principal struct {
 	UserID         string
 	ServicePurpose string
+	Subject        string
 }
 
 func UserPrincipal(userID string) Principal {
 	return Principal{UserID: strings.TrimSpace(userID)}
 }
 
-func ServicePrincipal(purpose string) Principal {
-	return Principal{ServicePurpose: strings.TrimSpace(purpose)}
+func ServicePrincipal(purpose string, subject string) Principal {
+	return Principal{ServicePurpose: purpose, Subject: subject}
 }
 
 func (principal Principal) valid() bool {
-	return (validPrincipalValue(principal.UserID) != "") != (validPrincipalValue(principal.ServicePurpose) != "")
+	user := validPrincipalValue(principal.UserID) != ""
+	service := validPrincipalValue(principal.ServicePurpose) != ""
+	subject := validPrincipalValue(principal.Subject) != ""
+	return (user && !service && !subject) || (!user && service && subject)
 }
 
 func (principal Principal) equal(other Principal) bool {
-	return principal.UserID == other.UserID && principal.ServicePurpose == other.ServicePurpose
+	return principal.UserID == other.UserID && principal.ServicePurpose == other.ServicePurpose &&
+		principal.Subject == other.Subject
+}
+
+func (principal Principal) identity() string {
+	if principal.UserID != "" {
+		return principal.UserID
+	}
+	return principal.Subject
 }
 
 // CredentialMaterial is allowed only for explicit development and test
@@ -312,10 +334,24 @@ func normalizeCredentialRequest(request *CredentialRequest) (string, error) {
 }
 
 func validPrincipalValue(value string) string {
-	if value == "" || strings.TrimSpace(value) != value || strings.ContainsAny(value, "\x00\t\r\n") {
+	if value == "" || strings.TrimSpace(value) != value {
 		return ""
 	}
+	for _, character := range value {
+		if unicode.IsControl(character) || unicode.IsSpace(character) {
+			return ""
+		}
+	}
 	return value
+}
+
+// ValidateServiceSubject validates the exact immutable subject configured for
+// a service principal without exposing credential material or normalizing it.
+func ValidateServiceSubject(subject string) error {
+	if validPrincipalValue(subject) == "" {
+		return ErrInvalidPrincipal
+	}
+	return nil
 }
 
 func validateIssuedCredential(
@@ -330,7 +366,7 @@ func validateIssuedCredential(
 	if credential.Identity == "" || credential.Token == "" || credential.AuthURL == "" {
 		return ErrCredentialContract
 	}
-	if request.Principal.UserID != "" && credential.Identity != request.Principal.UserID {
+	if credential.Identity != request.Principal.identity() {
 		return ErrCredentialContract
 	}
 	now := time.Now().UTC()
@@ -354,7 +390,7 @@ func validateProductionCredential(credential Credential, expectedAuthHost string
 		credential.ExpiresAt.After(time.Now().UTC().Add(maxCredentialLifetime)) {
 		return ErrCredentialUnavailable
 	}
-	if credential.Principal.UserID != "" && credential.Identity != credential.Principal.UserID {
+	if credential.Identity != credential.Principal.identity() {
 		return ErrCredentialContract
 	}
 	if err := validateAuthURLAgainst(credential.AuthURL, expectedAuthHost); err != nil {

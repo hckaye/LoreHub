@@ -32,10 +32,7 @@ func (issuer *recordingCredentialIssuer) IssueCredential(
 }
 
 func productionCredential(request CredentialRequest, token string) Credential {
-	identity := request.Principal.ServicePurpose
-	if request.Principal.UserID != "" {
-		identity = request.Principal.UserID
-	}
+	identity := request.Principal.identity()
 	return Credential{
 		Partition: request.Partition,
 		Scope:     request.Scope,
@@ -60,7 +57,7 @@ func TestProductionCredentialIssuerBindsEveryRequest(t *testing.T) {
 	issuer := &recordingCredentialIssuer{}
 	var sequence atomic.Int32
 	issuer.issue = func(request CredentialRequest) Credential {
-		return productionCredential(request, "token-"+request.Principal.UserID+"-"+
+		return productionCredential(request, "token-"+request.Principal.identity()+"-"+
 			string(request.Scope)+"-"+strconv.FormatInt(int64(sequence.Add(1)), 10))
 	}
 	provider := productionProvider(t, issuer)
@@ -87,7 +84,7 @@ func TestProductionCredentialIssuerBindsEveryRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 	serviceRequest := CredentialRequest{
-		Principal:  ServicePrincipal(ServicePurposePublicReader),
+		Principal:  ServicePrincipal(ServicePurposePublicReader, "public-reader-subject"),
 		Repository: ref,
 		Scope:      ScopeRead,
 	}
@@ -98,13 +95,15 @@ func TestProductionCredentialIssuerBindsEveryRequest(t *testing.T) {
 	if userB.Principal != requestB.Principal || userB.Partition != "repo-b" || userB.Scope != ScopeWrite {
 		t.Fatalf("user B credential crossed request boundary: %+v", userB)
 	}
-	if service.Principal != serviceRequest.Principal || service.Partition != "repo-a" {
+	if service.Principal != serviceRequest.Principal || service.Identity != serviceRequest.Principal.Subject ||
+		service.Partition != "repo-a" {
 		t.Fatalf("service credential crossed request boundary: %+v", service)
 	}
 	issuer.mu.Lock()
 	defer issuer.mu.Unlock()
 	if len(issuer.requests) != 4 || issuer.requests[0].Partition != "repo-a" ||
-		issuer.requests[2].Partition != "repo-b" || issuer.requests[3].Principal != serviceRequest.Principal {
+		issuer.requests[2].Partition != "repo-b" || issuer.requests[3].Principal != serviceRequest.Principal ||
+		issuer.requests[3].Principal.Subject != "public-reader-subject" {
 		t.Fatalf("issuer did not receive canonical exact requests: %+v", issuer.requests)
 	}
 }
@@ -124,7 +123,16 @@ func TestCredentialRequestRejectsNonCanonicalPartitionAndPrincipal(t *testing.T)
 		t.Fatalf("partition mismatch error = %v, want ErrCredentialContract", err)
 	}
 	for name, request := range map[string]CredentialRequest{
-		"ambiguous": {Principal: Principal{UserID: "user-a", ServicePurpose: "service"},
+		"ambiguous user service": {Principal: Principal{UserID: "user-a", ServicePurpose: "service",
+			Subject: "service-subject"},
+			Repository: base.Repository, Scope: ScopeRead},
+		"service without subject": {Principal: Principal{ServicePurpose: "service"},
+			Repository: base.Repository, Scope: ScopeRead},
+		"service empty subject": {Principal: ServicePrincipal("service", ""),
+			Repository: base.Repository, Scope: ScopeRead},
+		"service whitespace subject": {Principal: ServicePrincipal("service", " subject "),
+			Repository: base.Repository, Scope: ScopeRead},
+		"service control subject": {Principal: ServicePrincipal("service", "subject\x00value"),
 			Repository: base.Repository, Scope: ScopeRead},
 		"empty partition": {Principal: UserPrincipal("user-a"), Repository: RepositoryRef{}, Scope: ScopeRead},
 		"unsafe partition": {Principal: UserPrincipal("user-a"),
@@ -138,6 +146,31 @@ func TestCredentialRequestRejectsNonCanonicalPartitionAndPrincipal(t *testing.T)
 				t.Fatalf("request error = %v, want a contract rejection", err)
 			}
 		})
+	}
+}
+
+func TestServiceSubjectValidationRejectsInvalidValues(t *testing.T) {
+	for name, subject := range map[string]string{
+		"empty":          "",
+		"space":          " ",
+		"newline":        "subject\nvalue",
+		"nul":            "subject\x00value",
+		"vertical tab":   "subject\vvalue",
+		"internal space": "subject value",
+		"trailing":       "subject ",
+	} {
+		name, subject := name, subject
+		t.Run(name, func(t *testing.T) {
+			if ValidateServiceSubject(subject) == nil {
+				t.Fatalf("accepted invalid service subject %q", subject)
+			}
+			if ServicePrincipal(ServicePurposePublicReader, subject).valid() {
+				t.Fatalf("accepted invalid service principal subject %q", subject)
+			}
+		})
+	}
+	if !ServicePrincipal(ServicePurposePublicReader, "public-reader-jwt-subject").valid() {
+		t.Fatal("rejected exact service subject")
 	}
 }
 
@@ -181,6 +214,44 @@ func TestProductionCredentialIssuerRejectsMismatchAndExpiry(t *testing.T) {
 	}
 }
 
+func TestProductionCredentialIssuerRequiresExactServiceSubject(t *testing.T) {
+	request := CredentialRequest{
+		Principal:  ServicePrincipal(ServicePurposePublicReader, "public-reader-jwt-subject"),
+		Repository: RepositoryRef{LoreRepositoryID: "repo-a"},
+		Scope:      ScopeRead,
+	}
+	cases := map[string]func(Credential) Credential{
+		"wrong subject in principal": func(value Credential) Credential {
+			value.Principal.Subject = "other-jwt-subject"
+			return value
+		},
+		"wrong service identity": func(value Credential) Credential {
+			value.Identity = "public-reader"
+			return value
+		},
+		"wrong purpose and subject": func(value Credential) Credential {
+			value.Principal = ServicePrincipal(ServicePurposeActionsRunner, "actions-jwt-subject")
+			value.Identity = value.Principal.Subject
+			return value
+		},
+	}
+	for name, mutate := range cases {
+		name, mutate := name, mutate
+		t.Run(name, func(t *testing.T) {
+			issuer := &recordingCredentialIssuer{issue: func(value CredentialRequest) Credential {
+				return mutate(productionCredential(value, "service-token"))
+			}}
+			_, err := productionProvider(t, issuer).ForRepository(context.Background(), request)
+			if !errors.Is(err, ErrCredentialContract) {
+				t.Fatalf("error = %v, want ErrCredentialContract", err)
+			}
+			if strings.Contains(err.Error(), "service-token") {
+				t.Fatalf("service token leaked in error: %v", err)
+			}
+		})
+	}
+}
+
 func TestProductionCredentialIssuerIsRequiredAndStaticMapIsRejected(t *testing.T) {
 	if _, err := NewProductionCredentialProvider(nil, "auth.example.com"); !errors.Is(err, ErrCredentialIssuerRequired) {
 		t.Fatalf("missing issuer error = %v, want ErrCredentialIssuerRequired", err)
@@ -189,6 +260,31 @@ func TestProductionCredentialIssuerIsRequiredAndStaticMapIsRejected(t *testing.T
 		"repo-a": {Identity: "shared", Token: "token", AuthURL: "ucs-auth://auth.example.com"},
 	}, "", false); !errors.Is(err, ErrCredentialIssuerRequired) {
 		t.Fatalf("static production error = %v, want ErrCredentialIssuerRequired", err)
+	}
+}
+
+func TestProductionServiceSubjectsRemainDistinct(t *testing.T) {
+	issuer := &recordingCredentialIssuer{issue: func(request CredentialRequest) Credential {
+		return productionCredential(request, "token-"+request.Principal.Subject)
+	}}
+	provider := productionProvider(t, issuer)
+	base := RepositoryRef{LoreRepositoryID: "repo-a"}
+	first, err := provider.ForRepository(context.Background(), CredentialRequest{
+		Principal:  ServicePrincipal(ServicePurposePublicReader, "public-reader-subject-a"),
+		Repository: base, Scope: ScopeRead,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := provider.ForRepository(context.Background(), CredentialRequest{
+		Principal:  ServicePrincipal(ServicePurposePublicReader, "public-reader-subject-b"),
+		Repository: base, Scope: ScopeRead,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Principal == second.Principal || first.Identity == second.Identity || first.Token == second.Token {
+		t.Fatalf("service credentials were reused across exact subjects: first=%+v second=%+v", first, second)
 	}
 }
 
@@ -219,7 +315,7 @@ func TestDevelopmentCredentialIsExplicitlyInsecure(t *testing.T) {
 		t.Fatal(err)
 	}
 	credential, err := provider.ForRepository(context.Background(), CredentialRequest{
-		Principal:  ServicePrincipal(ServicePurposePublicReader),
+		Principal:  ServicePrincipal(ServicePurposePublicReader, "public-reader-dev-subject"),
 		Repository: RepositoryRef{LoreRepositoryID: "repo-a"},
 		Scope:      ScopeWrite,
 	})
@@ -237,12 +333,16 @@ func TestDevelopmentCredentialIsExplicitlyInsecure(t *testing.T) {
 func TestCredentialProviderIsSafeForConcurrentPrincipals(t *testing.T) {
 	issuer := &recordingCredentialIssuer{}
 	issuer.issue = func(request CredentialRequest) Credential {
-		return productionCredential(request, "token-"+request.Principal.UserID)
+		return productionCredential(request, "token-"+request.Principal.identity())
 	}
 	provider := productionProvider(t, issuer)
 	requests := []CredentialRequest{
 		{Principal: UserPrincipal("user-a"), Repository: RepositoryRef{LoreRepositoryID: "repo-a"}, Scope: ScopeRead},
 		{Principal: UserPrincipal("user-b"), Repository: RepositoryRef{LoreRepositoryID: "repo-b"}, Scope: ScopeWrite},
+		{Principal: ServicePrincipal(ServicePurposePublicReader, "public-reader-subject"),
+			Repository: RepositoryRef{LoreRepositoryID: "repo-c"}, Scope: ScopeRead},
+		{Principal: ServicePrincipal(ServicePurposeActionsRunner, "actions-runner-subject"),
+			Repository: RepositoryRef{LoreRepositoryID: "repo-d"}, Scope: ScopeRead},
 	}
 	var group sync.WaitGroup
 	results := make(chan Credential, len(requests))
@@ -262,7 +362,8 @@ func TestCredentialProviderIsSafeForConcurrentPrincipals(t *testing.T) {
 	group.Wait()
 	close(results)
 	for credential := range results {
-		if !strings.Contains(credential.Token, credential.Principal.UserID) || credential.Partition == "" {
+		if !strings.Contains(credential.Token, credential.Principal.identity()) || credential.Partition == "" ||
+			credential.Identity != credential.Principal.identity() {
 			t.Fatalf("concurrent credential crossed users or partitions: %+v", credential)
 		}
 	}

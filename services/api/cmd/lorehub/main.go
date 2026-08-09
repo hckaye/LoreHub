@@ -144,6 +144,11 @@ func run(logger *slog.Logger) error {
 		}),
 		httpapi.WithCollaboration(collab.NewStore(pool)),
 		httpapi.WithLoreCredentials(loreCredentials),
+		httpapi.WithLoreServiceSubjects(loreclient.ServiceSubjects{
+			PublicReader:           settings.LorePublicReaderSubject,
+			ActionsRunner:          settings.LoreActionsRunnerSubject,
+			RepositoryRegistration: settings.LoreRepositoryRegistrationSubject,
+		}),
 	)
 	server := &http.Server{
 		Addr:              settings.HTTPAddress,
@@ -198,7 +203,9 @@ func runRunner(
 	if err != nil {
 		return err
 	}
-	poller := runner.NewPoller(store, runnerLoreClient{client: lore, credentials: credentials}, settings.LoreIdentity,
+	poller := runner.NewPoller(store, runnerLoreClient{
+		client: lore, credentials: credentials, actionsRunnerSubject: settings.LoreActionsRunnerSubject,
+	}, settings.LoreIdentity,
 		settings.BranchPollPeriod, logger)
 	errorsChannel := make(chan error, 2)
 	go func() { errorsChannel <- poller.Run(ctx) }()
@@ -211,8 +218,9 @@ func runRunner(
 }
 
 type runnerLoreClient struct {
-	client      *loreclient.SDKClient
-	credentials loreclient.CredentialProvider
+	client               *loreclient.SDKClient
+	credentials          loreclient.CredentialProvider
+	actionsRunnerSubject string
 }
 
 func (adapter runnerLoreClient) Branches(
@@ -233,7 +241,7 @@ func (adapter runnerLoreClient) Branches(
 	}
 	repository.LoreRepositoryID = partition
 	credential, err := adapter.credentials.ForRepository(ctx, loreclient.CredentialRequest{
-		Principal:  loreclient.ServicePrincipal(loreclient.ServicePurposeActionsRunner),
+		Principal:  loreclient.ServicePrincipal(loreclient.ServicePurposeActionsRunner, adapter.actionsRunnerSubject),
 		Repository: repository,
 		Partition:  repository.CanonicalPartition(),
 		Scope:      loreclient.ScopeRead,

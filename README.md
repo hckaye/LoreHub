@@ -147,6 +147,10 @@ LoreHubのコード閲覧とマージ操作は、ブラウザ利用者のLore to
 監査記録には実際の利用者を保存します。
 本番のcredential issuerが未接続の場合、APIは起動時にfail closedします。
 `LOREHUB_LORE_AUTHORITY`にはissuerが返す`ucs-auth://` authorityを設定します。
+サービス用principalは用途名だけでは成立せず、対応するJWTの不変なsubjectも必要です。本番では
+`LOREHUB_LORE_PUBLIC_READER_SUBJECT`、`LOREHUB_LORE_ACTIONS_RUNNER_SUBJECT`、
+`LOREHUB_LORE_REPOSITORY_REGISTRATION_SUBJECT`を明示設定します。subjectが用途名と同じである必要はなく、
+issuerが返すcredentialの`identity`は要求したsubjectと完全一致しなければ使用しません。
 secret、token、identity設定値をリポジトリへコミットしないでください。
 本番でpartitionに対応するcredentialが無い、要求と一致しない、または期限が不正な場合もfail closedになります。
 `AuthURL`とtokenはログ、エラー、URLへ出力しません。サービスidentityとsecretは最小権限で管理し、

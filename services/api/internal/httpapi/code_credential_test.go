@@ -148,7 +148,9 @@ func newCodeCredentialHandler(
 		codeTestLore{}, auth.DisabledAuthenticator{}, healthy{}, "",
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 		WithAuthentication(AuthOptions{SessionStore: authenticationStore, Secrets: codec}),
-		WithCollaboration(store), WithLoreCredentials(provider),
+		WithCollaboration(store), WithLoreCredentials(provider), WithLoreServiceSubjects(loreclient.ServiceSubjects{
+			PublicReader: "public-reader-subject",
+		}),
 	)
 }
 
@@ -189,7 +191,9 @@ func TestCodeAPIPublicAnonymousReadUsesPublicReaderPurpose(t *testing.T) {
 		t.Fatalf("anonymous public code read status=%d body=%s", response.Code, response.Body.String())
 	}
 	requestValue := provider.lastRequest()
-	if requestValue.Principal != (loreclient.Principal{ServicePurpose: loreclient.ServicePurposePublicReader}) ||
+	if requestValue.Principal != (loreclient.Principal{
+		ServicePurpose: loreclient.ServicePurposePublicReader, Subject: "public-reader-subject",
+	}) ||
 		requestValue.Partition != "0123456789abcdef0123456789abcdef" {
 		t.Fatal("anonymous public code read did not use the public-reader purpose and canonical partition")
 	}
