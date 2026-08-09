@@ -93,7 +93,7 @@ func TestOIDCProviderExchangesAndVerifiesIDToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	authorizationURL, err := url.Parse(provider.AuthorizationURL("state-1", "challenge-1", "nonce-1"))
+	authorizationURL, err := url.Parse(provider.AuthorizationURL("state-1", "challenge-1", "nonce-1", ""))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,6 +101,20 @@ func TestOIDCProviderExchangesAndVerifiesIDToken(t *testing.T) {
 		authorizationURL.Query().Get("code_challenge") != "challenge-1" ||
 		authorizationURL.Query().Get("nonce") != "nonce-1" {
 		t.Fatalf("authorization request omitted PKCE or nonce: %s", authorizationURL)
+	}
+	registrationURL, err := url.Parse(provider.AuthorizationURL("state-1", "challenge-1", "nonce-1", RegistrationPrompt))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if registrationURL.Query().Get("prompt") != RegistrationPrompt {
+		t.Fatalf("registration request omitted prompt=create: %s", registrationURL)
+	}
+	unsupportedURL, err := url.Parse(provider.AuthorizationURL("state-1", "challenge-1", "nonce-1", "login"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unsupportedURL.Query().Get("prompt") != "" {
+		t.Fatal("provider forwarded an unsupported prompt")
 	}
 
 	principal, err := provider.Exchange(t.Context(), "authorization-code", "code-verifier", "nonce-1")

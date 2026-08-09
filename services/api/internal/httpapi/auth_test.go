@@ -23,19 +23,29 @@ type fakeLoginProvider struct {
 	codeChallenge string
 	codeVerifier  string
 	nonce         string
+	prompt        string
 	exchangeCalls int
 	principal     auth.Principal
 	exchangeError error
 }
 
-func (provider *fakeLoginProvider) AuthorizationURL(state string, codeChallenge string, nonce string) string {
+func (provider *fakeLoginProvider) AuthorizationURL(
+	state string,
+	codeChallenge string,
+	nonce string,
+	prompt string,
+) string {
 	provider.state = state
 	provider.codeChallenge = codeChallenge
 	provider.nonce = nonce
+	provider.prompt = prompt
 	values := url.Values{}
 	values.Set("state", state)
 	values.Set("code_challenge", codeChallenge)
 	values.Set("nonce", nonce)
+	if prompt != "" {
+		values.Set("prompt", prompt)
+	}
 	return "https://identity.example/authorize?" + values.Encode()
 }
 
@@ -59,6 +69,8 @@ func (provider *fakeLoginProvider) Exchange(
 type fakeAuthenticationStore struct {
 	transaction      auth.LoginTransaction
 	transactionUsed  bool
+	transactions     map[string]auth.LoginTransaction
+	usedTransactions map[string]bool
 	session          auth.Session
 	sessionTokenHash []byte
 	sessionValid     bool
@@ -69,8 +81,15 @@ func (store *fakeAuthenticationStore) CreateLoginTransaction(
 	_ context.Context,
 	transaction auth.LoginTransaction,
 ) error {
+	if store.transactions == nil {
+		store.transactions = make(map[string]auth.LoginTransaction)
+		store.usedTransactions = make(map[string]bool)
+	}
 	store.transaction = transaction
 	store.transactionUsed = false
+	key := string(transaction.StateDigest)
+	store.transactions[key] = transaction
+	store.usedTransactions[key] = false
 	return nil
 }
 
@@ -79,12 +98,24 @@ func (store *fakeAuthenticationStore) ConsumeLoginTransaction(
 	stateDigest []byte,
 	now time.Time,
 ) (auth.LoginTransaction, error) {
-	if store.transactionUsed || store.transaction.ExpiresAt.Before(now) ||
-		!bytes.Equal(stateDigest, store.transaction.StateDigest) {
+	key := string(stateDigest)
+	transaction, found := store.transactions[key]
+	if key == string(store.transaction.StateDigest) {
+		transaction = store.transaction
+		found = true
+	}
+	used := store.usedTransactions[key]
+	if key == string(store.transaction.StateDigest) {
+		used = store.transactionUsed
+	}
+	if !found || used || transaction.ExpiresAt.Before(now) || !bytes.Equal(stateDigest, transaction.StateDigest) {
 		return auth.LoginTransaction{}, auth.ErrInvalidTransaction
 	}
-	store.transactionUsed = true
-	return store.transaction, nil
+	store.usedTransactions[key] = true
+	if key == string(store.transaction.StateDigest) {
+		store.transactionUsed = true
+	}
+	return transaction, nil
 }
 
 func (store *fakeAuthenticationStore) CreateSession(
@@ -182,6 +213,17 @@ func newAuthTestHandler(
 	)
 }
 
+func cookieNamed(t *testing.T, cookies []*http.Cookie, name string) *http.Cookie {
+	t.Helper()
+	for _, cookie := range cookies {
+		if cookie.Name == name {
+			return cookie
+		}
+	}
+	t.Fatalf("cookie %q was not set; got %#v", name, cookies)
+	return &http.Cookie{}
+}
+
 func TestAuthorizationCodeFlowCreatesSessionAndProtectsCookieRequests(t *testing.T) {
 	codec, err := auth.NewSecretCodec("test authentication secret")
 	if err != nil {
@@ -211,12 +253,23 @@ func TestAuthorizationCodeFlowCreatesSessionAndProtectsCookieRequests(t *testing
 	if loginURL.Host != "identity.example" || loginURL.Query().Get("state") != provider.state {
 		t.Fatalf("unexpected provider redirect: %s", loginURL)
 	}
+	if loginURL.Query().Get("prompt") != "" {
+		t.Fatal("normal login unexpectedly requested registration")
+	}
+	bindingCookie := cookieNamed(t, loginResponse.Result().Cookies(), "lorehub_login_binding")
+	if bindingCookie.HttpOnly == false || bindingCookie.Secure == false || bindingCookie.Path != "/auth" ||
+		bindingCookie.SameSite != http.SameSiteLaxMode || bindingCookie.MaxAge != 600 ||
+		bindingCookie.Value != provider.state ||
+		bindingCookie.Expires.Unix() != authenticationStore.transaction.ExpiresAt.Unix() {
+		t.Fatalf("binding cookie is not narrowly scoped and expiring: %#v", bindingCookie)
+	}
 
 	callbackRequest := httptest.NewRequest(
 		http.MethodGet,
 		"/auth/callback?state="+url.QueryEscape(provider.state)+"&code=authorization-code",
 		nil,
 	)
+	callbackRequest.AddCookie(bindingCookie)
 	callbackResponse := httptest.NewRecorder()
 	handler.ServeHTTP(callbackResponse, callbackRequest)
 	if callbackResponse.Code != http.StatusSeeOther || callbackResponse.Header().Get("Location") != "/dashboard" {
@@ -227,11 +280,13 @@ func TestAuthorizationCodeFlowCreatesSessionAndProtectsCookieRequests(t *testing
 		t.Fatal("callback did not send the transaction's PKCE verifier")
 	}
 	cookies := callbackResponse.Result().Cookies()
-	if len(cookies) != 1 || cookies[0].Name != "lorehub_session" || !cookies[0].HttpOnly || !cookies[0].Secure ||
-		cookies[0].SameSite != http.SameSiteLaxMode || cookies[0].Path != "/" || cookies[0].MaxAge <= 0 {
+	sessionCookie := cookieNamed(t, cookies, "lorehub_session")
+	clearedBinding := cookieNamed(t, cookies, "lorehub_login_binding")
+	if !sessionCookie.HttpOnly || !sessionCookie.Secure || sessionCookie.SameSite != http.SameSiteLaxMode ||
+		sessionCookie.Path != "/" || sessionCookie.MaxAge <= 0 || clearedBinding.MaxAge >= 0 ||
+		clearedBinding.Path != "/auth" {
 		t.Fatalf("session cookie is not secure: %#v", cookies)
 	}
-	sessionCookie := cookies[0]
 	if bytes.Equal(authenticationStore.transaction.StateDigest, []byte(provider.state)) ||
 		bytes.Equal(authenticationStore.sessionTokenHash, []byte(sessionCookie.Value)) {
 		t.Fatal("opaque authentication values were stored without a digest")
@@ -289,6 +344,124 @@ func TestAuthorizationCodeFlowCreatesSessionAndProtectsCookieRequests(t *testing
 	}
 }
 
+func TestCallbackRequiresBindingAndClearsMatchingTerminalCookies(t *testing.T) {
+	codec, _ := auth.NewSecretCodec("test authentication secret")
+	provider := &fakeLoginProvider{principal: auth.Principal{Issuer: "issuer", Subject: "subject"}}
+	authenticationStore := &fakeAuthenticationStore{}
+	handler := newAuthTestHandler(provider, authenticationStore, codec, auth.DisabledAuthenticator{})
+	startLogin := func() (string, *http.Cookie) {
+		request := httptest.NewRequest(http.MethodGet, "/auth/login", nil)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		return provider.state, cookieNamed(t, response.Result().Cookies(), "lorehub_login_binding")
+	}
+	callback := func(state string, binding *http.Cookie, suffix string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodGet, "/auth/callback?state="+state+suffix, nil)
+		if binding != nil {
+			request.AddCookie(binding)
+		}
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		return response
+	}
+
+	state, binding := startLogin()
+	response := callback(state, nil, "&code=code")
+	if response.Code != http.StatusBadRequest || authenticationStore.transactionUsed ||
+		len(response.Result().Cookies()) != 0 {
+		t.Fatalf("callback without binding was not rejected safely: status=%d used=%t cookies=%#v", response.Code,
+			authenticationStore.transactionUsed, response.Result().Cookies())
+	}
+
+	state, secondBinding := startLogin()
+	response = callback(state, binding, "&code=code")
+	if response.Code != http.StatusBadRequest || authenticationStore.transactionUsed ||
+		len(response.Result().Cookies()) != 0 {
+		t.Fatalf("mismatched binding was not rejected safely: status=%d used=%t cookies=%#v", response.Code,
+			authenticationStore.transactionUsed, response.Result().Cookies())
+	}
+	response = callback(state, secondBinding, "&code=code")
+	if response.Code != http.StatusSeeOther || provider.exchangeCalls != 1 {
+		t.Fatalf("matching binding did not complete login: status=%d exchanges=%d", response.Code,
+			provider.exchangeCalls)
+	}
+	response = callback(state, secondBinding, "&code=code")
+	if response.Code != http.StatusBadRequest ||
+		cookieNamed(t, response.Result().Cookies(), "lorehub_login_binding").MaxAge >= 0 {
+		t.Fatalf("replayed matching callback did not clear its binding: status=%d cookies=%#v", response.Code,
+			response.Result().Cookies())
+	}
+
+	state, binding = startLogin()
+	response = callback(state, binding, "&error=access_denied")
+	if response.Code != http.StatusBadRequest || !authenticationStore.transactionUsed ||
+		cookieNamed(t, response.Result().Cookies(), "lorehub_login_binding").MaxAge >= 0 {
+		t.Fatalf("provider-error callback did not consume and clear binding: status=%d used=%t", response.Code,
+			authenticationStore.transactionUsed)
+	}
+
+	state, binding = startLogin()
+	provider.exchangeError = errors.New("provider exchange failed")
+	response = callback(state, binding, "&code=code")
+	provider.exchangeError = nil
+	if response.Code != http.StatusUnauthorized || !authenticationStore.transactionUsed ||
+		cookieNamed(t, response.Result().Cookies(), "lorehub_login_binding").MaxAge >= 0 {
+		t.Fatalf("exchange-error callback did not consume and clear binding: status=%d used=%t", response.Code,
+			authenticationStore.transactionUsed)
+	}
+
+	state, binding = startLogin()
+	authenticationStore.transaction.ExpiresAt = time.Now().UTC().Add(-time.Minute)
+	response = callback(state, binding, "&code=code")
+	if response.Code != http.StatusBadRequest || authenticationStore.transactionUsed ||
+		cookieNamed(t, response.Result().Cookies(), "lorehub_login_binding").MaxAge >= 0 {
+		t.Fatalf("expired callback did not clear matching binding: status=%d used=%t", response.Code,
+			authenticationStore.transactionUsed)
+	}
+}
+
+func TestLoginRegistrationPromptIsStrictlyValidated(t *testing.T) {
+	codec, _ := auth.NewSecretCodec("test authentication secret")
+	provider := &fakeLoginProvider{principal: auth.Principal{Issuer: "issuer", Subject: "subject"}}
+	handler := newAuthTestHandler(provider, &fakeAuthenticationStore{}, codec, auth.DisabledAuthenticator{})
+	start := func(path string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		return response
+	}
+
+	response := start("/auth/login")
+	if response.Code != http.StatusFound || provider.prompt != "" {
+		t.Fatalf("normal login unexpectedly requested registration: status=%d prompt=%q", response.Code, provider.prompt)
+	}
+	if query, _ := url.Parse(response.Header().Get("Location")); query.Query().Get("prompt") != "" {
+		t.Fatal("normal login forwarded a prompt")
+	}
+
+	response = start("/auth/login?prompt=create")
+	if response.Code != http.StatusFound || provider.prompt != auth.RegistrationPrompt {
+		t.Fatalf("prompt=create did not start registration: status=%d prompt=%q", response.Code, provider.prompt)
+	}
+	registrationURL, _ := url.Parse(response.Header().Get("Location"))
+	if registrationURL.Query().Get("prompt") != auth.RegistrationPrompt || registrationURL.Query().Get("kc_action") != "" {
+		t.Fatalf("registration request was not narrowed to prompt=create: %s", registrationURL)
+	}
+
+	response = start("/auth/login?kc_action=register")
+	if response.Code != http.StatusFound || provider.prompt != auth.RegistrationPrompt {
+		t.Fatalf("kc_action=register was not mapped to prompt=create: status=%d prompt=%q", response.Code,
+			provider.prompt)
+	}
+	for _, path := range []string{"/auth/login?prompt=login", "/auth/login?kc_action=login",
+		"/auth/login?prompt=create&kc_action=login"} {
+		response = start(path)
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("unsupported registration input %q returned %d", path, response.Code)
+		}
+	}
+}
+
 func TestAuthenticationRejectsOpenRedirectsAndReplayedOrExpiredState(t *testing.T) {
 	codec, _ := auth.NewSecretCodec("test authentication secret")
 	provider := &fakeLoginProvider{principal: auth.Principal{Issuer: "issuer", Subject: "subject"}}
@@ -308,8 +481,10 @@ func TestAuthenticationRejectsOpenRedirectsAndReplayedOrExpiredState(t *testing.
 	loginResponse := httptest.NewRecorder()
 	handler.ServeHTTP(loginResponse, loginRequest)
 	state := provider.state
+	bindingCookie := cookieNamed(t, loginResponse.Result().Cookies(), "lorehub_login_binding")
 	callback := func() *httptest.ResponseRecorder {
 		request := httptest.NewRequest(http.MethodGet, "/auth/callback?state="+state+"&code=code", nil)
+		request.AddCookie(bindingCookie)
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, request)
 		return response
@@ -324,8 +499,10 @@ func TestAuthenticationRejectsOpenRedirectsAndReplayedOrExpiredState(t *testing.
 	loginRequest = httptest.NewRequest(http.MethodGet, "/auth/login?return_to=%2Fhome", nil)
 	loginResponse = httptest.NewRecorder()
 	handler.ServeHTTP(loginResponse, loginRequest)
+	bindingCookie = cookieNamed(t, loginResponse.Result().Cookies(), "lorehub_login_binding")
 	authenticationStore.transaction.ExpiresAt = time.Now().UTC().Add(-time.Minute)
 	request := httptest.NewRequest(http.MethodGet, "/auth/callback?state="+provider.state+"&code=code", nil)
+	request.AddCookie(bindingCookie)
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusBadRequest {
@@ -335,8 +512,10 @@ func TestAuthenticationRejectsOpenRedirectsAndReplayedOrExpiredState(t *testing.
 	loginRequest = httptest.NewRequest(http.MethodGet, "/auth/login?return_to=%2Fhome", nil)
 	loginResponse = httptest.NewRecorder()
 	handler.ServeHTTP(loginResponse, loginRequest)
+	bindingCookie = cookieNamed(t, loginResponse.Result().Cookies(), "lorehub_login_binding")
 	authenticationStore.transaction.NonceDigest = codec.Digest("wrong-nonce")
 	request = httptest.NewRequest(http.MethodGet, "/auth/callback?state="+provider.state+"&code=code", nil)
+	request.AddCookie(bindingCookie)
 	response = httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusBadRequest {
@@ -372,10 +551,12 @@ func TestLogoutRequiresCSRFAndBearerRequestsRemainCompatible(t *testing.T) {
 	loginRequest := httptest.NewRequest(http.MethodGet, "/auth/login", nil)
 	loginResponse := httptest.NewRecorder()
 	handler.ServeHTTP(loginResponse, loginRequest)
+	bindingCookie := cookieNamed(t, loginResponse.Result().Cookies(), "lorehub_login_binding")
 	callbackRequest := httptest.NewRequest(http.MethodGet, "/auth/callback?state="+provider.state+"&code=code", nil)
+	callbackRequest.AddCookie(bindingCookie)
 	callbackResponse := httptest.NewRecorder()
 	handler.ServeHTTP(callbackResponse, callbackRequest)
-	sessionCookie := callbackResponse.Result().Cookies()[0]
+	sessionCookie := cookieNamed(t, callbackResponse.Result().Cookies(), "lorehub_session")
 	sessionRequest := httptest.NewRequest(http.MethodGet, "/api/v1/auth/session", nil)
 	sessionRequest.AddCookie(sessionCookie)
 	sessionResponse := httptest.NewRecorder()
@@ -404,7 +585,7 @@ func TestLogoutRequiresCSRFAndBearerRequestsRemainCompatible(t *testing.T) {
 		t.Fatalf("logout with CSRF failed: status=%d location=%q revokes=%d", logoutResponse.Code,
 			logoutResponse.Header().Get("Location"), authenticationStore.revokeCalls)
 	}
-	clearCookie := logoutResponse.Result().Cookies()[0]
+	clearCookie := cookieNamed(t, logoutResponse.Result().Cookies(), "lorehub_session")
 	if clearCookie.MaxAge >= 0 || !clearCookie.HttpOnly || clearCookie.SameSite != http.SameSiteLaxMode {
 		t.Fatalf("logout did not clear a secure session cookie: %#v", clearCookie)
 	}

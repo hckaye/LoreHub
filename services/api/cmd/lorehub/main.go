@@ -113,10 +113,11 @@ func run(logger *slog.Logger) error {
 			SessionTTL:     settings.SessionTTL,
 			TransactionTTL: settings.LoginTransactionTTL,
 			SessionCookie: httpapi.SessionCookieOptions{
-				Name:   settings.SessionCookieName,
-				Path:   settings.SessionCookiePath,
-				Domain: settings.SessionCookieDomain,
-				Secure: settings.SessionCookieSecure,
+				Name:             settings.SessionCookieName,
+				LoginBindingName: settings.LoginBindingCookieName,
+				Path:             settings.SessionCookiePath,
+				Domain:           settings.SessionCookieDomain,
+				Secure:           settings.SessionCookieSecure,
 			},
 		}),
 	)

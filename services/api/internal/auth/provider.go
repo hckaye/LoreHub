@@ -43,13 +43,21 @@ func newOIDCProvider(ctx context.Context, config OIDCConfig) (*OIDCProvider, err
 	}, nil
 }
 
-func (provider *OIDCProvider) AuthorizationURL(state string, codeChallenge string, nonce string) string {
-	return provider.oauthConfig.AuthCodeURL(
-		state,
+func (provider *OIDCProvider) AuthorizationURL(
+	state string,
+	codeChallenge string,
+	nonce string,
+	prompt string,
+) string {
+	options := []oauth2.AuthCodeOption{
 		oauth2.SetAuthURLParam("code_challenge", codeChallenge),
 		oauth2.SetAuthURLParam("code_challenge_method", "S256"),
 		oauth2.SetAuthURLParam("nonce", nonce),
-	)
+	}
+	if prompt == RegistrationPrompt {
+		options = append(options, oauth2.SetAuthURLParam("prompt", RegistrationPrompt))
+	}
+	return provider.oauthConfig.AuthCodeURL(state, options...)
 }
 
 func (provider *OIDCProvider) Exchange(

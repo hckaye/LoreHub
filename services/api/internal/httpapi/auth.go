@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"net/http"
@@ -28,18 +29,22 @@ type AuthOptions struct {
 }
 
 type SessionCookieOptions struct {
-	Name   string
-	Path   string
-	Domain string
-	Secure bool
+	Name             string
+	LoginBindingName string
+	Path             string
+	Domain           string
+	Secure           bool
 }
 
 type sessionCookieConfig struct {
-	name   string
-	path   string
-	domain string
-	secure bool
+	name        string
+	bindingName string
+	path        string
+	domain      string
+	secure      bool
 }
+
+const loginBindingCookiePath = "/auth"
 
 func WithAuthentication(options AuthOptions) Option {
 	return func(api *API) {
@@ -58,13 +63,17 @@ func WithAuthentication(options AuthOptions) Option {
 			api.transactionTTL = 10 * time.Minute
 		}
 		api.cookie = sessionCookieConfig{
-			name:   options.SessionCookie.Name,
-			path:   options.SessionCookie.Path,
-			domain: options.SessionCookie.Domain,
-			secure: options.SessionCookie.Secure,
+			name:        options.SessionCookie.Name,
+			bindingName: options.SessionCookie.LoginBindingName,
+			path:        options.SessionCookie.Path,
+			domain:      options.SessionCookie.Domain,
+			secure:      options.SessionCookie.Secure,
 		}
 		if api.cookie.name == "" {
 			api.cookie.name = "lorehub_session"
+		}
+		if api.cookie.bindingName == "" {
+			api.cookie.bindingName = "lorehub_login_binding"
 		}
 		if api.cookie.path == "" {
 			api.cookie.path = "/"
@@ -76,6 +85,11 @@ func (api *API) login(writer http.ResponseWriter, request *http.Request) {
 	returnTo, ok := safeRelativeReturnTo(request.URL.Query().Get("return_to"))
 	if !ok {
 		writeProblem(writer, http.StatusBadRequest, "invalid_return_to", "The return location is invalid")
+		return
+	}
+	prompt, ok := loginPrompt(request.URL.Query())
+	if !ok {
+		writeProblem(writer, http.StatusBadRequest, "invalid_auth_request", "The login request is invalid")
 		return
 	}
 	if !api.interactiveAuthenticationAvailable() {
@@ -104,12 +118,15 @@ func (api *API) login(writer http.ResponseWriter, request *http.Request) {
 		api.internalError(writer, request, "create login transaction", err)
 		return
 	}
-	loginURL := api.loginProvider.AuthorizationURL(state, api.secrets.CodeChallenge(codeVerifier), nonce)
+	loginURL := api.loginProvider.AuthorizationURL(
+		state, api.secrets.CodeChallenge(codeVerifier), nonce, prompt,
+	)
 	if err := validateProviderURL(loginURL); err != nil {
 		api.internalError(writer, request, "prepare OIDC redirect", err)
 		return
 	}
 	writer.Header().Set("Cache-Control", "no-store")
+	http.SetCookie(writer, api.newLoginBindingCookie(state, now.Add(api.transactionTTL)))
 	http.Redirect(writer, request, loginURL, http.StatusFound)
 }
 
@@ -124,6 +141,13 @@ func (api *API) callback(writer http.ResponseWriter, request *http.Request) {
 		writeProblem(writer, http.StatusBadRequest, "authentication_failed", "The authentication response is invalid")
 		return
 	}
+	bindingCookie, bindingErr := request.Cookie(api.cookie.bindingName)
+	if bindingErr != nil || bindingCookie.Value == "" || len(bindingCookie.Value) != len(state) ||
+		subtle.ConstantTimeCompare([]byte(bindingCookie.Value), []byte(state)) != 1 {
+		writeProblem(writer, http.StatusBadRequest, "authentication_failed", "The authentication response is invalid")
+		return
+	}
+	api.clearLoginBindingCookie(writer)
 	now := time.Now().UTC()
 	transaction, err := api.loginStore.ConsumeLoginTransaction(request.Context(), api.secrets.Digest(state), now)
 	if err != nil {
@@ -332,6 +356,38 @@ func (api *API) clearSessionCookie(writer http.ResponseWriter) {
 	})
 }
 
+func (api *API) newLoginBindingCookie(state string, expiresAt time.Time) *http.Cookie {
+	maxAge := int(api.transactionTTL / time.Second)
+	if maxAge < 1 {
+		maxAge = 1
+	}
+	return &http.Cookie{
+		Name:     api.cookie.bindingName,
+		Value:    state,
+		Path:     loginBindingCookiePath,
+		Domain:   api.cookie.domain,
+		Expires:  expiresAt,
+		MaxAge:   maxAge,
+		HttpOnly: true,
+		Secure:   api.cookie.secure,
+		SameSite: http.SameSiteLaxMode,
+	}
+}
+
+func (api *API) clearLoginBindingCookie(writer http.ResponseWriter) {
+	http.SetCookie(writer, &http.Cookie{
+		Name:     api.cookie.bindingName,
+		Value:    "",
+		Path:     loginBindingCookiePath,
+		Domain:   api.cookie.domain,
+		Expires:  time.Unix(1, 0).UTC(),
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   api.cookie.secure,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
 type authSessionResponse struct {
 	Authenticated bool                 `json:"authenticated"`
 	User          *authUserResponse    `json:"user"`
@@ -413,6 +469,21 @@ func validateProviderURL(value string) error {
 		return fmt.Errorf("OIDC provider returned an invalid authorization URL")
 	}
 	return nil
+}
+
+func loginPrompt(query url.Values) (string, bool) {
+	promptValues, promptPresent := query["prompt"]
+	if promptPresent && (len(promptValues) != 1 || promptValues[0] != auth.RegistrationPrompt) {
+		return "", false
+	}
+	kcActionValues, kcActionPresent := query["kc_action"]
+	if kcActionPresent && (len(kcActionValues) != 1 || kcActionValues[0] != "register") {
+		return "", false
+	}
+	if promptPresent || kcActionPresent {
+		return auth.RegistrationPrompt, true
+	}
+	return "", true
 }
 
 func stateChangingMethod(method string) bool {

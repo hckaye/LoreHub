@@ -101,11 +101,18 @@ Bearer認証だけを使う場合は、`LOREHUB_AUTH_MODE=bearer`、`LOREHUB_OID
 `LOREHUB_OIDC_ISSUER`、`LOREHUB_OIDC_CLIENT_ID`、`LOREHUB_OIDC_CLIENT_SECRET`、
 `LOREHUB_OIDC_REDIRECT_URL`、`LOREHUB_PUBLIC_ORIGIN`、32文字以上の`LOREHUB_AUTH_SECRET`を設定します。
 Google、GitHub、Facebook、XなどのログインはKeycloak側のbroker設定で追加します。ログイン状態はLoreHubの
-サーバー側セッションで管理し、ブラウザCookieへOIDC tokenは保存しません。CookieのSecure属性は本番で既定有効です。
+サーバー側セッションで管理し、ブラウザCookieへOIDC tokenは保存しません。ログイン開始時は`/auth`専用の短命な
+HttpOnly、SameSite=Laxのbinding cookieで開始ブラウザを記録し、callbackでstateと照合します。CookieのSecure属性は
+本番で既定有効です。
 セッション期限、Cookie名、Path、Domain、Secure属性は`LOREHUB_SESSION_TTL`、
 `LOREHUB_SESSION_COOKIE_NAME`、`LOREHUB_SESSION_COOKIE_PATH`、`LOREHUB_SESSION_COOKIE_DOMAIN`、
-`LOREHUB_SESSION_COOKIE_SECURE`で変更できます。ログイン transactionの期限は
-`LOREHUB_LOGIN_TRANSACTION_TTL`で変更できます（セッションは最大30日、transactionは最大15分）。
+`LOREHUB_SESSION_COOKIE_SECURE`で変更できます。binding cookie名は`LOREHUB_LOGIN_BINDING_COOKIE_NAME`で変更でき、
+ログイン transactionとbinding cookieの期限は`LOREHUB_LOGIN_TRANSACTION_TTL`で変更できます（セッションは最大30日、
+transactionは最大15分）。
+
+通常のログインは`GET /auth/login`、Keycloakの登録画面を開始する場合は
+`GET /auth/login?prompt=create`を使います。互換性のため`kc_action=register`も受け付けますが、値は厳密に検証し、
+認証プロバイダーへは`prompt=create`だけを渡します。その他の`prompt`や`kc_action`は400を返します。
 
 Lore側の読み取りidentityは`LOREHUB_LORE_IDENTITY`で指定します。
 
@@ -115,7 +122,7 @@ Lore側の読み取りidentityは`LOREHUB_LORE_IDENTITY`で指定します。
 | ------ | ---------------------------------------------- | ---- | -------------------- |
 | `GET`  | `/health/live`                                 | 不要 | プロセスの確認       |
 | `GET`  | `/health/ready`                                | 不要 | PostgreSQL接続の確認 |
-| `GET`  | `/auth/login`                                  | 不要 | OIDCログイン開始     |
+| `GET`  | `/auth/login`                                  | 不要 | OIDCログイン／登録開始 |
 | `GET`  | `/auth/callback`                               | 不要 | OIDCログイン完了     |
 | `POST` | `/auth/logout`                                 | CSRF | セッション終了       |
 | `GET`  | `/api/v1/auth/session`                         | 不要 | ログイン状態の確認   |

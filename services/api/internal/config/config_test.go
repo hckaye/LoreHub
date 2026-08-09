@@ -58,8 +58,18 @@ func TestLoadInteractiveAuthenticationUsesSecureProductionCookie(t *testing.T) {
 		t.Fatal(err)
 	}
 	if settings.AuthMode != AuthModeInteractive || !settings.SessionCookieSecure ||
-		settings.OIDCClientID != "lorehub-web" {
+		settings.OIDCClientID != "lorehub-web" || settings.LoginBindingCookieName != "lorehub_login_binding" {
 		t.Fatalf("unexpected interactive production settings: %#v", settings)
+	}
+}
+
+func TestLoadRejectsInvalidLoginBindingCookieName(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("LOREHUB_LOGIN_BINDING_COOKIE_NAME", "invalid;name")
+
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "LOREHUB_LOGIN_BINDING_COOKIE_NAME") {
+		t.Fatalf("expected invalid binding cookie name error, got %v", err)
 	}
 }
 
@@ -70,6 +80,7 @@ func setRequiredEnvironment(t *testing.T) {
 	t.Setenv("LOREHUB_LOGIN_TRANSACTION_TTL", "")
 	t.Setenv("LOREHUB_SESSION_COOKIE_SECURE", "")
 	t.Setenv("LOREHUB_SESSION_COOKIE_NAME", "")
+	t.Setenv("LOREHUB_LOGIN_BINDING_COOKIE_NAME", "")
 	t.Setenv("LOREHUB_SESSION_COOKIE_PATH", "")
 	t.Setenv("LOREHUB_SESSION_COOKIE_DOMAIN", "")
 }

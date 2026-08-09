@@ -16,6 +16,8 @@ var (
 	ErrInvalidSession     = errors.New("session is invalid")
 )
 
+const RegistrationPrompt = "create"
+
 type Principal struct {
 	Issuer          string
 	Subject         string
@@ -31,7 +33,7 @@ type Authenticator interface {
 }
 
 type LoginProvider interface {
-	AuthorizationURL(state string, codeChallenge string, nonce string) string
+	AuthorizationURL(state string, codeChallenge string, nonce string, prompt string) string
 	Exchange(ctx context.Context, code string, codeVerifier string, nonce string) (Principal, error)
 }
 
