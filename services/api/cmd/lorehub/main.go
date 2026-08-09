@@ -286,6 +286,34 @@ func (adapter runnerLoreClient) Branches(
 	return adapter.client.Branches(ctx, repository, credential)
 }
 
+func (adapter runnerLoreClient) BranchesWithCredential(
+	ctx context.Context,
+	repository loreclient.RepositoryRef,
+	credential loreclient.Credential,
+) ([]loreclient.Branch, error) {
+	return adapter.client.BranchesWithCredential(ctx, repository, credential)
+}
+
+func (adapter runnerLoreClient) CloneRevision(
+	ctx context.Context,
+	repository loreclient.RepositoryRef,
+	identity string,
+	revision string,
+	destination string,
+) error {
+	return adapter.client.CloneRevision(ctx, repository, identity, revision, destination)
+}
+
+func (adapter runnerLoreClient) CloneRevisionWithCredential(
+	ctx context.Context,
+	repository loreclient.RepositoryRef,
+	credential loreclient.Credential,
+	revision string,
+	destination string,
+) error {
+	return adapter.client.CloneRevisionWithCredential(ctx, repository, credential, revision, destination)
+}
+
 func configuredExecutionContextResolver(settings config.Config) runner.ExecutionContextResolver {
 	if settings.DevActionsContextFallback &&
 		(settings.Environment == "development" || settings.Environment == "local") {
