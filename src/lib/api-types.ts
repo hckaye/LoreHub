@@ -90,7 +90,12 @@ export type MergeRequest = {
 
 export type CIRun = {
   id: string;
+  workflowId: string;
+  workflowName: string;
+  workflowPath: string;
   runNumber: number;
+  runAttempt: number;
+  rerunOf?: string;
   eventName: string;
   branch: string;
   revision: string;
@@ -99,6 +104,49 @@ export type CIRun = {
   queuedAt: string;
   startedAt: string | null;
   completedAt: string | null;
+};
+
+export type CIWorkflow = {
+  id: string;
+  path: string;
+  name: string;
+  enabled: boolean;
+  state: "active" | "disabled" | "error";
+  errorCode?: string;
+  errorMessage?: string;
+  lastSeenRevision: string;
+  triggerConfig: {
+    push?: { branches?: string[]; branches_ignore?: string[] };
+    workflow_dispatch?: Record<string, unknown>;
+  };
+  updatedAt: string;
+};
+
+export type CIJob = {
+  id: string;
+  name: string;
+  status: "queued" | "in_progress" | "completed" | "cancelled";
+  conclusion: CIRun["conclusion"];
+  attempt: number;
+  logAvailable: boolean;
+  queuedAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+};
+
+export type CIArtifact = {
+  id: string;
+  jobId: string;
+  name: string;
+  sizeBytes: number;
+  createdAt: string;
+};
+
+export type CIRunDetail = {
+  run: CIRun;
+  workflow: CIWorkflow;
+  jobs: CIJob[];
+  artifacts: CIArtifact[];
 };
 
 export type APIResult<T> =

@@ -47,6 +47,11 @@ type Config struct {
 	RunnerPollPeriod       time.Duration
 	BranchPollPeriod       time.Duration
 	RunnerJobTimeout       time.Duration
+	RunnerLeaseDuration    time.Duration
+	RunnerLogMaxBytes      int64
+	RunnerArtifactMaxCount int
+	RunnerArtifactMaxFile  int64
+	RunnerArtifactMaxTotal int64
 	RunnerLogDir           string
 	RunnerArtifactDir      string
 	RunnerWorkDir          string
@@ -74,6 +79,22 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	transactionTTL, err := durationSetting("LOREHUB_LOGIN_TRANSACTION_TTL", 10*time.Minute)
+	if err != nil {
+		return Config{}, err
+	}
+	logMaxBytes, err := byteSetting("LOREHUB_RUNNER_LOG_MAX_BYTES", 10<<20)
+	if err != nil {
+		return Config{}, err
+	}
+	artifactMaxFile, err := byteSetting("LOREHUB_RUNNER_ARTIFACT_MAX_FILE_BYTES", 100<<20)
+	if err != nil {
+		return Config{}, err
+	}
+	artifactMaxTotal, err := byteSetting("LOREHUB_RUNNER_ARTIFACT_MAX_TOTAL_BYTES", 500<<20)
+	if err != nil {
+		return Config{}, err
+	}
+	artifactMaxCount, err := intSetting("LOREHUB_RUNNER_ARTIFACT_MAX_COUNT", 100)
 	if err != nil {
 		return Config{}, err
 	}
@@ -105,6 +126,11 @@ func Load() (Config, error) {
 		RunnerPollPeriod:       durationOrDefault("LOREHUB_RUNNER_POLL_PERIOD", 2*time.Second),
 		BranchPollPeriod:       durationOrDefault("LOREHUB_BRANCH_POLL_PERIOD", 15*time.Second),
 		RunnerJobTimeout:       durationOrDefault("LOREHUB_RUNNER_JOB_TIMEOUT", 60*time.Minute),
+		RunnerLeaseDuration:    durationOrDefault("LOREHUB_RUNNER_LEASE_DURATION", 2*time.Minute),
+		RunnerLogMaxBytes:      logMaxBytes,
+		RunnerArtifactMaxCount: artifactMaxCount,
+		RunnerArtifactMaxFile:  artifactMaxFile,
+		RunnerArtifactMaxTotal: artifactMaxTotal,
 		RunnerLogDir:           envOrDefault("LOREHUB_RUNNER_LOG_DIR", ".cache/lorehub/runner-logs"),
 		RunnerArtifactDir:      envOrDefault("LOREHUB_RUNNER_ARTIFACT_DIR", ".cache/lorehub/runner-artifacts"),
 		RunnerWorkDir:          envOrDefault("LOREHUB_RUNNER_WORK_DIR", ".cache/lorehub/runner-work"),
@@ -181,7 +207,7 @@ func validate(config Config) error {
 		}
 	}
 	if config.AuthMode != AuthModeInteractive {
-		return nil
+		return validateRunner(config)
 	}
 	for name, value := range map[string]string{
 		"LOREHUB_OIDC_CLIENT_ID":     config.OIDCClientID,
@@ -207,6 +233,21 @@ func validate(config Config) error {
 	publicOrigin, _ := url.Parse(config.PublicOrigin)
 	if !sameOrigin(redirectURL, publicOrigin) {
 		return errors.New("LOREHUB_OIDC_REDIRECT_URL must use the LOREHUB_PUBLIC_ORIGIN origin")
+	}
+	return validateRunner(config)
+}
+
+func validateRunner(config Config) error {
+	if config.RunnerPollPeriod <= 0 || config.BranchPollPeriod <= 0 || config.RunnerJobTimeout <= 0 ||
+		config.RunnerLeaseDuration <= 0 {
+		return errors.New("runner polling, lease, and job timeout durations must be greater than zero")
+	}
+	if config.RunnerLeaseDuration >= config.RunnerJobTimeout {
+		return errors.New("LOREHUB_RUNNER_LEASE_DURATION must be shorter than LOREHUB_RUNNER_JOB_TIMEOUT")
+	}
+	if config.RunnerLogMaxBytes <= 0 || config.RunnerArtifactMaxCount <= 0 || config.RunnerArtifactMaxFile <= 0 ||
+		config.RunnerArtifactMaxTotal <= 0 || config.RunnerArtifactMaxFile > config.RunnerArtifactMaxTotal {
+		return errors.New("runner log and artifact quotas are invalid")
 	}
 	return nil
 }
@@ -290,6 +331,30 @@ func durationSetting(key string, fallback time.Duration) (time.Duration, error) 
 		return time.Duration(seconds) * time.Second, nil
 	}
 	return 0, fmt.Errorf("%s must be a duration such as 10m or a number of seconds", key)
+}
+
+func byteSetting(key string, fallback int64) (int64, error) {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback, nil
+	}
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || parsed <= 0 {
+		return 0, fmt.Errorf("%s must be a positive byte count", key)
+	}
+	return parsed, nil
+}
+
+func intSetting(key string, fallback int) (int, error) {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback, nil
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed <= 0 {
+		return 0, fmt.Errorf("%s must be a positive integer", key)
+	}
+	return parsed, nil
 }
 
 func cookieSecureSetting(environment string) (bool, error) {

@@ -35,3 +35,13 @@ type Client interface {
 	RepositoryInfo(ctx context.Context, repositoryURL string, identity string) (Repository, error)
 	Branches(ctx context.Context, repository RepositoryRef, identity string) ([]Branch, error)
 }
+
+type RevisionClient interface {
+	CloneRevision(
+		ctx context.Context,
+		repository RepositoryRef,
+		identity string,
+		revision string,
+		destination string,
+	) error
+}

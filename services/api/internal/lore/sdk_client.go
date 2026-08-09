@@ -132,6 +132,42 @@ func (client *SDKClient) Branches(
 	return branches, nil
 }
 
+func (client *SDKClient) CloneRevision(
+	ctx context.Context,
+	repository RepositoryRef,
+	identity string,
+	revision string,
+	destination string,
+) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if revision == "" || destination == "" {
+		return errors.New("Lore revision and destination are required")
+	}
+	if filepath.IsAbs(destination) == false {
+		return errors.New("Lore revision destination must be absolute")
+	}
+	if err := os.MkdirAll(destination, 0o750); err != nil {
+		return fmt.Errorf("create Lore revision workspace: %w", err)
+	}
+	globals, cleanupGlobals := types.NewLoreGlobalArgs(types.LoreGlobalArgs{
+		RepositoryPath: destination,
+		Identity:       identity,
+		Remote:         true,
+	})
+	defer cleanupGlobals()
+	args, cleanupArgs := types.NewLoreRepositoryCloneArgs(types.LoreRepositoryCloneArgs{
+		RepositoryUrl: repository.URL,
+		Revision:      revision,
+	})
+	defer cleanupArgs()
+	if _, err := loresdk.RepositoryClone(&globals, &args).Wait(); err != nil {
+		return fmt.Errorf("clone Lore revision %s: %w", revision, err)
+	}
+	return nil
+}
+
 func (client *SDKClient) ensureBareClone(repositoryURL string, cachePath string, identity string) error {
 	if _, err := os.Stat(filepath.Join(cachePath, ".lore", "config.toml")); err == nil {
 		return nil

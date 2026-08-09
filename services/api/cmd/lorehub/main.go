@@ -69,6 +69,7 @@ func run(logger *slog.Logger) error {
 	var loginProvider auth.LoginProvider
 	var secretCodec *auth.SecretCodec
 	store := platform.NewStore(pool)
+	actionsStore := runner.NewStoreWithFiles(pool, settings.RunnerLogDir, settings.RunnerArtifactDir)
 	switch settings.AuthMode {
 	case config.AuthModeInteractive:
 		provider, err := auth.NewOIDCProvider(rootContext, auth.OIDCConfig{
@@ -121,6 +122,7 @@ func run(logger *slog.Logger) error {
 				Secure:           settings.SessionCookieSecure,
 			},
 		}),
+		httpapi.WithActions(actionsStore),
 	)
 	server := &http.Server{
 		Addr:              settings.HTTPAddress,
@@ -161,15 +163,22 @@ func runRunner(
 	settings config.Config,
 	logger *slog.Logger,
 ) error {
-	store := runner.NewStore(pool)
+	store := runner.NewStoreWithFiles(pool, settings.RunnerLogDir, settings.RunnerArtifactDir)
 	worker, err := runner.NewWorker(store, runner.WorkerConfig{
-		LoreBinary:  settings.LoreBinary,
-		ActBinary:   settings.ActBinary,
-		WorkDir:     settings.RunnerWorkDir,
-		LogDir:      settings.RunnerLogDir,
-		ArtifactDir: settings.RunnerArtifactDir,
-		PollPeriod:  settings.RunnerPollPeriod,
-		JobTimeout:  settings.RunnerJobTimeout,
+		LoreBinary:            settings.LoreBinary,
+		LoreIdentity:          settings.LoreIdentity,
+		RevisionClient:        lore,
+		ActBinary:             settings.ActBinary,
+		WorkDir:               settings.RunnerWorkDir,
+		LogDir:                settings.RunnerLogDir,
+		ArtifactDir:           settings.RunnerArtifactDir,
+		PollPeriod:            settings.RunnerPollPeriod,
+		JobTimeout:            settings.RunnerJobTimeout,
+		LeaseDuration:         settings.RunnerLeaseDuration,
+		LogMaxBytes:           settings.RunnerLogMaxBytes,
+		ArtifactMaxCount:      settings.RunnerArtifactMaxCount,
+		ArtifactMaxFileBytes:  settings.RunnerArtifactMaxFile,
+		ArtifactMaxTotalBytes: settings.RunnerArtifactMaxTotal,
 	}, logger)
 	if err != nil {
 		return err

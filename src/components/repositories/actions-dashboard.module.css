@@ -1,0 +1,178 @@
+.dashboard {
+  display: grid;
+  gap: 22px;
+}
+
+.section {
+  display: grid;
+  gap: 12px;
+}
+
+.heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.heading h2 {
+  margin: 0 0 4px;
+  font-size: 1rem;
+}
+
+.heading p,
+.run p {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.workflowList,
+.runList {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.workflow,
+.run {
+  display: flex;
+  min-height: 56px;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-muted);
+}
+
+.workflow:last-child,
+.run:last-child {
+  border-bottom: 0;
+}
+
+.workflow > div,
+.runMain {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  flex: 1;
+}
+
+.workflow code {
+  color: var(--accent-fg);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  overflow-wrap: anywhere;
+}
+
+.runIcon {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  color: var(--accent-fg);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.runMain a {
+  color: var(--fg-default);
+  font-size: 0.86rem;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.runMain a:hover {
+  color: var(--accent-fg);
+}
+
+.run button,
+.dispatchForm button {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--fg-default);
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.run button:hover,
+.dispatchForm button:hover {
+  background: var(--canvas-subtle);
+}
+
+.run button:disabled,
+.dispatchForm button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.dispatchForm {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 0.8fr) auto;
+  align-items: end;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.dispatchForm label {
+  display: grid;
+  gap: 6px;
+  color: var(--fg-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.dispatchForm input,
+.dispatchForm select {
+  min-height: 34px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--canvas);
+  color: var(--fg-default);
+  font: inherit;
+}
+
+.dispatchForm button {
+  border-color: var(--accent-border);
+  background: var(--accent-emphasis);
+  color: var(--fg-on-emphasis);
+}
+
+.empty,
+.notice {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 0.82rem;
+}
+
+.notice {
+  padding: 10px 12px;
+  border: 1px solid var(--attention-border);
+  border-radius: 6px;
+  background: var(--attention-bg);
+}
+
+@media (max-width: 720px) {
+  .dispatchForm {
+    grid-template-columns: 1fr;
+  }
+
+  .run {
+    flex-wrap: wrap;
+  }
+
+  .runMain {
+    min-width: calc(100% - 36px);
+  }
+}

@@ -70,6 +70,7 @@ type HealthChecker interface {
 
 type API struct {
 	store          Store
+	actions        ActionsStore
 	lore           loreclient.Client
 	authenticator  auth.Authenticator
 	health         HealthChecker
@@ -123,6 +124,19 @@ func New(
 	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/merge-requests", api.listMergeRequests)
 	mux.HandleFunc("POST /api/v1/repositories/{owner}/{repository}/merge-requests", api.createMergeRequest)
 	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/actions/runs", api.listCIRuns)
+	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/actions/workflows", api.listActionWorkflows)
+	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/actions/runs/{runNumber}", api.actionRunDetail)
+	mux.HandleFunc("POST /api/v1/repositories/{owner}/{repository}/actions/workflows/{workflow}/dispatches",
+		api.dispatchActionWorkflow)
+	mux.HandleFunc("POST /api/v1/repositories/{owner}/{repository}/actions/runs/{runNumber}/cancel",
+		api.cancelActionRun)
+	mux.HandleFunc("POST /api/v1/repositories/{owner}/{repository}/actions/runs/{runNumber}/rerun",
+		api.rerunActionRun)
+	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/actions/jobs/{jobID}/logs", api.actionJobLog)
+	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/actions/artifacts/{artifactID}",
+		api.actionArtifact)
+	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/actions/artifacts/{artifactID}/download",
+		api.actionArtifact)
 	return api.recoverPanic(api.securityHeaders(api.requestLog(mux)))
 }
 
@@ -395,6 +409,10 @@ func (api *API) createMergeRequest(writer http.ResponseWriter, request *http.Req
 }
 
 func (api *API) listCIRuns(writer http.ResponseWriter, request *http.Request) {
+	if api.actions != nil {
+		api.actionRuns(writer, request)
+		return
+	}
 	runs, err := api.store.ListPublicCIRuns(
 		request.Context(),
 		request.PathValue("owner"),

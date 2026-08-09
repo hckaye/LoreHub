@@ -59,8 +59,9 @@ outboxへ記録し、workerが再送する。重複通知は外部イベントID
 `act`はGitHubのサービスそのものではないため、Windows/macOS runner、GitHub固有API、未対応構文には差がある。
 対応範囲をAPIと画面で明示し、GitHub公開のワークフロー例を使った実行テストで差を検出する。
 
-任意コードを実行するrunnerはAPIと同じホストへ置かない。本番では専用ノード上のrootlessコンテナまたはVMを使い、
-ホストのDocker socketを直接渡さない。開発環境だけは、明示的なprofileでローカルDockerを利用できる。
+任意コードを実行するrunnerはAPIと同じホストへ置かない。本番では信頼ドメインごとに専用・短命なrunner基盤を
+使い、ホストのDocker socketを直接渡さない。Composeの明示的なprofileもrunner専用のrootless Docker-in-Docker
+engineを使い、engine境界の権限とjob containerの制限を分けて管理する。
 
 ### 画面と翻訳
 

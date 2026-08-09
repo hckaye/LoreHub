@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"time"
 
 	loreclient "github.com/lorehub/lorehub/services/api/internal/lore"
@@ -71,11 +72,37 @@ func (poller *Poller) poll(ctx context.Context) error {
 			if branch.Archived || branch.LatestRevision == "" {
 				continue
 			}
+			var workflows []WorkflowDefinition
+			revisionClient, canInspectRevision := poller.lore.(loreclient.RevisionClient)
+			if canInspectRevision {
+				workspace, err := os.MkdirTemp("", "lorehub-workflow-")
+				if err != nil {
+					return fmt.Errorf("create workflow inspection workspace: %w", err)
+				}
+				cloneErr := revisionClient.CloneRevision(ctx, loreclient.RepositoryRef{
+					CacheKey: repository.ID,
+					URL:      repository.LoreURL,
+				}, poller.identity, branch.LatestRevision, workspace)
+				if cloneErr == nil {
+					workflows, cloneErr = DiscoverWorkflows(workspace)
+				}
+				removeErr := os.RemoveAll(workspace)
+				if cloneErr != nil {
+					return fmt.Errorf("inspect workflows at Lore revision %s: %w", branch.LatestRevision, cloneErr)
+				}
+				if removeErr != nil {
+					return fmt.Errorf("remove workflow inspection workspace: %w", removeErr)
+				}
+			} else {
+				poller.logger.Warn("Lore client cannot inspect revision workflows; branch state was not scheduled",
+					"repository", repository.Owner+"/"+repository.Slug, "branch", branch.Name)
+				workflows = nil
+			}
 			queued, err := poller.store.ObserveBranch(ctx, repository, ObservedBranch{
 				ID:             branch.ID,
 				Name:           branch.Name,
 				LatestRevision: branch.LatestRevision,
-			})
+			}, workflows...)
 			if err != nil {
 				return fmt.Errorf("observe %s/%s branch %s: %w", repository.Owner, repository.Slug, branch.Name, err)
 			}

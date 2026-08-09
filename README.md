@@ -75,8 +75,11 @@ docker compose -f infra/compose.yaml up --build postgres lore api web
 docker compose -f infra/compose.yaml --profile runner up --build
 ```
 
-開発用profileはホストのDocker socketをrunnerへ渡します。任意コードを実行できるため、信頼できないリポジトリには
-使えません。本番ではAPIと別の専用ノードに配置し、rootlessコンテナまたはVMでジョブごとに隔離してください。
+runner profileは、ホストのDocker socketを使わず、runner専用のrootless
+Docker-in-Docker engineへ接続します。engine境界には必要な権限がありますが、job containerには特権、host network、
+host mountを渡しません。任意コードを実行するため、信頼ドメインごとにAPIとは別の専用・短命なrunner基盤へ配置し、
+CPU、メモリ、PID、ログ、成果物の制限を維持してください。検証方法は[runner運用ドキュメント](docs/runner-actions.md)を
+参照してください。
 
 ## ホスト上での開発
 
@@ -120,20 +123,20 @@ Lore側の読み取りidentityは`LOREHUB_LORE_IDENTITY`で指定します。
 
 ## APIの主な入口
 
-| Method | Path                                           | 認証 | 目的                 |
-| ------ | ---------------------------------------------- | ---- | -------------------- |
-| `GET`  | `/health/live`                                 | 不要 | プロセスの確認       |
-| `GET`  | `/health/ready`                                | 不要 | PostgreSQL接続の確認 |
+| Method | Path                                           | 認証 | 目的                   |
+| ------ | ---------------------------------------------- | ---- | ---------------------- |
+| `GET`  | `/health/live`                                 | 不要 | プロセスの確認         |
+| `GET`  | `/health/ready`                                | 不要 | PostgreSQL接続の確認   |
 | `GET`  | `/auth/login`                                  | 不要 | OIDCログイン／登録開始 |
-| `GET`  | `/auth/callback`                               | 不要 | OIDCログイン完了     |
-| `POST` | `/auth/logout`                                 | CSRF | セッション終了       |
-| `GET`  | `/api/v1/auth/session`                         | 不要 | ログイン状態の確認   |
-| `GET`  | `/api/v1/explore/repositories`                 | 不要 | 公開リポジトリ一覧   |
-| `POST` | `/api/v1/organizations`                        | OIDC | 組織作成             |
-| `POST` | `/api/v1/organizations/{org}/repositories`     | OIDC | Loreリポジトリ登録   |
-| `GET`  | `/api/v1/repositories/{owner}/{repo}/branches` | 不要 | Lore branch一覧      |
-| `GET`  | `/api/v1/repositories/{owner}/{repo}/issues`   | 不要 | 公開Issue一覧        |
-| `POST` | `/api/v1/repositories/{owner}/{repo}/issues`   | OIDC | Issue作成            |
+| `GET`  | `/auth/callback`                               | 不要 | OIDCログイン完了       |
+| `POST` | `/auth/logout`                                 | CSRF | セッション終了         |
+| `GET`  | `/api/v1/auth/session`                         | 不要 | ログイン状態の確認     |
+| `GET`  | `/api/v1/explore/repositories`                 | 不要 | 公開リポジトリ一覧     |
+| `POST` | `/api/v1/organizations`                        | OIDC | 組織作成               |
+| `POST` | `/api/v1/organizations/{org}/repositories`     | OIDC | Loreリポジトリ登録     |
+| `GET`  | `/api/v1/repositories/{owner}/{repo}/branches` | 不要 | Lore branch一覧        |
+| `GET`  | `/api/v1/repositories/{owner}/{repo}/issues`   | 不要 | 公開Issue一覧          |
+| `POST` | `/api/v1/repositories/{owner}/{repo}/issues`   | OIDC | Issue作成              |
 
 更新APIは、既存クライアントからは`Authorization: Bearer <token>`で利用できます。ブラウザセッションで利用する場合は、
 `GET /api/v1/auth/session`が返すCSRF tokenを`X-CSRF-Token`ヘッダーに付けます。APIはOIDCのissuer、audience、署名、
@@ -141,8 +144,8 @@ Lore側の読み取りidentityは`LOREHUB_LORE_IDENTITY`で指定します。
 
 ## GitHub Actions互換範囲
 
-runnerは`.github/workflows/*.yml`を`act`へ渡します。`actions/checkout`は、workerが取得済みのLore revisionを使う
-処理へ置き換えます。`push`イベントの`before`と`after`にはLore revisionが入ります。
+runnerは`.github/workflows/*.yml`を`act`へ渡します。`actions/checkout`は、workerが取得済みのLore revisionを
+使う処理へ置き換えます。`push`イベントの`before`と`after`にはLore revisionが入ります。
 
 Linuxコンテナで実行できるworkflowを対象にしています。GitHubのAPIそのもの、Git固有コマンド、Windows／macOS
 runner、GitHubが管理するrunner imageとの完全一致は提供しません。互換範囲外の機能を黙って成功扱いにはしません。

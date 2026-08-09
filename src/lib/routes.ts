@@ -23,6 +23,11 @@ export function repositoryPath(
   return section === "code" ? base : `${base}/${section}`;
 }
 
+export function actionsAPIPath(owner: string, repository: string, ...segments: string[]): string {
+  const base = `/api/v1/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/actions`;
+  return `${base}/${segments.map((segment) => encodeURIComponent(segment)).join("/")}`;
+}
+
 export function localizedPath(locale: Locale, ...segments: string[]): string {
   return `/${locale}/${segments.map((segment) => encodeURIComponent(segment)).join("/")}`;
 }

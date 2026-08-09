@@ -10,20 +10,34 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/google/uuid"
+	loreclient "github.com/lorehub/lorehub/services/api/internal/lore"
 )
 
 type WorkerConfig struct {
-	LoreBinary  string
-	ActBinary   string
-	WorkDir     string
-	LogDir      string
-	ArtifactDir string
-	PollPeriod  time.Duration
-	JobTimeout  time.Duration
+	LoreBinary            string
+	LoreIdentity          string
+	RevisionClient        loreclient.RevisionClient
+	ActBinary             string
+	WorkDir               string
+	LogDir                string
+	ArtifactDir           string
+	PollPeriod            time.Duration
+	JobTimeout            time.Duration
+	LeaseDuration         time.Duration
+	LogMaxBytes           int64
+	ArtifactMaxCount      int
+	ArtifactMaxFileBytes  int64
+	ArtifactMaxTotalBytes int64
 }
+
+const containerOptions = "--privileged=false --cpus=1 --memory=1g --pids-limit=256 " +
+	"--cap-drop=ALL --security-opt=no-new-privileges:true"
 
 type Worker struct {
 	store    *Store
@@ -38,10 +52,29 @@ func NewWorker(store *Store, config WorkerConfig, logger *slog.Logger) (*Worker,
 			return nil, fmt.Errorf("create runner directory %q: %w", directory, err)
 		}
 	}
-	for name, binary := range map[string]string{"Lore": config.LoreBinary, "act": config.ActBinary} {
+	binaries := map[string]string{"act": config.ActBinary}
+	if config.RevisionClient == nil {
+		binaries["Lore"] = config.LoreBinary
+	}
+	for name, binary := range binaries {
 		if _, err := exec.LookPath(binary); err != nil {
 			return nil, fmt.Errorf("%s executable %q is unavailable: %w", name, binary, err)
 		}
+	}
+	if config.LeaseDuration <= 0 {
+		config.LeaseDuration = config.JobTimeout + time.Minute
+	}
+	if config.LogMaxBytes <= 0 {
+		config.LogMaxBytes = 10 << 20
+	}
+	if config.ArtifactMaxCount <= 0 {
+		config.ArtifactMaxCount = 100
+	}
+	if config.ArtifactMaxFileBytes <= 0 {
+		config.ArtifactMaxFileBytes = 100 << 20
+	}
+	if config.ArtifactMaxTotalBytes <= 0 {
+		config.ArtifactMaxTotalBytes = 500 << 20
 	}
 	return &Worker{
 		store:    store,
@@ -55,7 +88,7 @@ func (worker *Worker) Run(ctx context.Context) error {
 	ticker := time.NewTicker(worker.config.PollPeriod)
 	defer ticker.Stop()
 	for {
-		job, err := worker.store.ClaimJob(ctx, worker.workerID, worker.config.JobTimeout+time.Minute)
+		job, err := worker.store.ClaimJob(ctx, worker.workerID, worker.config.LeaseDuration)
 		if err != nil {
 			worker.logger.Error("claim CI job", "error", err)
 		} else if job != nil {
@@ -73,14 +106,31 @@ func (worker *Worker) Run(ctx context.Context) error {
 func (worker *Worker) execute(parent context.Context, job Job) {
 	ctx, cancel := context.WithTimeout(parent, worker.config.JobTimeout)
 	defer cancel()
+	monitorDone := make(chan struct{})
+	go func() {
+		defer close(monitorDone)
+		worker.monitorJob(ctx, job, cancel)
+	}()
+
+	logKey := worker.logObjectKey(job)
 	conclusion := "success"
-	logKey, artifacts, err := worker.runJob(ctx, job)
+	logKey, artifacts, err := worker.runJob(ctx, job, logKey)
 	if err != nil {
 		conclusion = "failure"
 		if errors.Is(err, context.DeadlineExceeded) {
 			conclusion = "timed_out"
+		} else if errors.Is(err, context.Canceled) {
+			conclusion = "cancelled"
 		}
 		worker.logger.Error("CI job failed", "job_id", job.ID, "error", err)
+	}
+	cancel()
+	<-monitorDone
+	if parent.Err() != nil {
+		if err := removeArtifactAttempt(worker.config.ArtifactDir, job); err != nil {
+			worker.logger.Warn("remove abandoned CI artifacts", "job_id", job.ID, "error", err)
+		}
+		return
 	}
 	completeContext, completeCancel := context.WithTimeout(context.WithoutCancel(parent), 10*time.Second)
 	defer completeCancel()
@@ -93,10 +143,47 @@ func (worker *Worker) execute(parent context.Context, job Job) {
 		artifacts,
 	); err != nil {
 		worker.logger.Error("record CI job completion", "job_id", job.ID, "error", err)
+		if err := removeArtifactAttempt(worker.config.ArtifactDir, job); err != nil {
+			worker.logger.Warn("remove uncommitted CI artifacts", "job_id", job.ID, "error", err)
+		}
 	}
 }
 
-func (worker *Worker) runJob(ctx context.Context, job Job) (string, []Artifact, error) {
+func (worker *Worker) monitorJob(ctx context.Context, job Job, cancel context.CancelFunc) {
+	heartbeatPeriod := worker.config.LeaseDuration / 3
+	if heartbeatPeriod < time.Second {
+		heartbeatPeriod = time.Second
+	}
+	heartbeatTicker := time.NewTicker(heartbeatPeriod)
+	cancelTicker := time.NewTicker(500 * time.Millisecond)
+	defer heartbeatTicker.Stop()
+	defer cancelTicker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-cancelTicker.C:
+			requested, err := worker.store.CancellationRequested(ctx, job.ID)
+			if err != nil {
+				worker.logger.Error("poll CI cancellation", "job_id", job.ID, "error", err)
+				cancel()
+				return
+			}
+			if requested {
+				cancel()
+				return
+			}
+		case <-heartbeatTicker.C:
+			if err := worker.store.HeartbeatJob(ctx, job.ID, worker.workerID, worker.config.LeaseDuration); err != nil {
+				worker.logger.Error("heartbeat CI job", "job_id", job.ID, "error", err)
+				cancel()
+				return
+			}
+		}
+	}
+}
+
+func (worker *Worker) runJob(ctx context.Context, job Job, logKey string) (string, []Artifact, error) {
 	workspace, err := os.MkdirTemp(worker.config.WorkDir, "job-"+job.ID+"-")
 	if err != nil {
 		return "", nil, fmt.Errorf("create CI workspace: %w", err)
@@ -107,35 +194,25 @@ func (worker *Worker) runJob(ctx context.Context, job Job) (string, []Artifact, 
 		}
 	}()
 
-	attemptName := fmt.Sprintf("attempt-%d", job.Attempt)
-	logKey := filepath.Join(job.RepositoryID, job.RunID, job.ID, attemptName+".log")
-	logPath := filepath.Join(worker.config.LogDir, logKey)
+	logPath := filepath.Join(worker.config.LogDir, filepath.FromSlash(logKey))
 	if err := os.MkdirAll(filepath.Dir(logPath), 0o750); err != nil {
 		return "", nil, fmt.Errorf("create CI log directory: %w", err)
 	}
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o600)
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return "", nil, fmt.Errorf("create CI log: %w", err)
 	}
 	defer func() { _ = logFile.Close() }()
+	if err := worker.store.SetJobLogObjectKey(ctx, job, worker.workerID, logKey); err != nil {
+		return "", nil, fmt.Errorf("publish CI log path: %w", err)
+	}
+	logWriter := &boundedLogWriter{writer: logFile, remaining: worker.config.LogMaxBytes}
 
 	repositoryPath := filepath.Join(workspace, "repository")
-	clone := exec.CommandContext(
-		ctx,
-		worker.config.LoreBinary,
-		"clone",
-		"--revision",
-		job.Revision,
-		job.LoreURL,
-		repositoryPath,
-	)
-	clone.Stdout = logFile
-	clone.Stderr = logFile
-	clone.Env = safeEnvironment()
-	if err := clone.Run(); err != nil {
-		return logKey, nil, fmt.Errorf("clone Lore revision: %w", err)
+	if err := worker.cloneRevision(ctx, job, repositoryPath, logWriter); err != nil {
+		return logKey, nil, err
 	}
-	if _, err := AdaptWorkflows(repositoryPath); err != nil {
+	if _, err := AdaptWorkflow(repositoryPath, job.WorkflowPath); err != nil {
 		return logKey, nil, err
 	}
 
@@ -147,24 +224,32 @@ func (worker *Worker) runJob(ctx context.Context, job Job) (string, []Artifact, 
 	if err := os.MkdirAll(artifactPath, 0o750); err != nil {
 		return logKey, nil, fmt.Errorf("create CI artifact directory: %w", err)
 	}
-	workflowPath := filepath.Join(repositoryPath, ".github", "workflows")
-	act := exec.CommandContext(
-		ctx,
-		worker.config.ActBinary,
+	workflowPath := filepath.Join(repositoryPath, filepath.FromSlash(job.WorkflowPath))
+	if err := validateWorkflowFile(workflowPath); err != nil {
+		return logKey, nil, err
+	}
+	arguments := []string{
 		job.EventName,
-		"--directory",
-		repositoryPath,
-		"--workflows",
-		workflowPath,
-		"--eventpath",
-		eventPath,
-		"--artifact-server-path",
-		artifactPath,
-	)
-	act.Stdout = io.MultiWriter(logFile)
-	act.Stderr = io.MultiWriter(logFile)
-	act.Env = safeEnvironment()
-	runErr := act.Run()
+		"--directory", repositoryPath,
+		"--workflows", workflowPath,
+		"--eventpath", eventPath,
+		"--artifact-server-path", artifactPath,
+		"--artifact-server-addr", "0.0.0.0",
+		"--container-daemon-socket", "-",
+		"--container-architecture", "linux/amd64",
+		"--network", "bridge",
+		"--no-cache-server",
+		"--platform", "ubuntu-latest=node:22-bookworm-slim",
+		"--rm",
+		"--env", "LOREHUB_LORE_REVISION=" + job.Revision,
+	}
+	arguments = append(arguments, "--container-options", containerOptions)
+	act := exec.CommandContext(ctx, worker.config.ActBinary, arguments...)
+	act.Stdout = logWriter
+	act.Stderr = logWriter
+	act.Env = append(safeEnvironment(), "LOREHUB_LORE_REVISION="+job.Revision)
+	runErr := runAct(ctx, act)
+	_ = logFile.Sync()
 	artifacts, artifactErr := worker.persistArtifacts(job, artifactPath)
 	if artifactErr != nil {
 		return logKey, nil, artifactErr
@@ -175,10 +260,74 @@ func (worker *Worker) runJob(ctx context.Context, job Job) (string, []Artifact, 
 	return logKey, artifacts, nil
 }
 
+func runAct(ctx context.Context, act *exec.Cmd) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := act.Start(); err != nil {
+		return err
+	}
+	done := make(chan error, 1)
+	go func() { done <- act.Wait() }()
+	select {
+	case err := <-done:
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		return err
+	case <-ctx.Done():
+		_ = act.Process.Signal(syscall.SIGTERM)
+		timer := time.NewTimer(5 * time.Second)
+		defer timer.Stop()
+		select {
+		case <-done:
+			return ctx.Err()
+		case <-timer.C:
+			_ = act.Process.Kill()
+			<-done
+			return ctx.Err()
+		}
+	}
+}
+
+func (worker *Worker) cloneRevision(ctx context.Context, job Job, destination string, output io.Writer) error {
+	if worker.config.RevisionClient != nil {
+		err := worker.config.RevisionClient.CloneRevision(ctx, loreclient.RepositoryRef{
+			CacheKey: job.RepositoryID,
+			URL:      job.LoreURL,
+		}, worker.config.LoreIdentity, job.Revision, destination)
+		if err != nil {
+			return fmt.Errorf("clone Lore revision: %w", err)
+		}
+		return nil
+	}
+	clone := exec.CommandContext(
+		ctx,
+		worker.config.LoreBinary,
+		"clone",
+		"--revision",
+		job.Revision,
+		job.LoreURL,
+		destination,
+	)
+	clone.Stdout = output
+	clone.Stderr = output
+	clone.Env = safeEnvironment()
+	if err := clone.Run(); err != nil {
+		return fmt.Errorf("clone Lore revision: %w", err)
+	}
+	return nil
+}
+
 func (worker *Worker) persistArtifacts(job Job, sourceDirectory string) ([]Artifact, error) {
 	attemptName := fmt.Sprintf("attempt-%d", job.Attempt)
 	destinationRoot := filepath.Join(worker.config.ArtifactDir, job.RepositoryID, job.RunID, job.ID, attemptName)
+	stagingRoot := destinationRoot + ".partial-" + uuid.NewString()
 	artifacts := make([]Artifact, 0)
+	var totalBytes int64
+	if err := os.MkdirAll(stagingRoot, 0o750); err != nil {
+		return nil, fmt.Errorf("create CI artifact staging directory: %w", err)
+	}
 	err := filepath.WalkDir(sourceDirectory, func(sourcePath string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -189,31 +338,63 @@ func (worker *Worker) persistArtifacts(job Job, sourceDirectory string) ([]Artif
 		if entry.Type()&os.ModeSymlink != 0 {
 			return fmt.Errorf("CI artifact %q is a symbolic link", sourcePath)
 		}
-		relative, err := filepath.Rel(sourceDirectory, sourcePath)
+		info, err := entry.Info()
 		if err != nil {
-			return fmt.Errorf("resolve CI artifact path: %w", err)
+			return err
 		}
-		destination := filepath.Join(destinationRoot, relative)
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("CI artifact %q is not a regular file", sourcePath)
+		}
+		if len(artifacts) >= worker.config.ArtifactMaxCount {
+			return errors.New("CI artifact count quota exceeded")
+		}
+		if info.Size() > worker.config.ArtifactMaxFileBytes {
+			return fmt.Errorf("CI artifact %q exceeds the per-file quota", sourcePath)
+		}
+		if info.Size() > worker.config.ArtifactMaxTotalBytes-totalBytes {
+			return errors.New("CI artifact total-size quota exceeded")
+		}
+		relative, err := filepath.Rel(sourceDirectory, sourcePath)
+		if err != nil || filepath.IsAbs(relative) || relative == ".." ||
+			strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			return fmt.Errorf("CI artifact path escapes the artifact directory: %q", sourcePath)
+		}
+		destination, err := safeArtifactPath(stagingRoot, relative)
+		if err != nil {
+			return err
+		}
 		if err := os.MkdirAll(filepath.Dir(destination), 0o750); err != nil {
 			return err
 		}
-		size, err := copyArtifact(sourcePath, destination)
+		copiedSize, err := copyArtifact(sourcePath, destination, worker.config.ArtifactMaxFileBytes)
 		if err != nil {
 			return err
 		}
-		objectKey := filepath.ToSlash(
-			filepath.Join(job.RepositoryID, job.RunID, job.ID, attemptName, relative),
-		)
-		artifacts = append(artifacts, Artifact{Name: relative, ObjectKey: objectKey, Size: size})
+		if copiedSize > worker.config.ArtifactMaxTotalBytes-totalBytes {
+			_ = os.Remove(destination)
+			return errors.New("CI artifact total-size quota exceeded while copying")
+		}
+		objectKey := filepath.ToSlash(filepath.Join(job.RepositoryID, job.RunID, job.ID, attemptName, relative))
+		artifacts = append(artifacts, Artifact{Name: filepath.ToSlash(relative), ObjectKey: objectKey, Size: copiedSize})
+		totalBytes += copiedSize
 		return nil
 	})
 	if err != nil {
+		_ = os.RemoveAll(stagingRoot)
 		return nil, fmt.Errorf("persist CI artifacts: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(destinationRoot), 0o750); err != nil {
+		_ = os.RemoveAll(stagingRoot)
+		return nil, err
+	}
+	if err := os.Rename(stagingRoot, destinationRoot); err != nil {
+		_ = os.RemoveAll(stagingRoot)
+		return nil, fmt.Errorf("publish CI artifacts: %w", err)
 	}
 	return artifacts, nil
 }
 
-func copyArtifact(sourcePath string, destinationPath string) (int64, error) {
+func copyArtifact(sourcePath string, destinationPath string, maxBytes int64) (int64, error) {
 	source, err := os.Open(sourcePath)
 	if err != nil {
 		return 0, err
@@ -223,15 +404,57 @@ func copyArtifact(sourcePath string, destinationPath string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	size, copyErr := io.Copy(destination, source)
+	copyLimit := maxBytes
+	if copyLimit < int64(^uint64(0)>>1) {
+		copyLimit++
+	}
+	size, copyErr := io.Copy(destination, io.LimitReader(source, copyLimit))
 	closeErr := destination.Close()
 	if copyErr != nil {
+		_ = os.Remove(destinationPath)
 		return 0, copyErr
 	}
 	if closeErr != nil {
+		_ = os.Remove(destinationPath)
 		return 0, closeErr
 	}
+	if size > maxBytes {
+		_ = os.Remove(destinationPath)
+		return 0, errors.New("CI artifact exceeded the per-file quota while copying")
+	}
 	return size, nil
+}
+
+func safeArtifactPath(root string, relative string) (string, error) {
+	root, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	path, err := filepath.Abs(filepath.Join(root, relative))
+	if err != nil || path != root && !strings.HasPrefix(path, root+string(filepath.Separator)) {
+		return "", errors.New("CI artifact path escapes its destination")
+	}
+	return path, nil
+}
+
+func removeArtifactAttempt(root string, job Job) error {
+	path := filepath.Join(root, job.RepositoryID, job.RunID, job.ID, fmt.Sprintf("attempt-%d", job.Attempt))
+	return os.RemoveAll(path)
+}
+
+func validateWorkflowFile(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return fmt.Errorf("stat selected workflow: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return errors.New("selected workflow is not a regular file")
+	}
+	return nil
+}
+
+func (worker *Worker) logObjectKey(job Job) string {
+	return filepath.ToSlash(filepath.Join(job.RepositoryID, job.RunID, job.ID, fmt.Sprintf("attempt-%d.log", job.Attempt)))
 }
 
 func safeEnvironment() []string {
@@ -243,4 +466,54 @@ func safeEnvironment() []string {
 		}
 	}
 	return environment
+}
+
+type boundedLogWriter struct {
+	mu        sync.Mutex
+	writer    io.Writer
+	remaining int64
+	marked    bool
+}
+
+const logLimitMarker = "\n[LoreHub log limit reached; remaining output was discarded]\n"
+
+func (writer *boundedLogWriter) Write(contents []byte) (int, error) {
+	writer.mu.Lock()
+	defer writer.mu.Unlock()
+	if writer.marked {
+		return len(contents), nil
+	}
+	if int64(len(contents)) <= writer.remaining {
+		written, err := writer.writer.Write(contents)
+		writer.remaining -= int64(written)
+		return len(contents), err
+	}
+	markerLimit := int64(len(logLimitMarker))
+	contentLimit := writer.remaining - markerLimit
+	if contentLimit < 0 {
+		contentLimit = 0
+	}
+	written, err := writer.writer.Write(contents[:contentLimit])
+	writer.remaining -= int64(written)
+	if err != nil {
+		return written, err
+	}
+	writer.writeMarker()
+	return len(contents), nil
+}
+
+func (writer *boundedLogWriter) writeMarker() {
+	if writer.marked {
+		return
+	}
+	writer.marked = true
+	if writer.remaining <= 0 {
+		return
+	}
+	marker := logLimitMarker
+	if int64(len(marker)) > writer.remaining {
+		marker = marker[:writer.remaining]
+	}
+	written, _ := io.WriteString(writer.writer, marker)
+	writer.remaining -= int64(written)
 }
