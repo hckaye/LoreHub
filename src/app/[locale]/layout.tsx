@@ -8,7 +8,7 @@ import { SiteFooter } from "@/components/layout/site-footer";
 import { SiteHeader } from "@/components/layout/site-header";
 import { getDictionary } from "@/i18n";
 import { isLocale, locales, type Locale } from "@/i18n/config";
-import { getAuthSession } from "@/lib/auth-api";
+import { getAuthSession, getUnreadNotificationCount } from "@/lib/auth-api";
 
 import "./globals.css";
 
@@ -49,11 +49,18 @@ export default async function LocaleLayout({ children, params }: LayoutProps) {
     notFound();
   }
   const [dictionary, session] = await Promise.all([getDictionary(value), getAuthSession()]);
+  const unreadNotifications =
+    session.status === "authenticated" ? await getUnreadNotificationCount() : { ok: false as const };
   return (
     <html lang={value}>
       <body className={`${geistSans.variable} ${geistMono.variable}`}>
         <div className="site-shell">
-          <SiteHeader locale={value} dictionary={dictionary} session={session} />
+          <SiteHeader
+            dictionary={dictionary}
+            locale={value}
+            session={session}
+            unreadNotifications={unreadNotifications.ok ? unreadNotifications.data : 0}
+          />
           <AuthNotice dictionary={dictionary} session={session} />
           <main className="site-main">{children}</main>
           <SiteFooter dictionary={dictionary} />

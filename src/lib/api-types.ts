@@ -9,6 +9,9 @@ export type Repository = {
   loreRepositoryId: string;
   loreUrl: string;
   defaultBranch: string;
+  homepageUrl: string;
+  allowIssues: boolean;
+  allowMergeRequests: boolean;
   issueCount: number;
   mergeRequestCount: number;
   updatedAt: string;
@@ -21,6 +24,96 @@ export type Organization = {
   description: string;
   visibility: "private" | "internal" | "public";
   createdAt: string;
+};
+
+export type OrganizationView = Organization & {
+  websiteUrl: string;
+  contactEmail: string;
+  defaultRepositoryVisibility: "private" | "internal" | "public";
+  role: "" | "owner" | "maintainer" | "member";
+  memberCount: number;
+  repositoryCount: number;
+  teamCount: number;
+};
+
+export type UserProfile = {
+  id: string;
+  username: string;
+  displayName: string;
+  email: string | null;
+  bio: string;
+  avatarUrl: string;
+  websiteUrl: string;
+  location: string;
+  company: string;
+  pronouns: string;
+  locale: string;
+  createdAt: string;
+  repositoryCount: number;
+};
+
+export type Team = {
+  id: string;
+  organizationId: string;
+  organizationSlug: string;
+  slug: string;
+  displayName: string;
+  description: string;
+  viewerRole: "" | "owner" | "maintainer" | "member";
+  memberCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type TeamMember = {
+  userId: string;
+  username: string;
+  displayName: string;
+  role: "maintainer" | "member";
+  joinedAt: string;
+};
+
+export type Notification = {
+  id: string;
+  topic: string;
+  title: string;
+  body: string;
+  href: string;
+  readAt: string | null;
+  createdAt: string;
+};
+
+export type NotificationPreferences = {
+  inAppEnabled: boolean;
+  emailEnabled: boolean;
+  mentionEnabled: boolean;
+  teamEnabled: boolean;
+  repositoryEnabled: boolean;
+  updatedAt: string;
+};
+
+export type DashboardData = {
+  repositories: Repository[];
+  organizations: OrganizationView[];
+  notifications: Notification[];
+  unreadNotifications: number;
+};
+
+export type SearchUser = {
+  id: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string;
+};
+
+export type SearchResults = {
+  repositories: Repository[];
+  organizations: OrganizationView[];
+  users: SearchUser[];
+};
+
+export type AuthProvider = {
+  id: "password" | "google" | "github" | "facebook" | "x";
 };
 
 export type AuthUser = {

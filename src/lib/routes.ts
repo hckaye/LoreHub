@@ -50,6 +50,22 @@ export function loginUrl(returnTo: string | null | undefined, signup = false): s
   return `/auth/login?${params.toString()}`;
 }
 
+export function providerLoginUrl(returnTo: string | null | undefined, provider: string, signup = false): string {
+  const params = new URLSearchParams({ return_to: safeReturnTo(returnTo), provider });
+  if (signup) {
+    params.set("prompt", "create");
+  }
+  return `/auth/login?${params.toString()}`;
+}
+
+export function brandedAuthPath(locale: Locale, register = false): string {
+  return `/${locale}/auth/${register ? "register" : "login"}`;
+}
+
+export function brandedAuthUrl(locale: Locale, returnTo: string | null | undefined, register = false): string {
+  return `${brandedAuthPath(locale, register)}?return_to=${encodeURIComponent(safeReturnTo(returnTo))}`;
+}
+
 export function localePathFrom(pathname: string, locale: Locale): string {
   const segments = pathname.split("/");
   if (segments.length > 1) {

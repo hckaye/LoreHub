@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpen, Menu, Search, X } from "lucide-react";
+import { Bell, BookOpen, Menu, Search, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useState } from "react";
@@ -8,7 +8,7 @@ import { useState } from "react";
 import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
 import type { AuthSession } from "@/lib/api-types";
-import { loginUrl } from "@/lib/routes";
+import { brandedAuthUrl } from "@/lib/routes";
 
 import { AccountMenu } from "./account-menu";
 import { CreateMenu } from "./create-menu";
@@ -19,9 +19,10 @@ type SiteHeaderProps = {
   locale: Locale;
   dictionary: Dictionary;
   session: AuthSession;
+  unreadNotifications: number;
 };
 
-export function SiteHeader({ locale, dictionary, session }: SiteHeaderProps) {
+export function SiteHeader({ locale, dictionary, session, unreadNotifications }: SiteHeaderProps) {
   const [navigationOpen, setNavigationOpen] = useState(false);
   const pathname = usePathname() ?? `/${locale}`;
   const searchParams = useSearchParams();
@@ -54,14 +55,21 @@ export function SiteHeader({ locale, dictionary, session }: SiteHeaderProps) {
         >
           <Link href={`/${locale}`} onClick={() => setNavigationOpen(false)}>
             <Search aria-hidden="true" size={16} />
-            {dictionary.common.explore}
+            {isAuthenticated ? dictionary.common.dashboard : dictionary.common.explore}
           </Link>
+          {isAuthenticated && (
+            <Link href={`/${locale}/notifications`} onClick={() => setNavigationOpen(false)}>
+              <Bell aria-hidden="true" size={16} />
+              {dictionary.common.notifications}
+              {unreadNotifications > 0 && <span className={styles.notificationCount}>{unreadNotifications}</span>}
+            </Link>
+          )}
           <a href="https://github.com/EpicGames/lore" rel="noreferrer" target="_blank">
             <BookOpen aria-hidden="true" size={16} />
             {dictionary.common.documentation}
           </a>
         </nav>
-        <form action={`/${locale}`} className={styles.search} role="search">
+        <form action={`/${locale}/search`} className={styles.search} role="search">
           <label className="visually-hidden" htmlFor="global-repository-search">
             {dictionary.common.searchRepositories}
           </label>
@@ -82,8 +90,8 @@ export function SiteHeader({ locale, dictionary, session }: SiteHeaderProps) {
             </>
           ) : (
             <div className={styles.authLinks}>
-              <Link href={loginUrl(returnTo)}>{dictionary.common.signIn}</Link>
-              <Link className={styles.signUp} href={loginUrl(returnTo, true)}>
+              <Link href={brandedAuthUrl(locale, returnTo)}>{dictionary.common.signIn}</Link>
+              <Link className={styles.signUp} href={brandedAuthUrl(locale, returnTo, true)}>
                 {dictionary.common.signUp}
               </Link>
             </div>

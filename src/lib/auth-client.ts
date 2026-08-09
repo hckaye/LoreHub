@@ -30,6 +30,14 @@ export async function postJson<T>(
   }
 }
 
+export async function patchJson<T>(path: string, input: unknown, csrfToken: string): Promise<MutationResult<T>> {
+  return jsonMutation("PATCH", path, input, csrfToken);
+}
+
+export async function deleteJson<T>(path: string, csrfToken: string): Promise<MutationResult<T>> {
+  return jsonMutation("DELETE", path, undefined, csrfToken);
+}
+
 export async function postLogout(csrfToken: string): Promise<MutationResult<null>> {
   try {
     const response = await fetch("/auth/logout", {
@@ -79,6 +87,32 @@ async function readMutationResponse<T>(response: Response): Promise<MutationResu
     return { ok: true, data: (await response.json()) as T };
   }
   return { ok: false, kind: classifyMutationStatus(response.status), code: await readProblemCode(response) };
+}
+
+async function jsonMutation<T>(
+  method: "PATCH" | "DELETE",
+  path: string,
+  input: unknown,
+  csrfToken: string,
+): Promise<MutationResult<T>> {
+  try {
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+      "X-CSRF-Token": csrfToken,
+    };
+    if (input !== undefined) {
+      headers["Content-Type"] = "application/json";
+    }
+    const response = await fetch(path, {
+      method,
+      credentials: "include",
+      headers,
+      body: input === undefined ? undefined : JSON.stringify(input),
+    });
+    return await readMutationResponse<T>(response);
+  } catch {
+    return { ok: false, kind: "unavailable", code: "network_error" };
+  }
 }
 
 async function readProblemCode(response: Response): Promise<string | null> {

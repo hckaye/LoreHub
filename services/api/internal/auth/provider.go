@@ -52,10 +52,23 @@ func (provider *OIDCProvider) AuthorizationURL(
 	nonce string,
 	prompt string,
 ) string {
+	return provider.AuthorizationURLForProvider(state, codeChallenge, nonce, prompt, "")
+}
+
+func (provider *OIDCProvider) AuthorizationURLForProvider(
+	state string,
+	codeChallenge string,
+	nonce string,
+	prompt string,
+	providerHint string,
+) string {
 	options := []oauth2.AuthCodeOption{
 		oauth2.SetAuthURLParam("code_challenge", codeChallenge),
 		oauth2.SetAuthURLParam("code_challenge_method", "S256"),
 		oauth2.SetAuthURLParam("nonce", nonce),
+	}
+	if providerHint != "" {
+		options = append(options, oauth2.SetAuthURLParam("kc_idp_hint", providerHint))
 	}
 	if prompt == RegistrationPrompt {
 		options = append(options, oauth2.SetAuthURLParam("prompt", RegistrationPrompt))

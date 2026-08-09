@@ -81,6 +81,38 @@ func WithAuthentication(options AuthOptions) Option {
 	}
 }
 
+func WithIdentityStore(store IdentityStore) Option {
+	return func(api *API) {
+		api.identityStore = store
+	}
+}
+
+func WithConfiguredLoginProviders(providers []string) Option {
+	return func(api *API) {
+		api.loginProviders = normalizeLoginProviders(providers)
+	}
+}
+
+func normalizeLoginProviders(providers []string) []string {
+	known := map[string]struct{}{
+		"google": {}, "github": {}, "facebook": {}, "x": {},
+	}
+	result := make([]string, 0, len(providers))
+	seen := make(map[string]struct{}, len(providers))
+	for _, value := range providers {
+		provider := strings.ToLower(strings.TrimSpace(value))
+		if _, ok := known[provider]; !ok {
+			continue
+		}
+		if _, ok := seen[provider]; ok {
+			continue
+		}
+		seen[provider] = struct{}{}
+		result = append(result, provider)
+	}
+	return result
+}
+
 func (api *API) login(writer http.ResponseWriter, request *http.Request) {
 	returnTo, ok := safeRelativeReturnTo(request.URL.Query().Get("return_to"))
 	if !ok {
@@ -90,6 +122,11 @@ func (api *API) login(writer http.ResponseWriter, request *http.Request) {
 	prompt, ok := loginPrompt(request.URL.Query())
 	if !ok {
 		writeProblem(writer, http.StatusBadRequest, "invalid_auth_request", "The login request is invalid")
+		return
+	}
+	provider, ok := api.requestedLoginProvider(request.URL.Query())
+	if !ok {
+		writeProblem(writer, http.StatusBadRequest, "invalid_auth_request", "The login provider is not configured")
 		return
 	}
 	if !api.interactiveAuthenticationAvailable() {
@@ -118,8 +155,8 @@ func (api *API) login(writer http.ResponseWriter, request *http.Request) {
 		api.internalError(writer, request, "create login transaction", err)
 		return
 	}
-	loginURL := api.loginProvider.AuthorizationURL(
-		state, api.secrets.CodeChallenge(codeVerifier), nonce, prompt,
+	loginURL := api.authorizationURL(
+		state, api.secrets.CodeChallenge(codeVerifier), nonce, prompt, provider,
 	)
 	if err := validateProviderURL(loginURL); err != nil {
 		api.internalError(writer, request, "prepare OIDC redirect", err)
@@ -128,6 +165,45 @@ func (api *API) login(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Cache-Control", "no-store")
 	http.SetCookie(writer, api.newLoginBindingCookie(state, now.Add(api.transactionTTL)))
 	http.Redirect(writer, request, loginURL, http.StatusFound)
+}
+
+type providerHintLoginProvider interface {
+	AuthorizationURLForProvider(state string, codeChallenge string, nonce string, prompt string, provider string) string
+}
+
+func (api *API) authorizationURL(
+	state string,
+	codeChallenge string,
+	nonce string,
+	prompt string,
+	provider string,
+) string {
+	if provider != "" {
+		if hinted, ok := api.loginProvider.(providerHintLoginProvider); ok {
+			return hinted.AuthorizationURLForProvider(state, codeChallenge, nonce, prompt, provider)
+		}
+	}
+	return api.loginProvider.AuthorizationURL(state, codeChallenge, nonce, prompt)
+}
+
+func (api *API) requestedLoginProvider(query url.Values) (string, bool) {
+	values, present := query["provider"]
+	if !present {
+		return "", true
+	}
+	if len(values) != 1 {
+		return "", false
+	}
+	provider := strings.ToLower(strings.TrimSpace(values[0]))
+	if provider == "password" {
+		return "", true
+	}
+	for _, configured := range api.loginProviders {
+		if provider == configured {
+			return provider, true
+		}
+	}
+	return "", false
 }
 
 func (api *API) callback(writer http.ResponseWriter, request *http.Request) {
