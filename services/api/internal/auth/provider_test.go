@@ -139,6 +139,15 @@ func TestOIDCProviderExchangesAndVerifiesIDToken(t *testing.T) {
 	if unsupportedURL.Query().Get("prompt") != "" {
 		t.Fatal("provider forwarded an unsupported prompt")
 	}
+	hintedURL, err := url.Parse(provider.AuthorizationURLForProvider(
+		"state-1", "challenge-1", "nonce-1", "", "github",
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hintedURL.Query().Get("kc_idp_hint") != "github" {
+		t.Fatalf("provider hint was not forwarded: %s", hintedURL)
+	}
 
 	principal, err := provider.Exchange(t.Context(), "authorization-code", "code-verifier", "nonce-1")
 	if err != nil {

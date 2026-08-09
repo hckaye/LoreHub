@@ -1,9 +1,9 @@
-import { Activity, BookOpenText, ServerOff } from "lucide-react";
+import { Activity, Bell, BookOpenText, ServerOff } from "lucide-react";
 import Link from "next/link";
 
 import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
-import type { Repository } from "@/lib/api-types";
+import type { DashboardData } from "@/lib/api-types";
 import { repositoryPath } from "@/lib/routes";
 
 import { RepositoryCard } from "../repositories/repository-card";
@@ -13,12 +13,12 @@ import styles from "./dashboard.module.css";
 type DashboardProps = {
   locale: Locale;
   dictionary: Dictionary;
-  repositories: Repository[] | null;
-  repositoriesUnavailable: boolean;
+  dashboard: DashboardData | null;
+  unavailable: boolean;
   userName: string;
 };
 
-export function Dashboard({ locale, dictionary, repositories, repositoriesUnavailable, userName }: DashboardProps) {
+export function Dashboard({ dashboard, locale, dictionary, unavailable, userName }: DashboardProps) {
   const greeting = dictionary.home.dashboardGreeting.replace("{name}", userName);
   return (
     <div className={styles.page}>
@@ -34,59 +34,15 @@ export function Dashboard({ locale, dictionary, repositories, repositoriesUnavai
         </Link>
       </div>
       <div className={styles.layout}>
-        <aside className={styles.sidebar}>
-          <div className={styles.sidebarHeading}>
-            <div>
-              <h2>{dictionary.home.availablePublicRepositories}</h2>
-              <p>{dictionary.home.availablePublicRepositoriesDescription}</p>
-            </div>
-          </div>
-          {!repositoriesUnavailable && repositories && repositories.length > 0 ? (
-            <ul className={styles.repositoryList}>
-              {repositories.map((repository) => (
-                <li key={repository.id}>
-                  <Link href={repositoryPath(locale, repository.owner, repository.slug)}>
-                    <strong>{repository.displayName}</strong>
-                    <span>{repository.owner}</span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <EmptyState
-              body={
-                repositoriesUnavailable
-                  ? dictionary.home.apiUnavailableBody
-                  : dictionary.home.availablePublicRepositoriesEmptyBody
-              }
-              icon={<ServerOff aria-hidden="true" />}
-              title={
-                repositoriesUnavailable
-                  ? dictionary.home.apiUnavailableTitle
-                  : dictionary.home.availablePublicRepositoriesEmptyTitle
-              }
-              tone={repositoriesUnavailable ? "warning" : "neutral"}
-            />
-          )}
-        </aside>
+        <DashboardSidebar dashboard={dashboard} dictionary={dictionary} locale={locale} unavailable={unavailable} />
         <div className={styles.main}>
-          <section className={styles.activity}>
-            <div className={styles.sectionTitle}>
-              <Activity aria-hidden="true" size={18} />
-              <h2>{dictionary.home.activityTitle}</h2>
-            </div>
-            <EmptyState
-              body={dictionary.home.activityEmptyBody}
-              icon={<Activity aria-hidden="true" />}
-              title={dictionary.home.activityEmptyTitle}
-            />
-          </section>
+          <DashboardActivity dashboard={dashboard} dictionary={dictionary} unavailable={unavailable} />
           <section>
             <div className={styles.sectionTitle}>
               <h2>{dictionary.home.discoverTitle}</h2>
               <span>{dictionary.home.publicDashboardNote}</span>
             </div>
-            {repositoriesUnavailable ? (
+            {unavailable ? (
               <EmptyState
                 body={dictionary.home.apiUnavailableBody}
                 icon={<ServerOff aria-hidden="true" />}
@@ -95,7 +51,7 @@ export function Dashboard({ locale, dictionary, repositories, repositoriesUnavai
               />
             ) : (
               <div className={styles.cards}>
-                {(repositories ?? []).map((repository) => (
+                {(dashboard?.repositories ?? []).map((repository) => (
                   <RepositoryCard dictionary={dictionary} key={repository.id} locale={locale} repository={repository} />
                 ))}
               </div>
@@ -104,5 +60,108 @@ export function Dashboard({ locale, dictionary, repositories, repositoriesUnavai
         </div>
       </div>
     </div>
+  );
+}
+
+type DashboardSidebarProps = {
+  dashboard: DashboardData | null;
+  dictionary: Dictionary;
+  locale: Locale;
+  unavailable: boolean;
+};
+
+function DashboardSidebar({ dashboard, dictionary, locale, unavailable }: DashboardSidebarProps) {
+  const organizations = dashboard?.organizations ?? [];
+  const repositories = dashboard?.repositories ?? [];
+  let content = null;
+  if (organizations.length > 0) {
+    content = (
+      <ul className={styles.repositoryList}>
+        {organizations.map((organization) => (
+          <li key={organization.id}>
+            <Link href={`/${locale}/organizations/${encodeURIComponent(organization.slug)}`}>
+              <strong>{organization.displayName}</strong>
+              <span>{organization.slug}</span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    );
+  } else if (repositories.length > 0) {
+    content = (
+      <ul className={styles.repositoryList}>
+        {repositories.map((repository) => (
+          <li key={repository.id}>
+            <Link href={repositoryPath(locale, repository.owner, repository.slug)}>
+              <strong>{repository.displayName}</strong>
+              <span>{repository.owner}</span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    );
+  } else {
+    content = (
+      <EmptyState
+        body={unavailable ? dictionary.home.apiUnavailableBody : dictionary.home.availablePublicRepositoriesEmptyBody}
+        icon={<ServerOff aria-hidden="true" />}
+        title={
+          unavailable ? dictionary.home.apiUnavailableTitle : dictionary.home.availablePublicRepositoriesEmptyTitle
+        }
+        tone={unavailable ? "warning" : "neutral"}
+      />
+    );
+  }
+  return (
+    <aside className={styles.sidebar}>
+      <div className={styles.sidebarHeading}>
+        <h2>{dictionary.common.organizations}</h2>
+        <p>{dictionary.home.dashboardDescription}</p>
+      </div>
+      {content}
+    </aside>
+  );
+}
+
+type DashboardActivityProps = {
+  dashboard: DashboardData | null;
+  dictionary: Dictionary;
+  unavailable: boolean;
+};
+
+function DashboardActivity({ dashboard, dictionary, unavailable }: DashboardActivityProps) {
+  const notifications = dashboard?.notifications ?? [];
+  let content = null;
+  if (notifications.length > 0) {
+    content = (
+      <ul className={styles.notificationList}>
+        {notifications.map((notification) => (
+          <li data-unread={!notification.readAt} key={notification.id}>
+            <Link href={notification.href}>
+              <strong>{notification.title}</strong>
+              <span>{notification.body || notification.topic}</span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    );
+  } else {
+    content = (
+      <EmptyState
+        body={unavailable ? dictionary.home.apiUnavailableBody : dictionary.home.activityEmptyBody}
+        icon={<Activity aria-hidden="true" />}
+        title={unavailable ? dictionary.home.apiUnavailableTitle : dictionary.home.activityEmptyTitle}
+        tone={unavailable ? "warning" : "neutral"}
+      />
+    );
+  }
+  return (
+    <section className={styles.activity}>
+      <div className={styles.sectionTitle}>
+        <Bell aria-hidden="true" size={18} />
+        <h2>{dictionary.home.activityTitle}</h2>
+      </div>
+      {content}
+    </section>
   );
 }

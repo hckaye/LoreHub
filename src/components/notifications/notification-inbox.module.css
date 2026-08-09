@@ -1,0 +1,136 @@
+.wrapper {
+  display: grid;
+  gap: 14px;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--fg-muted);
+  font-size: 0.82rem;
+}
+
+.toolbar button,
+.readButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--fg-default);
+  font-size: 0.77rem;
+}
+
+.toolbar button:hover,
+.readButton:hover {
+  border-color: var(--accent-fg);
+  color: var(--accent-fg);
+}
+
+.toolbar button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 14px;
+  border-bottom: 1px solid var(--border-muted);
+  border-left: 3px solid transparent;
+}
+
+.list li:last-child {
+  border-bottom: 0;
+}
+
+.list li[data-read="false"] {
+  border-left-color: var(--accent-emphasis);
+}
+
+.list li > a {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  gap: 11px;
+  color: var(--fg-default);
+  text-decoration: none;
+}
+
+.list li > a:hover strong {
+  color: var(--accent-fg);
+}
+
+.icon {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  color: var(--accent-fg);
+}
+
+.content {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.content strong,
+.content > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.content > span {
+  color: var(--fg-muted);
+  font-size: 0.8rem;
+}
+
+.content time {
+  color: var(--fg-subtle);
+  font-size: 0.72rem;
+}
+
+.error {
+  margin: 0;
+  color: var(--danger-fg);
+  font-size: 0.82rem;
+}
+
+@media (max-width: 600px) {
+  .toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .readButton {
+    display: none;
+  }
+}

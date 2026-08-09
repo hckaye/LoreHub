@@ -1,0 +1,63 @@
+.form {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.form label {
+  display: grid;
+  gap: 6px;
+  color: var(--fg-muted);
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.form input,
+.form textarea,
+.form select {
+  width: 100%;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface-raised);
+  color: var(--fg-default);
+}
+
+.form input,
+.form select {
+  min-height: 38px;
+  padding: 0 10px;
+}
+
+.form textarea {
+  padding: 9px 10px;
+  resize: vertical;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.actions button {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--accent-emphasis);
+  border-radius: 6px;
+  background: var(--accent-emphasis);
+  color: var(--fg-on-emphasis);
+  font-weight: 650;
+}
+
+.actions span {
+  color: var(--success-fg);
+  font-size: 0.8rem;
+}
+
+.actions span[role="alert"] {
+  color: var(--danger-fg);
+}

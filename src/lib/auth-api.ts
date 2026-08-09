@@ -2,7 +2,7 @@ import "server-only";
 
 import { cookies } from "next/headers";
 
-import type { AuthSession, AuthUser } from "./api-types";
+import type { APIResult, AuthProvider, AuthSession, AuthUser } from "./api-types";
 
 const apiOrigin = process.env.LOREHUB_API_URL ?? "http://127.0.0.1:8080";
 
@@ -27,6 +27,63 @@ export async function getAuthSession(): Promise<AuthSession> {
     return normalizeSession((await response.json()) as unknown);
   } catch {
     return { status: "unavailable", user: null, reason: "network" };
+  }
+}
+
+export async function getAuthProviders(): Promise<APIResult<AuthProvider[]>> {
+  try {
+    const response = await fetch(new URL("/api/v1/auth/providers", apiOrigin), {
+      cache: "no-store",
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(4_000),
+    });
+    if (!response.ok) {
+      return { ok: false, reason: response.status >= 500 ? "unavailable" : "invalid" };
+    }
+    const payload = (await response.json()) as unknown;
+    if (!isRecord(payload) || !Array.isArray(payload.providers)) {
+      return { ok: false, reason: "unavailable" };
+    }
+    const providers = payload.providers.flatMap((value) => {
+      if (!isRecord(value) || typeof value.id !== "string") {
+        return [];
+      }
+      if (!isProviderID(value.id)) {
+        return [];
+      }
+      return [{ id: value.id }];
+    });
+    return { ok: true, data: providers };
+  } catch {
+    return { ok: false, reason: "unavailable" };
+  }
+}
+
+export async function getUnreadNotificationCount(): Promise<APIResult<number>> {
+  try {
+    const cookieHeader = (await cookies()).toString();
+    const headers = new Headers({ Accept: "application/json" });
+    if (cookieHeader) {
+      headers.set("Cookie", cookieHeader);
+    }
+    const response = await fetch(new URL("/api/v1/notifications/unread-count", apiOrigin), {
+      cache: "no-store",
+      headers,
+      signal: AbortSignal.timeout(4_000),
+    });
+    if (response.status === 401) {
+      return { ok: false, reason: "unauthorized" };
+    }
+    if (!response.ok) {
+      return { ok: false, reason: response.status >= 500 ? "unavailable" : "invalid" };
+    }
+    const payload = (await response.json()) as unknown;
+    if (!isRecord(payload) || typeof payload.count !== "number") {
+      return { ok: false, reason: "unavailable" };
+    }
+    return { ok: true, data: payload.count };
+  } catch {
+    return { ok: false, reason: "unavailable" };
   }
 }
 
@@ -77,4 +134,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function readString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value : null;
+}
+
+function isProviderID(value: string): value is AuthProvider["id"] {
+  return ["password", "google", "github", "facebook", "x"].includes(value);
 }

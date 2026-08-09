@@ -3,7 +3,7 @@ import Link from "next/link";
 
 import type { Dictionary } from "@/i18n";
 import type { AuthSession } from "@/lib/api-types";
-import { loginUrl } from "@/lib/routes";
+import { brandedAuthUrl } from "@/lib/routes";
 
 import { FlashNotice } from "../ui/flash-notice";
 import styles from "./auth-required.module.css";
@@ -19,6 +19,7 @@ export function AuthRequired({ dictionary, session, returnTo }: AuthRequiredProp
     return null;
   }
   const isUnavailable = session.status === "unavailable";
+  const locale = returnTo.split("/")[1] === "ja" ? "ja" : "en";
   return (
     <div className={styles.wrapper}>
       <FlashNotice
@@ -28,7 +29,7 @@ export function AuthRequired({ dictionary, session, returnTo }: AuthRequiredProp
         tone={isUnavailable ? "warning" : "info"}
       />
       {!isUnavailable && (
-        <Link className={styles.link} href={loginUrl(returnTo)}>
+        <Link className={styles.link} href={brandedAuthUrl(locale, returnTo)}>
           {dictionary.auth.loginToContinue}
         </Link>
       )}

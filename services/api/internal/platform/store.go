@@ -180,6 +180,9 @@ func (store *Store) CreateOrganization(
 		organization.ID); err != nil {
 		return Organization{}, err
 	}
+	if err := insertOutbox(ctx, transaction, "organization.created", organization.ID, organization); err != nil {
+		return Organization{}, err
+	}
 	if err := transaction.Commit(ctx); err != nil {
 		return Organization{}, fmt.Errorf("commit organization transaction: %w", err)
 	}
@@ -673,6 +676,7 @@ func (store *Store) canReadRepository(
 const repositorySelect = `
 	SELECT r.id, r.organization_id, o.slug, r.slug, r.display_name, r.description,
 	       r.visibility, r.lore_repository_id, r.lore_url, r.default_branch,
+	       r.homepage_url, r.allow_issues, r.allow_merge_requests,
 	       COUNT(DISTINCT i.id) FILTER (WHERE i.state = 'open'),
 	       COUNT(DISTINCT mr.id) FILTER (WHERE mr.state = 'open'), r.updated_at
 	FROM repositories r
@@ -698,6 +702,9 @@ func scanRepository(row rowScanner) (Repository, error) {
 		&repository.LoreRepositoryID,
 		&repository.LoreURL,
 		&repository.DefaultBranch,
+		&repository.HomepageURL,
+		&repository.AllowIssues,
+		&repository.AllowMergeRequests,
 		&repository.IssueCount,
 		&repository.MergeRequestCount,
 		&repository.UpdatedAt,
