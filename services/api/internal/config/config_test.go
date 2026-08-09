@@ -70,6 +70,10 @@ func TestLoadInteractiveAuthenticationUsesSecureProductionCookie(t *testing.T) {
 	t.Setenv("LOREHUB_AUTH_SECRET", strings.Repeat("a", 32))
 	t.Setenv("LOREHUB_SESSION_TTL", "24h")
 	t.Setenv("LOREHUB_LOGIN_TRANSACTION_TTL", "10m")
+	t.Setenv("LOREHUB_LORE_AUTHORITY", "auth.example.com")
+	t.Setenv("LOREHUB_LORE_PUBLIC_READER_SUBJECT", "public-reader-subject")
+	t.Setenv("LOREHUB_LORE_ACTIONS_RUNNER_SUBJECT", "actions-runner-subject")
+	t.Setenv("LOREHUB_LORE_REPOSITORY_REGISTRATION_SUBJECT", "registration-subject")
 
 	settings, err := Load()
 	if err != nil {
@@ -77,8 +81,46 @@ func TestLoadInteractiveAuthenticationUsesSecureProductionCookie(t *testing.T) {
 	}
 	if settings.AuthMode != AuthModeInteractive || !settings.SessionCookieSecure ||
 		settings.OIDCClientID != "lorehub-web" || settings.OIDCAudience != "lorehub-api" ||
-		settings.LoginBindingCookieName != "lorehub_login_binding" {
+		settings.LoginBindingCookieName != "lorehub_login_binding" ||
+		settings.LoreAuthAuthority != "auth.example.com" ||
+		settings.LorePublicReaderSubject != "public-reader-subject" ||
+		settings.LoreActionsRunnerSubject != "actions-runner-subject" ||
+		settings.LoreRepositoryRegistrationSubject != "registration-subject" {
 		t.Fatalf("unexpected interactive production settings: %#v", settings)
+	}
+}
+
+func TestLoadRejectsProductionStaticLoreCredentials(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("LOREHUB_ENV", "production")
+	t.Setenv("LOREHUB_LORE_CREDENTIALS", `{"partition":{"identity":"shared","token":"token",`+
+		`"authUrl":"ucs-auth://auth.example.com"}}`)
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "only allowed in development or test") {
+		t.Fatalf("expected static production credential rejection, got %v", err)
+	}
+}
+
+func TestLoadRejectsProductionMissingServiceSubject(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("LOREHUB_ENV", "production")
+	t.Setenv("LOREHUB_LORE_PUBLIC_READER_SUBJECT", "public-reader-subject")
+	t.Setenv("LOREHUB_LORE_ACTIONS_RUNNER_SUBJECT", "actions-runner-subject")
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "LOREHUB_LORE_REPOSITORY_REGISTRATION_SUBJECT") {
+		t.Fatalf("expected missing production service subject rejection, got %v", err)
+	}
+}
+
+func TestLoadRejectsProductionInvalidServiceSubject(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("LOREHUB_ENV", "production")
+	t.Setenv("LOREHUB_LORE_PUBLIC_READER_SUBJECT", "public reader")
+	t.Setenv("LOREHUB_LORE_ACTIONS_RUNNER_SUBJECT", "actions-runner-subject")
+	t.Setenv("LOREHUB_LORE_REPOSITORY_REGISTRATION_SUBJECT", "registration-subject")
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "LOREHUB_LORE_PUBLIC_READER_SUBJECT") {
+		t.Fatalf("expected invalid production service subject rejection, got %v", err)
 	}
 }
 
@@ -89,6 +131,20 @@ func TestLoadRejectsInvalidLoginBindingCookieName(t *testing.T) {
 	_, err := Load()
 	if err == nil || !strings.Contains(err.Error(), "LOREHUB_LOGIN_BINDING_COOKIE_NAME") {
 		t.Fatalf("expected invalid binding cookie name error, got %v", err)
+	}
+}
+
+func TestLoadRejectsProductionIdentityFallback(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("LOREHUB_ENV", "production")
+	t.Setenv("LOREHUB_LORE_IDENTITY", "legacy-shared-identity")
+	t.Setenv("LOREHUB_LORE_CREDENTIALS",
+		`{"lore-partition":{"identity":"service-identity","token":"short-lived-token",`+
+			`"authUrl":"https://auth.example/login"}}`)
+
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "LOREHUB_LORE_IDENTITY") {
+		t.Fatalf("expected production identity fallback error, got %v", err)
 	}
 }
 
@@ -104,6 +160,12 @@ func setRequiredEnvironment(t *testing.T) {
 	t.Setenv("LOREHUB_AUTH_SECRET", "")
 	t.Setenv("LOREHUB_SESSION_TTL", "")
 	t.Setenv("LOREHUB_LOGIN_TRANSACTION_TTL", "")
+	t.Setenv("LOREHUB_LORE_IDENTITY", "")
+	t.Setenv("LOREHUB_LORE_CREDENTIALS", "")
+	t.Setenv("LOREHUB_LORE_AUTHORITY", "")
+	t.Setenv("LOREHUB_LORE_PUBLIC_READER_SUBJECT", "")
+	t.Setenv("LOREHUB_LORE_ACTIONS_RUNNER_SUBJECT", "")
+	t.Setenv("LOREHUB_LORE_REPOSITORY_REGISTRATION_SUBJECT", "")
 	t.Setenv("LOREHUB_SESSION_COOKIE_SECURE", "")
 	t.Setenv("LOREHUB_SESSION_COOKIE_NAME", "")
 	t.Setenv("LOREHUB_LOGIN_BINDING_COOKIE_NAME", "")
