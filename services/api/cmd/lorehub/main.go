@@ -66,7 +66,12 @@ func run(logger *slog.Logger) error {
 		return nil
 	}
 	store := platform.NewStore(pool)
-	lore, err := loreclient.NewSDKClient(settings.LoreCacheDir)
+	var lore *loreclient.SDKClient
+	if settings.Environment == "local-insecure" {
+		lore, err = loreclient.NewDevelopmentSDKClient(settings.LoreCacheDir)
+	} else {
+		lore, err = loreclient.NewSDKClientWithAuthAuthority(settings.LoreCacheDir, settings.LoreAuthAuthority)
+	}
 	if err != nil {
 		return err
 	}
@@ -74,8 +79,18 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	issuer, err := loreauth.NewCredentialIssuer(loreAuth)
+	if err != nil {
+		return err
+	}
+	loreCredentials, err := loreclient.NewCredentialProviderWithIssuer(settings.Environment, issuer,
+		settings.LoreAuthAuthority, settings.LoreCredentials, settings.LoreIdentity,
+		settings.LoreAllowDevelopmentFallback)
+	if err != nil {
+		return err
+	}
 	if command == "runner" {
-		return runRunner(rootContext, pool, lore, loreAuth, settings, logger)
+		return runRunner(rootContext, pool, lore, loreCredentials, settings, logger)
 	}
 
 	var authenticator auth.Authenticator
@@ -138,6 +153,13 @@ func run(logger *slog.Logger) error {
 		httpapi.WithLoreAuth(loreAuth),
 		httpapi.WithLorePublicURL(settings.LorePublicURL),
 		httpapi.WithLegacyLoreIdentityAllowed(settings.AllowLegacyLoreIdentity),
+		httpapi.WithLoreCredentials(loreCredentials),
+		httpapi.WithLoreServiceSubjects(loreclient.ServiceSubjects{
+			PublicReader:           settings.LorePublicReaderSubject,
+			ActionsRunner:          settings.LoreActionsRunnerSubject,
+			Observer:               settings.LoreObserverSubject,
+			RepositoryRegistration: settings.LoreRepositoryRegistrationSubject,
+		}),
 	)
 	server := &http.Server{
 		Addr:              settings.HTTPAddress,
@@ -148,7 +170,9 @@ func run(logger *slog.Logger) error {
 		IdleTimeout:       90 * time.Second,
 		MaxHeaderBytes:    1 << 20,
 	}
-	policyTLS, err := loadTLSConfig(settings.PolicyTLSCert, settings.PolicyTLSKey, settings.PolicyTLSClientCA, true)
+
+	policyTLS, err := loadTLSConfig(settings.PolicyTLSCert, settings.PolicyTLSKey,
+		settings.PolicyTLSClientCA, true)
 	if err != nil {
 		return err
 	}
@@ -156,13 +180,10 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	policyHandler := httpapi.NewInternalPolicyHandler(store)
 	policyServer := &http.Server{
-		Addr:              settings.PolicyAddress,
-		Handler:           httpapi.NewInternalPolicyHandler(store),
-		TLSConfig:         policyTLS,
-		ReadHeaderTimeout: 2 * time.Second,
-		ReadTimeout:       2 * time.Second,
-		WriteTimeout:      2 * time.Second,
+		Addr: settings.PolicyAddress, Handler: policyHandler, TLSConfig: policyTLS,
+		ReadHeaderTimeout: 2 * time.Second, ReadTimeout: 2 * time.Second, WriteTimeout: 2 * time.Second,
 	}
 	authListener, err := net.Listen("tcp", settings.LoreAuthAddress)
 	if err != nil {
@@ -182,18 +203,17 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("listen Lore policy endpoint: %w", err)
 	}
 	tlsPolicyListener := tls.NewListener(policyListener, policyTLS)
-
 	serverErrors := make(chan error, 3)
 	go func() {
 		logger.Info("LoreHub API listening", "address", settings.HTTPAddress)
 		serverErrors <- server.ListenAndServe()
 	}()
 	go func() {
-		logger.Info("Lore UCS auth listening", "address", settings.LoreAuthAddress)
+		logger.Info("LoreHub UCS auth listening", "address", settings.LoreAuthAddress)
 		serverErrors <- authGRPC.Serve(authListener)
 	}()
 	go func() {
-		logger.Info("Lore policy endpoint listening", "address", settings.PolicyAddress)
+		logger.Info("LoreHub policy endpoint listening", "address", settings.PolicyAddress)
 		serverErrors <- policyServer.Serve(tlsPolicyListener)
 	}()
 
@@ -240,48 +260,40 @@ func loadTLSConfig(certPath string, keyPath string, clientCAPath string, require
 	config.ClientCAs = clientCAs
 	config.ClientAuth = tls.RequireAndVerifyClientCert
 	config.VerifyConnection = func(state tls.ConnectionState) error {
-		if len(state.PeerCertificates) == 0 {
-			return errors.New("policy client certificate is required")
-		}
-		if state.PeerCertificates[0].Subject.CommonName != "lore-policy-hook" {
-			return errors.New("policy client certificate is not the Lore hook identity")
+		if len(state.PeerCertificates) == 0 || state.PeerCertificates[0].Subject.CommonName != "lore-policy-hook" {
+			return errors.New("policy hook client certificate is invalid")
 		}
 		for _, usage := range state.PeerCertificates[0].ExtKeyUsage {
 			if usage == x509.ExtKeyUsageClientAuth {
 				return nil
 			}
 		}
-		return errors.New("policy client certificate lacks client authentication usage")
+		return errors.New("policy hook client certificate lacks client authentication usage")
 	}
 	return config, nil
 }
 
 func newLoreAuthService(store *platform.Store, settings config.Config) (*loreauth.Service, error) {
-	keyProvider, err := loreauth.NewRSAKeyProvider(
-		settings.AuthSigningKeyPath,
-		settings.AuthSigningKeyPEM,
-		settings.AuthSigningKeyKID,
-		settings.AuthPreviousKeys,
-		settings.Environment != "production",
-	)
+	keyProvider, err := loreauth.NewRSAKeyProvider(settings.AuthSigningKeyPath, settings.AuthSigningKeyPEM,
+		settings.AuthSigningKeyKID, settings.AuthPreviousKeys, settings.Environment != "production")
 	if err != nil {
 		return nil, err
 	}
 	tokenService, err := loreauth.NewTokenService(keyProvider, settings.LoreAuthIssuer,
-		settings.LoreAuthAudience, settings.LoreAuthEnvironment, settings.LoreAuthIDP, settings.LoreAuthTokenTTL)
+		settings.LoreAuthAudience, settings.LoreAuthEnvironment, settings.LoreAuthIDP,
+		settings.LoreAuthTokenTTL)
 	if err != nil {
 		return nil, err
 	}
-	return loreauth.NewService(store, store, tokenService, settings.LoreAuthLoginURL,
-		settings.LoreAuthURL, settings.LoreAuthSessionTTL,
-		settings.Environment == "development" || settings.Environment == "local-insecure")
+	return loreauth.NewService(store, store, tokenService, settings.LoreAuthLoginURL, settings.LoreAuthURL,
+		settings.LoreAuthSessionTTL, settings.Environment == "development" || settings.Environment == "local-insecure")
 }
 
 func runRunner(
 	ctx context.Context,
 	pool *pgxpool.Pool,
 	lore *loreclient.SDKClient,
-	loreAuth *loreauth.Service,
+	credentials loreclient.CredentialProvider,
 	settings config.Config,
 	logger *slog.Logger,
 ) error {
@@ -295,13 +307,13 @@ func runRunner(
 		PollPeriod:       settings.RunnerPollPeriod,
 		JobTimeout:       settings.RunnerJobTimeout,
 		Lore:             lore,
-		Issuer:           loreAuth,
-		ServicePrincipal: settings.RunnerServicePrincipal,
+		Credentials:      credentials,
+		ServicePrincipal: settings.LoreActionsRunnerSubject,
 	}, logger)
 	if err != nil {
 		return err
 	}
-	poller := runner.NewPoller(store, lore, loreAuth, settings.ObserverServicePrincipal,
+	poller := runner.NewPoller(store, lore, credentials, settings.LoreObserverSubject,
 		settings.BranchPollPeriod, logger)
 	errorsChannel := make(chan error, 2)
 	go func() { errorsChannel <- poller.Run(ctx) }()

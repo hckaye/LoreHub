@@ -18,11 +18,15 @@ func (store *Store) SetTeamRepositoryRole(
 	repositorySlug string,
 	input SetTeamRepositoryRoleInput,
 ) (TeamRepositoryRole, error) {
-	organizationID, organizationRole, err := store.organizationAccess(ctx, actor.ID, organizationSlug)
+	organizationID, _, err := store.organizationAccess(ctx, actor.ID, organizationSlug)
 	if err != nil {
 		return TeamRepositoryRole{}, err
 	}
-	if !canManageOrganization(organizationRole) || !validRepositoryRole(input.Role) {
+	repositoryID, repositoryOrganizationID, err := store.repositoryAdminAccess(ctx, actor.ID, owner, repositorySlug)
+	if err != nil {
+		return TeamRepositoryRole{}, err
+	}
+	if repositoryOrganizationID != organizationID || !validRepositoryRole(input.Role) {
 		return TeamRepositoryRole{}, ErrForbidden
 	}
 	var result TeamRepositoryRole
@@ -39,6 +43,9 @@ func (store *Store) SetTeamRepositoryRole(
 	}
 	if err != nil {
 		return TeamRepositoryRole{}, fmt.Errorf("find team repository: %w", err)
+	}
+	if result.RepositoryID != repositoryID {
+		return TeamRepositoryRole{}, ErrNotFound
 	}
 	transaction, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
@@ -76,26 +83,33 @@ func (store *Store) DeleteTeamRepositoryRole(
 	owner string,
 	repositorySlug string,
 ) error {
-	organizationID, organizationRole, err := store.organizationAccess(ctx, actor.ID, organizationSlug)
+	organizationID, _, err := store.organizationAccess(ctx, actor.ID, organizationSlug)
 	if err != nil {
 		return err
 	}
-	if !canManageOrganization(organizationRole) {
+	repositoryID, repositoryOrganizationID, err := store.repositoryAdminAccess(ctx, actor.ID, owner, repositorySlug)
+	if err != nil {
+		return err
+	}
+	if repositoryOrganizationID != organizationID {
 		return ErrForbidden
 	}
-	var teamID, repositoryID string
+	var teamID, foundRepositoryID string
 	err = store.pool.QueryRow(ctx, `
 		SELECT t.id, r.id
 		FROM teams t
 		JOIN repositories r ON r.organization_id = t.organization_id
 		JOIN organizations o ON o.id = r.organization_id
 		WHERE t.organization_id = $1 AND t.slug = $2 AND o.slug = $3 AND r.slug = $4
-	`, organizationID, teamSlug, owner, repositorySlug).Scan(&teamID, &repositoryID)
+	`, organizationID, teamSlug, owner, repositorySlug).Scan(&teamID, &foundRepositoryID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotFound
 	}
 	if err != nil {
 		return fmt.Errorf("find team repository role: %w", err)
+	}
+	if foundRepositoryID != repositoryID {
+		return ErrNotFound
 	}
 	transaction, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {

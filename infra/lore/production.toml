@@ -10,22 +10,26 @@ cert_file = "/etc/lore/auth-tls/server.crt"
 pkey_file = "/etc/lore/auth-tls/server.key"
 
 [server.auth]
-jwt_issuer = "auth.lorehub.example"
-jwt_audience = ["lorehub.example"]
+jwt_issuer = "@AUTH_ISSUER@"
+jwt_audience = ["@AUTH_AUDIENCE@"]
 
 [server.quic]
 verify_client_certs = false
 
 [server.auth.jwk]
-endpoint = "https://api.lorehub.example/.well-known/jwks.json"
+endpoint = "@JWKS_ENDPOINT@"
 
 [environment.endpoint]
-auth_url = "ucs-auth://auth.lorehub.example:8443"
+auth_url = "@AUTH_URL@"
 
 [hooks.lorehub_policy]
 enabled = true
-endpoint = "https://api.lorehub.example:8444/internal/lore/policy"
-observation_endpoint = "https://api.lorehub.example:8444/internal/lore/observation"
+environment = "production"
+root_domain = "@ROOT_DOMAIN@"
+endpoint = "@POLICY_ENDPOINT@"
+observation_endpoint = "@OBSERVATION_ENDPOINT@"
+auth_endpoint = "@AUTH_URL@"
+jwks_endpoint = "@JWKS_ENDPOINT@"
 ca_certificate = "/etc/lore/auth-tls/ca.crt"
 client_certificate = "/etc/lore/auth-tls/lore-client.crt"
 client_key = "/etc/lore/auth-tls/lore-client.key"

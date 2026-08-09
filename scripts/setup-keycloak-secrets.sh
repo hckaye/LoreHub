@@ -75,7 +75,9 @@ set_var() {
     if [ "$force" -eq 0 ] && [ -n "$current" ]; then
       return
     fi
-    temporary=$(mktemp "${env_file}.tmp.XXXXXX")
+    temporary=$(mktemp \
+      "${env_file}.tmp.XXXXXX"
+    )
     awk -v key="$key" -v value="$value" '
       index($0, key "=") == 1 { print key "=" value; next }
       { print }

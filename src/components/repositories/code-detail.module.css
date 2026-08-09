@@ -1,0 +1,176 @@
+.panel {
+  display: grid;
+  gap: 1rem;
+}
+
+.heading {
+  align-items: start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.heading h2,
+.heading p {
+  margin: 0;
+}
+
+.heading p,
+.meta {
+  color: var(--fg-muted);
+  font-size: 0.9rem;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.actions a,
+.actions button {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.45rem;
+  color: var(--fg-default);
+  cursor: pointer;
+  font: inherit;
+  padding: 0.45rem 0.7rem;
+  text-decoration: none;
+}
+
+.actions a:hover,
+.actions button:hover {
+  border-color: var(--accent-emphasis);
+  color: var(--accent-fg);
+}
+
+.source {
+  background: var(--canvas-subtle);
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+  overflow-x: auto;
+}
+
+.source pre {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.86rem;
+  line-height: 1.6;
+  margin: 0;
+  min-width: max-content;
+  padding: 1rem;
+  white-space: pre;
+}
+
+.readme {
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+  padding: clamp(1rem, 3vw, 2rem);
+}
+
+.readme h1,
+.readme h2,
+.readme h3 {
+  line-height: 1.25;
+  margin: 1.5rem 0 0.75rem;
+}
+
+.readme h1:first-child,
+.readme h2:first-child,
+.readme h3:first-child {
+  margin-top: 0;
+}
+
+.readme p {
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+.readme ul {
+  line-height: 1.65;
+  padding-left: 1.5rem;
+}
+
+.readme code {
+  background: var(--canvas-subtle);
+  border-radius: 0.25rem;
+  padding: 0.1rem 0.25rem;
+}
+
+.readme pre {
+  background: var(--canvas-subtle);
+  border: 1px solid var(--border-muted);
+  border-radius: 0.45rem;
+  overflow-x: auto;
+  padding: 0.8rem;
+  white-space: pre-wrap;
+}
+
+.tableWrap {
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+  overflow-x: auto;
+}
+
+.table {
+  border-collapse: collapse;
+  min-width: 36rem;
+  width: 100%;
+}
+
+.table th,
+.table td {
+  border-bottom: 1px solid var(--border);
+  padding: 0.7rem 0.9rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.table th {
+  background: var(--canvas-subtle);
+  color: var(--fg-muted);
+  font-size: 0.8rem;
+}
+
+.table tr:last-child td {
+  border-bottom: 0;
+}
+
+.table a {
+  color: var(--accent-fg);
+}
+
+.patch {
+  background: var(--canvas-subtle);
+  border: 1px solid var(--border-muted);
+  border-radius: 0.45rem;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  max-height: 32rem;
+  overflow: auto;
+  padding: 0.75rem;
+  white-space: pre-wrap;
+}
+
+.status {
+  border: 1px solid var(--border);
+  border-radius: 0.55rem;
+  padding: 0.8rem;
+}
+
+.status[data-tone="success"] {
+  background: var(--success-bg);
+  border-color: var(--success-border);
+}
+
+.status[data-tone="warning"] {
+  background: var(--attention-bg);
+  border-color: var(--attention-border);
+}
+
+.status ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.2rem;
+}

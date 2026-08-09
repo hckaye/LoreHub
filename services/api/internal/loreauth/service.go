@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lorehub/lorehub/services/api/internal/authz"
+	loreclient "github.com/lorehub/lorehub/services/api/internal/lore"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -105,30 +106,33 @@ func (service *Service) IssueResourceToken(
 	userID string,
 	resourceID string,
 	requested []string,
-) (string, error) {
+) (loreclient.Credential, error) {
 	if !authz.ValidResourceID(resourceID) {
-		return "", authz.ErrInvalidResource
+		return loreclient.Credential{}, authz.ErrInvalidResource
 	}
 	current, err := service.policy.EffectivePermissions(ctx, userID, resourceID)
 	if err != nil {
-		return "", err
+		return loreclient.Credential{}, err
 	}
 	narrowed, err := authz.IntersectPermissions(permissionMap(current.Permissions), requested)
 	if err != nil {
-		return "", err
+		return loreclient.Credential{}, err
 	}
 	if len(narrowed) == 0 {
-		return "", authz.ErrScopeWidened
+		return loreclient.Credential{}, authz.ErrScopeWidened
 	}
 	user, err := service.policy.UserInfo(ctx, userID)
 	if err != nil {
-		return "", err
+		return loreclient.Credential{}, err
 	}
 	token, _, err := service.tokens.MintResourceToken(user, []LoreResourcePermission{{
 		ResourceID: resourceID,
 		Permission: authz.PermissionList(narrowed),
 	}})
-	return token, err
+	if err != nil {
+		return loreclient.Credential{}, err
+	}
+	return service.credentialFromToken(token, resourceID, requested, loreclient.UserPrincipal(userID))
 }
 
 type servicePrincipalPolicy interface {
@@ -144,30 +148,87 @@ func (service *Service) IssueServiceResourceToken(
 	principalName string,
 	resourceID string,
 	requested []string,
-) (string, error) {
+) (loreclient.Credential, error) {
 	if !authz.ValidResourceID(resourceID) {
-		return "", authz.ErrInvalidResource
+		return loreclient.Credential{}, authz.ErrInvalidResource
 	}
 	policy, ok := service.policy.(servicePrincipalPolicy)
 	if !ok {
-		return "", errors.New("service principal policy is unavailable")
+		return loreclient.Credential{}, errors.New("service principal policy is unavailable")
 	}
 	principal, granted, err := policy.ServicePrincipalResource(ctx, principalName, resourceID)
 	if err != nil {
-		return "", err
+		return loreclient.Credential{}, err
 	}
 	narrowed, err := authz.IntersectPermissions(permissionMap(granted), requested)
 	if err != nil || len(narrowed) == 0 {
 		if err != nil {
-			return "", err
+			return loreclient.Credential{}, err
 		}
-		return "", authz.ErrScopeWidened
+		return loreclient.Credential{}, authz.ErrScopeWidened
 	}
 	token, _, err := service.tokens.MintServiceResourceToken(principal, []LoreResourcePermission{{
 		ResourceID: resourceID,
 		Permission: authz.PermissionList(narrowed),
 	}})
-	return token, err
+	if err != nil {
+		return loreclient.Credential{}, err
+	}
+	return service.credentialFromToken(token, resourceID, requested,
+		loreclient.ServicePrincipal("service", principal.ID))
+}
+
+func (service *Service) credentialFromToken(
+	rawToken string,
+	resourceID string,
+	requested []string,
+	principal loreclient.Principal,
+) (loreclient.Credential, error) {
+	verified, err := service.tokens.VerifyResourceToken(rawToken)
+	if err != nil {
+		return loreclient.Credential{}, errors.New("issued Lore token could not be verified")
+	}
+	permissions, found := resourcePermissions(verified.Claims.Resources, resourceID)
+	if !found || len(permissions) == 0 {
+		return loreclient.Credential{}, errors.New("issued Lore token has no exact resource scope")
+	}
+	scope := loreclient.ScopeRead
+	if containsPermission(permissions, authz.PermissionWrite) ||
+		containsPermission(permissions, authz.PermissionAdmin) {
+		scope = loreclient.ScopeWrite
+	}
+	return loreclient.Credential{
+		Partition:       strings.TrimPrefix(resourceID, "urc-"),
+		Scope:           scope,
+		ResourceID:      resourceID,
+		Subject:         verified.Claims.Subject,
+		RequestedScopes: []string{string(scopeForRequested(requested))},
+		GrantedScopes:   []string{string(scope)},
+		Identity:        verified.Claims.Subject,
+		Token:           rawToken,
+		AuthURL:         service.authURL,
+		ExpiresAt:       verified.Claims.Expiry.Time(),
+		Principal:       principal,
+	}, nil
+}
+
+func scopeForRequested(requested []string) loreclient.Scope {
+	for _, permission := range requested {
+		if permission == authz.PermissionWrite || permission == authz.PermissionAdmin ||
+			permission == authz.PermissionObliterate {
+			return loreclient.ScopeWrite
+		}
+	}
+	return loreclient.ScopeRead
+}
+
+func containsPermission(permissions []string, wanted string) bool {
+	for _, permission := range permissions {
+		if permission == wanted {
+			return true
+		}
+	}
+	return false
 }
 
 func (service *Service) HealthCheck(

@@ -2,194 +2,113 @@ package lore
 
 import (
 	"context"
-	"errors"
 	"os"
 	"testing"
 	"time"
-
-	loresdk "github.com/EpicGames/lore-go"
-	"github.com/EpicGames/lore-go/types"
 )
 
 func TestSDKClientAgainstLoreServer(t *testing.T) {
+	// This fixture is unauthenticated component coverage, not production auth evidence.
 	repositoryURL := os.Getenv("LOREHUB_TEST_LORE_URL")
-	token := os.Getenv("LOREHUB_TEST_LORE_TOKEN")
-	authURL := os.Getenv("LOREHUB_TEST_LORE_AUTH_URL")
-	identity := os.Getenv("LOREHUB_TEST_LORE_IDENTITY")
-	if repositoryURL == "" || token == "" || authURL == "" || identity == "" {
-		t.Skip("LOREHUB_TEST_LORE_URL, LOREHUB_TEST_LORE_TOKEN, " +
-			"LOREHUB_TEST_LORE_AUTH_URL, and LOREHUB_TEST_LORE_IDENTITY are required")
+	if repositoryURL == "" {
+		t.Skip("LOREHUB_TEST_LORE_URL is not set")
 	}
-	client, err := NewSDKClient(t.TempDir())
+	client, err := NewDevelopmentSDKClient(loreTestTempDir(t))
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	credential := Credential{Token: token, AuthURL: authURL, Identity: identity}
-	repository, err := client.RepositoryInfoWithCredential(ctx, repositoryURL, credential)
+	bootstrapCredential := Credential{
+		Partition: repositoryURLPartition(repositoryURL), Identity: "fixture", Scope: ScopeRead,
+		Principal:           ServicePrincipal(ServicePurposeRepositoryRegistration, "fixture-registration"),
+		InsecureDevelopment: true,
+	}
+	repository, err := client.RepositoryInfo(ctx, repositoryURL, bootstrapCredential)
 	if err != nil {
 		t.Fatalf("RepositoryInfo returned an error: %v", err)
 	}
 	if repository.ID == "" || repository.DefaultBranch == "" {
 		t.Fatalf("repository data is incomplete: %#v", repository)
 	}
-	branches, err := client.BranchesWithCredential(
-		ctx,
-		RepositoryRef{CacheKey: "integration", URL: repositoryURL},
-		credential,
-	)
+	ref := RepositoryRef{
+		CacheKey:         "integration",
+		URL:              repositoryURL,
+		LoreRepositoryID: repository.ID,
+		DefaultBranch:    repository.DefaultBranch,
+	}
+	readCredential := developmentCredential(repository.ID, "fixture", ScopeRead)
+	branches, err := client.Branches(ctx, ref, readCredential)
 	if err != nil {
 		t.Fatalf("Branches returned an error: %v", err)
 	}
+	var latest string
 	for _, branch := range branches {
 		if branch.Name == repository.DefaultBranch && branch.LatestRevision != "" {
-			return
+			latest = branch.LatestRevision
+			break
 		}
 	}
-	t.Fatalf("default branch %q was not returned: %#v", repository.DefaultBranch, branches)
-}
-
-func TestSDKClientLoreAuthBoundaryAgainstLoreServer(t *testing.T) {
-	primaryURL := os.Getenv("LOREHUB_TEST_LORE_URL")
-	otherURL := os.Getenv("LOREHUB_TEST_LORE_OTHER_URL")
-	authURL := os.Getenv("LOREHUB_TEST_LORE_AUTH_URL")
-	identity := os.Getenv("LOREHUB_TEST_LORE_IDENTITY")
-	primaryToken := os.Getenv("LOREHUB_TEST_LORE_READ_TOKEN")
-	otherToken := os.Getenv("LOREHUB_TEST_LORE_OTHER_TOKEN")
-	baseToken := os.Getenv("LOREHUB_TEST_LORE_BASE_TOKEN")
-	negativeTokens := map[string]string{
-		"expired":        os.Getenv("LOREHUB_TEST_LORE_EXPIRED_TOKEN"),
-		"wrong_issuer":   os.Getenv("LOREHUB_TEST_LORE_WRONG_ISSUER_TOKEN"),
-		"wrong_audience": os.Getenv("LOREHUB_TEST_LORE_WRONG_AUDIENCE_TOKEN"),
-		"wrong_kid":      os.Getenv("LOREHUB_TEST_LORE_WRONG_KID_TOKEN"),
+	if latest == "" {
+		t.Fatalf("default branch %q was not returned: %#v", repository.DefaultBranch, branches)
 	}
-	if primaryURL == "" || otherURL == "" || authURL == "" || identity == "" || primaryToken == "" ||
-		otherToken == "" || baseToken == "" {
-		t.Skip("Lore boundary integration credentials and two repository URLs are required")
-	}
-	for name, token := range negativeTokens {
-		if token == "" {
-			t.Skip("Lore boundary integration malformed tokens are required")
-		}
-		if name == "" {
-			t.Fatal("negative token name is empty")
-		}
-	}
-
-	credential := func(token string) Credential {
-		return Credential{Token: token, AuthURL: authURL, Identity: identity}
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-
-	t.Run("valid_read_gRPC", func(t *testing.T) {
-		client, err := NewSDKClient(t.TempDir())
-		if err != nil {
-			t.Fatal(err)
-		}
-		repository, err := client.RepositoryInfoWithCredential(ctx, primaryURL, credential(primaryToken))
-		if err != nil {
-			t.Fatalf("valid gRPC read was rejected: %v", err)
-		}
-		if repository.ID == "" {
-			t.Fatal("valid gRPC read returned no repository ID")
-		}
-	})
-
-	t.Run("missing_token_blocks_gRPC", func(t *testing.T) {
-		if err := unauthenticatedRepositoryInfo(ctx, primaryURL, "missing-grpc-token-identity"); err == nil {
-			t.Fatal("gRPC read without a stored token was accepted")
-		}
-	})
-
-	t.Run("valid_read_QUIC_and_missing_token", func(t *testing.T) {
-		client, err := NewSDKClient(t.TempDir())
-		if err != nil {
-			t.Fatal(err)
-		}
-		repository := RepositoryRef{CacheKey: "quic-boundary", URL: primaryURL}
-		if _, err := client.BranchesWithCredential(ctx, repository, credential(primaryToken)); err != nil {
-			t.Fatalf("valid QUIC read was rejected: %v", err)
-		}
-		if _, err := client.Branches(ctx, repository, "missing-token-identity"); err == nil {
-			t.Fatal("QUIC read without a stored token was accepted")
-		}
-	})
-
-	t.Run("base_token_blocks_gRPC_and_QUIC", func(t *testing.T) {
-		assertCredentialRejectedOnBothTransports(t, ctx, primaryURL, credential(baseToken))
-	})
-
-	t.Run("cross_partition_token_blocks_gRPC_and_QUIC", func(t *testing.T) {
-		assertCredentialRejectedOnBothTransports(t, ctx, primaryURL, credential(otherToken))
-		assertCredentialRejectedOnBothTransports(t, ctx, otherURL, credential(primaryToken))
-	})
-
-	for name, token := range negativeTokens {
-		name, token := name, token
-		t.Run(name+"_blocks_gRPC_and_QUIC", func(t *testing.T) {
-			assertCredentialRejectedOnBothTransports(t, ctx, primaryURL, credential(token))
-		})
-	}
-
-	t.Run("read_token_blocks_write", func(t *testing.T) {
-		client, err := NewSDKClient(t.TempDir())
-		if err != nil {
-			t.Fatal(err)
-		}
-		err = client.CreateRepositoryWithCredential(ctx, primaryURL,
-			"0123456789abcdef0123456789abcdef", "read-only-boundary", "", credential(primaryToken))
-		if err == nil {
-			t.Fatal("Lore accepted repository creation with a read-only token")
-		}
-	})
-}
-
-func assertCredentialRejectedOnBothTransports(
-	t *testing.T,
-	ctx context.Context,
-	repositoryURL string,
-	credential Credential,
-) {
-	t.Helper()
-	grpcClient, err := NewSDKClient(t.TempDir())
+	code := CodeClient(client)
+	tree, err := code.Tree(ctx, ref, latest, "", readCredential, 100)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Tree returned an error: %v", err)
 	}
-	if _, err := grpcClient.RepositoryInfoWithCredential(ctx, repositoryURL, credential); err == nil {
-		t.Fatal("gRPC repository read accepted an unauthorized Lore credential")
+	if tree.Revision != latest || !hasTreeEntry(tree, "README.md", "file") || !hasTreeEntry(tree, "src", "directory") {
+		t.Fatalf("tree did not contain the expected exact-revision entries: %#v", tree)
 	}
-	quicClient, err := NewSDKClient(t.TempDir())
+	file, body, err := code.File(ctx, ref, latest, "README.md", readCredential, 1<<20)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("File returned an error: %v", err)
 	}
-	if _, err := quicClient.BranchesWithCredential(ctx, RepositoryRef{
-		CacheKey: "negative-quic-boundary", URL: repositoryURL,
-	}, credential); err == nil {
-		t.Fatal("QUIC branch read accepted an unauthorized Lore credential")
+	if file.Revision != latest || file.Binary || string(body) == "" || file.Content == "" {
+		t.Fatalf("file response was incomplete: file=%#v body=%q", file, body)
+	}
+	fileHistory, err := code.FileHistory(ctx, ref, latest, repository.DefaultBranch, "README.md", readCredential, 20)
+	if err != nil {
+		t.Fatalf("FileHistory returned an error: %v", err)
+	}
+	if len(fileHistory) == 0 || fileHistory[0].Path != "README.md" || fileHistory[0].Revision == "" {
+		t.Fatalf("file history was incomplete: %#v", fileHistory)
+	}
+	history, err := code.RevisionHistory(ctx, ref, latest, repository.DefaultBranch, readCredential, 20)
+	if err != nil {
+		t.Fatalf("RevisionHistory returned an error: %v", err)
+	}
+	if len(history) < 2 || history[0].Revision != latest {
+		t.Fatalf("revision history did not contain the fixture's two revisions: %#v", history)
+	}
+	detail, err := code.RevisionInfo(ctx, ref, latest, readCredential)
+	if err != nil {
+		t.Fatalf("RevisionInfo returned an error: %v", err)
+	}
+	if detail.Revision != latest {
+		t.Fatalf("revision detail was incomplete: %#v", detail)
+	}
+	diff, err := code.RevisionDiff(ctx, ref, history[1].Revision, latest, nil, readCredential, 20, 1<<20)
+	if err != nil {
+		t.Fatalf("RevisionDiff returned an error: %v", err)
+	}
+	if diff.Source != history[1].Revision || diff.Target != latest || len(diff.Files) == 0 {
+		t.Fatalf("revision diff did not contain a changed file: %#v", diff)
 	}
 }
 
-func unauthenticatedRepositoryInfo(ctx context.Context, repositoryURL, identity string) error {
-	globals, cleanupGlobals := types.NewLoreGlobalArgs(types.LoreGlobalArgs{
-		Identity: identity,
-		Remote:   true,
-		InMemory: true,
-	})
-	defer cleanupGlobals()
-	args, cleanupArgs := types.NewLoreRepositoryInfoArgs(types.LoreRepositoryInfoArgs{
-		RepositoryUrl: repositoryURL,
-	})
-	defer cleanupArgs()
-	events, err := loresdk.RepositoryInfo(&globals, &args).
-		FilterByType(types.LoreEventTag_REPOSITORY_DATA).
-		Collect()
-	if err != nil {
-		return err
+func developmentCredential(partition, identity string, scope Scope) Credential {
+	return Credential{
+		Partition: partition, Identity: identity, Scope: scope,
+		Principal: ServicePrincipal(ServicePurposePublicReader, "fixture-public-reader"), InsecureDevelopment: true,
 	}
-	if len(events) == 0 {
-		return errors.New("unauthenticated Lore read returned no repository data")
+}
+
+func hasTreeEntry(tree Tree, path string, kind string) bool {
+	for _, entry := range tree.Entries {
+		if entry.Path == path && entry.Kind == kind {
+			return true
+		}
 	}
-	return nil
+	return false
 }

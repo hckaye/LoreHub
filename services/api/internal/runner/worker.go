@@ -17,15 +17,17 @@ import (
 )
 
 type WorkerConfig struct {
-	LoreBinary       string
-	ActBinary        string
-	WorkDir          string
-	LogDir           string
-	ArtifactDir      string
-	PollPeriod       time.Duration
-	JobTimeout       time.Duration
-	Lore             lore.CredentialClient
-	Issuer           CredentialIssuer
+	LoreBinary  string
+	ActBinary   string
+	WorkDir     string
+	LogDir      string
+	ArtifactDir string
+	PollPeriod  time.Duration
+	JobTimeout  time.Duration
+	Lore        interface {
+		CloneWithCredential(context.Context, string, string, string, lore.Credential) error
+	}
+	Credentials      lore.CredentialProvider
 	ServicePrincipal string
 }
 
@@ -124,17 +126,20 @@ func (worker *Worker) runJob(ctx context.Context, job Job) (string, []Artifact, 
 	defer func() { _ = logFile.Close() }()
 
 	repositoryPath := filepath.Join(workspace, "repository")
-	if worker.config.Lore == nil || worker.config.Issuer == nil || worker.config.ServicePrincipal == "" {
+	if worker.config.Lore == nil || worker.config.Credentials == nil || worker.config.ServicePrincipal == "" {
 		return logKey, nil, errors.New("CI runner requires scoped Lore credentials")
 	}
-	token, err := worker.config.Issuer.IssueServiceResourceToken(ctx, worker.config.ServicePrincipal,
-		"urc-"+job.LoreRepositoryID, []string{"read"})
+	ref := lore.RepositoryRef{CacheKey: job.RepositoryID, URL: job.LoreURL,
+		LoreRepositoryID: job.LoreRepositoryID}
+	credential, err := worker.config.Credentials.ForRepository(ctx, lore.CredentialRequest{
+		Principal:  lore.ServicePrincipal(lore.ServicePurposeActionsRunner, worker.config.ServicePrincipal),
+		Repository: ref, Partition: job.LoreRepositoryID, Scope: lore.ScopeRead,
+	})
 	if err != nil {
 		return logKey, nil, errors.New("could not mint CI Lore credential")
 	}
-	if err := worker.config.Lore.CloneWithCredential(ctx, job.LoreURL, job.Revision, repositoryPath, lore.Credential{
-		Token: token, AuthURL: worker.config.Issuer.AuthURL(), Identity: worker.config.ServicePrincipal,
-	}); err != nil {
+	if err := worker.config.Lore.CloneWithCredential(ctx, job.LoreURL, job.Revision, repositoryPath,
+		credential); err != nil {
 		return logKey, nil, errors.New("clone Lore revision was rejected")
 	}
 	if _, err := AdaptWorkflows(repositoryPath); err != nil {
@@ -237,7 +242,7 @@ func copyArtifact(sourcePath string, destinationPath string) (int64, error) {
 }
 
 func safeEnvironment() []string {
-	allowed := []string{"PATH", "HOME", "DOCKER_HOST", "DOCKER_CONFIG", "XDG_RUNTIME_DIR", "TMPDIR"}
+	allowed := []string{"PATH", "HOME", "DOCKER_CONFIG", "XDG_RUNTIME_DIR", "TMPDIR"}
 	environment := make([]string, 0, len(allowed))
 	for _, key := range allowed {
 		if value := os.Getenv(key); value != "" {

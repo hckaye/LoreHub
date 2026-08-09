@@ -4,6 +4,34 @@ set -eu
 umask 077
 mkdir -p /tls
 
+environment=${LOREHUB_ENV:-development}
+root_domain=${LOREHUB_LORE_ROOT_DOMAIN:-lorehub.localhost}
+
+if [ "$environment" = production ]; then
+  for required in ca.crt server.key server.crt lore-client.key lore-client.crt; do
+    test -s "/input/${required}"
+    cp "/input/${required}" "/tls/${required}"
+  done
+  openssl verify -CAfile /tls/ca.crt /tls/server.crt /tls/lore-client.crt >/dev/null
+  server_names=${LOREHUB_TLS_SERVER_NAMES:?LOREHUB_TLS_SERVER_NAMES is required in production}
+  old_ifs=$IFS
+  IFS=,
+  for server_name in $server_names; do
+    test -n "$server_name"
+    openssl x509 -in /tls/server.crt -checkhost "$server_name" -noout >/dev/null
+  done
+  IFS=$old_ifs
+  chmod 0600 /tls/*.key
+  chmod 0644 /tls/*.crt
+  chown 0:999 /tls/server.key /tls/lore-client.key
+  chmod 0640 /tls/server.key /tls/lore-client.key
+  if [ -d /export ]; then
+    cp /tls/ca.crt /export/lorehub-local-ca.crt
+    chmod 0644 /export/lorehub-local-ca.crt
+  fi
+  exit 0
+fi
+
 if [ -e /tls/ca.crt ]; then
   for required in ca.key server.key server.crt lore-client.key lore-client.crt; do
     test -s "/tls/${required}"
@@ -23,10 +51,13 @@ openssl req -x509 -newkey rsa:3072 -nodes \
   -addext "basicConstraints=critical,CA:TRUE,pathlen:1" \
   -addext "keyUsage=critical,keyCertSign,cRLSign"
 
-server_san="DNS:lorehub.localhost"
-server_san="${server_san},DNS:auth.lorehub.localhost"
-server_san="${server_san},DNS:api.lorehub.localhost"
-server_san="${server_san},DNS:lore.lorehub.localhost"
+case "$root_domain" in
+  *[!A-Za-z0-9.-]*) echo "LOREHUB_LORE_ROOT_DOMAIN contains invalid characters" >&2; exit 1 ;;
+esac
+server_san="DNS:${root_domain}"
+server_san="${server_san},DNS:auth.${root_domain}"
+server_san="${server_san},DNS:api.${root_domain}"
+server_san="${server_san},DNS:lore.${root_domain}"
 server_san="${server_san},DNS:localhost,IP:127.0.0.1"
 cat >/tmp/server.ext <<EOF
 basicConstraints=CA:FALSE

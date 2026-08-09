@@ -10,42 +10,28 @@ import (
 )
 
 type BranchClient interface {
-	BranchesWithCredential(
-		ctx context.Context,
-		repository loreclient.RepositoryRef,
-		credential loreclient.Credential,
-	) ([]loreclient.Branch, error)
-}
-
-type CredentialIssuer interface {
-	IssueServiceResourceToken(
-		ctx context.Context,
-		principalName string,
-		resourceID string,
-		requested []string,
-	) (string, error)
-	AuthURL() string
+	Branches(context.Context, loreclient.RepositoryRef, loreclient.Credential) ([]loreclient.Branch, error)
 }
 
 type Poller struct {
-	store                 *Store
-	lore                  BranchClient
-	issuer                CredentialIssuer
-	observerPrincipalName string
-	period                time.Duration
-	logger                *slog.Logger
+	store           *Store
+	lore            BranchClient
+	credentials     loreclient.CredentialProvider
+	observerSubject string
+	period          time.Duration
+	logger          *slog.Logger
 }
 
 func NewPoller(
 	store *Store,
 	lore BranchClient,
-	issuer CredentialIssuer,
-	observerPrincipalName string,
+	credentials loreclient.CredentialProvider,
+	observerSubject string,
 	period time.Duration,
 	logger *slog.Logger,
 ) *Poller {
 	return &Poller{
-		store: store, lore: lore, issuer: issuer, observerPrincipalName: observerPrincipalName,
+		store: store, lore: lore, credentials: credentials, observerSubject: observerSubject,
 		period: period, logger: logger,
 	}
 }
@@ -74,22 +60,22 @@ func (poller *Poller) poll(ctx context.Context) error {
 		return err
 	}
 	for _, repository := range repositories {
-		if poller.issuer == nil || poller.observerPrincipalName == "" {
+		if poller.credentials == nil || poller.observerSubject == "" {
 			return fmt.Errorf("branch observer requires a dedicated service principal")
 		}
-		token, err := poller.issuer.IssueServiceResourceToken(ctx, poller.observerPrincipalName,
-			"urc-"+repository.LoreRepositoryID, []string{"read"})
+		ref := loreclient.RepositoryRef{
+			CacheKey: repository.ID, URL: repository.LoreURL, LoreRepositoryID: repository.LoreRepositoryID,
+		}
+		credential, err := poller.credentials.ForRepository(ctx, loreclient.CredentialRequest{
+			Principal:  loreclient.ServicePrincipal(loreclient.ServicePurposeObserver, poller.observerSubject),
+			Repository: ref, Partition: repository.LoreRepositoryID, Scope: loreclient.ScopeRead,
+		})
 		if err != nil {
 			poller.logger.Error("could not mint scoped Lore polling credential",
 				"repository", repository.Owner+"/"+repository.Slug, "error", err)
 			continue
 		}
-		branches, err := poller.lore.BranchesWithCredential(ctx, loreclient.RepositoryRef{
-			CacheKey: repository.ID,
-			URL:      repository.LoreURL,
-		}, loreclient.Credential{
-			Token: token, AuthURL: poller.issuer.AuthURL(), Identity: poller.observerPrincipalName,
-		})
+		branches, err := poller.lore.Branches(ctx, ref, credential)
 		if err != nil {
 			poller.logger.Error(
 				"could not read Lore branches",

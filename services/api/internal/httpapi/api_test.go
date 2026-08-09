@@ -99,11 +99,13 @@ func (store fakeStore) ListPublicCIRuns(context.Context, string, string) ([]plat
 
 type fakeLore struct{}
 
-func (fakeLore) RepositoryInfo(context.Context, string, string) (loreclient.Repository, error) {
+func (fakeLore) RepositoryInfo(context.Context, string, loreclient.Credential) (loreclient.Repository, error) {
 	return loreclient.Repository{}, nil
 }
 
-func (fakeLore) Branches(context.Context, loreclient.RepositoryRef, string) ([]loreclient.Branch, error) {
+func (fakeLore) Branches(
+	context.Context, loreclient.RepositoryRef, loreclient.Credential,
+) ([]loreclient.Branch, error) {
 	return []loreclient.Branch{}, nil
 }
 

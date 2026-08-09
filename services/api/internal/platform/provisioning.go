@@ -44,6 +44,10 @@ func (store *Store) BeginRepositoryProvisioning(
 	if err != nil {
 		return Repository{}, fmt.Errorf("create canonical Lore repository ID: %w", err)
 	}
+	publicLoreURL, err = loreRepositoryURL(publicLoreURL, loreRepositoryID)
+	if err != nil {
+		return Repository{}, err
+	}
 	now := time.Now().UTC()
 	repository := Repository{
 		ID:               uuid.NewString(),
@@ -366,8 +370,24 @@ func newLorePartitionID() (string, error) {
 func validatePublicLoreURL(value string) error {
 	parsed, err := url.Parse(strings.TrimSpace(value))
 	if err != nil || parsed.Scheme != "lores" || parsed.Host == "" || parsed.User != nil ||
-		parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		parsed.RawQuery != "" || parsed.Fragment != "" ||
+		(parsed.Path != "" && !isLorePartitionID(strings.TrimPrefix(parsed.Path, "/"))) {
 		return errors.New("the public Lore URL must be a fixed lores:// endpoint")
 	}
 	return nil
+}
+
+func loreRepositoryURL(base string, partition string) (string, error) {
+	if err := validatePublicLoreURL(base); err != nil {
+		return "", err
+	}
+	parsed, err := url.Parse(strings.TrimSpace(base))
+	if err != nil {
+		return "", errors.New("the public Lore URL is invalid")
+	}
+	if parsed.Path != "" && parsed.Path != "/"+partition {
+		return "", errors.New("the public Lore URL partition does not match the canonical ID")
+	}
+	parsed.Path = "/" + partition
+	return parsed.String(), nil
 }

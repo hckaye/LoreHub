@@ -19,9 +19,11 @@ func (s *store) GetMergeRequest(
 	row := s.pool.QueryRow(ctx, `
 		SELECT mr.id, mr.number, mr.title, mr.body, mr.state,
 		       mr.source_branch, mr.target_branch, mr.source_revision, mr.target_revision,
-		       author.username, mr.author_id, mr.created_at, mr.updated_at, mr.closed_at
+		       author.username, mr.author_id, merged.username, mr.merged_revision,
+		       mr.merged_at, mr.created_at, mr.updated_at, mr.closed_at
 		FROM merge_requests mr
 		JOIN users author ON author.id = mr.author_id
+		LEFT JOIN users merged ON merged.id = mr.merged_by
 		WHERE mr.repository_id = $1 AND mr.number = $2
 	`, repoID, number)
 	mr, err := scanMergeRequest(row)
@@ -39,7 +41,8 @@ func scanMergeRequest(row pgx.Row) (MergeRequest, error) {
 	err := row.Scan(
 		&mr.ID, &mr.Number, &mr.Title, &mr.Body, &mr.State,
 		&mr.SourceBranch, &mr.TargetBranch, &mr.SourceRevision, &mr.TargetRevision,
-		&mr.Author, &mr.AuthorID, &mr.CreatedAt, &mr.UpdatedAt, &mr.ClosedAt,
+		&mr.Author, &mr.AuthorID, &mr.MergedBy, &mr.MergedRevision, &mr.MergedAt,
+		&mr.CreatedAt, &mr.UpdatedAt, &mr.ClosedAt,
 	)
 	return mr, err
 }
@@ -194,9 +197,11 @@ func scanMergeRequestByTx(
 	row := tx.QueryRow(ctx, `
 		SELECT mr.id, mr.number, mr.title, mr.body, mr.state,
 		       mr.source_branch, mr.target_branch, mr.source_revision, mr.target_revision,
-		       author.username, mr.author_id, mr.created_at, mr.updated_at, mr.closed_at
+		       author.username, mr.author_id, merged.username, mr.merged_revision,
+		       mr.merged_at, mr.created_at, mr.updated_at, mr.closed_at
 		FROM merge_requests mr
 		JOIN users author ON author.id = mr.author_id
+		LEFT JOIN users merged ON merged.id = mr.merged_by
 		WHERE mr.repository_id = $1 AND mr.number = $2
 	`, repoID, number)
 	return scanMergeRequest(row)

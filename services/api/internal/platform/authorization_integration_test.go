@@ -255,6 +255,64 @@ func TestAuthorizationIntegrationPartitionsTeamsAndRevocation(t *testing.T) {
 	}
 }
 
+func TestAuthorizationIntegrationRepositoryGrantRequiresExactRepositoryAdmin(t *testing.T) {
+	fixture := authorizationIntegrationFixture(t)
+	ctx := context.Background()
+	team, err := fixture.store.CreateTeam(ctx, fixture.manager, fixture.orgSlug, SetTeamInput{
+		Slug: "grant-admins", DisplayName: "Grant admins",
+	})
+	if err != nil {
+		t.Fatalf("create team: %v", err)
+	}
+	if _, err := fixture.store.SetTeamMember(ctx, fixture.manager, fixture.orgSlug, team.Slug,
+		SetTeamMemberInput{Username: fixture.alice.Username, Role: "member", Active: true}); err != nil {
+		t.Fatalf("add Alice to team: %v", err)
+	}
+	if _, err := fixture.store.SetTeamRepositoryRole(ctx, fixture.manager, fixture.orgSlug, team.Slug,
+		fixture.orgSlug, "a", SetTeamRepositoryRoleInput{Role: "read"}); err != nil {
+		t.Fatalf("owner grants team read: %v", err)
+	}
+	if _, err := fixture.store.SetOrganizationMember(ctx, fixture.manager, fixture.orgSlug,
+		SetOrganizationMemberInput{Username: fixture.manager.Username, Role: "maintainer", Active: true}); err != nil {
+		t.Fatalf("demote owner to maintainer: %v", err)
+	}
+	if _, err := fixture.store.SetTeamRepositoryRole(ctx, fixture.manager, fixture.orgSlug, team.Slug,
+		fixture.orgSlug, "a", SetTeamRepositoryRoleInput{Role: "admin"}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("maintainer grant error = %v, want private denial", err)
+	}
+	if err := fixture.store.DeleteTeamRepositoryRole(ctx, fixture.manager, fixture.orgSlug, team.Slug,
+		fixture.orgSlug, "a"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("maintainer delete error = %v, want private denial", err)
+	}
+	var role string
+	if err := fixture.pool.QueryRow(ctx, `
+		SELECT role FROM team_repository_roles WHERE team_id = $1 AND repository_id = $2
+	`, team.ID, fixture.repositoryA).Scan(&role); err != nil || role != "read" {
+		t.Fatalf("maintainer changed team grant to %q, err %v", role, err)
+	}
+
+	if _, err := fixture.store.SetOrganizationMember(ctx, fixture.manager, fixture.orgSlug,
+		SetOrganizationMemberInput{Username: fixture.manager.Username, Role: "owner", Active: true}); err != nil {
+		t.Fatalf("restore owner: %v", err)
+	}
+	if _, err := fixture.store.SetTeamRepositoryRole(ctx, fixture.manager, fixture.orgSlug, team.Slug,
+		fixture.orgSlug, "a", SetTeamRepositoryRoleInput{Role: "admin"}); err != nil {
+		t.Fatalf("owner grants team admin: %v", err)
+	}
+	if _, err := fixture.store.SetRepositoryCollaborator(ctx, fixture.manager, fixture.orgSlug, "a",
+		SetCollaboratorInput{Username: fixture.alice.Username, Role: "admin", Active: true}); err != nil {
+		t.Fatalf("owner grants exact repository admin: %v", err)
+	}
+	if _, err := fixture.store.SetTeamRepositoryRole(ctx, fixture.alice, fixture.orgSlug, team.Slug,
+		fixture.orgSlug, "a", SetTeamRepositoryRoleInput{Role: "write"}); err != nil {
+		t.Fatalf("exact repository admin grants team write: %v", err)
+	}
+	if err := fixture.store.DeleteTeamRepositoryRole(ctx, fixture.alice, fixture.orgSlug, team.Slug,
+		fixture.orgSlug, "a"); err != nil {
+		t.Fatalf("exact repository admin deletes team grant: %v", err)
+	}
+}
+
 func TestAuthorizationIntegrationProtectedBranchAndOneTimeMerge(t *testing.T) {
 	fixture := authorizationIntegrationFixture(t)
 	ctx := context.Background()

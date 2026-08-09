@@ -1,0 +1,42 @@
+services:
+  lore:
+    platform: linux/amd64
+    build:
+      context: ../..
+      dockerfile: infra/lore/Dockerfile
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:41339/health_check"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - lore-server-data:/data
+
+  lore-test:
+    platform: linux/amd64
+    build:
+      context: ../..
+      dockerfile: infra/lore/test.Dockerfile
+    environment:
+      LORE_TEST_REPOSITORY_URL: ${LORE_TEST_REPOSITORY_URL:?LORE_TEST_REPOSITORY_URL is required}
+      LOREHUB_TEST_LORE_URL: ${LORE_TEST_REPOSITORY_URL:?LORE_TEST_REPOSITORY_URL is required}
+      LOREHUB_TEST_LORE_MERGE: "1"
+      LOREHUB_TEST_LORE_CLI: /usr/local/bin/lore
+      LOREHUB_TEST_LORE_IDENTITY: fixture
+      LOREHUB_TEST_LORE_WORKTREE: /var/lib/lorehub/fixture
+    depends_on:
+      lore:
+        condition: service_healthy
+    volumes:
+      - lore-test-client:/var/lib/lorehub
+    command:
+      - /bin/sh
+      - -ec
+      - >-
+        /usr/local/bin/lore-fixture "$LORE_TEST_REPOSITORY_URL"
+        /var/lib/lorehub/fixture
+        && go test -count=1 ./internal/lore
+
+volumes:
+  lore-server-data:
+  lore-test-client:

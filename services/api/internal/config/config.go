@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -9,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	loreclient "github.com/lorehub/lorehub/services/api/internal/lore"
 )
 
 const (
@@ -20,61 +23,68 @@ const (
 )
 
 type Config struct {
-	Environment              string
-	HTTPAddress              string
-	DatabaseURL              string
-	DatabaseTimeout          time.Duration
-	ShutdownTimeout          time.Duration
-	AuthMode                 string
-	OIDCIssuer               string
-	OIDCAudience             string
-	OIDCClientID             string
-	OIDCClientSecret         string
-	OIDCRedirectURL          string
-	PublicOrigin             string
-	AuthSecret               string
-	SessionCookieName        string
-	LoginBindingCookieName   string
-	SessionCookiePath        string
-	SessionCookieDomain      string
-	SessionCookieSecure      bool
-	SessionTTL               time.Duration
-	LoginTransactionTTL      time.Duration
-	LoreCacheDir             string
-	LoreIdentity             string
-	AllowLegacyLoreIdentity  bool
-	LoreAuthIssuer           string
-	LoreAuthAudience         string
-	LoreRootDomain           string
-	LoreAuthJWKSURL          string
-	LoreAuthEnvironment      string
-	LoreAuthIDP              string
-	LoreAuthTokenTTL         time.Duration
-	LoreAuthSessionTTL       time.Duration
-	LoreAuthLoginURL         string
-	LoreAuthURL              string
-	LorePublicURL            string
-	LoreAuthAddress          string
-	LoreAuthTLSCert          string
-	LoreAuthTLSKey           string
-	AuthSigningKeyPath       string
-	AuthSigningKeyPEM        string
-	AuthSigningKeyKID        string
-	AuthPreviousKeys         string
-	PolicyAddress            string
-	PolicyTLSCert            string
-	PolicyTLSKey             string
-	PolicyTLSClientCA        string
-	LoreBinary               string
-	ActBinary                string
-	RunnerPollPeriod         time.Duration
-	BranchPollPeriod         time.Duration
-	RunnerJobTimeout         time.Duration
-	RunnerLogDir             string
-	RunnerArtifactDir        string
-	RunnerWorkDir            string
-	RunnerServicePrincipal   string
-	ObserverServicePrincipal string
+	Environment                       string
+	HTTPAddress                       string
+	DatabaseURL                       string
+	DatabaseTimeout                   time.Duration
+	ShutdownTimeout                   time.Duration
+	AuthMode                          string
+	OIDCIssuer                        string
+	OIDCAudience                      string
+	OIDCClientID                      string
+	OIDCClientSecret                  string
+	OIDCRedirectURL                   string
+	PublicOrigin                      string
+	AuthSecret                        string
+	SessionCookieName                 string
+	LoginBindingCookieName            string
+	SessionCookiePath                 string
+	SessionCookieDomain               string
+	SessionCookieSecure               bool
+	SessionTTL                        time.Duration
+	LoginTransactionTTL               time.Duration
+	LoreCacheDir                      string
+	LoreIdentity                      string
+	AllowLegacyLoreIdentity           bool
+	LoreCredentials                   map[string]loreclient.CredentialMaterial
+	LoreAuthAuthority                 string
+	LorePublicReaderSubject           string
+	LoreActionsRunnerSubject          string
+	LoreObserverSubject               string
+	LoreRepositoryRegistrationSubject string
+	LoreAllowDevelopmentFallback      bool
+	LoreAuthIssuer                    string
+	LoreAuthAudience                  string
+	LoreRootDomain                    string
+	LoreAuthJWKSURL                   string
+	LoreAuthEnvironment               string
+	LoreAuthIDP                       string
+	LoreAuthTokenTTL                  time.Duration
+	LoreAuthSessionTTL                time.Duration
+	LoreAuthLoginURL                  string
+	LoreAuthURL                       string
+	LorePublicURL                     string
+	LoreAuthAddress                   string
+	LoreAuthTLSCert                   string
+	LoreAuthTLSKey                    string
+	AuthSigningKeyPath                string
+	AuthSigningKeyPEM                 string
+	AuthSigningKeyKID                 string
+	AuthPreviousKeys                  string
+	PolicyAddress                     string
+	PolicyTLSCert                     string
+	PolicyTLSKey                      string
+	PolicyTLSClientCA                 string
+	LorePolicyEndpoint                string
+	LoreObservationEndpoint           string
+	LoreBinary                        string
+	ActBinary                         string
+	RunnerPollPeriod                  time.Duration
+	BranchPollPeriod                  time.Duration
+	RunnerJobTimeout                  time.Duration
+	RunnerLogDir                      string
+	RunnerArtifactDir                 string
+	RunnerWorkDir                     string
 }
 
 func Load() (Config, error) {
@@ -85,6 +95,12 @@ func Load() (Config, error) {
 	loreRootDomain := os.Getenv("LOREHUB_LORE_ROOT_DOMAIN")
 	loreAuthJWKSURL := os.Getenv("LOREHUB_LORE_AUTH_JWKS_URL")
 	lorePublicURL := os.Getenv("LOREHUB_LORE_PUBLIC_URL")
+	lorePolicyEndpoint := os.Getenv("LOREHUB_LORE_POLICY_ENDPOINT")
+	loreObservationEndpoint := os.Getenv("LOREHUB_LORE_OBSERVATION_ENDPOINT")
+	loreAuthAuthority := os.Getenv("LOREHUB_LORE_AUTHORITY")
+	publicReaderSubject := os.Getenv("LOREHUB_LORE_PUBLIC_READER_SUBJECT")
+	actionsRunnerSubject := os.Getenv("LOREHUB_LORE_ACTIONS_RUNNER_SUBJECT")
+	registrationSubject := os.Getenv("LOREHUB_LORE_REPOSITORY_REGISTRATION_SUBJECT")
 	signingKeyPath := os.Getenv("LOREHUB_AUTH_SIGNING_KEY_PATH")
 	loreAuthTLSCert := os.Getenv("LOREHUB_LORE_AUTH_TLS_CERT")
 	loreAuthTLSKey := os.Getenv("LOREHUB_LORE_AUTH_TLS_KEY")
@@ -92,7 +108,15 @@ func Load() (Config, error) {
 	policyTLSKey := os.Getenv("LOREHUB_POLICY_TLS_KEY")
 	policyTLSCA := os.Getenv("LOREHUB_POLICY_TLS_CLIENT_CA")
 	signingKeyKID := os.Getenv("LOREHUB_AUTH_SIGNING_KEY_KID")
+	loreCredentials, err := parseLoreCredentials(os.Getenv("LOREHUB_LORE_CREDENTIALS"))
+	if err != nil {
+		return Config{}, err
+	}
 	allowLegacyLoreIdentity, err := boolSetting("LOREHUB_ALLOW_LEGACY_LORE_IDENTITY", false)
+	if err != nil {
+		return Config{}, err
+	}
+	allowDevelopmentFallback, err := boolSetting("LOREHUB_LORE_ALLOW_DEVELOPMENT_FALLBACK", false)
 	if err != nil {
 		return Config{}, err
 	}
@@ -105,6 +129,17 @@ func Load() (Config, error) {
 		loreAuthJWKSURL = defaultIfEmpty(loreAuthJWKSURL,
 			"http://api.lorehub.localhost:8080/.well-known/jwks.json")
 		lorePublicURL = defaultIfEmpty(lorePublicURL, "lores://lore.lorehub.localhost:41337")
+		lorePolicyEndpoint = defaultIfEmpty(lorePolicyEndpoint,
+			"https://api.lorehub.localhost:8444/internal/lore/policy")
+		loreObservationEndpoint = defaultIfEmpty(loreObservationEndpoint,
+			"https://api.lorehub.localhost:8444/internal/lore/observation")
+		loreAuthAuthority = defaultIfEmpty(loreAuthAuthority, "auth.lorehub.localhost:8443")
+		publicReaderSubject = defaultIfEmpty(publicReaderSubject,
+			"00000000-0000-4000-8000-000000000001")
+		actionsRunnerSubject = defaultIfEmpty(actionsRunnerSubject,
+			"00000000-0000-4000-8000-000000000002")
+		registrationSubject = defaultIfEmpty(registrationSubject,
+			"00000000-0000-4000-8000-000000000004")
 		signingKeyPath = defaultIfEmpty(signingKeyPath, "/var/lib/lorehub/keys/lore-auth.pem")
 		loreAuthTLSCert = defaultIfEmpty(loreAuthTLSCert, "/var/lib/lorehub/tls/server.crt")
 		loreAuthTLSKey = defaultIfEmpty(loreAuthTLSKey, "/var/lib/lorehub/tls/server.key")
@@ -137,63 +172,69 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	config := Config{
-		Environment:             environment,
-		HTTPAddress:             envOrDefault("LOREHUB_HTTP_ADDRESS", ":8080"),
-		DatabaseURL:             os.Getenv("DATABASE_URL"),
-		DatabaseTimeout:         durationOrDefault("LOREHUB_DATABASE_TIMEOUT", 10*time.Second),
-		ShutdownTimeout:         durationOrDefault("LOREHUB_SHUTDOWN_TIMEOUT", 15*time.Second),
-		AuthMode:                authMode,
-		OIDCIssuer:              oidcIssuer,
-		OIDCAudience:            oidcAudience,
-		OIDCClientID:            oidcClientID,
-		OIDCClientSecret:        os.Getenv("LOREHUB_OIDC_CLIENT_SECRET"),
-		OIDCRedirectURL:         os.Getenv("LOREHUB_OIDC_REDIRECT_URL"),
-		PublicOrigin:            strings.TrimRight(os.Getenv("LOREHUB_PUBLIC_ORIGIN"), "/"),
-		AuthSecret:              os.Getenv("LOREHUB_AUTH_SECRET"),
-		SessionCookieName:       envOrDefault("LOREHUB_SESSION_COOKIE_NAME", "lorehub_session"),
-		LoginBindingCookieName:  envOrDefault("LOREHUB_LOGIN_BINDING_COOKIE_NAME", "lorehub_login_binding"),
-		SessionCookiePath:       envOrDefault("LOREHUB_SESSION_COOKIE_PATH", "/"),
-		SessionCookieDomain:     os.Getenv("LOREHUB_SESSION_COOKIE_DOMAIN"),
-		SessionCookieSecure:     cookieSecure,
-		SessionTTL:              sessionTTL,
-		LoginTransactionTTL:     transactionTTL,
-		LoreCacheDir:            envOrDefault("LOREHUB_LORE_CACHE_DIR", ".cache/lorehub/repositories"),
-		LoreIdentity:            os.Getenv("LOREHUB_LORE_IDENTITY"),
-		AllowLegacyLoreIdentity: allowLegacyLoreIdentity,
-		LoreAuthIssuer:          loreAuthIssuer,
-		LoreAuthAudience:        envOrDefault("LOREHUB_LORE_AUTH_AUDIENCE", loreRootDomain),
-		LoreRootDomain:          loreRootDomain,
-		LoreAuthJWKSURL:         loreAuthJWKSURL,
-		LoreAuthEnvironment:     envOrDefault("LOREHUB_LORE_AUTH_ENVIRONMENT", environment),
-		LoreAuthIDP:             envOrDefault("LOREHUB_LORE_AUTH_IDP", "keycloak"),
-		LoreAuthTokenTTL:        durationOrDefault("LOREHUB_LORE_AUTH_TOKEN_TTL", 5*time.Minute),
-		LoreAuthSessionTTL:      durationOrDefault("LOREHUB_LORE_AUTH_SESSION_TTL", 5*time.Minute),
-		LoreAuthLoginURL:        loreAuthLoginURL,
-		LoreAuthURL:             loreAuthURL,
-		LorePublicURL:           lorePublicURL,
-		LoreAuthAddress:         envOrDefault("LOREHUB_LORE_AUTH_ADDRESS", ":8443"),
-		LoreAuthTLSCert:         loreAuthTLSCert,
-		LoreAuthTLSKey:          loreAuthTLSKey,
-		AuthSigningKeyPath:      signingKeyPath,
-		AuthSigningKeyPEM:       os.Getenv("LOREHUB_AUTH_SIGNING_KEY"),
-		AuthSigningKeyKID:       signingKeyKID,
-		AuthPreviousKeys:        os.Getenv("LOREHUB_AUTH_PREVIOUS_KEYS"),
-		PolicyAddress:           envOrDefault("LOREHUB_POLICY_ADDRESS", ":8444"),
-		PolicyTLSCert:           policyTLSCert,
-		PolicyTLSKey:            policyTLSKey,
-		PolicyTLSClientCA:       policyTLSCA,
-		LoreBinary:              envOrDefault("LOREHUB_LORE_BINARY", "lore"),
-		ActBinary:               envOrDefault("LOREHUB_ACT_BINARY", "act"),
-		RunnerPollPeriod:        durationOrDefault("LOREHUB_RUNNER_POLL_PERIOD", 2*time.Second),
-		BranchPollPeriod:        durationOrDefault("LOREHUB_BRANCH_POLL_PERIOD", 15*time.Second),
-		RunnerJobTimeout:        durationOrDefault("LOREHUB_RUNNER_JOB_TIMEOUT", 60*time.Minute),
-		RunnerLogDir:            envOrDefault("LOREHUB_RUNNER_LOG_DIR", ".cache/lorehub/runner-logs"),
-		RunnerArtifactDir:       envOrDefault("LOREHUB_RUNNER_ARTIFACT_DIR", ".cache/lorehub/runner-artifacts"),
-		RunnerWorkDir:           envOrDefault("LOREHUB_RUNNER_WORK_DIR", ".cache/lorehub/runner-work"),
-		RunnerServicePrincipal: strings.TrimSpace(envOrDefault(
-			"LOREHUB_RUNNER_SERVICE_PRINCIPAL", "lorehub-ci-runner")),
-		ObserverServicePrincipal: strings.TrimSpace(envOrDefault(
-			"LOREHUB_OBSERVER_SERVICE_PRINCIPAL", "lorehub-observer")),
+		Environment:              environment,
+		HTTPAddress:              envOrDefault("LOREHUB_HTTP_ADDRESS", ":8080"),
+		DatabaseURL:              os.Getenv("DATABASE_URL"),
+		DatabaseTimeout:          durationOrDefault("LOREHUB_DATABASE_TIMEOUT", 10*time.Second),
+		ShutdownTimeout:          durationOrDefault("LOREHUB_SHUTDOWN_TIMEOUT", 15*time.Second),
+		AuthMode:                 authMode,
+		OIDCIssuer:               oidcIssuer,
+		OIDCAudience:             oidcAudience,
+		OIDCClientID:             oidcClientID,
+		OIDCClientSecret:         os.Getenv("LOREHUB_OIDC_CLIENT_SECRET"),
+		OIDCRedirectURL:          os.Getenv("LOREHUB_OIDC_REDIRECT_URL"),
+		PublicOrigin:             strings.TrimRight(os.Getenv("LOREHUB_PUBLIC_ORIGIN"), "/"),
+		AuthSecret:               os.Getenv("LOREHUB_AUTH_SECRET"),
+		SessionCookieName:        envOrDefault("LOREHUB_SESSION_COOKIE_NAME", "lorehub_session"),
+		LoginBindingCookieName:   envOrDefault("LOREHUB_LOGIN_BINDING_COOKIE_NAME", "lorehub_login_binding"),
+		SessionCookiePath:        envOrDefault("LOREHUB_SESSION_COOKIE_PATH", "/"),
+		SessionCookieDomain:      os.Getenv("LOREHUB_SESSION_COOKIE_DOMAIN"),
+		SessionCookieSecure:      cookieSecure,
+		SessionTTL:               sessionTTL,
+		LoginTransactionTTL:      transactionTTL,
+		LoreCacheDir:             envOrDefault("LOREHUB_LORE_CACHE_DIR", ".cache/lorehub/repositories"),
+		LoreIdentity:             os.Getenv("LOREHUB_LORE_IDENTITY"),
+		AllowLegacyLoreIdentity:  allowLegacyLoreIdentity,
+		LoreCredentials:          loreCredentials,
+		LoreAuthAuthority:        strings.TrimSpace(loreAuthAuthority),
+		LorePublicReaderSubject:  publicReaderSubject,
+		LoreActionsRunnerSubject: actionsRunnerSubject,
+		LoreObserverSubject: strings.TrimSpace(envOrDefault(
+			"LOREHUB_OBSERVER_SERVICE_PRINCIPAL", "00000000-0000-4000-8000-000000000003")),
+		LoreRepositoryRegistrationSubject: registrationSubject,
+		LoreAllowDevelopmentFallback:      allowDevelopmentFallback,
+		LoreAuthIssuer:                    loreAuthIssuer,
+		LoreAuthAudience:                  envOrDefault("LOREHUB_LORE_AUTH_AUDIENCE", loreRootDomain),
+		LoreRootDomain:                    loreRootDomain,
+		LoreAuthJWKSURL:                   loreAuthJWKSURL,
+		LoreAuthEnvironment:               envOrDefault("LOREHUB_LORE_AUTH_ENVIRONMENT", environment),
+		LoreAuthIDP:                       envOrDefault("LOREHUB_LORE_AUTH_IDP", "keycloak"),
+		LoreAuthTokenTTL:                  durationOrDefault("LOREHUB_LORE_AUTH_TOKEN_TTL", 5*time.Minute),
+		LoreAuthSessionTTL:                durationOrDefault("LOREHUB_LORE_AUTH_SESSION_TTL", 5*time.Minute),
+		LoreAuthLoginURL:                  loreAuthLoginURL,
+		LoreAuthURL:                       loreAuthURL,
+		LorePublicURL:                     lorePublicURL,
+		LoreAuthAddress:                   envOrDefault("LOREHUB_LORE_AUTH_ADDRESS", ":8443"),
+		LoreAuthTLSCert:                   loreAuthTLSCert,
+		LoreAuthTLSKey:                    loreAuthTLSKey,
+		AuthSigningKeyPath:                signingKeyPath,
+		AuthSigningKeyPEM:                 os.Getenv("LOREHUB_AUTH_SIGNING_KEY"),
+		AuthSigningKeyKID:                 signingKeyKID,
+		AuthPreviousKeys:                  os.Getenv("LOREHUB_AUTH_PREVIOUS_KEYS"),
+		PolicyAddress:                     envOrDefault("LOREHUB_POLICY_ADDRESS", ":8444"),
+		PolicyTLSCert:                     policyTLSCert,
+		PolicyTLSKey:                      policyTLSKey,
+		PolicyTLSClientCA:                 policyTLSCA,
+		LorePolicyEndpoint:                lorePolicyEndpoint,
+		LoreObservationEndpoint:           loreObservationEndpoint,
+		LoreBinary:                        envOrDefault("LOREHUB_LORE_BINARY", "lore"),
+		ActBinary:                         envOrDefault("LOREHUB_ACT_BINARY", "act"),
+		RunnerPollPeriod:                  durationOrDefault("LOREHUB_RUNNER_POLL_PERIOD", 2*time.Second),
+		BranchPollPeriod:                  durationOrDefault("LOREHUB_BRANCH_POLL_PERIOD", 15*time.Second),
+		RunnerJobTimeout:                  durationOrDefault("LOREHUB_RUNNER_JOB_TIMEOUT", 60*time.Minute),
+		RunnerLogDir:                      envOrDefault("LOREHUB_RUNNER_LOG_DIR", ".cache/lorehub/runner-logs"),
+		RunnerArtifactDir:                 envOrDefault("LOREHUB_RUNNER_ARTIFACT_DIR", ".cache/lorehub/runner-artifacts"),
+		RunnerWorkDir:                     envOrDefault("LOREHUB_RUNNER_WORK_DIR", ".cache/lorehub/runner-work"),
 	}
 
 	if err := validate(config); err != nil {
@@ -269,6 +310,10 @@ func validate(config Config) error {
 	if config.Environment == "production" && config.AuthMode == AuthModeDisabled {
 		return errors.New("LOREHUB_AUTH_MODE=disabled is limited to an isolated local profile")
 	}
+	if config.Environment != "development" && config.Environment != "test" &&
+		config.Environment != "local-insecure" && config.LoreAllowDevelopmentFallback {
+		return errors.New("LOREHUB_LORE_ALLOW_DEVELOPMENT_FALLBACK is limited to isolated local profiles")
+	}
 	if config.Environment == "production" && strings.TrimSpace(config.LoreIdentity) != "" {
 		return errors.New("LOREHUB_LORE_IDENTITY is forbidden in production")
 	}
@@ -278,6 +323,31 @@ func validate(config Config) error {
 	if config.AllowLegacyLoreIdentity && (config.Environment != "local-insecure" ||
 		config.AuthMode != AuthModeDisabled || strings.TrimSpace(config.LoreIdentity) == "") {
 		return errors.New("legacy Lore identity requires LOREHUB_ENV=local-insecure and disabled API auth")
+	}
+	if config.Environment != "development" && config.Environment != "test" &&
+		len(config.LoreCredentials) != 0 {
+		return errors.New("LOREHUB_LORE_CREDENTIALS is limited to development and test")
+	}
+	if config.Environment != "development" && config.Environment != "test" &&
+		strings.TrimSpace(config.LoreAuthAuthority) == "" {
+		return errors.New("LOREHUB_LORE_AUTHORITY is required outside local development")
+	}
+	if config.LoreAuthAuthority != "" {
+		if err := loreclient.ValidateAuthAuthority(config.LoreAuthAuthority); err != nil {
+			return fmt.Errorf("invalid Lore auth authority: %w", err)
+		}
+	}
+	if config.Environment != "development" && config.Environment != "test" {
+		for name, subject := range map[string]string{
+			"LOREHUB_LORE_PUBLIC_READER_SUBJECT":           config.LorePublicReaderSubject,
+			"LOREHUB_LORE_ACTIONS_RUNNER_SUBJECT":          config.LoreActionsRunnerSubject,
+			"LOREHUB_OBSERVER_SERVICE_PRINCIPAL":           config.LoreObserverSubject,
+			"LOREHUB_LORE_REPOSITORY_REGISTRATION_SUBJECT": config.LoreRepositoryRegistrationSubject,
+		} {
+			if err := loreclient.ValidateServiceSubject(subject); err != nil {
+				return fmt.Errorf("%s is required and must be an exact subject: %w", name, err)
+			}
+		}
 	}
 	if config.LoreAuthIssuer == "" || config.LoreAuthAudience == "" || config.LoreRootDomain == "" ||
 		config.LoreAuthJWKSURL == "" || config.AuthSigningKeyKID == "" {
@@ -302,6 +372,18 @@ func validate(config Config) error {
 	jwksURL, _ := url.Parse(config.LoreAuthJWKSURL)
 	if !hostWithinRoot(jwksURL.Hostname(), config.LoreRootDomain) {
 		return errors.New("LOREHUB_LORE_AUTH_JWKS_URL must use the managed Lore root domain")
+	}
+	for name, endpoint := range map[string]string{
+		"LOREHUB_LORE_POLICY_ENDPOINT":      config.LorePolicyEndpoint,
+		"LOREHUB_LORE_OBSERVATION_ENDPOINT": config.LoreObservationEndpoint,
+	} {
+		if err := validateURL(name, endpoint, config.Environment, false); err != nil {
+			return err
+		}
+		parsedEndpoint, _ := url.Parse(endpoint)
+		if !hostWithinRoot(parsedEndpoint.Hostname(), config.LoreRootDomain) {
+			return fmt.Errorf("%s must use the managed Lore root domain", name)
+		}
 	}
 	for _, audience := range strings.Split(config.LoreAuthAudience, ",") {
 		audience = strings.TrimSpace(audience)
@@ -376,6 +458,27 @@ func validate(config Config) error {
 		return errors.New("LOREHUB_OIDC_REDIRECT_URL must use the LOREHUB_PUBLIC_ORIGIN origin")
 	}
 	return nil
+}
+
+func parseLoreCredentials(value string) (map[string]loreclient.CredentialMaterial, error) {
+	if strings.TrimSpace(value) == "" {
+		return map[string]loreclient.CredentialMaterial{}, nil
+	}
+	var result map[string]loreclient.CredentialMaterial
+	if err := json.Unmarshal([]byte(value), &result); err != nil || result == nil {
+		return nil, errors.New("LOREHUB_LORE_CREDENTIALS must be a JSON object keyed by partition")
+	}
+	for partition, material := range result {
+		if strings.TrimSpace(partition) == "" {
+			return nil, errors.New("LOREHUB_LORE_CREDENTIALS contains an empty partition")
+		}
+		result[partition] = loreclient.CredentialMaterial{
+			Identity: strings.TrimSpace(material.Identity),
+			Token:    strings.TrimSpace(material.Token),
+			AuthURL:  strings.TrimSpace(material.AuthURL),
+		}
+	}
+	return result, nil
 }
 
 func validateCookie(config Config) error {
