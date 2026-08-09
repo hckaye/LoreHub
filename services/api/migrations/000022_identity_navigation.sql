@@ -88,6 +88,12 @@ CREATE TABLE IF NOT EXISTS notifications (
     CONSTRAINT notifications_recipient_event_unique UNIQUE (recipient_id, source_event_id)
 );
 
+ALTER TABLE notifications
+    ADD COLUMN IF NOT EXISTS scope_organization_id uuid,
+    ADD COLUMN IF NOT EXISTS scope_repository_id uuid,
+    ADD COLUMN IF NOT EXISTS scope_team_id uuid,
+    ADD COLUMN IF NOT EXISTS scope_visibility varchar(16);
+
 CREATE INDEX IF NOT EXISTS notifications_recipient_created_idx
     ON notifications (recipient_id, created_at DESC);
 

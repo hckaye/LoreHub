@@ -50,18 +50,26 @@ func (store *Store) ListNotifications(
 	if err := store.syncNotifications(ctx, transaction); err != nil {
 		return NotificationPage{}, err
 	}
+	if err := store.pruneInaccessibleNotifications(ctx, transaction, actor.ID); err != nil {
+		return NotificationPage{}, err
+	}
 	var total int64
 	if err := transaction.QueryRow(ctx, `
-		SELECT COUNT(*) FROM notifications
-		WHERE recipient_id = $1 AND ($2 = false OR read_at IS NULL)
+		SELECT COUNT(*)
+		FROM notifications n
+		WHERE n.recipient_id = $1
+		  AND `+notificationCurrentAccessClause("n", "$1")+`
+		  AND ($2 = false OR n.read_at IS NULL)
 	`, actor.ID, unreadOnly).Scan(&total); err != nil {
 		return NotificationPage{}, fmt.Errorf("count notifications: %w", err)
 	}
 	rows, err := transaction.Query(ctx, `
-		SELECT id, topic, title, body, href, read_at, created_at
-		FROM notifications
-		WHERE recipient_id = $1 AND ($2 = false OR read_at IS NULL)
-		ORDER BY created_at DESC, id DESC
+		SELECT n.id, n.topic, n.title, n.body, n.href, n.read_at, n.created_at
+		FROM notifications n
+		WHERE n.recipient_id = $1
+		  AND `+notificationCurrentAccessClause("n", "$1")+`
+		  AND ($2 = false OR n.read_at IS NULL)
+		ORDER BY n.created_at DESC, n.id DESC
 		LIMIT $3
 	`, actor.ID, unreadOnly, limit)
 	if err != nil {
@@ -76,6 +84,32 @@ func (store *Store) ListNotifications(
 		return NotificationPage{}, fmt.Errorf("commit notification projection: %w", err)
 	}
 	return NotificationPage{Items: items, Total: total}, nil
+}
+
+func (store *Store) pruneInaccessibleNotifications(
+	ctx context.Context,
+	transaction pgx.Tx,
+	userID string,
+) error {
+	_, err := transaction.Exec(ctx, `
+		WITH stale AS MATERIALIZED (
+			SELECT n.id
+			FROM notifications n
+			WHERE n.recipient_id = $1
+			  AND n.scope_organization_id IS NOT NULL
+			  AND NOT `+notificationCurrentAccessClause("n", "$1")+`
+			ORDER BY n.created_at ASC, n.id ASC
+			LIMIT `+fmt.Sprint(notificationProjectionBatchSize)+`
+			FOR UPDATE OF n SKIP LOCKED
+		)
+		DELETE FROM notifications n
+		USING stale
+		WHERE n.id = stale.id AND n.recipient_id = $1
+	`, userID)
+	if err != nil {
+		return fmt.Errorf("prune inaccessible notifications: %w", err)
+	}
+	return nil
 }
 
 func (store *Store) UnreadNotificationCount(ctx context.Context, actor User) (int64, error) {
@@ -303,11 +337,17 @@ func (store *Store) syncNotifications(ctx context.Context, transaction pgx.Tx) e
 			for _, recipient := range preferences {
 				_, err := transaction.Exec(ctx, `
 					INSERT INTO notifications (
-					    id, recipient_id, source_event_id, topic, title, body, href, created_at
-					) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-					ON CONFLICT (recipient_id, source_event_id) DO NOTHING
+					    id, recipient_id, source_event_id, topic, title, body, href,
+					    scope_organization_id, scope_repository_id, scope_team_id, scope_visibility, created_at
+					) VALUES ($1, $2, $3, $4, $5, $6, $7,
+					    NULLIF($8, '')::uuid, NULLIF($9, '')::uuid, NULLIF($10, '')::uuid, NULLIF($11, ''), $12)
+					ON CONFLICT (recipient_id, source_event_id) DO UPDATE SET
+						scope_organization_id = EXCLUDED.scope_organization_id,
+						scope_repository_id = EXCLUDED.scope_repository_id,
+						scope_team_id = EXCLUDED.scope_team_id,
+						scope_visibility = EXCLUDED.scope_visibility
 				`, uuid.NewString(), recipient, event.ID, event.Topic, message.title, message.body, message.href,
-					event.CreatedAt)
+					scope.OrganizationID, scope.RepositoryID, scope.TeamID, scope.Visibility, event.CreatedAt)
 				if err != nil {
 					return fmt.Errorf("materialize notification: %w", err)
 				}
@@ -552,7 +592,8 @@ func (store *Store) notificationRecipients(
 			SELECT members.user_id
 			FROM organization_memberships members
 			JOIN users recipient ON recipient.id = members.user_id AND recipient.status = 'active'
-			WHERE members.organization_id = $1 AND $3 = 'internal'
+			WHERE members.organization_id = $1
+			  AND ($3 = 'internal' OR ($3 = 'private' AND members.role = 'owner'))
 			UNION
 			SELECT repository_members.user_id
 			FROM repository_memberships repository_members
