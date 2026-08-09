@@ -18,7 +18,8 @@ func TestSDKClientAgainstLoreServer(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	repository, err := client.RepositoryInfo(ctx, repositoryURL, "")
+	bootstrapCredential := Credential{Identity: "fixture", Scope: ScopeRead}
+	repository, err := client.RepositoryInfo(ctx, repositoryURL, bootstrapCredential)
 	if err != nil {
 		t.Fatalf("RepositoryInfo returned an error: %v", err)
 	}
@@ -31,7 +32,8 @@ func TestSDKClientAgainstLoreServer(t *testing.T) {
 		LoreRepositoryID: repository.ID,
 		DefaultBranch:    repository.DefaultBranch,
 	}
-	branches, err := client.Branches(ctx, ref, "")
+	readCredential := Credential{Partition: repository.ID, Identity: "fixture", Scope: ScopeRead}
+	branches, err := client.Branches(ctx, ref, readCredential)
 	if err != nil {
 		t.Fatalf("Branches returned an error: %v", err)
 	}
@@ -46,42 +48,42 @@ func TestSDKClientAgainstLoreServer(t *testing.T) {
 		t.Fatalf("default branch %q was not returned: %#v", repository.DefaultBranch, branches)
 	}
 	code := CodeClient(client)
-	tree, err := code.Tree(ctx, ref, latest, "", "fixture", 100)
+	tree, err := code.Tree(ctx, ref, latest, "", readCredential, 100)
 	if err != nil {
 		t.Fatalf("Tree returned an error: %v", err)
 	}
 	if tree.Revision != latest || !hasTreeEntry(tree, "README.md", "file") || !hasTreeEntry(tree, "src", "directory") {
 		t.Fatalf("tree did not contain the expected exact-revision entries: %#v", tree)
 	}
-	file, body, err := code.File(ctx, ref, latest, "README.md", "fixture", 1<<20)
+	file, body, err := code.File(ctx, ref, latest, "README.md", readCredential, 1<<20)
 	if err != nil {
 		t.Fatalf("File returned an error: %v", err)
 	}
 	if file.Revision != latest || file.Binary || string(body) == "" || file.Content == "" {
 		t.Fatalf("file response was incomplete: file=%#v body=%q", file, body)
 	}
-	fileHistory, err := code.FileHistory(ctx, ref, latest, repository.DefaultBranch, "README.md", "fixture", 20)
+	fileHistory, err := code.FileHistory(ctx, ref, latest, repository.DefaultBranch, "README.md", readCredential, 20)
 	if err != nil {
 		t.Fatalf("FileHistory returned an error: %v", err)
 	}
 	if len(fileHistory) == 0 || fileHistory[0].Path != "README.md" || fileHistory[0].Revision == "" {
 		t.Fatalf("file history was incomplete: %#v", fileHistory)
 	}
-	history, err := code.RevisionHistory(ctx, ref, latest, repository.DefaultBranch, "fixture", 20)
+	history, err := code.RevisionHistory(ctx, ref, latest, repository.DefaultBranch, readCredential, 20)
 	if err != nil {
 		t.Fatalf("RevisionHistory returned an error: %v", err)
 	}
 	if len(history) < 2 || history[0].Revision != latest {
 		t.Fatalf("revision history did not contain the fixture's two revisions: %#v", history)
 	}
-	detail, err := code.RevisionInfo(ctx, ref, latest, "fixture")
+	detail, err := code.RevisionInfo(ctx, ref, latest, readCredential)
 	if err != nil {
 		t.Fatalf("RevisionInfo returned an error: %v", err)
 	}
 	if detail.Revision != latest {
 		t.Fatalf("revision detail was incomplete: %#v", detail)
 	}
-	diff, err := code.RevisionDiff(ctx, ref, history[1].Revision, latest, nil, "fixture", 20, 1<<20)
+	diff, err := code.RevisionDiff(ctx, ref, history[1].Revision, latest, nil, readCredential, 20, 1<<20)
 	if err != nil {
 		t.Fatalf("RevisionDiff returned an error: %v", err)
 	}

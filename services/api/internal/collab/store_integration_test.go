@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -586,6 +587,280 @@ func TestIntegrationMergeOperationLeaseFinalizationAndIdempotency(t *testing.T) 
 	}
 	if finalOperation.State != "merged" || finalOperation.PushedRevision != "remote-rev" {
 		t.Fatalf("completed operation = %+v", finalOperation)
+	}
+}
+
+func TestIntegrationMergeReadinessUsesExactSourceRevisionForReviewsAndCI(t *testing.T) {
+	pool, s := integrationEnv(t)
+	ctx := context.Background()
+	fix := setupFixture(t, pool, "public", "write")
+	number := seedMergeRequest(t, ctx, pool, fix, fix.alice.ID, "source-rev-1")
+	if _, _, err := s.CreateReview(ctx, fix.bob, fix.repoID, number,
+		ReviewInput{Decision: "approved"}); err != nil {
+		t.Fatalf("create source revision approval: %v", err)
+	}
+	mustExec(t, ctx, pool, `
+		INSERT INTO ci_runs (
+			id, repository_id, run_number, event_name, branch, revision, status, conclusion, event_payload
+		) VALUES ($1, $2, 1, 'push', 'feature', 'source-rev-1', 'completed', 'success', '{}'),
+		($3, $2, 2, 'push', 'main', 'main-rev', 'completed', 'success', '{}')
+	`, uuidNew(), fix.repoID, uuidNew())
+	if ok, err := s.ListSuccessfulCI(ctx, fix.repoID, "feature", "source-rev-1"); err != nil || !ok {
+		t.Fatalf("exact source CI = %v, %v; want true", ok, err)
+	}
+	mustExec(t, ctx, pool, `
+		UPDATE merge_requests SET source_revision = 'source-rev-2'
+		WHERE repository_id = $1 AND number = $2
+	`, fix.repoID, number)
+	summary, err := s.ListReviews(ctx, fix.repoID, number)
+	if err != nil {
+		t.Fatalf("list reviews after source revision change: %v", err)
+	}
+	if summary.Approvals != 0 || len(summary.CurrentReviews) != 0 {
+		t.Fatalf("old approval was reused after source revision change: %+v", summary)
+	}
+	if ok, err := s.ListSuccessfulCI(ctx, fix.repoID, "feature", "source-rev-2"); err != nil || ok {
+		t.Fatalf("old CI was reused after source revision change = %v, %v; want false", ok, err)
+	}
+}
+
+func TestIntegrationMergeOperationResolutionLeaseAndRestartRaces(t *testing.T) {
+	pool, s := integrationEnv(t)
+	ctx := context.Background()
+	fix := setupFixture(t, pool, "public", "write")
+	number := seedMergeRequest(t, ctx, pool, fix, fix.alice.ID, "source-race")
+	operation, err := s.AcquireMergeOperation(ctx, fix.alice.ID, fix.repoID, number,
+		"source-race", "main-race", "initial-owner", time.Minute)
+	if err != nil {
+		t.Fatalf("acquire operation: %v", err)
+	}
+	operation.State = "started"
+	operation.ConflictPaths = []string{"conflict.txt"}
+	operation = mustUpdateMergeOperation(t, ctx, s, operation)
+
+	type resolutionResult struct {
+		operation MergeOperation
+		err       error
+	}
+	resolutionResults := make(chan resolutionResult, 2)
+	var resolutionGroup sync.WaitGroup
+	for _, actor := range []platform.User{fix.alice, fix.bob} {
+		actor := actor
+		resolutionGroup.Add(1)
+		go func() {
+			defer resolutionGroup.Done()
+			updated, resolveErr := s.RecordMergeResolutions(ctx, actor, operation,
+				[]string{"conflict.txt"}, "theirs")
+			resolutionResults <- resolutionResult{operation: updated, err: resolveErr}
+		}()
+	}
+	resolutionGroup.Wait()
+	close(resolutionResults)
+	resolutionSuccesses := 0
+	resolutionConflicts := 0
+	for result := range resolutionResults {
+		if result.err == nil {
+			resolutionSuccesses++
+			continue
+		}
+		if errors.Is(result.err, ErrMergeOperationConflict) {
+			resolutionConflicts++
+			continue
+		}
+		t.Fatalf("concurrent resolution error = %v", result.err)
+	}
+	if resolutionSuccesses != 1 || resolutionConflicts != 1 {
+		t.Fatalf("concurrent resolutions = successes %d conflicts %d, want one each",
+			resolutionSuccesses, resolutionConflicts)
+	}
+	resolved, err := s.GetMergeOperation(ctx, fix.repoID, number)
+	if err != nil {
+		t.Fatalf("get resolved operation: %v", err)
+	}
+	if resolved.State != "conflicts" || len(resolved.Resolutions) != 1 || resolved.Resolutions[0].Strategy != "theirs" {
+		t.Fatalf("durable resolution = %#v", resolved.Resolutions)
+	}
+
+	mustExec(t, ctx, pool, `UPDATE merge_operations SET lease_expires_at = now() - interval '1 second' WHERE id = $1`,
+		resolved.ID)
+	type acquireResult struct {
+		operation MergeOperation
+		err       error
+	}
+	acquireResults := make(chan acquireResult, 2)
+	var acquireGroup sync.WaitGroup
+	for _, owner := range []string{"lease-owner-b", "lease-owner-c"} {
+		owner := owner
+		acquireGroup.Add(1)
+		go func() {
+			defer acquireGroup.Done()
+			acquired, acquireErr := s.AcquireMergeOperation(ctx, fix.alice.ID, fix.repoID, number,
+				resolved.SourceRevision, resolved.TargetRevision, owner, time.Minute)
+			acquireResults <- acquireResult{operation: acquired, err: acquireErr}
+		}()
+	}
+	acquireGroup.Wait()
+	close(acquireResults)
+	var leaseWinner MergeOperation
+	leaseSuccesses := 0
+	leaseConflicts := 0
+	for result := range acquireResults {
+		if result.err == nil {
+			leaseSuccesses++
+			leaseWinner = result.operation
+			continue
+		}
+		if errors.Is(result.err, ErrMergeBusy) {
+			leaseConflicts++
+			continue
+		}
+		t.Fatalf("concurrent lease acquisition error = %v", result.err)
+	}
+	if leaseSuccesses != 1 || leaseConflicts != 1 {
+		t.Fatalf("concurrent lease acquisition = successes %d conflicts %d, want one each",
+			leaseSuccesses, leaseConflicts)
+	}
+
+	abortState := leaseWinner
+	abortState.State = "aborted"
+	abortState.LeaseOwner = ""
+	abortState.LeaseExpiresAt = nil
+	now := nowUTC()
+	abortState.CompletedAt = &now
+	restartResults := make(chan error, 2)
+	var stateGroup sync.WaitGroup
+	stateGroup.Add(2)
+	go func() {
+		defer stateGroup.Done()
+		_, updateErr := s.UpdateMergeOperationOwned(ctx, abortState, leaseWinner.LeaseOwner)
+		restartResults <- updateErr
+	}()
+	go func() {
+		defer stateGroup.Done()
+		_, restartErr := s.RestartMergeOperation(ctx, fix.alice, fix.repoID, number,
+			leaseWinner.SourceRevision, leaseWinner.TargetRevision, leaseWinner.LeaseOwner, time.Minute)
+		restartResults <- restartErr
+	}()
+	stateGroup.Wait()
+	close(restartResults)
+	stateSuccesses := 0
+	stateConflicts := 0
+	for stateErr := range restartResults {
+		if stateErr == nil {
+			stateSuccesses++
+			continue
+		}
+		if errors.Is(stateErr, ErrMergeOperationConflict) || errors.Is(stateErr, ErrMergeBusy) {
+			stateConflicts++
+			continue
+		}
+		t.Fatalf("abort/restart race error = %v", stateErr)
+	}
+	if stateSuccesses != 1 || stateConflicts != 1 {
+		t.Fatalf("abort/restart race = successes %d conflicts %d, want one each",
+			stateSuccesses, stateConflicts)
+	}
+	final, err := s.GetMergeOperation(ctx, fix.repoID, number)
+	if err != nil {
+		t.Fatalf("get raced operation: %v", err)
+	}
+	if final.State != "aborted" && final.State != "started" {
+		t.Fatalf("raced operation state = %q, want aborted or started", final.State)
+	}
+	if got := countAuditAction(t, ctx, pool, "merge_operation.resolution_recorded"); got < 1 {
+		t.Fatalf("resolution audit count = %d, want at least 1", got)
+	}
+	if got := countTopic(t, ctx, pool, "merge_operation.updated"); got < 1 {
+		t.Fatalf("operation update outbox count = %d, want at least 1", got)
+	}
+}
+
+func TestIntegrationMergeOperationRetriesStaleStartWithNewRevisions(t *testing.T) {
+	pool, s := integrationEnv(t)
+	ctx := context.Background()
+	fix := setupFixture(t, pool, "public", "write")
+	number := seedMergeRequest(t, ctx, pool, fix, fix.alice.ID, "source-old")
+	operation, err := s.AcquireMergeOperation(ctx, fix.alice.ID, fix.repoID, number,
+		"source-old", "target-old", "stale-start-owner", time.Minute)
+	if err != nil {
+		t.Fatalf("acquire operation: %v", err)
+	}
+	operation.State = "created"
+	operation.ErrorCode = "stale_revision"
+	operation.LeaseOwner = ""
+	operation.LeaseExpiresAt = nil
+	operation = mustUpdateMergeOperation(t, ctx, s, operation)
+
+	retried, err := s.AcquireMergeOperation(ctx, fix.alice.ID, fix.repoID, number,
+		"source-new", "target-new", "retry-owner", time.Minute)
+	if err != nil {
+		t.Fatalf("retry stale start: %v", err)
+	}
+	if retried.SourceRevision != "source-new" || retried.TargetRevision != "target-new" ||
+		retried.State != "created" || retried.ErrorCode != "" || len(retried.Resolutions) != 0 {
+		t.Fatalf("stale start was not reset for exact new revisions: %#v", retried)
+	}
+}
+
+func TestIntegrationMergeOperationResolveAndPushRace(t *testing.T) {
+	pool, s := integrationEnv(t)
+	ctx := context.Background()
+	fix := setupFixture(t, pool, "public", "write")
+	number := seedMergeRequest(t, ctx, pool, fix, fix.alice.ID, "source-resolve-push")
+	operation, err := s.AcquireMergeOperation(ctx, fix.alice.ID, fix.repoID, number,
+		"source-resolve-push", "target-resolve-push", "resolve-push-owner", time.Minute)
+	if err != nil {
+		t.Fatalf("acquire operation: %v", err)
+	}
+	operation.State = "started"
+	operation.ConflictPaths = []string{"conflict.txt"}
+	operation = mustUpdateMergeOperation(t, ctx, s, operation)
+
+	results := make(chan error, 2)
+	go func() {
+		_, resolveErr := s.RecordMergeResolutions(ctx, fix.alice, operation,
+			[]string{"conflict.txt"}, "mine")
+		results <- resolveErr
+	}()
+	pushOperation := operation
+	pushOperation.State = "pushing"
+	go func() {
+		_, pushErr := s.UpdateMergeOperationOwned(ctx, pushOperation, operation.LeaseOwner)
+		results <- pushErr
+	}()
+
+	successes := 0
+	conflicts := 0
+	for range 2 {
+		raceErr := <-results
+		if raceErr == nil {
+			successes++
+			continue
+		}
+		if errors.Is(raceErr, ErrMergeOperationConflict) {
+			conflicts++
+			continue
+		}
+		t.Fatalf("concurrent resolve/push error = %v", raceErr)
+	}
+	if successes != 1 || conflicts != 1 {
+		t.Fatalf("concurrent resolve/push = successes %d conflicts %d, want one each", successes, conflicts)
+	}
+	final, err := s.GetMergeOperation(ctx, fix.repoID, number)
+	if err != nil {
+		t.Fatalf("get raced operation: %v", err)
+	}
+	if final.State != "conflicts" && final.State != "pushing" {
+		t.Fatalf("raced operation state = %q, want conflicts or pushing", final.State)
+	}
+	if final.State == "conflicts" && len(final.Resolutions) != 1 {
+		t.Fatalf("resolved operation lost its durable choice: %#v", final.Resolutions)
+	}
+	if got := countAuditAction(t, ctx, pool, "merge_operation.updated"); got < 1 {
+		t.Fatalf("resolve/push audit count = %d, want at least 1", got)
+	}
+	if got := countTopic(t, ctx, pool, "merge_operation.updated"); got < 1 {
+		t.Fatalf("resolve/push outbox count = %d, want at least 1", got)
 	}
 }
 

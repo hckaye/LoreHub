@@ -72,22 +72,23 @@ type HealthChecker interface {
 }
 
 type API struct {
-	store          Store
-	lore           loreclient.Client
-	authenticator  auth.Authenticator
-	health         HealthChecker
-	loreIdentity   string
-	logger         *slog.Logger
-	collabStore    collab.Store
-	loginProvider  auth.LoginProvider
-	loginStore     auth.LoginTransactionStore
-	sessionStore   auth.SessionStore
-	cleanupStore   auth.CleanupStore
-	secrets        *auth.SecretCodec
-	publicOrigin   string
-	cookie         sessionCookieConfig
-	sessionTTL     time.Duration
-	transactionTTL time.Duration
+	store           Store
+	lore            loreclient.Client
+	authenticator   auth.Authenticator
+	health          HealthChecker
+	loreIdentity    string
+	loreCredentials loreclient.CredentialProvider
+	logger          *slog.Logger
+	collabStore     collab.Store
+	loginProvider   auth.LoginProvider
+	loginStore      auth.LoginTransactionStore
+	sessionStore    auth.SessionStore
+	cleanupStore    auth.CleanupStore
+	secrets         *auth.SecretCodec
+	publicOrigin    string
+	cookie          sessionCookieConfig
+	sessionTTL      time.Duration
+	transactionTTL  time.Duration
 }
 
 func New(
@@ -99,13 +100,15 @@ func New(
 	logger *slog.Logger,
 	options ...Option,
 ) http.Handler {
+	productionCredentials, _ := loreclient.NewCredentialProvider("production", nil, "", false)
 	api := &API{
-		store:         store,
-		lore:          lore,
-		authenticator: authenticator,
-		health:        health,
-		loreIdentity:  loreIdentity,
-		logger:        logger,
+		store:           store,
+		lore:            lore,
+		authenticator:   authenticator,
+		health:          health,
+		loreIdentity:    loreIdentity,
+		loreCredentials: productionCredentials,
+		logger:          logger,
 	}
 	for _, option := range options {
 		if option != nil {
@@ -132,12 +135,12 @@ func New(
 	if api.collabStore != nil {
 		collab.Register(mux, api.collabStore, api, logger)
 		if codeClient, ok := api.lore.(loreclient.CodeClient); ok {
-			codeapi.Register(mux, api.collabStore, api.lore, codeClient, api, api.loreIdentity, logger)
+			codeapi.Register(mux, api.collabStore, api.lore, codeClient, api, api.loreCredentials, logger)
 		}
 		if workflow, ok := api.collabStore.(collab.MergeWorkflowStore); ok {
 			if mergeClient, mergeOK := api.lore.(loreclient.MergeClient); mergeOK {
 				mergeapi.Register(mux, api.collabStore, workflow, api.lore, mergeClient, api,
-					api.loreIdentity, logger)
+					api.loreCredentials, logger)
 			}
 		}
 	}
@@ -149,6 +152,20 @@ func New(
 func WithCollaboration(store collab.Store) Option {
 	return func(api *API) {
 		api.collabStore = store
+	}
+}
+
+func WithLoreCredentials(provider loreclient.CredentialProvider) Option {
+	return func(api *API) {
+		api.loreCredentials = provider
+	}
+}
+
+// WithDevelopmentLoreCredentials is explicit and intended only for local
+// development. Production wiring must provide partition-scoped credentials.
+func WithDevelopmentLoreCredentials(identity string) Option {
+	return func(api *API) {
+		api.loreCredentials = loreclient.NewDevelopmentCredentialProvider(identity)
 	}
 }
 
@@ -187,6 +204,17 @@ func (api *API) ResolveOptionalActor(
 		return nil, false
 	}
 	return &user, true
+}
+
+func (api *API) loreCredential(
+	ctx context.Context,
+	repository loreclient.RepositoryRef,
+	scope loreclient.Scope,
+) (loreclient.Credential, error) {
+	if api.loreCredentials == nil {
+		return loreclient.Credential{}, loreclient.ErrCredentialUnavailable
+	}
+	return api.loreCredentials.ForRepository(ctx, repository, scope)
 }
 
 func (api *API) live(writer http.ResponseWriter, _ *http.Request) {
@@ -269,11 +297,17 @@ func (api *API) repositoryBranches(writer http.ResponseWriter, request *http.Req
 		repositoryLoreURL = repository.LoreURL
 		repositoryID = repository.ID
 	}
-	branches, err := api.lore.Branches(request.Context(), loreclient.RepositoryRef{
+	ref := loreclient.RepositoryRef{
 		CacheKey:         repositoryID,
 		URL:              repositoryLoreURL,
 		LoreRepositoryID: repositoryLoreID,
-	}, api.loreIdentity)
+	}
+	credential, err := api.loreCredential(request.Context(), ref, loreclient.ScopeRead)
+	if err != nil {
+		api.internalError(writer, request, "get Lore read credential", err)
+		return
+	}
+	branches, err := api.lore.Branches(request.Context(), ref, credential)
 	if err != nil {
 		api.internalError(writer, request, "list Lore branches", err)
 		return
@@ -335,7 +369,14 @@ func (api *API) registerRepository(writer http.ResponseWriter, request *http.Req
 		writeProblem(writer, http.StatusBadRequest, "invalid_input", "Repository fields are invalid")
 		return
 	}
-	loreRepository, err := api.lore.RepositoryInfo(request.Context(), input.LoreURL, api.loreIdentity)
+	credential, credentialErr := api.loreCredential(request.Context(), loreclient.RepositoryRef{
+		URL: input.LoreURL,
+	}, loreclient.ScopeRead)
+	if credentialErr != nil {
+		writeProblem(writer, http.StatusBadGateway, "lore_unavailable", "Lore credentials are not configured")
+		return
+	}
+	loreRepository, err := api.lore.RepositoryInfo(request.Context(), input.LoreURL, credential)
 	if err != nil {
 		writeProblem(writer, http.StatusBadGateway, "lore_unavailable", "Lore repository could not be verified")
 		return
@@ -499,10 +540,17 @@ func (api *API) createMergeRequest(writer http.ResponseWriter, request *http.Req
 		api.platformError(writer, request, "check merge request permission", err)
 		return
 	}
-	branches, err := api.lore.Branches(request.Context(), loreclient.RepositoryRef{
-		CacheKey: repository.ID,
-		URL:      repository.LoreURL,
-	}, api.loreIdentity)
+	ref := loreclient.RepositoryRef{
+		CacheKey:         repository.ID,
+		URL:              repository.LoreURL,
+		LoreRepositoryID: repository.LoreRepositoryID,
+	}
+	credential, credentialErr := api.loreCredential(request.Context(), ref, loreclient.ScopeRead)
+	if credentialErr != nil {
+		writeProblem(writer, http.StatusBadGateway, "lore_unavailable", "Lore credentials are not configured")
+		return
+	}
+	branches, err := api.lore.Branches(request.Context(), ref, credential)
 	if err != nil {
 		writeProblem(writer, http.StatusBadGateway, "lore_unavailable", "Lore branches could not be verified")
 		return

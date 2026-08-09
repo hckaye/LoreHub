@@ -37,8 +37,8 @@ type Branch struct {
 }
 
 type Client interface {
-	RepositoryInfo(ctx context.Context, repositoryURL string, identity string) (Repository, error)
-	Branches(ctx context.Context, repository RepositoryRef, identity string) ([]Branch, error)
+	RepositoryInfo(ctx context.Context, repositoryURL string, credential Credential) (Repository, error)
+	Branches(ctx context.Context, repository RepositoryRef, credential Credential) ([]Branch, error)
 }
 
 type TreeEntry struct {
@@ -114,47 +114,72 @@ type MergeStartResult struct {
 	SourceRevision string
 	TargetRevision string
 	StagedRevision string
+	Parents        []string
 	Conflicts      []string
 }
 
 type MergePushResult struct {
-	LocalRevision  string
-	RemoteRevision string
-	AlreadyPushed  bool
+	LocalRevision        string
+	RemoteRevision       string
+	RemoteSourceRevision string
+	RemoteTargetRevision string
+	Parents              []string
+}
+
+type MergeResolution struct {
+	Path     string `json:"path"`
+	Strategy string `json:"strategy"`
+}
+
+type MergeWorkspace struct {
+	SourceBranch   string
+	TargetBranch   string
+	SourceRevision string
+	TargetRevision string
+	Message        string
+	Resolutions    []MergeResolution
 }
 
 type CodeClient interface {
-	Tree(ctx context.Context, repository RepositoryRef, revision, path, identity string, limit int) (Tree, error)
+	Tree(
+		ctx context.Context, repository RepositoryRef, revision, path string, credential Credential, limit int,
+	) (Tree, error)
 	File(
-		ctx context.Context, repository RepositoryRef, revision, path, identity string, maxBytes int64,
+		ctx context.Context, repository RepositoryRef, revision, path string, credential Credential, maxBytes int64,
 	) (File, []byte, error)
 	RevisionHistory(
-		ctx context.Context, repository RepositoryRef, revision, branch, identity string, limit int,
+		ctx context.Context, repository RepositoryRef, revision, branch string, credential Credential, limit int,
 	) ([]RevisionHistoryEntry, error)
 	FileHistory(
-		ctx context.Context, repository RepositoryRef, revision, branch, path, identity string, limit int,
+		ctx context.Context, repository RepositoryRef, revision, branch, path string, credential Credential, limit int,
 	) ([]FileHistoryEntry, error)
-	RevisionInfo(ctx context.Context, repository RepositoryRef, revision, identity string) (Revision, error)
-	RevisionDiff(ctx context.Context, repository RepositoryRef, source, target string, paths []string, identity string,
-		maxFiles, maxPatchBytes int) (Diff, error)
+	RevisionInfo(ctx context.Context, repository RepositoryRef, revision string, credential Credential) (Revision, error)
+	RevisionDiff(
+		ctx context.Context, repository RepositoryRef, source, target string, paths []string, credential Credential,
+		maxFiles, maxPatchBytes int,
+	) (Diff, error)
 }
 
 type MergeClient interface {
 	StartMerge(ctx context.Context, repository RepositoryRef, operationID, sourceBranch, targetBranch, sourceRevision,
-		targetRevision, message, identity string) (MergeStartResult, error)
-	ResolveMerge(ctx context.Context, repository RepositoryRef, operationID string, paths []string, strategy,
-		identity string) (string, error)
+		targetRevision, message string, credential Credential) (MergeStartResult, error)
+	EnsureMergeWorkspace(ctx context.Context, repository RepositoryRef, operationID string, workspace MergeWorkspace,
+		credential Credential) error
+	ResolveMerge(ctx context.Context, repository RepositoryRef, operationID string, workspace MergeWorkspace,
+		paths []string, strategy string, credential Credential) (string, error)
 	ListConflicts(
-		ctx context.Context, repository RepositoryRef, operationID string, paths []string, identity string,
+		ctx context.Context, repository RepositoryRef, operationID string, workspace MergeWorkspace, paths []string,
+		credential Credential,
 	) ([]string, error)
-	AbortMerge(ctx context.Context, repository RepositoryRef, operationID, identity string) error
-	RestartMerge(ctx context.Context, repository RepositoryRef, operationID, sourceBranch, targetBranch,
-		sourceRevision, targetRevision string, paths []string, identity string) ([]string, error)
+	AbortMerge(ctx context.Context, repository RepositoryRef, operationID string, credential Credential) error
+	RestartMerge(ctx context.Context, repository RepositoryRef, operationID string, workspace MergeWorkspace,
+		paths []string, credential Credential) (MergeStartResult, error)
 	PushMerge(
-		ctx context.Context, repository RepositoryRef, operationID, targetBranch, identity string,
+		ctx context.Context, repository RepositoryRef, operationID string, workspace MergeWorkspace,
+		stagedRevision string, readCredential Credential, writeCredential Credential,
 	) (MergePushResult, error)
 	CleanupMergeWorkspace(ctx context.Context, repository RepositoryRef, operationID string) error
 	MergeInto(
-		ctx context.Context, repository RepositoryRef, sourceBranch, targetBranch, message, identity string,
+		ctx context.Context, repository RepositoryRef, sourceBranch, targetBranch, message string, credential Credential,
 	) (MergeStartResult, error)
 }

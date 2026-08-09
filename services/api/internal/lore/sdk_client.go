@@ -32,7 +32,7 @@ func NewSDKClient(cacheDirectory string) (*SDKClient, error) {
 func (client *SDKClient) RepositoryInfo(
 	ctx context.Context,
 	repositoryURL string,
-	identity string,
+	credential Credential,
 ) (Repository, error) {
 	if err := ctx.Err(); err != nil {
 		return Repository{}, err
@@ -40,8 +40,11 @@ func (client *SDKClient) RepositoryInfo(
 	if !strings.HasPrefix(repositoryURL, "lore://") {
 		return Repository{}, errors.New("repository URL must use the lore scheme")
 	}
+	if err := ValidateCredential(RepositoryRef{}, credential, ScopeRead); err != nil {
+		return Repository{}, err
+	}
 	globals, cleanupGlobals := types.NewLoreGlobalArgs(types.LoreGlobalArgs{
-		Identity: identity,
+		Identity: credential.Identity,
 		Remote:   true,
 		InMemory: true,
 	})
@@ -78,9 +81,12 @@ func (client *SDKClient) RepositoryInfo(
 func (client *SDKClient) Branches(
 	ctx context.Context,
 	repository RepositoryRef,
-	identity string,
+	credential Credential,
 ) ([]Branch, error) {
 	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := ValidateCredential(repository, credential, ScopeRead); err != nil {
 		return nil, err
 	}
 	cachePath, err := client.cachePath(repository.CacheKey)
@@ -92,13 +98,13 @@ func (client *SDKClient) Branches(
 	lock.Lock()
 	defer lock.Unlock()
 
-	if err := client.ensureBareClone(repository.URL, cachePath, identity); err != nil {
+	if err := client.ensureBareClone(repository.URL, cachePath, credential.Identity); err != nil {
 		return nil, err
 	}
 
 	globals, cleanupGlobals := types.NewLoreGlobalArgs(types.LoreGlobalArgs{
 		RepositoryPath: cachePath,
-		Identity:       identity,
+		Identity:       credential.Identity,
 		Remote:         true,
 		StoreKeepAlive: true,
 	})

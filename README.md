@@ -139,11 +139,22 @@ transactionは最大15分）。
 `GET /auth/login?prompt=create`を使います。互換性のため`kc_action=register`も受け付けますが、値は厳密に検証し、
 認証プロバイダーへは`prompt=create`だけを渡します。その他の`prompt`や`kc_action`は400を返します。
 
-LoreHubのマージ操作は、ブラウザ利用者のLore tokenをLoreへ転送せず、設定された`LOREHUB_LORE_IDENTITY`の
-サービスidentityで実行します。利用者のwrite/admin権限、branch rule、レビュー、CI、CSRFはLoreHub APIが先に確認し、
-監査記録には実際の利用者を保存します。このidentityはLore側でマージに必要な最小権限だけを付与し、本番では環境変数へ
-平文で書かず、デプロイ基盤のsecret managerから実行時に注入してください。secret、token、identity設定値をリポジトリへ
-コミットしないでください。`LOREHUB_LORE_IDENTITY`は読み取りにも使われます。
+LoreHubのコード閲覧とマージ操作は、ブラウザ利用者のLore tokenをLoreへ転送しません。
+各Lore repository partitionに対応するread/write identityを`LOREHUB_LORE_CREDENTIALS`へ設定し、
+APIが呼び出しごとに必要なscopeを選びます。
+利用者のwrite/admin権限、branch rule、レビュー、CI、CSRFはLoreHub APIが先に確認します。
+監査記録には実際の利用者を保存します。
+`LOREHUB_LORE_CREDENTIALS`はJSON object（partitionをキー、identityを値）として
+secret managerから実行時に注入し、
+secret、token、identity設定値をリポジトリへコミットしないでください。
+本番でpartitionに対応するcredentialが無い場合はfail closedになります。
+
+ローカル開発だけは`LOREHUB_LORE_ALLOW_DEVELOPMENT_FALLBACK=true`を明示し、
+`LOREHUB_LORE_IDENTITY`を設定した場合に限ります。
+全partitionへ開発用identityを使えます。
+このfallbackはdevelopment環境以外では起動時に拒否されます。
+Actions runnerの既存identity設定はrunner専用の読み取り経路です。
+ブラウザのコード閲覧・マージ権限を与えるものではありません。
 
 Keycloakを使う場合、ローカルのissuerは
 `http://keycloak.localhost:8280/realms/lorehub`、audienceは`lorehub-api`です。本番では公開HTTPSのissuerを設定します。

@@ -174,6 +174,7 @@ func newCollabAuthTestHandler(
 				Name: "lorehub_session", Path: "/",
 			},
 		}),
+		WithDevelopmentLoreCredentials("fixture"),
 		WithCollaboration(collabStore),
 	)
 }
@@ -292,7 +293,7 @@ func TestCollaborationPrivateReadAnonymousAndBearerCompatible(t *testing.T) {
 type authCodeLore struct{ fakeLore }
 
 func (authCodeLore) Tree(
-	context.Context, loreclient.RepositoryRef, string, string, string, int,
+	context.Context, loreclient.RepositoryRef, string, string, loreclient.Credential, int,
 ) (loreclient.Tree, error) {
 	return loreclient.Tree{Revision: testRevision, Entries: []loreclient.TreeEntry{{
 		Name: "README.md", Path: "README.md", Kind: "file", Size: 12,
@@ -300,32 +301,32 @@ func (authCodeLore) Tree(
 }
 
 func (authCodeLore) File(
-	context.Context, loreclient.RepositoryRef, string, string, string, int64,
+	context.Context, loreclient.RepositoryRef, string, string, loreclient.Credential, int64,
 ) (loreclient.File, []byte, error) {
 	body := []byte("# private\n")
 	return loreclient.File{Path: "README.md", Revision: testRevision, Kind: "file", Size: uint64(len(body))}, body, nil
 }
 
 func (authCodeLore) RevisionHistory(
-	context.Context, loreclient.RepositoryRef, string, string, string, int,
+	context.Context, loreclient.RepositoryRef, string, string, loreclient.Credential, int,
 ) ([]loreclient.RevisionHistoryEntry, error) {
 	return []loreclient.RevisionHistoryEntry{{Revision: testRevision}}, nil
 }
 
 func (authCodeLore) FileHistory(
-	context.Context, loreclient.RepositoryRef, string, string, string, string, int,
+	context.Context, loreclient.RepositoryRef, string, string, string, loreclient.Credential, int,
 ) ([]loreclient.FileHistoryEntry, error) {
 	return []loreclient.FileHistoryEntry{{Path: "README.md", Revision: testRevision}}, nil
 }
 
 func (authCodeLore) RevisionInfo(
-	context.Context, loreclient.RepositoryRef, string, string,
+	context.Context, loreclient.RepositoryRef, string, loreclient.Credential,
 ) (loreclient.Revision, error) {
 	return loreclient.Revision{Revision: testRevision, Number: 1}, nil
 }
 
 func (authCodeLore) RevisionDiff(
-	context.Context, loreclient.RepositoryRef, string, string, []string, string, int, int,
+	context.Context, loreclient.RepositoryRef, string, string, []string, loreclient.Credential, int, int,
 ) (loreclient.Diff, error) {
 	return loreclient.Diff{Source: testRevision, Target: testRevision}, nil
 }
@@ -348,6 +349,7 @@ func TestCodeBrowserUsesPrivateSessionAndKeepsAnonymousNotFound(t *testing.T) {
 			SessionStore: authenticationStore, Secrets: codec, PublicOrigin: "https://app.example",
 			SessionCookie: SessionCookieOptions{Name: "lorehub_session", Path: "/"},
 		}),
+		WithDevelopmentLoreCredentials("fixture"),
 		WithCollaboration(collabStore),
 	)
 	target := "/api/v1/repositories/acme/private/tree?revision=" + testRevision
@@ -382,6 +384,7 @@ func TestCodeBrowserBearerReadRemainsCompatible(t *testing.T) {
 			SessionStore: &fakeAuthenticationStore{}, Secrets: codec, PublicOrigin: "https://app.example",
 			SessionCookie: SessionCookieOptions{Name: "lorehub_session", Path: "/"},
 		}),
+		WithDevelopmentLoreCredentials("fixture"),
 		WithCollaboration(&authCollabStore{}),
 	)
 	request := httptest.NewRequest(

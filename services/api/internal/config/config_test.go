@@ -70,6 +70,7 @@ func TestLoadInteractiveAuthenticationUsesSecureProductionCookie(t *testing.T) {
 	t.Setenv("LOREHUB_AUTH_SECRET", strings.Repeat("a", 32))
 	t.Setenv("LOREHUB_SESSION_TTL", "24h")
 	t.Setenv("LOREHUB_LOGIN_TRANSACTION_TTL", "10m")
+	t.Setenv("LOREHUB_LORE_CREDENTIALS", `{"lore-partition":"service-identity"}`)
 
 	settings, err := Load()
 	if err != nil {

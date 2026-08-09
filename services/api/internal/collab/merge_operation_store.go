@@ -27,7 +27,12 @@ type MergeWorkflowStore interface {
 		ctx context.Context, actorID, repositoryID string, number int64,
 		sourceRevision, targetRevision, owner string, lease time.Duration,
 	) (MergeOperation, error)
+	RecordMergeResolutions(ctx context.Context, actor platform.User, operation MergeOperation,
+		paths []string, strategy string) (MergeOperation, error)
 	UpdateMergeOperation(ctx context.Context, operation MergeOperation) (MergeOperation, error)
+	UpdateMergeOperationOwned(ctx context.Context, operation MergeOperation, leaseOwner string) (MergeOperation, error)
+	RestartMergeOperation(ctx context.Context, actor platform.User, repositoryID string, number int64,
+		sourceRevision, targetRevision, owner string, lease time.Duration) (MergeOperation, error)
 	FinalizeMerged(ctx context.Context, actor platform.User, repositoryID string, number int64,
 		operationID, pushedRevision string) (MergeRequest, error)
 }
@@ -67,7 +72,90 @@ func (s *store) GetMergeOperation(
 	if err != nil {
 		return MergeOperation{}, fmt.Errorf("get merge operation: %w", err)
 	}
+	operation.Resolutions, err = loadMergeResolutions(ctx, s.pool, operation.ID)
+	if err != nil {
+		return MergeOperation{}, err
+	}
 	return operation, nil
+}
+
+func (s *store) RecordMergeResolutions(
+	ctx context.Context,
+	actor platform.User,
+	operation MergeOperation,
+	paths []string,
+	strategy string,
+) (MergeOperation, error) {
+	if operation.ID == "" || len(paths) == 0 || (strategy != "mine" && strategy != "theirs") {
+		return MergeOperation{}, ErrMergeOperationConflict
+	}
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return MergeOperation{}, fmt.Errorf("begin merge resolution: %w", err)
+	}
+	defer rollback(ctx, tx)
+	current, err := scanMergeOperation(tx.QueryRow(ctx, mergeOperationQuery+`
+		WHERE mo.id = $1
+		FOR UPDATE
+	`, operation.ID))
+	if err != nil {
+		return MergeOperation{}, fmt.Errorf("lock merge resolution operation: %w", err)
+	}
+	current.Resolutions, err = loadMergeResolutions(ctx, tx, current.ID)
+	if err != nil {
+		return MergeOperation{}, err
+	}
+	if current.Version != operation.Version || current.LeaseOwner == "" || current.LeaseOwner != operation.LeaseOwner ||
+		current.LeaseExpiresAt == nil || !current.LeaseExpiresAt.After(nowUTC()) {
+		return MergeOperation{}, ErrMergeOperationConflict
+	}
+	for _, path := range paths {
+		if path == "" || len(path) > 2048 {
+			return MergeOperation{}, ErrMergeOperationConflict
+		}
+		if _, err := tx.Exec(ctx, `
+		INSERT INTO merge_operation_resolutions (operation_id, path, strategy, actor_id)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (operation_id, path) DO UPDATE
+		SET strategy = EXCLUDED.strategy, actor_id = EXCLUDED.actor_id, updated_at = now()
+		`, operation.ID, path, strategy, actor.ID); err != nil {
+			return MergeOperation{}, fmt.Errorf("persist merge resolution: %w", err)
+		}
+	}
+	updated, err := scanMergeOperation(tx.QueryRow(ctx, `
+		UPDATE merge_operations
+		SET state = CASE WHEN state = 'started' THEN 'conflicts' ELSE state END,
+			error_code = NULL, error_detail = NULL, version = version + 1, updated_at = now()
+		WHERE id = $1 AND version = $2
+		RETURNING id, merge_request_id, repository_id, actor_id,
+			source_revision, target_revision, staged_revision, pushed_revision, parent_revisions,
+			state, conflict_paths, error_code, error_detail, lease_owner,
+			lease_expires_at, version, started_at, completed_at, created_at, updated_at
+	`, operation.ID, operation.Version))
+	if err != nil {
+		return MergeOperation{}, fmt.Errorf("update merge resolution operation: %w", err)
+	}
+	updated.Resolutions, err = loadMergeResolutions(ctx, tx, updated.ID)
+	if err != nil {
+		return MergeOperation{}, err
+	}
+	var organizationID string
+	if err := tx.QueryRow(ctx, `SELECT organization_id FROM repositories WHERE id = $1`, updated.RepositoryID).
+		Scan(&organizationID); err != nil {
+		return MergeOperation{}, fmt.Errorf("find merge organization: %w", err)
+	}
+	if err := insertAudit(ctx, tx, actor.ID, organizationID, updated.RepositoryID,
+		"merge_operation.resolution_recorded", "merge_operation", updated.ID); err != nil {
+		return MergeOperation{}, err
+	}
+	if err := insertOutbox(ctx, tx, "merge_operation.resolution_recorded", updated.ID+":"+uuidArg(),
+		updated); err != nil {
+		return MergeOperation{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return MergeOperation{}, fmt.Errorf("commit merge resolution: %w", err)
+	}
+	return updated, nil
 }
 
 func (s *store) RefreshMergeRequestRevisions(
@@ -152,6 +240,9 @@ func (s *store) AcquireMergeOperation(
 		FOR UPDATE
 	`, repositoryID, number)
 	operation, lookupErr := scanMergeOperation(row)
+	if lookupErr == nil {
+		operation.Resolutions, lookupErr = loadMergeResolutions(ctx, tx, operation.ID)
+	}
 	if errors.Is(lookupErr, pgx.ErrNoRows) {
 		operation = MergeOperation{
 			ID:             uuidArg(),
@@ -175,7 +266,7 @@ func (s *store) AcquireMergeOperation(
 			WHERE mr.repository_id = $2 AND mr.number = $9
 			ON CONFLICT (merge_request_id) DO NOTHING
 		RETURNING id, merge_request_id, repository_id, actor_id,
-			source_revision, target_revision, staged_revision, pushed_revision,
+			source_revision, target_revision, staged_revision, pushed_revision, parent_revisions,
 			state, conflict_paths, error_code, error_detail, lease_owner,
 			lease_expires_at, version, started_at, completed_at, created_at, updated_at
 		`, operation.ID, repositoryID, actorID, sourceRevision, targetRevision,
@@ -191,6 +282,9 @@ func (s *store) AcquireMergeOperation(
 				WHERE mo.repository_id = $1 AND mr.number = $2
 				FOR UPDATE
 			`, repositoryID, number))
+			if lookupErr == nil {
+				operation.Resolutions, lookupErr = loadMergeResolutions(ctx, tx, operation.ID)
+			}
 			if errors.Is(lookupErr, pgx.ErrNoRows) {
 				return MergeOperation{}, platform.ErrNotFound
 			}
@@ -198,6 +292,13 @@ func (s *store) AcquireMergeOperation(
 				return MergeOperation{}, fmt.Errorf("lock concurrent merge operation: %w", lookupErr)
 			}
 		} else {
+			operation.Resolutions, err = loadMergeResolutions(ctx, tx, operation.ID)
+			if err != nil {
+				return MergeOperation{}, err
+			}
+			if err := s.recordMergeOperationEvent(ctx, tx, operation, actorID, "merge_operation.created"); err != nil {
+				return MergeOperation{}, err
+			}
 			if err := tx.Commit(ctx); err != nil {
 				return MergeOperation{}, fmt.Errorf("commit merge operation: %w", err)
 			}
@@ -217,11 +318,13 @@ func (s *store) AcquireMergeOperation(
 		operation.LeaseExpiresAt.After(now) && operation.LeaseOwner != owner {
 		return MergeOperation{}, ErrMergeBusy
 	}
-	if operation.State != "aborted" &&
+	retryFailedStart := operation.State == "created" && operation.ErrorCode != "" &&
+		(operation.SourceRevision != sourceRevision || operation.TargetRevision != targetRevision)
+	if operation.State != "aborted" && !retryFailedStart &&
 		(operation.SourceRevision != sourceRevision || operation.TargetRevision != targetRevision) {
 		return MergeOperation{}, ErrMergeOperationConflict
 	}
-	reset := operation.State == "aborted"
+	reset := operation.State == "aborted" || retryFailedStart
 	state := operation.State
 	if reset {
 		state = "created"
@@ -229,6 +332,7 @@ func (s *store) AcquireMergeOperation(
 	if reset {
 		operation.StagedRevision = ""
 		operation.PushedRevision = ""
+		operation.ParentRevisions = []string{}
 		operation.ConflictPaths = []string{}
 		operation.ErrorCode = ""
 		operation.ErrorDetail = ""
@@ -237,23 +341,41 @@ func (s *store) AcquireMergeOperation(
 		operation.SourceRevision = sourceRevision
 		operation.TargetRevision = targetRevision
 	}
+	if retryFailedStart {
+		if _, err := tx.Exec(ctx, `
+			DELETE FROM merge_operation_resolutions WHERE operation_id = $1
+		`, operation.ID); err != nil {
+			return MergeOperation{}, fmt.Errorf("clear stale merge resolutions: %w", err)
+		}
+	}
 	updateRow := tx.QueryRow(ctx, `
 		UPDATE merge_operations
 		SET actor_id = $2, source_revision = $3, target_revision = $4,
-		    state = $5, conflict_paths = $6, staged_revision = NULLIF($7, ''),
-		    pushed_revision = NULLIF($8, ''), error_code = NULLIF($9, ''),
-		    error_detail = NULLIF($10, ''), lease_owner = $11,
-		    lease_expires_at = $12, version = version + 1, updated_at = $13
+		    parent_revisions = $5, state = $6, conflict_paths = $7,
+		    staged_revision = NULLIF($8, ''), pushed_revision = NULLIF($9, ''),
+		    error_code = NULLIF($10, ''), error_detail = NULLIF($11, ''), lease_owner = $12,
+		    lease_expires_at = $13, version = version + 1, updated_at = $14
 		WHERE id = $1
 		RETURNING id, merge_request_id, repository_id, actor_id,
-			source_revision, target_revision, staged_revision, pushed_revision,
+			source_revision, target_revision, staged_revision, pushed_revision, parent_revisions,
 			state, conflict_paths, error_code, error_detail, lease_owner,
 			lease_expires_at, version, started_at, completed_at, created_at, updated_at
 	`, operation.ID, actorID, operation.SourceRevision, operation.TargetRevision,
-		state, mustJSON(operation.ConflictPaths), operation.StagedRevision, operation.PushedRevision,
-		operation.ErrorCode, operation.ErrorDetail, owner, leaseUntil, now)
+		mustJSON(operation.ParentRevisions), state, mustJSON(operation.ConflictPaths), operation.StagedRevision,
+		operation.PushedRevision, operation.ErrorCode, operation.ErrorDetail, owner, leaseUntil, now)
 	if err := scanMergeOperationInto(updateRow, &operation); err != nil {
 		return MergeOperation{}, fmt.Errorf("renew merge operation: %w", err)
+	}
+	operation.Resolutions, err = loadMergeResolutions(ctx, tx, operation.ID)
+	if err != nil {
+		return MergeOperation{}, err
+	}
+	action := "merge_operation.lease_acquired"
+	if reset {
+		action = "merge_operation.restarted"
+	}
+	if err := s.recordMergeOperationEvent(ctx, tx, operation, actorID, action); err != nil {
+		return MergeOperation{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return MergeOperation{}, fmt.Errorf("commit merge operation renewal: %w", err)
@@ -261,34 +383,154 @@ func (s *store) AcquireMergeOperation(
 	return operation, nil
 }
 
+func (s *store) RestartMergeOperation(
+	ctx context.Context,
+	actor platform.User,
+	repositoryID string,
+	number int64,
+	sourceRevision string,
+	targetRevision string,
+	owner string,
+	lease time.Duration,
+) (MergeOperation, error) {
+	if sourceRevision == "" || targetRevision == "" || owner == "" {
+		return MergeOperation{}, ErrMergeOperationConflict
+	}
+	if lease <= 0 || lease > 30*time.Minute {
+		lease = 5 * time.Minute
+	}
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return MergeOperation{}, fmt.Errorf("begin merge restart: %w", err)
+	}
+	defer rollback(ctx, tx)
+	operation, err := scanMergeOperation(tx.QueryRow(ctx, mergeOperationQuery+`
+		WHERE mo.repository_id = $1 AND mr.number = $2
+		FOR UPDATE
+	`, repositoryID, number))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return MergeOperation{}, platform.ErrNotFound
+	}
+	if err != nil {
+		return MergeOperation{}, fmt.Errorf("lock merge operation for restart: %w", err)
+	}
+	operation.Resolutions, err = loadMergeResolutions(ctx, tx, operation.ID)
+	if err != nil {
+		return MergeOperation{}, err
+	}
+	now := nowUTC()
+	if operation.State == "merged" || operation.State == "pushed" || operation.State == "aborted" {
+		return MergeOperation{}, ErrMergeOperationConflict
+	}
+	if operation.State == "pushing" {
+		return MergeOperation{}, ErrMergeBusy
+	}
+	if operation.LeaseExpiresAt != nil && operation.LeaseExpiresAt.After(now) &&
+		operation.LeaseOwner != owner {
+		return MergeOperation{}, ErrMergeBusy
+	}
+	row := tx.QueryRow(ctx, `
+		UPDATE merge_operations
+		SET actor_id = $2, source_revision = $3, target_revision = $4,
+		    staged_revision = NULL, pushed_revision = NULL, parent_revisions = '[]'::jsonb,
+		    state = 'started', conflict_paths = '[]'::jsonb, error_code = NULL,
+		    error_detail = NULL, lease_owner = $5, lease_expires_at = $6,
+		    started_at = $7, completed_at = NULL, version = version + 1, updated_at = $7
+		WHERE id = $1
+		RETURNING id, merge_request_id, repository_id, actor_id,
+			source_revision, target_revision, staged_revision, pushed_revision, parent_revisions,
+			state, conflict_paths, error_code, error_detail, lease_owner,
+			lease_expires_at, version, started_at, completed_at, created_at, updated_at
+	`, operation.ID, actor.ID, sourceRevision, targetRevision, owner, now.Add(lease), now)
+	var updated MergeOperation
+	if err := scanMergeOperationInto(row, &updated); err != nil {
+		return MergeOperation{}, fmt.Errorf("restart merge operation: %w", err)
+	}
+	updated.Resolutions, err = loadMergeResolutions(ctx, tx, updated.ID)
+	if err != nil {
+		return MergeOperation{}, err
+	}
+	if err := s.recordMergeOperationEvent(ctx, tx, updated, actor.ID, "merge_operation.restarted"); err != nil {
+		return MergeOperation{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return MergeOperation{}, fmt.Errorf("commit merge restart: %w", err)
+	}
+	return updated, nil
+}
+
 func (s *store) UpdateMergeOperation(ctx context.Context, operation MergeOperation) (MergeOperation, error) {
+	return s.updateMergeOperation(ctx, operation, "")
+}
+
+func (s *store) UpdateMergeOperationOwned(
+	ctx context.Context,
+	operation MergeOperation,
+	leaseOwner string,
+) (MergeOperation, error) {
+	return s.updateMergeOperation(ctx, operation, leaseOwner)
+}
+
+func (s *store) updateMergeOperation(
+	ctx context.Context,
+	operation MergeOperation,
+	expectedLeaseOwner string,
+) (MergeOperation, error) {
 	if operation.ID == "" {
 		return MergeOperation{}, ErrMergeOperationConflict
 	}
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return MergeOperation{}, fmt.Errorf("begin merge operation update: %w", err)
+	}
+	defer rollback(ctx, tx)
 	now := nowUTC()
-	row := s.pool.QueryRow(ctx, `
+	row := tx.QueryRow(ctx, `
 		UPDATE merge_operations
 		SET source_revision = $2, target_revision = $3, staged_revision = NULLIF($4, ''),
-		    pushed_revision = NULLIF($5, ''), state = $6, conflict_paths = $7,
-		    error_code = NULLIF($8, ''), error_detail = NULLIF($9, ''),
-		    lease_owner = NULLIF($10, ''), lease_expires_at = $11,
-		    started_at = $12, completed_at = $13, version = version + 1, updated_at = $14
-		WHERE id = $1 AND version = $15
+		    pushed_revision = NULLIF($5, ''), parent_revisions = $6, state = $7, conflict_paths = $8,
+		    error_code = NULLIF($9, ''), error_detail = NULLIF($10, ''),
+		    lease_owner = NULLIF($11, ''), lease_expires_at = $12,
+		    started_at = $13, completed_at = $14, version = version + 1, updated_at = $15
+		WHERE id = $1 AND version = $16
+		  AND ($17 = '' OR (lease_owner = $17 AND lease_expires_at > $18))
 		RETURNING id, merge_request_id, repository_id, actor_id,
-			source_revision, target_revision, staged_revision, pushed_revision,
+			source_revision, target_revision, staged_revision, pushed_revision, parent_revisions,
 			state, conflict_paths, error_code, error_detail, lease_owner,
 			lease_expires_at, version, started_at, completed_at, created_at, updated_at
 	`, operation.ID, operation.SourceRevision, operation.TargetRevision, operation.StagedRevision,
-		operation.PushedRevision, operation.State, mustJSON(operation.ConflictPaths), operation.ErrorCode,
-		operation.ErrorDetail, operation.LeaseOwner, operation.LeaseExpiresAt, operation.StartedAt,
-		operation.CompletedAt, now, operation.Version)
+		operation.PushedRevision, mustJSON(operation.ParentRevisions), operation.State,
+		mustJSON(operation.ConflictPaths), operation.ErrorCode, operation.ErrorDetail, operation.LeaseOwner,
+		operation.LeaseExpiresAt, operation.StartedAt, operation.CompletedAt, now, operation.Version,
+		expectedLeaseOwner, now)
 	var updated MergeOperation
-	err := scanMergeOperationInto(row, &updated)
+	err = scanMergeOperationInto(row, &updated)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return MergeOperation{}, ErrMergeOperationConflict
 	}
 	if err != nil {
 		return MergeOperation{}, fmt.Errorf("update merge operation: %w", err)
+	}
+	updated.Resolutions, err = loadMergeResolutions(ctx, tx, updated.ID)
+	if err != nil {
+		return MergeOperation{}, err
+	}
+	var organizationID string
+	if err := tx.QueryRow(ctx, `SELECT organization_id FROM repositories WHERE id = $1`, updated.RepositoryID).
+		Scan(&organizationID); err != nil {
+		return MergeOperation{}, fmt.Errorf("find merge organization: %w", err)
+	}
+	if updated.ActorID != "" {
+		if err := insertAudit(ctx, tx, updated.ActorID, organizationID, updated.RepositoryID,
+			"merge_operation.updated", "merge_operation", updated.ID); err != nil {
+			return MergeOperation{}, err
+		}
+	}
+	if err := insertOutbox(ctx, tx, "merge_operation.updated", updated.ID+":"+uuidArg(), updated); err != nil {
+		return MergeOperation{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return MergeOperation{}, fmt.Errorf("commit merge operation update: %w", err)
 	}
 	return updated, nil
 }
@@ -321,6 +563,16 @@ func (s *store) FinalizeMerged(
 		return MergeRequest{}, err
 	}
 	if mr.State == "merged" {
+		finalRevision := pushedRevision
+		if mr.MergedRevision != nil {
+			if finalRevision != "" && *mr.MergedRevision != finalRevision {
+				return MergeRequest{}, platform.ErrConflict
+			}
+			finalRevision = *mr.MergedRevision
+		}
+		if operation.PushedRevision != "" && operation.PushedRevision != finalRevision {
+			return MergeRequest{}, platform.ErrConflict
+		}
 		if operation.State != "merged" {
 			_, err = tx.Exec(ctx, `
 				UPDATE merge_operations
@@ -328,9 +580,18 @@ func (s *store) FinalizeMerged(
 				    lease_owner = NULL, lease_expires_at = NULL, completed_at = COALESCE(completed_at, now()),
 				    version = version + 1, updated_at = now()
 				WHERE id = $1
-			`, operation.ID, pushedRevision)
+			`, operation.ID, finalRevision)
 			if err != nil {
 				return MergeRequest{}, fmt.Errorf("reconcile merge operation: %w", err)
+			}
+			reconciled := operation
+			reconciled.State = "merged"
+			reconciled.PushedRevision = finalRevision
+			reconciled.LeaseOwner = ""
+			reconciled.LeaseExpiresAt = nil
+			if err := s.recordMergeOperationEvent(ctx, tx, reconciled, actor.ID,
+				"merge_operation.reconciled"); err != nil {
+				return MergeRequest{}, err
 			}
 		}
 		if err := tx.Commit(ctx); err != nil {
@@ -338,7 +599,7 @@ func (s *store) FinalizeMerged(
 		}
 		return mr, nil
 	}
-	if operation.State != "pushed" || pushedRevision == "" {
+	if operation.State != "pushed" || pushedRevision == "" || operation.PushedRevision != pushedRevision {
 		return MergeRequest{}, ErrMergeOperationConflict
 	}
 	var organizationID string
@@ -364,6 +625,15 @@ func (s *store) FinalizeMerged(
 	`, operation.ID, pushedRevision, now); err != nil {
 		return MergeRequest{}, fmt.Errorf("complete merge operation: %w", err)
 	}
+	completed := operation
+	completed.State = "merged"
+	completed.PushedRevision = pushedRevision
+	completed.LeaseOwner = ""
+	completed.LeaseExpiresAt = nil
+	completed.CompletedAt = &now
+	if err := s.recordMergeOperationEvent(ctx, tx, completed, actor.ID, "merge_operation.completed"); err != nil {
+		return MergeRequest{}, err
+	}
 	mr, err = scanMergeRequestByTx(ctx, tx, repositoryID, number)
 	if err != nil {
 		return MergeRequest{}, err
@@ -381,9 +651,35 @@ func (s *store) FinalizeMerged(
 	return mr, nil
 }
 
+func (s *store) recordMergeOperationEvent(
+	ctx context.Context,
+	tx pgx.Tx,
+	operation MergeOperation,
+	actorID string,
+	action string,
+) error {
+	var organizationID string
+	if err := tx.QueryRow(ctx, `
+		SELECT organization_id FROM repositories WHERE id = $1
+	`, operation.RepositoryID).Scan(&organizationID); err != nil {
+		return fmt.Errorf("find merge organization: %w", err)
+	}
+	if actorID != "" {
+		if err := insertAudit(ctx, tx, actorID, organizationID, operation.RepositoryID,
+			action, "merge_operation", operation.ID); err != nil {
+			return err
+		}
+	}
+	if err := insertOutbox(ctx, tx, action, operation.ID+":"+uuidArg(), operation); err != nil {
+		return err
+	}
+	return nil
+}
+
 const mergeOperationQuery = `
 	SELECT mo.id, mo.merge_request_id, mo.repository_id, mo.actor_id,
 	       mo.source_revision, mo.target_revision, mo.staged_revision, mo.pushed_revision,
+	       mo.parent_revisions,
 	       mo.state, mo.conflict_paths, mo.error_code, mo.error_detail,
 	       mo.lease_owner, mo.lease_expires_at, mo.version, mo.started_at,
 	       mo.completed_at, mo.created_at, mo.updated_at
@@ -399,10 +695,10 @@ func scanMergeOperation(row pgx.Row) (MergeOperation, error) {
 
 func scanMergeOperationInto(row pgx.Row, operation *MergeOperation) error {
 	var actorID, staged, pushed, errorCode, errorDetail, leaseOwner *string
-	var conflictJSON []byte
+	var conflictJSON, parentJSON []byte
 	err := row.Scan(
 		&operation.ID, &operation.MergeRequestID, &operation.RepositoryID, &actorID,
-		&operation.SourceRevision, &operation.TargetRevision, &staged, &pushed,
+		&operation.SourceRevision, &operation.TargetRevision, &staged, &pushed, &parentJSON,
 		&operation.State, &conflictJSON, &errorCode, &errorDetail, &leaseOwner,
 		&operation.LeaseExpiresAt, &operation.Version, &operation.StartedAt,
 		&operation.CompletedAt, &operation.CreatedAt, &operation.UpdatedAt,
@@ -439,6 +735,15 @@ func scanMergeOperationInto(row pgx.Row, operation *MergeOperation) error {
 	if operation.ConflictPaths == nil {
 		operation.ConflictPaths = []string{}
 	}
+	if len(parentJSON) > 0 && json.Unmarshal(parentJSON, &operation.ParentRevisions) != nil {
+		return errors.New("merge operation parent revisions are invalid")
+	}
+	if operation.ParentRevisions == nil {
+		operation.ParentRevisions = []string{}
+	}
+	if operation.Resolutions == nil {
+		operation.Resolutions = []MergeResolution{}
+	}
 	return nil
 }
 
@@ -448,6 +753,41 @@ func mustJSON(values []string) []byte {
 	}
 	encoded, _ := json.Marshal(values)
 	return encoded
+}
+
+type mergeRowsQueryer interface {
+	Query(context.Context, string, ...any) (pgx.Rows, error)
+}
+
+func loadMergeResolutions(
+	ctx context.Context,
+	queryer mergeRowsQueryer,
+	operationID string,
+) ([]MergeResolution, error) {
+	rows, err := queryer.Query(ctx, `
+		SELECT mor.path, mor.strategy, COALESCE(u.username, ''), mor.created_at, mor.updated_at
+		FROM merge_operation_resolutions mor
+		LEFT JOIN users u ON u.id = mor.actor_id
+		WHERE mor.operation_id = $1
+		ORDER BY mor.path
+	`, operationID)
+	if err != nil {
+		return nil, fmt.Errorf("list merge resolutions: %w", err)
+	}
+	defer rows.Close()
+	resolutions := make([]MergeResolution, 0)
+	for rows.Next() {
+		var resolution MergeResolution
+		if err := rows.Scan(&resolution.Path, &resolution.Strategy, &resolution.Actor,
+			&resolution.CreatedAt, &resolution.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan merge resolution: %w", err)
+		}
+		resolutions = append(resolutions, resolution)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate merge resolutions: %w", err)
+	}
+	return resolutions, nil
 }
 
 func scanMergeRequestByTxForUpdate(ctx context.Context, tx pgx.Tx, repoID string, number int64) (MergeRequest, error) {

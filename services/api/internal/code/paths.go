@@ -69,15 +69,19 @@ func normalizeBranch(value string) (string, error) {
 }
 
 func boundedInt(value string, fallback int, maximum int) int {
+	if maximum < 1 {
+		return fallback
+	}
 	var result int
 	for _, character := range value {
 		if character < '0' || character > '9' {
 			return fallback
 		}
-		result = result*10 + int(character-'0')
-		if result > maximum {
+		digit := int(character - '0')
+		if result > (maximum-digit)/10 {
 			return maximum
 		}
+		result = result*10 + digit
 	}
 	if result < 1 {
 		return fallback

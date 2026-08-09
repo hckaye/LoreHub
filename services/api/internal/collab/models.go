@@ -109,25 +109,35 @@ type MergeRequest struct {
 // MergeOperation records durable progress through a Lore merge workspace.
 // Repository contents are never stored here; only operation metadata is.
 type MergeOperation struct {
-	ID             string     `json:"id"`
-	MergeRequestID string     `json:"mergeRequestId"`
-	RepositoryID   string     `json:"repositoryId"`
-	ActorID        string     `json:"-"`
-	SourceRevision string     `json:"sourceRevision"`
-	TargetRevision string     `json:"targetRevision"`
-	StagedRevision string     `json:"stagedRevision,omitempty"`
-	PushedRevision string     `json:"pushedRevision,omitempty"`
-	State          string     `json:"state"`
-	ConflictPaths  []string   `json:"conflictPaths"`
-	ErrorCode      string     `json:"errorCode,omitempty"`
-	ErrorDetail    string     `json:"errorDetail,omitempty"`
-	LeaseOwner     string     `json:"-"`
-	LeaseExpiresAt *time.Time `json:"leaseExpiresAt,omitempty"`
-	Version        int64      `json:"version"`
-	StartedAt      *time.Time `json:"startedAt,omitempty"`
-	CompletedAt    *time.Time `json:"completedAt,omitempty"`
-	CreatedAt      time.Time  `json:"createdAt"`
-	UpdatedAt      time.Time  `json:"updatedAt"`
+	ID              string            `json:"id"`
+	MergeRequestID  string            `json:"mergeRequestId"`
+	RepositoryID    string            `json:"repositoryId"`
+	ActorID         string            `json:"-"`
+	SourceRevision  string            `json:"sourceRevision"`
+	TargetRevision  string            `json:"targetRevision"`
+	StagedRevision  string            `json:"stagedRevision,omitempty"`
+	PushedRevision  string            `json:"pushedRevision,omitempty"`
+	ParentRevisions []string          `json:"parentRevisions"`
+	Resolutions     []MergeResolution `json:"resolutions"`
+	State           string            `json:"state"`
+	ConflictPaths   []string          `json:"conflictPaths"`
+	ErrorCode       string            `json:"errorCode,omitempty"`
+	ErrorDetail     string            `json:"errorDetail,omitempty"`
+	LeaseOwner      string            `json:"-"`
+	LeaseExpiresAt  *time.Time        `json:"leaseExpiresAt,omitempty"`
+	Version         int64             `json:"version"`
+	StartedAt       *time.Time        `json:"startedAt,omitempty"`
+	CompletedAt     *time.Time        `json:"completedAt,omitempty"`
+	CreatedAt       time.Time         `json:"createdAt"`
+	UpdatedAt       time.Time         `json:"updatedAt"`
+}
+
+type MergeResolution struct {
+	Path      string    `json:"path"`
+	Strategy  string    `json:"strategy"`
+	Actor     string    `json:"actor,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 type MergeBlocker struct {

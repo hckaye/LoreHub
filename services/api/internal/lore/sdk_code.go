@@ -29,12 +29,16 @@ func (client *SDKClient) Tree(
 	repository RepositoryRef,
 	revision string,
 	path string,
-	identity string,
+	credential Credential,
 	limit int,
 ) (Tree, error) {
 	if err := ctx.Err(); err != nil {
 		return Tree{}, err
 	}
+	if err := ValidateCredential(repository, credential, ScopeRead); err != nil {
+		return Tree{}, err
+	}
+	identity := credential.Identity
 	if limit < 1 || limit >= maxTreeEntries {
 		limit = maxTreeEntries - 1
 	}
@@ -73,12 +77,16 @@ func (client *SDKClient) File(
 	repository RepositoryRef,
 	revision string,
 	path string,
-	identity string,
+	credential Credential,
 	maxBytes int64,
 ) (File, []byte, error) {
 	if err := ctx.Err(); err != nil {
 		return File{}, nil, err
 	}
+	if err := ValidateCredential(repository, credential, ScopeRead); err != nil {
+		return File{}, nil, err
+	}
+	identity := credential.Identity
 	if maxBytes < 1 {
 		return File{}, nil, errors.New("file size limit must be positive")
 	}
@@ -132,12 +140,16 @@ func (client *SDKClient) RevisionHistory(
 	repository RepositoryRef,
 	revision string,
 	branch string,
-	identity string,
+	credential Credential,
 	limit int,
 ) ([]RevisionHistoryEntry, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	if err := ValidateCredential(repository, credential, ScopeRead); err != nil {
+		return nil, err
+	}
+	identity := credential.Identity
 	if limit < 1 {
 		limit = 1
 	}
@@ -185,12 +197,16 @@ func (client *SDKClient) FileHistory(
 	revision string,
 	branch string,
 	path string,
-	identity string,
+	credential Credential,
 	limit int,
 ) ([]FileHistoryEntry, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	if err := ValidateCredential(repository, credential, ScopeRead); err != nil {
+		return nil, err
+	}
+	identity := credential.Identity
 	if limit < 1 {
 		limit = 1
 	}
@@ -243,8 +259,12 @@ func (client *SDKClient) RevisionInfo(
 	ctx context.Context,
 	repository RepositoryRef,
 	revision string,
-	identity string,
+	credential Credential,
 ) (Revision, error) {
+	if err := ValidateCredential(repository, credential, ScopeRead); err != nil {
+		return Revision{}, err
+	}
+	identity := credential.Identity
 	cachePath, err := client.prepareReadRepository(ctx, repository, identity)
 	if err != nil {
 		return Revision{}, err
@@ -290,10 +310,14 @@ func (client *SDKClient) RevisionDiff(
 	source string,
 	target string,
 	paths []string,
-	identity string,
+	credential Credential,
 	maxFiles int,
 	maxPatchBytes int,
 ) (Diff, error) {
+	if err := ValidateCredential(repository, credential, ScopeRead); err != nil {
+		return Diff{}, err
+	}
+	identity := credential.Identity
 	if maxFiles < 1 || maxFiles >= maxRevisionFiles {
 		maxFiles = maxRevisionFiles - 1
 	}

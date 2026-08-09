@@ -62,6 +62,11 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	loreCredentials, err := loreclient.NewCredentialProvider(settings.Environment, settings.LoreCredentials,
+		settings.LoreIdentity, settings.LoreAllowDevelopmentFallback)
+	if err != nil {
+		return err
+	}
 	if command == "runner" {
 		return runRunner(rootContext, pool, lore, settings, logger)
 	}
@@ -123,6 +128,7 @@ func run(logger *slog.Logger) error {
 			},
 		}),
 		httpapi.WithCollaboration(collab.NewStore(pool)),
+		httpapi.WithLoreCredentials(loreCredentials),
 	)
 	server := &http.Server{
 		Addr:              settings.HTTPAddress,
@@ -176,7 +182,8 @@ func runRunner(
 	if err != nil {
 		return err
 	}
-	poller := runner.NewPoller(store, lore, settings.LoreIdentity, settings.BranchPollPeriod, logger)
+	poller := runner.NewPoller(store, runnerLoreClient{client: lore}, settings.LoreIdentity,
+		settings.BranchPollPeriod, logger)
 	errorsChannel := make(chan error, 2)
 	go func() { errorsChannel <- poller.Run(ctx) }()
 	go func() { errorsChannel <- worker.Run(ctx) }()
@@ -185,4 +192,20 @@ func runRunner(
 		return nil
 	}
 	return err
+}
+
+type runnerLoreClient struct {
+	client *loreclient.SDKClient
+}
+
+func (adapter runnerLoreClient) Branches(
+	ctx context.Context,
+	repository loreclient.RepositoryRef,
+	identity string,
+) ([]loreclient.Branch, error) {
+	return adapter.client.Branches(ctx, repository, loreclient.Credential{
+		Partition: repository.LoreRepositoryID,
+		Identity:  identity,
+		Scope:     loreclient.ScopeRead,
+	})
 }

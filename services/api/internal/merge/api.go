@@ -25,13 +25,13 @@ var (
 )
 
 type API struct {
-	store    collab.Store
-	workflow collab.MergeWorkflowStore
-	lore     loreclient.Client
-	merge    loreclient.MergeClient
-	actors   collab.ActorResolver
-	identity string
-	logger   *slog.Logger
+	store       collab.Store
+	workflow    collab.MergeWorkflowStore
+	lore        loreclient.Client
+	merge       loreclient.MergeClient
+	actors      collab.ActorResolver
+	credentials loreclient.CredentialProvider
+	logger      *slog.Logger
 }
 
 // Register mounts readiness, continuation, conflict resolution and final push
@@ -43,11 +43,11 @@ func Register(
 	lore loreclient.Client,
 	mergeClient loreclient.MergeClient,
 	actors collab.ActorResolver,
-	identity string,
+	credentials loreclient.CredentialProvider,
 	logger *slog.Logger,
 ) {
 	api := &API{store: store, workflow: workflow, lore: lore, merge: mergeClient,
-		actors: actors, identity: identity, logger: logger}
+		actors: actors, credentials: credentials, logger: logger}
 	base := "/api/v1/repositories/{owner}/{repository}/merge-requests/{number}"
 	mux.HandleFunc("GET "+base+"/merge-readiness", api.readiness)
 	mux.HandleFunc("GET "+base+"/merge-operation", api.operation)
@@ -155,12 +155,9 @@ func (api *API) start(writer http.ResponseWriter, request *http.Request) {
 	}
 	existing, operationErr := api.workflow.GetMergeOperation(request.Context(), repository.ID, number)
 	if operationErr == nil {
-		if existing.State == "started" || existing.State == "conflicts" || existing.State == "ready_to_push" ||
-			existing.State == "pushing" || existing.State == "pushed" || existing.State == "merged" {
-			if existing.State != "started" || existing.ErrorCode == "" {
-				writeJSON(writer, http.StatusOK, existing)
-				return
-			}
+		if existing.State == "pushing" || existing.State == "pushed" || existing.State == "merged" {
+			writeJSON(writer, http.StatusOK, existing)
+			return
 		}
 	} else if !errors.Is(operationErr, platform.ErrNotFound) {
 		api.workflowError(writer, request, operationErr)
@@ -175,6 +172,13 @@ func (api *API) start(writer http.ResponseWriter, request *http.Request) {
 		api.writeReadinessBlocked(writer, readiness)
 		return
 	}
+	if operationErr == nil && existing.SourceRevision == mergeRequest.SourceRevision &&
+		existing.TargetRevision == mergeRequest.TargetRevision &&
+		(existing.State == "conflicts" || existing.State == "ready_to_push" ||
+			(existing.State == "started" && existing.ErrorCode == "" && mergeLeaseActive(existing))) {
+		writeJSON(writer, http.StatusOK, existing)
+		return
+	}
 	if api.merge == nil {
 		api.problem(writer, http.StatusServiceUnavailable, "lore_unavailable", "Lore merge operations are unavailable")
 		return
@@ -185,9 +189,9 @@ func (api *API) start(writer http.ResponseWriter, request *http.Request) {
 		api.workflowError(writer, request, err)
 		return
 	}
+	leaseOwner := operation.LeaseOwner
 	if operation.State == "merged" || operation.State == "pushed" || operation.State == "conflicts" ||
-		operation.State == "ready_to_push" || operation.State == "pushing" ||
-		(operation.State == "started" && operation.ErrorCode == "") {
+		operation.State == "ready_to_push" || operation.State == "pushing" {
 		writeJSON(writer, http.StatusOK, operation)
 		return
 	}
@@ -197,30 +201,49 @@ func (api *API) start(writer http.ResponseWriter, request *http.Request) {
 		operation.StartedAt = &now
 	}
 	operation.LeaseExpiresAt = timePtr(time.Now().UTC().Add(mergeLease))
-	operation, err = api.workflow.UpdateMergeOperation(request.Context(), operation)
+	operation, err = api.workflow.UpdateMergeOperationOwned(request.Context(), operation, leaseOwner)
 	if err != nil {
 		api.workflowError(writer, request, err)
 		return
 	}
+	writeCredential, credentialErr := api.credential(request, repository, loreclient.ScopeWrite)
+	if credentialErr != nil {
+		api.releaseAfterLoreError(request.Context(), operation, credentialErr)
+		api.loreError(writer, request, credentialErr)
+		return
+	}
 	result, err := api.merge.StartMerge(request.Context(), api.repositoryRef(repository), operation.ID,
 		mergeRequest.SourceBranch, mergeRequest.TargetBranch, mergeRequest.SourceRevision,
-		mergeRequest.TargetRevision, mergeRequest.Title, api.identity)
+		mergeRequest.TargetRevision, mergeRequest.Title, writeCredential)
 	if err != nil {
+		stale := errors.Is(err, loreclient.ErrMergeStale) || errors.Is(err, loreclient.ErrMergeParentCheck)
 		operation.ErrorCode = "lore_unavailable"
+		if stale {
+			operation.ErrorCode = "stale_revision"
+			operation.State = "created"
+			operation.StartedAt = nil
+		}
 		operation.ErrorDetail = err.Error()
 		operation.LeaseOwner = ""
 		operation.LeaseExpiresAt = nil
-		if updated, updateErr := api.workflow.UpdateMergeOperation(request.Context(), operation); updateErr == nil {
+		if updated, updateErr := api.workflow.UpdateMergeOperationOwned(
+			request.Context(), operation, leaseOwner,
+		); updateErr == nil {
 			operation = updated
 		} else {
 			api.logger.Warn("record failed Lore merge start", "error", updateErr, "operation_id", operation.ID)
 		}
-		api.problem(writer, http.StatusBadGateway, "lore_unavailable", "Lore did not complete the merge start")
+		if stale {
+			api.problem(writer, http.StatusConflict, "stale_revision", "Lore branch revisions changed; restart the merge")
+		} else {
+			api.problem(writer, http.StatusBadGateway, "lore_unavailable", "Lore did not complete the merge start")
+		}
 		return
 	}
 	operation.SourceRevision = result.SourceRevision
 	operation.TargetRevision = result.TargetRevision
 	operation.StagedRevision = result.StagedRevision
+	operation.ParentRevisions = result.Parents
 	operation.ConflictPaths = result.Conflicts
 	operation.ErrorCode = ""
 	operation.ErrorDetail = ""
@@ -231,7 +254,7 @@ func (api *API) start(writer http.ResponseWriter, request *http.Request) {
 	}
 	operation.LeaseOwner = ""
 	operation.LeaseExpiresAt = nil
-	operation, err = api.workflow.UpdateMergeOperation(request.Context(), operation)
+	operation, err = api.workflow.UpdateMergeOperationOwned(request.Context(), operation, leaseOwner)
 	if err != nil {
 		api.problem(writer, http.StatusServiceUnavailable, "merge_recovery_required",
 			"Lore completed the merge preparation but its durable state needs recovery")
@@ -255,6 +278,11 @@ func (api *API) conflicts(writer http.ResponseWriter, request *http.Request) {
 		api.workflowError(writer, request, err)
 		return
 	}
+	mergeRequest, err := api.store.GetMergeRequest(request.Context(), repository.ID, number)
+	if err != nil {
+		api.storeError(writer, request, err)
+		return
+	}
 	if operation.State == "aborted" {
 		api.problem(writer, http.StatusConflict, "merge_aborted", "The Lore merge operation was aborted")
 		return
@@ -267,8 +295,14 @@ func (api *API) conflicts(writer http.ResponseWriter, request *http.Request) {
 		api.problem(writer, http.StatusServiceUnavailable, "lore_unavailable", "Lore merge operations are unavailable")
 		return
 	}
+	readCredential, credentialErr := api.credential(request, repository, loreclient.ScopeRead)
+	if credentialErr != nil {
+		api.loreError(writer, request, credentialErr)
+		return
+	}
 	paths, err := api.merge.ListConflicts(
-		request.Context(), api.repositoryRef(repository), operation.ID, nil, api.identity,
+		request.Context(), api.repositoryRef(repository), operation.ID, api.workspace(mergeRequest, operation), nil,
+		readCredential,
 	)
 	if err != nil {
 		api.loreError(writer, request, err)
@@ -279,11 +313,6 @@ func (api *API) conflicts(writer http.ResponseWriter, request *http.Request) {
 		operation.State = "conflicts"
 	} else if operation.State == "conflicts" || operation.State == "started" {
 		operation.State = "ready_to_push"
-	}
-	operation, err = api.workflow.UpdateMergeOperation(request.Context(), operation)
-	if err != nil {
-		api.workflowError(writer, request, err)
-		return
 	}
 	writeJSON(writer, http.StatusOK, operation)
 }
@@ -316,6 +345,11 @@ func (api *API) resolve(writer http.ResponseWriter, request *http.Request) {
 		api.workflowError(writer, request, err)
 		return
 	}
+	mergeRequest, err := api.store.GetMergeRequest(request.Context(), repository.ID, number)
+	if err != nil {
+		api.storeError(writer, request, err)
+		return
+	}
 	if operation.State == "aborted" {
 		api.problem(writer, http.StatusConflict, "merge_aborted", "The Lore merge operation was aborted")
 		return
@@ -328,25 +362,38 @@ func (api *API) resolve(writer http.ResponseWriter, request *http.Request) {
 		api.problem(writer, http.StatusServiceUnavailable, "lore_unavailable", "Lore merge operations are unavailable")
 		return
 	}
+	writeCredential, credentialErr := api.credential(request, repository, loreclient.ScopeWrite)
+	if credentialErr != nil {
+		api.loreError(writer, request, credentialErr)
+		return
+	}
 	operation, err = api.workflow.AcquireMergeOperation(request.Context(), actor.ID, repository.ID, number,
 		operation.SourceRevision, operation.TargetRevision, newLeaseOwner(), mergeLease)
 	if err != nil {
 		api.workflowError(writer, request, err)
 		return
 	}
+	leaseOwner := operation.LeaseOwner
 	if operation.State != "conflicts" && operation.State != "started" {
 		api.problem(writer, http.StatusConflict, "merge_not_in_conflict", "The merge operation has no unresolved conflicts")
 		return
 	}
+	operation, err = api.workflow.RecordMergeResolutions(request.Context(), actor, operation,
+		input.Paths, input.Strategy)
+	if err != nil {
+		api.workflowError(writer, request, err)
+		return
+	}
 	revision, err := api.merge.ResolveMerge(request.Context(), api.repositoryRef(repository), operation.ID,
-		input.Paths, input.Strategy, api.identity)
+		api.workspace(mergeRequest, operation), input.Paths, input.Strategy, writeCredential)
 	if err != nil {
 		api.releaseAfterLoreError(request.Context(), operation, err)
 		api.loreError(writer, request, err)
 		return
 	}
 	paths, err := api.merge.ListConflicts(
-		request.Context(), api.repositoryRef(repository), operation.ID, nil, api.identity,
+		request.Context(), api.repositoryRef(repository), operation.ID, api.workspace(mergeRequest, operation), nil,
+		writeCredential,
 	)
 	if err != nil {
 		api.releaseAfterLoreError(request.Context(), operation, err)
@@ -361,7 +408,7 @@ func (api *API) resolve(writer http.ResponseWriter, request *http.Request) {
 	}
 	operation.LeaseOwner = ""
 	operation.LeaseExpiresAt = nil
-	operation, err = api.workflow.UpdateMergeOperation(request.Context(), operation)
+	operation, err = api.workflow.UpdateMergeOperationOwned(request.Context(), operation, leaseOwner)
 	if err != nil {
 		api.workflowError(writer, request, err)
 		return
@@ -400,14 +447,20 @@ func (api *API) abort(writer http.ResponseWriter, request *http.Request) {
 		api.problem(writer, http.StatusServiceUnavailable, "lore_unavailable", "Lore merge operations are unavailable")
 		return
 	}
+	writeCredential, credentialErr := api.credential(request, repository, loreclient.ScopeWrite)
+	if credentialErr != nil {
+		api.loreError(writer, request, credentialErr)
+		return
+	}
 	operation, err = api.workflow.AcquireMergeOperation(request.Context(), actor.ID, repository.ID, number,
 		operation.SourceRevision, operation.TargetRevision, newLeaseOwner(), mergeLease)
 	if err != nil {
 		api.workflowError(writer, request, err)
 		return
 	}
+	leaseOwner := operation.LeaseOwner
 	if err := api.merge.AbortMerge(
-		request.Context(), api.repositoryRef(repository), operation.ID, api.identity,
+		request.Context(), api.repositoryRef(repository), operation.ID, writeCredential,
 	); err != nil {
 		api.releaseAfterLoreError(request.Context(), operation, err)
 		api.loreError(writer, request, err)
@@ -420,7 +473,7 @@ func (api *API) abort(writer http.ResponseWriter, request *http.Request) {
 	operation.ErrorDetail = ""
 	operation.ConflictPaths = []string{}
 	operation.CompletedAt = timePtr(time.Now().UTC())
-	operation, err = api.workflow.UpdateMergeOperation(request.Context(), operation)
+	operation, err = api.workflow.UpdateMergeOperationOwned(request.Context(), operation, leaseOwner)
 	if err != nil {
 		api.problem(writer, http.StatusServiceUnavailable, "merge_recovery_required",
 			"Lore aborted the merge but its durable state needs recovery")
@@ -494,47 +547,45 @@ func (api *API) restart(writer http.ResponseWriter, request *http.Request) {
 		api.problem(writer, http.StatusServiceUnavailable, "lore_unavailable", "Lore merge operations are unavailable")
 		return
 	}
-	operation, err = api.workflow.AcquireMergeOperation(request.Context(), actor.ID, repository.ID, number,
-		operation.SourceRevision, operation.TargetRevision, newLeaseOwner(), mergeLease)
+	operation, err = api.workflow.RestartMergeOperation(request.Context(), actor, repository.ID, number,
+		readiness.CurrentSourceRevision, readiness.CurrentTargetRevision, newLeaseOwner(), mergeLease)
 	if err != nil {
 		api.workflowError(writer, request, err)
 		return
 	}
+	leaseOwner := operation.LeaseOwner
 	mergeRequest, err = api.workflow.RefreshMergeRequestRevisions(request.Context(), actor, repository.ID, number,
 		readiness.CurrentSourceRevision, readiness.CurrentTargetRevision)
 	if err != nil {
+		api.releaseAfterLoreError(request.Context(), operation, err)
 		api.workflowError(writer, request, err)
 		return
 	}
-	operation.SourceRevision = readiness.CurrentSourceRevision
-	operation.TargetRevision = readiness.CurrentTargetRevision
-	operation.State = "started"
-	operation.ConflictPaths = []string{}
-	operation.ErrorCode = ""
-	operation.ErrorDetail = ""
-	operation, err = api.workflow.UpdateMergeOperation(request.Context(), operation)
-	if err != nil {
-		api.workflowError(writer, request, err)
+	writeCredential, credentialErr := api.credential(request, repository, loreclient.ScopeWrite)
+	if credentialErr != nil {
+		api.releaseAfterLoreError(request.Context(), operation, credentialErr)
+		api.loreError(writer, request, credentialErr)
 		return
 	}
-	paths, err := api.merge.RestartMerge(request.Context(), api.repositoryRef(repository), operation.ID,
-		mergeRequest.SourceBranch, mergeRequest.TargetBranch, mergeRequest.SourceRevision,
-		mergeRequest.TargetRevision, input.Paths, api.identity)
+	result, err := api.merge.RestartMerge(request.Context(), api.repositoryRef(repository), operation.ID,
+		api.workspace(mergeRequest, operation), input.Paths, writeCredential)
 	if err != nil {
 		api.releaseAfterLoreError(request.Context(), operation, err)
 		api.loreError(writer, request, err)
 		return
 	}
-	operation.SourceRevision = mergeRequest.SourceRevision
-	operation.TargetRevision = mergeRequest.TargetRevision
-	operation.ConflictPaths = paths
+	operation.SourceRevision = result.SourceRevision
+	operation.TargetRevision = result.TargetRevision
+	operation.StagedRevision = result.StagedRevision
+	operation.ParentRevisions = result.Parents
+	operation.ConflictPaths = result.Conflicts
 	operation.State = "ready_to_push"
-	if len(paths) > 0 {
+	if len(result.Conflicts) > 0 {
 		operation.State = "conflicts"
 	}
 	operation.LeaseOwner = ""
 	operation.LeaseExpiresAt = nil
-	operation, err = api.workflow.UpdateMergeOperation(request.Context(), operation)
+	operation, err = api.workflow.UpdateMergeOperationOwned(request.Context(), operation, leaseOwner)
 	if err != nil {
 		api.workflowError(writer, request, err)
 		return
@@ -582,6 +633,16 @@ func (api *API) push(writer http.ResponseWriter, request *http.Request) {
 	}
 	recoveringPush := operation.State == "pushing"
 	if operation.State == "pushed" {
+		readCredential, credentialErr := api.credential(request, repository, loreclient.ScopeRead)
+		if credentialErr != nil {
+			api.loreError(writer, request, credentialErr)
+			return
+		}
+		if err := api.verifyPushedRemote(request.Context(), repository, operation, mergeRequest.TargetBranch,
+			readCredential); err != nil {
+			api.loreError(writer, request, err)
+			return
+		}
 		merged, finalizeErr := api.workflow.FinalizeMerged(request.Context(), actor, repository.ID, number,
 			operation.ID, operation.PushedRevision)
 		if finalizeErr != nil {
@@ -636,7 +697,18 @@ func (api *API) push(writer http.ResponseWriter, request *http.Request) {
 		api.workflowError(writer, request, err)
 		return
 	}
+	leaseOwner = operation.LeaseOwner
 	if operation.State == "pushed" {
+		readCredential, credentialErr := api.credential(request, repository, loreclient.ScopeRead)
+		if credentialErr != nil {
+			api.loreError(writer, request, credentialErr)
+			return
+		}
+		if err := api.verifyPushedRemote(request.Context(), repository, operation, mergeRequest.TargetBranch,
+			readCredential); err != nil {
+			api.loreError(writer, request, err)
+			return
+		}
 		merged, finalizeErr := api.workflow.FinalizeMerged(request.Context(), actor, repository.ID, number,
 			operation.ID, operation.PushedRevision)
 		if finalizeErr != nil {
@@ -662,20 +734,49 @@ func (api *API) push(writer http.ResponseWriter, request *http.Request) {
 		api.problem(writer, http.StatusConflict, "merge_not_ready", "Start the Lore merge before pushing it")
 		return
 	}
+	readCredential, credentialErr := api.credential(request, repository, loreclient.ScopeRead)
+	if credentialErr != nil {
+		api.loreError(writer, request, credentialErr)
+		return
+	}
+	writeCredential, credentialErr := api.credential(request, repository, loreclient.ScopeWrite)
+	if credentialErr != nil {
+		api.loreError(writer, request, credentialErr)
+		return
+	}
 	operation.LeaseExpiresAt = timePtr(time.Now().UTC().Add(mergeLease))
 	operation.State = "pushing"
-	operation, err = api.workflow.UpdateMergeOperation(request.Context(), operation)
+	operation, err = api.workflow.UpdateMergeOperationOwned(request.Context(), operation, leaseOwner)
 	if err != nil {
 		api.workflowError(writer, request, err)
 		return
 	}
+	recoveryRevision := operation.StagedRevision
+	if operation.PushedRevision != "" {
+		recoveryRevision = operation.PushedRevision
+	}
 	result, err := api.merge.PushMerge(request.Context(), api.repositoryRef(repository), operation.ID,
-		mergeRequest.TargetBranch, api.identity)
+		api.workspace(mergeRequest, operation), recoveryRevision, readCredential, writeCredential)
 	if err != nil {
+		if errors.Is(err, loreclient.ErrMergeStale) || errors.Is(err, loreclient.ErrMergeParentCheck) {
+			operation.State = "ready_to_push"
+			operation.ErrorCode = "stale_revision"
+			operation.ErrorDetail = err.Error()
+			operation.LeaseOwner = ""
+			operation.LeaseExpiresAt = nil
+			if _, updateErr := api.workflow.UpdateMergeOperationOwned(
+				request.Context(), operation, leaseOwner,
+			); updateErr != nil {
+				api.logger.Warn("record stale Lore merge operation", "error", updateErr,
+					"operation_id", operation.ID)
+			}
+			api.problem(writer, http.StatusConflict, "stale_revision", "Lore branch revisions changed; restart the merge")
+			return
+		}
 		operation.ErrorCode = "lore_unavailable"
 		operation.ErrorDetail = err.Error()
 		operation.LeaseExpiresAt = timePtr(time.Now().UTC().Add(mergeLease))
-		_, _ = api.workflow.UpdateMergeOperation(request.Context(), operation)
+		_, _ = api.workflow.UpdateMergeOperationOwned(request.Context(), operation, leaseOwner)
 		api.problem(writer, http.StatusBadGateway, "lore_unavailable",
 			"Lore push did not report a durable result; retry to reconcile the operation")
 		return
@@ -687,20 +788,28 @@ func (api *API) push(writer http.ResponseWriter, request *http.Request) {
 	if pushedRevision == "" {
 		operation.ErrorCode = "lore_unavailable"
 		operation.ErrorDetail = "Lore push completed without a revision"
-		_, _ = api.workflow.UpdateMergeOperation(request.Context(), operation)
+		_, _ = api.workflow.UpdateMergeOperationOwned(request.Context(), operation, leaseOwner)
 		api.problem(writer, http.StatusServiceUnavailable, "merge_recovery_required",
 			"Lore push completed without a revision; retry to reconcile the operation")
 		return
 	}
 	operation.PushedRevision = pushedRevision
+	if len(result.Parents) > 0 {
+		operation.ParentRevisions = result.Parents
+	}
 	operation.State = "pushed"
 	operation.ErrorCode = ""
 	operation.ErrorDetail = ""
 	operation.LeaseExpiresAt = timePtr(time.Now().UTC().Add(mergeLease))
-	operation, err = api.workflow.UpdateMergeOperation(request.Context(), operation)
+	operation, err = api.workflow.UpdateMergeOperationOwned(request.Context(), operation, leaseOwner)
 	if err != nil {
 		api.problem(writer, http.StatusServiceUnavailable, "merge_recovery_required",
 			"Lore push succeeded; retry to finalize the merge request")
+		return
+	}
+	if err := api.verifyPushedRemote(request.Context(), repository, operation, mergeRequest.TargetBranch,
+		readCredential); err != nil {
+		api.loreError(writer, request, err)
 		return
 	}
 	merged, err := api.workflow.FinalizeMerged(
@@ -716,112 +825,6 @@ func (api *API) push(writer http.ResponseWriter, request *http.Request) {
 		api.logger.Warn("clean merged Lore workspace", "error", err, "operation_id", operation.ID)
 	}
 	writeJSON(writer, http.StatusOK, merged)
-}
-
-func (api *API) buildReadiness(
-	ctx context.Context,
-	repository collab.Repository,
-	number int64,
-	actor *platform.User,
-) (collab.MergeReadiness, error) {
-	mergeRequest, err := api.store.GetMergeRequest(ctx, repository.ID, number)
-	if err != nil {
-		return collab.MergeReadiness{}, err
-	}
-	rules, err := api.store.ListBranchRules(ctx, repository.ID)
-	if err != nil {
-		return collab.MergeReadiness{}, err
-	}
-	reviews, err := api.store.ListReviews(ctx, repository.ID, number)
-	if err != nil {
-		return collab.MergeReadiness{}, err
-	}
-	branches, err := api.lore.Branches(ctx, api.repositoryRef(repository), api.identity)
-	if err != nil {
-		return collab.MergeReadiness{}, err
-	}
-	sourceCurrent, sourceFound := branchRevision(branches, mergeRequest.SourceBranch)
-	targetCurrent, targetFound := branchRevision(branches, mergeRequest.TargetBranch)
-	matched := matchingRules(rules, mergeRequest.TargetBranch)
-	ciSuccess := true
-	if requiresCI(matched) {
-		ciSuccess = false
-		if targetFound {
-			ciSuccess, err = api.workflow.ListSuccessfulCI(ctx, repository.ID, mergeRequest.TargetBranch, targetCurrent)
-			if err != nil {
-				return collab.MergeReadiness{}, err
-			}
-		}
-	}
-	readiness := collab.MergeReadiness{
-		MergeRequest:          mergeRequest,
-		CurrentSourceRevision: sourceCurrent,
-		CurrentTargetRevision: targetCurrent,
-		SourceStale:           !sourceFound || sourceCurrent != mergeRequest.SourceRevision,
-		TargetStale:           !targetFound || targetCurrent != mergeRequest.TargetRevision,
-		Reviews:               reviews,
-		CISuccess:             ciSuccess,
-		DirectPushBlocked:     directPushBlocked(matched),
-		Rules:                 matched,
-		Blockers:              []collab.MergeBlocker{},
-	}
-	if actor != nil {
-		access, err := api.store.RepositoryPermission(ctx, *actor, repository)
-		if err != nil {
-			return collab.MergeReadiness{}, err
-		}
-		readiness.CanMerge = access.AtLeast(collab.PermWrite)
-	}
-	if !readiness.CanMerge {
-		readiness.Blockers = append(readiness.Blockers, collab.MergeBlocker{
-			Code: "write_permission_required", Detail: "Write permission is required to merge",
-		})
-	}
-	if mergeRequest.State != "open" {
-		readiness.Blockers = append(readiness.Blockers, collab.MergeBlocker{Code: "state_not_open",
-			Detail: "Only an open merge request can be merged"})
-	}
-	if readiness.SourceStale {
-		readiness.Blockers = append(readiness.Blockers, collab.MergeBlocker{Code: "stale_source_revision",
-			Detail: "The source branch revision changed since this merge request was opened"})
-	}
-	if readiness.TargetStale {
-		readiness.Blockers = append(readiness.Blockers, collab.MergeBlocker{Code: "stale_target_revision",
-			Detail: "The target branch revision changed since this merge request was opened"})
-	}
-	if reviews.ChangeRequests > 0 {
-		readiness.Blockers = append(readiness.Blockers, collab.MergeBlocker{Code: "changes_requested",
-			Detail: "A current review requests changes"})
-	}
-	if approvals := requiredApprovals(matched); reviews.Approvals < int64(approvals) {
-		readiness.Blockers = append(readiness.Blockers, collab.MergeBlocker{Code: "required_approvals",
-			Detail: "The required current-revision approvals have not been reached"})
-	}
-	if requiresCI(matched) && !ciSuccess {
-		readiness.Blockers = append(readiness.Blockers, collab.MergeBlocker{Code: "ci_required",
-			Detail: "A successful CI run for the current target revision is required"})
-	}
-	if operation, operationErr := api.workflow.GetMergeOperation(ctx, repository.ID, number); operationErr == nil {
-		readiness.Operation = &operation
-	} else if !errors.Is(operationErr, platform.ErrNotFound) {
-		return collab.MergeReadiness{}, operationErr
-	}
-	readiness.Ready = len(readiness.Blockers) == 0
-	return readiness, nil
-}
-
-func branchRevision(branches []loreclient.Branch, name string) (string, bool) {
-	for _, branch := range branches {
-		if branch.Name == name && !branch.Archived && branch.LatestRevision != "" {
-			return branch.LatestRevision, true
-		}
-	}
-	return "", false
-}
-
-func (api *API) repositoryRef(repository collab.Repository) loreclient.RepositoryRef {
-	return loreclient.RepositoryRef{CacheKey: repository.ID, URL: repository.LoreURL,
-		LoreRepositoryID: repository.LoreRepositoryID, DefaultBranch: repository.DefaultBranch}
 }
 
 func parseNumber(value string) (int64, bool) {
@@ -888,6 +891,8 @@ func (api *API) workflowError(writer http.ResponseWriter, request *http.Request,
 		api.problem(writer, http.StatusConflict, "merge_busy", "Another merge operation is currently running")
 	case errors.Is(err, collab.ErrMergeOperationConflict):
 		api.problem(writer, http.StatusConflict, "merge_operation_changed", "The merge operation changed; reload and retry")
+	case errors.Is(err, platform.ErrConflict):
+		api.problem(writer, http.StatusConflict, "merge_operation_changed", "The merge operation changed; reload and retry")
 	default:
 		api.logger.Error("merge workflow", "error", err, "method", request.Method, "path", request.URL.Path)
 		api.problem(writer, http.StatusInternalServerError, "internal_error", "The request could not be completed")
@@ -899,17 +904,28 @@ func (api *API) storeError(writer http.ResponseWriter, request *http.Request, er
 }
 
 func (api *API) releaseAfterLoreError(ctx context.Context, operation collab.MergeOperation, err error) {
+	leaseOwner := operation.LeaseOwner
 	operation.ErrorCode = "lore_unavailable"
 	operation.ErrorDetail = err.Error()
 	operation.LeaseOwner = ""
 	operation.LeaseExpiresAt = nil
-	if _, updateErr := api.workflow.UpdateMergeOperation(ctx, operation); updateErr != nil {
+	var updateErr error
+	if leaseOwner != "" {
+		_, updateErr = api.workflow.UpdateMergeOperationOwned(ctx, operation, leaseOwner)
+	} else {
+		_, updateErr = api.workflow.UpdateMergeOperation(ctx, operation)
+	}
+	if updateErr != nil {
 		api.logger.Warn("record failed Lore merge operation", "error", updateErr, "operation_id", operation.ID)
 	}
 }
 
 func (api *API) loreError(writer http.ResponseWriter, request *http.Request, err error) {
 	if errors.Is(err, request.Context().Err()) {
+		return
+	}
+	if errors.Is(err, loreclient.ErrMergeStale) || errors.Is(err, loreclient.ErrMergeParentCheck) {
+		api.problem(writer, http.StatusConflict, "stale_revision", "Lore branch revisions changed; restart the merge")
 		return
 	}
 	api.logger.Error("Lore merge operation", "error", err, "method", request.Method, "path", request.URL.Path)

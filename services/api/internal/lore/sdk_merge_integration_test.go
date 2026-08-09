@@ -2,6 +2,7 @@ package lore
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -25,13 +26,15 @@ func TestSDKMergeLifecycleAgainstLoreServer(t *testing.T) {
 	if identity == "" {
 		identity = "fixture"
 	}
-	client, err := NewSDKClient(t.TempDir())
+	bootstrapCredential := Credential{Identity: identity, Scope: ScopeRead}
+	cacheDirectory := t.TempDir()
+	client, err := NewSDKClient(cacheDirectory)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	repository, err := client.RepositoryInfo(ctx, repositoryURL, identity)
+	repository, err := client.RepositoryInfo(ctx, repositoryURL, bootstrapCredential)
 	if err != nil {
 		t.Fatalf("RepositoryInfo returned an error: %v", err)
 	}
@@ -42,6 +45,8 @@ func TestSDKMergeLifecycleAgainstLoreServer(t *testing.T) {
 		DefaultBranch:    repository.DefaultBranch,
 	}
 	merge := MergeClient(client)
+	readCredential := Credential{Partition: repository.ID, Identity: identity, Scope: ScopeRead}
+	writeCredential := Credential{Partition: repository.ID, Identity: identity, Scope: ScopeWrite}
 
 	cleanSource, err := fixtureBranchRevision(ctx, client, ref, "feature-clean", identity)
 	if err != nil {
@@ -52,23 +57,41 @@ func TestSDKMergeLifecycleAgainstLoreServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	clean, err := merge.StartMerge(ctx, ref, "merge-lifecycle-clean", "feature-clean", "main",
-		cleanSource, cleanTarget, "Merge clean feature", identity)
+		cleanSource, cleanTarget, "Merge clean feature", writeCredential)
 	if err != nil {
 		t.Fatalf("clean StartMerge returned an error: %v", err)
 	}
 	if len(clean.Conflicts) != 0 || clean.StagedRevision == "" {
 		t.Fatalf("clean merge did not stage a revision: %#v", clean)
 	}
-	cleanPush, err := merge.PushMerge(ctx, ref, "merge-lifecycle-clean", "main", identity)
+	assertMergeParents(t, clean.Parents, cleanSource, cleanTarget)
+	cleanPush, err := merge.PushMerge(ctx, ref, "merge-lifecycle-clean", MergeWorkspace{
+		SourceBranch: "feature-clean", TargetBranch: "main", SourceRevision: cleanSource,
+		TargetRevision: cleanTarget, Message: "Merge clean feature",
+	}, clean.StagedRevision, readCredential, writeCredential)
 	if err != nil {
 		t.Fatalf("clean PushMerge returned an error: %v", err)
 	}
 	if cleanPush.RemoteRevision == "" {
 		t.Fatalf("clean push returned no remote revision: %#v", cleanPush)
 	}
+	duplicatePush, err := merge.PushMerge(ctx, ref, "merge-lifecycle-clean", MergeWorkspace{
+		SourceBranch: "feature-clean", TargetBranch: "main", SourceRevision: cleanSource,
+		TargetRevision: cleanTarget, Message: "Merge clean feature",
+	}, clean.StagedRevision, readCredential, writeCredential)
+	if err != nil {
+		t.Fatalf("duplicate clean PushMerge returned an error: %v", err)
+	}
+	if duplicatePush.RemoteRevision != cleanPush.RemoteRevision {
+		t.Fatalf("duplicate clean push changed remote revision: first=%#v second=%#v", cleanPush, duplicatePush)
+	}
 	if err := merge.CleanupMergeWorkspace(ctx, ref, "merge-lifecycle-clean"); err != nil {
 		t.Fatalf("clean workspace cleanup returned an error: %v", err)
 	}
+
+	testSourceAndTargetRaces(t, ctx, merge, client, ref, readCredential, writeCredential, cliPath, worktree,
+		identity)
+	testWorkspaceRecovery(t, ctx, cacheDirectory, client, ref, readCredential, writeCredential, identity)
 
 	conflictSource, err := fixtureBranchRevision(ctx, client, ref, "feature-conflict", identity)
 	if err != nil {
@@ -80,18 +103,20 @@ func TestSDKMergeLifecycleAgainstLoreServer(t *testing.T) {
 	}
 	abortOperation := "merge-lifecycle-abort"
 	abortStart, err := merge.StartMerge(ctx, ref, abortOperation, "feature-conflict", "conflict-target",
-		conflictSource, conflictTarget, "Conflict abort", identity)
+		conflictSource, conflictTarget, "Conflict abort", writeCredential)
 	if err != nil {
 		t.Fatalf("conflict StartMerge returned an error: %v", err)
 	}
 	if len(abortStart.Conflicts) == 0 {
 		t.Fatalf("conflict merge did not report conflicts: %#v", abortStart)
 	}
-	listed, err := merge.ListConflicts(ctx, ref, abortOperation, nil, identity)
+	abortWorkspace := MergeWorkspace{SourceBranch: "feature-conflict", TargetBranch: "conflict-target",
+		SourceRevision: conflictSource, TargetRevision: conflictTarget, Message: "Conflict abort"}
+	listed, err := merge.ListConflicts(ctx, ref, abortOperation, abortWorkspace, nil, writeCredential)
 	if err != nil || len(listed) == 0 {
 		t.Fatalf("ListConflicts returned %v and %#v", err, listed)
 	}
-	if err := merge.AbortMerge(ctx, ref, abortOperation, identity); err != nil {
+	if err := merge.AbortMerge(ctx, ref, abortOperation, writeCredential); err != nil {
 		t.Fatalf("AbortMerge returned an error: %v", err)
 	}
 	if err := merge.CleanupMergeWorkspace(ctx, ref, abortOperation); err != nil {
@@ -108,7 +133,7 @@ func TestSDKMergeLifecycleAgainstLoreServer(t *testing.T) {
 	}
 	restartOperation := "merge-lifecycle-restart"
 	restartStart, err := merge.StartMerge(ctx, ref, restartOperation, "feature-conflict", "conflict-target",
-		restartSource, restartTarget, "Conflict restart", identity)
+		restartSource, restartTarget, "Conflict restart", writeCredential)
 	if err != nil {
 		t.Fatalf("restart StartMerge returned an error: %v", err)
 	}
@@ -123,25 +148,31 @@ func TestSDKMergeLifecycleAgainstLoreServer(t *testing.T) {
 	if newTarget == restartTarget {
 		t.Fatalf("fixture target revision did not change: %s", newTarget)
 	}
-	restartedConflicts, err := merge.RestartMerge(ctx, ref, restartOperation, "feature-conflict", "conflict-target",
-		restartSource, newTarget, nil, identity)
+	restartResult, err := merge.RestartMerge(ctx, ref, restartOperation, MergeWorkspace{
+		SourceBranch: "feature-conflict", TargetBranch: "conflict-target", SourceRevision: restartSource,
+		TargetRevision: newTarget, Message: "Conflict restart",
+	}, nil, writeCredential)
 	if err != nil {
 		t.Fatalf("RestartMerge returned an error: %v", err)
 	}
-	if len(restartedConflicts) == 0 {
-		t.Fatalf("RestartMerge lost the expected conflict: %#v", restartedConflicts)
+	if len(restartResult.Conflicts) == 0 {
+		t.Fatalf("RestartMerge lost the expected conflict: %#v", restartResult)
 	}
-	if _, err := merge.ResolveMerge(ctx, ref, restartOperation, restartedConflicts, "theirs", identity); err != nil {
+	restartWorkspace := MergeWorkspace{SourceBranch: "feature-conflict", TargetBranch: "conflict-target",
+		SourceRevision: restartSource, TargetRevision: newTarget, Message: "Conflict restart"}
+	if _, err := merge.ResolveMerge(ctx, ref, restartOperation, restartWorkspace, restartResult.Conflicts,
+		"theirs", writeCredential); err != nil {
 		t.Fatalf("ResolveMerge returned an error: %v", err)
 	}
-	remaining, err := merge.ListConflicts(ctx, ref, restartOperation, nil, identity)
+	remaining, err := merge.ListConflicts(ctx, ref, restartOperation, restartWorkspace, nil, writeCredential)
 	if err != nil {
 		t.Fatalf("ListConflicts after resolution returned an error: %v", err)
 	}
 	if len(remaining) != 0 {
 		t.Fatalf("resolved merge still has conflicts: %#v", remaining)
 	}
-	restartedPush, err := merge.PushMerge(ctx, ref, restartOperation, "conflict-target", identity)
+	restartedPush, err := merge.PushMerge(ctx, ref, restartOperation, restartWorkspace,
+		restartResult.StagedRevision, readCredential, writeCredential)
 	if err != nil {
 		t.Fatalf("restarted PushMerge returned an error: %v", err)
 	}
@@ -153,6 +184,152 @@ func TestSDKMergeLifecycleAgainstLoreServer(t *testing.T) {
 	}
 }
 
+func testSourceAndTargetRaces(
+	t *testing.T,
+	ctx context.Context,
+	merge MergeClient,
+	client *SDKClient,
+	ref RepositoryRef,
+	readCredential Credential,
+	writeCredential Credential,
+	cliPath string,
+	worktree string,
+	identity string,
+) {
+	t.Helper()
+	source, err := fixtureBranchRevision(ctx, client, ref, "race-source", identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := fixtureBranchRevision(ctx, client, ref, "race-target", identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	operation := "merge-lifecycle-source-race"
+	workspace := MergeWorkspace{SourceBranch: "race-source", TargetBranch: "race-target",
+		SourceRevision: source, TargetRevision: target, Message: "Source race"}
+	started, err := merge.StartMerge(ctx, ref, operation, workspace.SourceBranch, workspace.TargetBranch,
+		source, target, workspace.Message, writeCredential)
+	if err != nil {
+		t.Fatalf("source race StartMerge returned an error: %v", err)
+	}
+	assertMergeParents(t, started.Parents, source, target)
+	advanceFixtureBranch(t, ctx, cliPath, worktree, identity, "race-source", "race-source-next.txt",
+		"source advanced", "advance race source")
+	if _, err := merge.PushMerge(ctx, ref, operation, workspace, started.StagedRevision,
+		readCredential, writeCredential); !errors.Is(err, ErrMergeStale) {
+		t.Fatalf("source race PushMerge error = %v, want ErrMergeStale", err)
+	}
+	if err := merge.CleanupMergeWorkspace(ctx, ref, operation); err != nil {
+		t.Fatalf("source race workspace cleanup: %v", err)
+	}
+
+	source, err = fixtureBranchRevision(ctx, client, ref, "race-source", identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err = fixtureBranchRevision(ctx, client, ref, "race-target", identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	operation = "merge-lifecycle-target-race"
+	workspace = MergeWorkspace{SourceBranch: "race-source", TargetBranch: "race-target",
+		SourceRevision: source, TargetRevision: target, Message: "Target race"}
+	started, err = merge.StartMerge(ctx, ref, operation, workspace.SourceBranch, workspace.TargetBranch,
+		source, target, workspace.Message, writeCredential)
+	if err != nil {
+		t.Fatalf("target race StartMerge returned an error: %v", err)
+	}
+	assertMergeParents(t, started.Parents, source, target)
+	advanceFixtureBranch(t, ctx, cliPath, worktree, identity, "race-target", "race-target-next.txt",
+		"target advanced", "advance race target")
+	if _, err := merge.PushMerge(ctx, ref, operation, workspace, started.StagedRevision,
+		readCredential, writeCredential); !errors.Is(err, ErrMergeStale) {
+		t.Fatalf("target race PushMerge error = %v, want ErrMergeStale", err)
+	}
+	if err := merge.CleanupMergeWorkspace(ctx, ref, operation); err != nil {
+		t.Fatalf("target race workspace cleanup: %v", err)
+	}
+}
+
+func testWorkspaceRecovery(
+	t *testing.T,
+	ctx context.Context,
+	cacheDirectory string,
+	client *SDKClient,
+	ref RepositoryRef,
+	readCredential Credential,
+	writeCredential Credential,
+	identity string,
+) {
+	t.Helper()
+	source, err := fixtureBranchRevision(ctx, client, ref, "recovery-source", identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := fixtureBranchRevision(ctx, client, ref, "recovery-target", identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	operation := "merge-lifecycle-workspace-recovery"
+	workspace := MergeWorkspace{SourceBranch: "recovery-source", TargetBranch: "recovery-target",
+		SourceRevision: source, TargetRevision: target, Message: "Workspace recovery"}
+	started, err := client.StartMerge(ctx, ref, operation, workspace.SourceBranch, workspace.TargetBranch,
+		source, target, workspace.Message, writeCredential)
+	if err != nil {
+		t.Fatalf("recovery StartMerge returned an error: %v", err)
+	}
+	if len(started.Conflicts) == 0 {
+		t.Fatalf("recovery StartMerge did not report conflicts: %#v", started)
+	}
+	resolvedRevision, err := client.ResolveMerge(ctx, ref, operation, workspace, started.Conflicts,
+		"theirs", writeCredential)
+	if err != nil {
+		t.Fatalf("recovery ResolveMerge returned an error: %v", err)
+	}
+	workspace.Resolutions = make([]MergeResolution, 0, len(started.Conflicts))
+	for _, path := range started.Conflicts {
+		workspace.Resolutions = append(workspace.Resolutions, MergeResolution{Path: path, Strategy: "theirs"})
+	}
+	path, err := client.operationPath(ref, operation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := removeMergeWorkspace(ctx, path); err != nil {
+		t.Fatalf("delete recovery workspace: %v", err)
+	}
+	recoveredClient, err := NewSDKClient(cacheDirectory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recoveredMerge := MergeClient(recoveredClient)
+	remaining, err := recoveredMerge.ListConflicts(ctx, ref, operation, workspace, nil, writeCredential)
+	if err != nil {
+		t.Fatalf("recovered ListConflicts returned an error: %v", err)
+	}
+	if len(remaining) != 0 {
+		t.Fatalf("stored conflict resolutions were not replayed: %#v", remaining)
+	}
+	pushed, err := recoveredMerge.PushMerge(ctx, ref, operation, workspace, resolvedRevision,
+		readCredential, writeCredential)
+	if err != nil {
+		t.Fatalf("recovered PushMerge returned an error: %v", err)
+	}
+	if pushed.RemoteRevision == "" {
+		t.Fatalf("recovered push returned no remote revision: %#v", pushed)
+	}
+	if err := recoveredMerge.CleanupMergeWorkspace(ctx, ref, operation); err != nil {
+		t.Fatalf("recovery workspace cleanup: %v", err)
+	}
+}
+
+func assertMergeParents(t *testing.T, parents []string, source, target string) {
+	t.Helper()
+	if !sameMergeParents(parents, source, target) {
+		t.Fatalf("merge parents = %#v, want %q and %q", parents, source, target)
+	}
+}
+
 func fixtureBranchRevision(
 	ctx context.Context,
 	client *SDKClient,
@@ -160,7 +337,8 @@ func fixtureBranchRevision(
 	branch string,
 	identity string,
 ) (string, error) {
-	branches, err := client.Branches(ctx, ref, identity)
+	branches, err := client.Branches(ctx, ref, Credential{Partition: ref.LoreRepositoryID, Identity: identity,
+		Scope: ScopeRead})
 	if err != nil {
 		return "", fmt.Errorf("list fixture branches: %w", err)
 	}
@@ -174,14 +352,30 @@ func fixtureBranchRevision(
 
 func advanceFixtureTarget(t *testing.T, ctx context.Context, cliPath, worktree, identity string) {
 	t.Helper()
-	args := []string{"--repository", worktree, "--identity", identity, "branch", "switch", "conflict-target", "--reset"}
-	runFixtureCLI(t, ctx, cliPath, args...)
-	if err := os.WriteFile(filepath.Join(worktree, "restart-target.txt"), []byte("target changed\n"), 0o644); err != nil {
-		t.Fatalf("write target fixture change: %v", err)
+	advanceFixtureBranch(t, ctx, cliPath, worktree, identity, "conflict-target", "restart-target.txt",
+		"target changed", "advance target")
+}
+
+func advanceFixtureBranch(
+	t *testing.T,
+	ctx context.Context,
+	cliPath string,
+	worktree string,
+	identity string,
+	branch string,
+	file string,
+	value string,
+	message string,
+) {
+	t.Helper()
+	runFixtureCLI(t, ctx, cliPath, "--repository", worktree, "--identity", identity,
+		"branch", "switch", branch, "--reset")
+	if err := os.WriteFile(filepath.Join(worktree, file), []byte(value+"\n"), 0o644); err != nil {
+		t.Fatalf("write %s fixture change: %v", branch, err)
 	}
 	runFixtureCLI(t, ctx, cliPath, "--repository", worktree, "stage", "--scan", ".")
-	runFixtureCLI(t, ctx, cliPath, "--repository", worktree, "--identity", identity, "commit", "advance target")
-	runFixtureCLI(t, ctx, cliPath, "--repository", worktree, "--identity", identity, "push", "conflict-target")
+	runFixtureCLI(t, ctx, cliPath, "--repository", worktree, "--identity", identity, "commit", message)
+	runFixtureCLI(t, ctx, cliPath, "--repository", worktree, "--identity", identity, "push", branch)
 }
 
 func runFixtureCLI(t *testing.T, ctx context.Context, cliPath string, args ...string) {
