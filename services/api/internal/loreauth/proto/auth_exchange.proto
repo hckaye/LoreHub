@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package epic_urc;
+
+option go_package = "github.com/lorehub/lorehub/services/api/internal/loreauth/epic_urc";
+
+import "auth_session.proto";
+import "auth_token.proto";
+import "auth_user.proto";
+
+message VerifyCompliance { string product_name = 1; }
+
+message VerifyRequirement {
+  reserved 1;
+  oneof requirement {
+    VerifyCompliance compliance = 2;
+  }
+}
+
+message VerifyUserRequest {
+  TargetUser target_user = 1;
+  repeated VerifyRequirement requirements = 2;
+}
+
+message VerifyUserResponse { UserInfo user_info = 1; }
+
+message ExchangeExternalTokenForUserTokenRequest {
+  string external_token = 1;
+  string token_type = 2;
+}
+
+message ExchangeExternalTokenForUserTokenResponse {
+  optional UserToken user_token = 1;
+}
+
+message ExchangeAPIKeyForUserTokenRequest { string api_key = 1; }
+
+message ExchangeAPIKeyForUserTokenResponse { optional UserToken user_token = 1; }

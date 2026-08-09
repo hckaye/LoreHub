@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,6 +18,7 @@ import (
 type SDKClient struct {
 	cacheDirectory string
 	locks          sync.Map
+	credentialLock sync.Mutex
 }
 
 func NewSDKClient(cacheDirectory string) (*SDKClient, error) {
@@ -37,8 +39,10 @@ func (client *SDKClient) RepositoryInfo(
 	if err := ctx.Err(); err != nil {
 		return Repository{}, err
 	}
-	if !strings.HasPrefix(repositoryURL, "lore://") {
-		return Repository{}, errors.New("repository URL must use the lore scheme")
+	parsedURL, err := url.Parse(repositoryURL)
+	if err != nil || parsedURL.Host == "" || parsedURL.User != nil || parsedURL.RawQuery != "" ||
+		parsedURL.Fragment != "" || (parsedURL.Scheme != "lore" && parsedURL.Scheme != "lores") {
+		return Repository{}, errors.New("repository URL must use the lore or lores scheme")
 	}
 	globals, cleanupGlobals := types.NewLoreGlobalArgs(types.LoreGlobalArgs{
 		Identity: identity,
@@ -73,6 +77,19 @@ func (client *SDKClient) RepositoryInfo(
 		}, nil
 	}
 	return Repository{}, errors.New("Lore repository response contained no repository data")
+}
+
+func (client *SDKClient) RepositoryInfoWithCredential(
+	ctx context.Context,
+	repositoryURL string,
+	credential Credential,
+) (Repository, error) {
+	client.credentialLock.Lock()
+	defer client.credentialLock.Unlock()
+	if err := client.authenticate(ctx, repositoryURL, credential); err != nil {
+		return Repository{}, err
+	}
+	return client.RepositoryInfo(ctx, repositoryURL, credential.Identity)
 }
 
 func (client *SDKClient) Branches(
@@ -130,6 +147,73 @@ func (client *SDKClient) Branches(
 		})
 	}
 	return branches, nil
+}
+
+func (client *SDKClient) BranchesWithCredential(
+	ctx context.Context,
+	repository RepositoryRef,
+	credential Credential,
+) ([]Branch, error) {
+	client.credentialLock.Lock()
+	defer client.credentialLock.Unlock()
+	if err := client.authenticate(ctx, repository.URL, credential); err != nil {
+		return nil, err
+	}
+	return client.Branches(ctx, repository, credential.Identity)
+}
+
+func (client *SDKClient) CloneWithCredential(
+	ctx context.Context,
+	repositoryURL string,
+	revision string,
+	destination string,
+	credential Credential,
+) error {
+	client.credentialLock.Lock()
+	defer client.credentialLock.Unlock()
+	if err := client.authenticate(ctx, repositoryURL, credential); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(destination, 0o750); err != nil {
+		return fmt.Errorf("create Lore clone directory: %w", err)
+	}
+	globals, cleanupGlobals := types.NewLoreGlobalArgs(types.LoreGlobalArgs{
+		RepositoryPath: destination,
+		Identity:       credential.Identity,
+		Remote:         true,
+	})
+	defer cleanupGlobals()
+	args, cleanupArgs := types.NewLoreRepositoryCloneArgs(types.LoreRepositoryCloneArgs{
+		RepositoryUrl: repositoryURL,
+		Revision:      revision,
+	})
+	defer cleanupArgs()
+	if _, err := loresdk.RepositoryClone(&globals, &args).Wait(); err != nil {
+		return errors.New("Lore clone was rejected")
+	}
+	return nil
+}
+
+func (client *SDKClient) authenticate(ctx context.Context, repositoryURL string, credential Credential) error {
+	if credential.Token == "" || credential.AuthURL == "" || credential.Identity == "" {
+		return errors.New("a scoped Lore credential is required")
+	}
+	globals, cleanupGlobals := types.NewLoreGlobalArgs(types.LoreGlobalArgs{Identity: credential.Identity})
+	defer cleanupGlobals()
+	args, cleanupArgs := types.NewLoreAuthLoginWithTokenArgs(types.LoreAuthLoginWithTokenArgs{
+		RemoteUrl: repositoryURL,
+		Token:     credential.Token,
+		TokenType: "lore",
+		// An explicit auth URL makes Lore compare the token audience with the
+		// auth service host. Let the remote environment advertise its own
+		// auth URL so the audience remains the configured Lore audience.
+		AuthUrl: "",
+	})
+	defer cleanupArgs()
+	if _, err := loresdk.AuthLoginWithToken(&globals, &args).Wait(); err != nil {
+		return errors.New("scoped Lore credential could not be accepted")
+	}
+	return nil
 }
 
 func (client *SDKClient) ensureBareClone(repositoryURL string, cachePath string, identity string) error {

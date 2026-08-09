@@ -70,6 +70,17 @@ func TestLoadInteractiveAuthenticationUsesSecureProductionCookie(t *testing.T) {
 	t.Setenv("LOREHUB_AUTH_SECRET", strings.Repeat("a", 32))
 	t.Setenv("LOREHUB_SESSION_TTL", "24h")
 	t.Setenv("LOREHUB_LOGIN_TRANSACTION_TTL", "10m")
+	t.Setenv("LOREHUB_LORE_AUTH_ISSUER", "https://lore-auth.example")
+	t.Setenv("LOREHUB_LORE_AUTH_AUDIENCE", "lore")
+	t.Setenv("LOREHUB_LORE_AUTH_URL", "ucs-auth://lore-auth.example:8443")
+	t.Setenv("LOREHUB_LORE_AUTH_LOGIN_URL", "https://app.example/auth/lore/confirm")
+	t.Setenv("LOREHUB_AUTH_SIGNING_KEY_PATH", "/keys/current.pem")
+	t.Setenv("LOREHUB_AUTH_SIGNING_KEY_KID", "current")
+	t.Setenv("LOREHUB_LORE_AUTH_TLS_CERT", "/tls/server.crt")
+	t.Setenv("LOREHUB_LORE_AUTH_TLS_KEY", "/tls/server.key")
+	t.Setenv("LOREHUB_POLICY_TLS_CERT", "/tls/server.crt")
+	t.Setenv("LOREHUB_POLICY_TLS_KEY", "/tls/server.key")
+	t.Setenv("LOREHUB_POLICY_TLS_CLIENT_CA", "/tls/ca.crt")
 
 	settings, err := Load()
 	if err != nil {
@@ -92,6 +103,31 @@ func TestLoadRejectsInvalidLoginBindingCookieName(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsLegacyLoreIdentityOutsideExplicitProfile(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("LOREHUB_LORE_IDENTITY", "shared-local-identity")
+
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "explicit local-insecure profile") {
+		t.Fatalf("expected legacy identity rejection, got %v", err)
+	}
+}
+
+func TestLoadAllowsExplicitLocalInsecureLegacyProfile(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("LOREHUB_ENV", "local-insecure")
+	t.Setenv("LOREHUB_LORE_IDENTITY", "isolated-local-identity")
+	t.Setenv("LOREHUB_ALLOW_LEGACY_LORE_IDENTITY", "true")
+
+	settings, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !settings.AllowLegacyLoreIdentity || settings.LoreIdentity != "isolated-local-identity" {
+		t.Fatalf("unexpected local legacy settings: %#v", settings)
+	}
+}
+
 func setRequiredEnvironment(t *testing.T) {
 	t.Helper()
 	t.Setenv("DATABASE_URL", "postgres://localhost/lorehub")
@@ -109,4 +145,6 @@ func setRequiredEnvironment(t *testing.T) {
 	t.Setenv("LOREHUB_LOGIN_BINDING_COOKIE_NAME", "")
 	t.Setenv("LOREHUB_SESSION_COOKIE_PATH", "")
 	t.Setenv("LOREHUB_SESSION_COOKIE_DOMAIN", "")
+	t.Setenv("LOREHUB_LORE_IDENTITY", "")
+	t.Setenv("LOREHUB_ALLOW_LEGACY_LORE_IDENTITY", "")
 }

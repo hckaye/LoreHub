@@ -26,6 +26,7 @@ export function RegisterRepositoryForm({ dictionary, locale, session }: Register
   const [description, setDescription] = useState("");
   const [visibility, setVisibility] = useState<Repository["visibility"]>("public");
   const [loreUrl, setLoreUrl] = useState("");
+  const [loreUserToken, setLoreUserToken] = useState("");
   const [created, setCreated] = useState<Repository | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [requiresLogin, setRequiresLogin] = useState(false);
@@ -35,6 +36,11 @@ export function RegisterRepositoryForm({ dictionary, locale, session }: Register
     event.preventDefault();
     if (!organization.trim() || !slug.trim() || !loreUrl.trim()) {
       setFailure(dictionary.forms.organizationRequired);
+      setRequiresLogin(false);
+      return;
+    }
+    if (!loreUserToken.trim()) {
+      setFailure(dictionary.forms.loreUserTokenRequired);
       setRequiresLogin(false);
       return;
     }
@@ -56,9 +62,11 @@ export function RegisterRepositoryForm({ dictionary, locale, session }: Register
         loreUrl: loreUrl.trim(),
       },
       session.csrfToken,
+      { "X-Lore-User-Token": loreUserToken.trim() },
     );
     if (result.ok) {
       setCreated(result.data);
+      setLoreUserToken("");
       setPending(false);
       return;
     }
@@ -128,6 +136,18 @@ export function RegisterRepositoryForm({ dictionary, locale, session }: Register
             placeholder={dictionary.forms.loreUrlPlaceholder}
             required
             value={loreUrl}
+          />
+        </div>
+        <div className={styles.field}>
+          <label htmlFor="repository-lore-user-token">{dictionary.forms.loreUserToken}</label>
+          <p>{dictionary.forms.loreUserTokenDescription}</p>
+          <input
+            autoComplete="off"
+            id="repository-lore-user-token"
+            onChange={(event) => setLoreUserToken(event.target.value)}
+            required
+            type="password"
+            value={loreUserToken}
           />
         </div>
         <div className={styles.actions}>

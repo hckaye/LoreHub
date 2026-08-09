@@ -1,0 +1,53 @@
+import { ServerOff } from "lucide-react";
+
+import { AuthRequired } from "@/components/auth/auth-required";
+import { OrganizationTeamSettings } from "@/components/organizations/organization-team-settings";
+import { RepositorySection } from "@/components/repositories/repository-section";
+import { EmptyState } from "@/components/ui/empty-state";
+import { getDictionary } from "@/i18n";
+import { isLocale } from "@/i18n/config";
+import { getAuthSession } from "@/lib/auth-api";
+
+type OrganizationSettingsPageProps = {
+  params: Promise<{ locale: string; organization: string }>;
+};
+
+export const dynamic = "force-dynamic";
+
+export default async function OrganizationSettingsPage({ params }: OrganizationSettingsPageProps) {
+  const { locale: value, organization } = await params;
+  const locale = isLocale(value) ? value : "en";
+  const [dictionary, session] = await Promise.all([getDictionary(locale), getAuthSession()]);
+  if (session.status !== "authenticated") {
+    return (
+      <RepositorySection
+        description={dictionary.organizationSettingsPage.description}
+        title={dictionary.organizationSettingsPage.title}
+      >
+        <AuthRequired
+          dictionary={dictionary}
+          returnTo={`/${locale}/organizations/${encodeURIComponent(organization)}/settings`}
+          session={session}
+        />
+      </RepositorySection>
+    );
+  }
+  if (session.user === null) {
+    return (
+      <EmptyState
+        body={dictionary.auth.requiredBody}
+        icon={<ServerOff aria-hidden="true" />}
+        title={dictionary.auth.requiredTitle}
+        tone="warning"
+      />
+    );
+  }
+  return (
+    <RepositorySection
+      description={dictionary.organizationSettingsPage.description}
+      title={dictionary.organizationSettingsPage.title}
+    >
+      <OrganizationTeamSettings dictionary={dictionary} organization={organization} session={session} />
+    </RepositorySection>
+  );
+}

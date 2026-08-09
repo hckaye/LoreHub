@@ -280,6 +280,7 @@ try {
       KEYCLOAK_ADMIN_PASSWORD: "check",
       LOREHUB_OIDC_CLIENT_SECRET: "check",
       LOREHUB_AUTH_SECRET: "check-check-check-check-check-check-check-check",
+      LOREHUB_RUNNER_USER_ID: "00000000-0000-0000-0000-000000000001",
     },
   });
 } catch (error) {

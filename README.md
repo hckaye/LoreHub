@@ -14,6 +14,8 @@ LoreHubは、Loreリポジトリ向けの共同開発基盤です。LoreをVCS�
 - Lore公式Go SDKを使ったリポジトリ確認とbranch一覧取得
 - PostgreSQLのmigration、組織、権限、リポジトリ登録、Issue、レビュー、CI、監査用schema
 - OIDCトークンを検証するGo API
+- Lore 0.8.6互換のUCS認証、resource限定JWT、JWKS、TLS、protected branch hook
+- 組織チーム、直接collaborator、リポジトリ方針、明示的なobliterate権限、Lore Links宣言
 - 公開リポジトリ、branch、Issueを表示する英語／日本語UI
 - Loreのbranch latestを確認してCIを登録するworker
 - `.github/workflows`を`nektos/act`で実行するGitHub Actions互換runner
@@ -85,8 +87,15 @@ LOREHUB_AUTH_MODE=disabled go run ./services/api/cmd/lorehub serve
 Keycloakの構成、ソーシャルプロバイダー、SMTP、本番のTLSとリバースプロキシ、バックアップについては
 [Keycloak運用ガイド](docs/operations/keycloak.md)を参照してください。
 
-開発用Lore Serverはデータと自己署名証明書をDocker volumeへ保存します。認証なしの単一ノード構成なので、公開環境で
-使ってはいけません。本番ではLore公式のストレージ、JWT検証、TLS、バックアップ構成を使用してください。
+開発用Lore ServerはデータとローカルCAで署名したTLS証明書をDocker volumeへ保存します。ComposeでもJWT検証と
+UCS gRPC認証を有効にしています。ローカルCAのtrust手順、本番の鍵交代、Lore hook、partition境界は
+[認可境界の運用ガイド](docs/operations/control-plane-authorization.md)を参照してください。
+
+Lore 0.8.6の`environment.endpoint.auth_url`はUCS認証とRebacが共用します。公式クライアントはUCS側では
+`ucs-auth://`を受け取れますが、同じ値を使うRebac側は`https://`以外をTLS接続として扱いません。そのため
+ComposeのLore設定だけはTLS endpointの`https://api:8443`を使います。この公式クライアントの制約を解消せずに
+`ucs-auth://`へ変更すると、認証の開始はできてもstock Loreのrepository作成が失敗します。詳細と本番での判断は
+運用ガイドの「0.8.6の環境URL互換性」を参照してください。
 
 ### CI runner
 
@@ -138,7 +147,8 @@ transactionは最大15分）。
 `GET /auth/login?prompt=create`を使います。互換性のため`kc_action=register`も受け付けますが、値は厳密に検証し、
 認証プロバイダーへは`prompt=create`だけを渡します。その他の`prompt`や`kc_action`は400を返します。
 
-Lore側の読み取りidentityは`LOREHUB_LORE_IDENTITY`で指定します。
+Loreの読み取り・書き込み・mergeとrunnerのcheckoutは、現在の利用者またはrunner専用利用者の短命resource限定
+tokenを使います。`LOREHUB_LORE_IDENTITY`は隔離したlocal互換モードでのみ使え、本番では設定できません。
 
 Keycloakを使う場合、ローカルのissuerは
 `http://keycloak.localhost:8280/realms/lorehub`、audienceは`lorehub-api`です。本番では公開HTTPSのissuerを設定します。
@@ -147,20 +157,20 @@ APIをDockerコンテナで起動する場合のdiscovery到達性について�
 
 ## APIの主な入口
 
-| Method | Path                                           | 認証 | 目的                   |
-| ------ | ---------------------------------------------- | ---- | ---------------------- |
-| `GET`  | `/health/live`                                 | 不要 | プロセスの確認         |
-| `GET`  | `/health/ready`                                | 不要 | PostgreSQL接続の確認   |
-| `GET`  | `/auth/login`                                  | 不要 | OIDCログイン／登録開始 |
-| `GET`  | `/auth/callback`                               | 不要 | OIDCログイン完了       |
-| `POST` | `/auth/logout`                                 | CSRF | セッション終了         |
-| `GET`  | `/api/v1/auth/session`                         | 不要 | ログイン状態の確認     |
-| `GET`  | `/api/v1/explore/repositories`                 | 不要 | 公開リポジトリ一覧     |
-| `POST` | `/api/v1/organizations`                        | OIDC | 組織作成               |
-| `POST` | `/api/v1/organizations/{org}/repositories`     | OIDC | Loreリポジトリ登録     |
-| `GET`  | `/api/v1/repositories/{owner}/{repo}/branches` | 不要 | Lore branch一覧        |
-| `GET`  | `/api/v1/repositories/{owner}/{repo}/issues`   | 不要 | 公開Issue一覧          |
-| `POST` | `/api/v1/repositories/{owner}/{repo}/issues`   | OIDC | Issue作成              |
+| Method | Path                                           | 認証          | 目的                   |
+| ------ | ---------------------------------------------- | ------------- | ---------------------- |
+| `GET`  | `/health/live`                                 | 不要          | プロセスの確認         |
+| `GET`  | `/health/ready`                                | 不要          | PostgreSQL接続の確認   |
+| `GET`  | `/auth/login`                                  | 不要          | OIDCログイン／登録開始 |
+| `GET`  | `/auth/callback`                               | 不要          | OIDCログイン完了       |
+| `POST` | `/auth/logout`                                 | CSRF          | セッション終了         |
+| `GET`  | `/api/v1/auth/session`                         | 不要          | ログイン状態の確認     |
+| `GET`  | `/api/v1/explore/repositories`                 | 不要          | 公開リポジトリ一覧     |
+| `POST` | `/api/v1/organizations`                        | OIDC          | 組織作成               |
+| `POST` | `/api/v1/organizations/{org}/repositories`     | OIDC          | Loreリポジトリ登録     |
+| `GET`  | `/api/v1/repositories/{owner}/{repo}/branches` | OIDC／session | Lore branch一覧        |
+| `GET`  | `/api/v1/repositories/{owner}/{repo}/issues`   | 不要          | 公開Issue一覧          |
+| `POST` | `/api/v1/repositories/{owner}/{repo}/issues`   | OIDC          | Issue作成              |
 
 更新APIは、既存クライアントからは`Authorization: Bearer <token>`で利用できます。ブラウザセッションで利用する場合は、
 `GET /api/v1/auth/session`が返すCSRF tokenを`X-CSRF-Token`ヘッダーに付けます。APIはOIDCのissuer、audience、署名、

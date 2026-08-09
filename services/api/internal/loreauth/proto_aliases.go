@@ -1,0 +1,43 @@
+package loreauth
+
+import epic_urc "github.com/lorehub/lorehub/services/api/internal/loreauth/epic_urc"
+
+type UrcAuthApiServer = epic_urc.UrcAuthApiServer
+type UnimplementedUrcAuthApiServer = epic_urc.UnimplementedUrcAuthApiServer
+
+type HealthCheckRequest = epic_urc.HealthCheckRequest
+type HealthCheckResponse = epic_urc.HealthCheckResponse
+type StartAuthSessionRequest = epic_urc.StartAuthSessionRequest
+type StartAuthSessionResponse = epic_urc.StartAuthSessionResponse
+type GetAuthSessionRequest = epic_urc.GetAuthSessionRequest
+type GetAuthSessionResponse = epic_urc.GetAuthSessionResponse
+type RefreshAuthSessionRequest = epic_urc.RefreshAuthSessionRequest
+type RefreshAuthSessionResponse = epic_urc.RefreshAuthSessionResponse
+type VerifyUserRequest = epic_urc.VerifyUserRequest
+type VerifyUserResponse = epic_urc.VerifyUserResponse
+type ExchangeExternalTokenForUserTokenRequest = epic_urc.ExchangeExternalTokenForUserTokenRequest
+type ExchangeExternalTokenForUserTokenResponse = epic_urc.ExchangeExternalTokenForUserTokenResponse
+type ExchangeAPIKeyForUserTokenRequest = epic_urc.ExchangeAPIKeyForUserTokenRequest
+type ExchangeAPIKeyForUserTokenResponse = epic_urc.ExchangeAPIKeyForUserTokenResponse
+type ExchangeUserTokenForMultiresourceTokenRequest = epic_urc.ExchangeUserTokenForMultiresourceTokenRequest
+type ExchangeUserTokenForMultiresourceTokenResponse = epic_urc.ExchangeUserTokenForMultiresourceTokenResponse
+type CheckUserPermissionRequest = epic_urc.CheckUserPermissionRequest
+type CheckUserPermissionResponse = epic_urc.CheckUserPermissionResponse
+type LookupUserPermissionsRequest = epic_urc.LookupUserPermissionsRequest
+type LookupUserPermissionsResponse = epic_urc.LookupUserPermissionsResponse
+type GetUserInfoRequest = epic_urc.GetUserInfoRequest
+type GetUserInfoResponse = epic_urc.GetUserInfoResponse
+type GetUserIdRequest = epic_urc.GetUserIdRequest
+type GetUserIdResponse = epic_urc.GetUserIdResponse
+type GetProviderUserIdRequest = epic_urc.GetProviderUserIdRequest
+type GetProviderUserIdResponse = epic_urc.GetProviderUserIdResponse
+type UserToken = epic_urc.UserToken
+type ResourcePermission = epic_urc.ResourcePermission
+type TargetUser = epic_urc.TargetUser
+type UserInfo = epic_urc.UserInfo
+type RebacApiServer = epic_urc.RebacApiServer
+type UnimplementedRebacApiServer = epic_urc.UnimplementedRebacApiServer
+type CreateResourceRequest = epic_urc.CreateResourceRequest
+type CreateResourceResponse = epic_urc.CreateResourceResponse
+type DeleteResourceRequest = epic_urc.DeleteResourceRequest
+type DeleteResourceResponse = epic_urc.DeleteResourceResponse

@@ -94,6 +94,112 @@ type RegisterRepositoryInput struct {
 	DefaultBranch    string
 }
 
+type Team struct {
+	ID             string    `json:"id"`
+	OrganizationID string    `json:"organizationId"`
+	Organization   string    `json:"organization"`
+	Slug           string    `json:"slug"`
+	DisplayName    string    `json:"displayName"`
+	Description    string    `json:"description"`
+	CreatedAt      time.Time `json:"createdAt"`
+	UpdatedAt      time.Time `json:"updatedAt"`
+}
+
+type TeamMember struct {
+	TeamID      string    `json:"teamId"`
+	UserID      string    `json:"userId"`
+	Username    string    `json:"username"`
+	DisplayName string    `json:"displayName"`
+	Role        string    `json:"role"`
+	Active      bool      `json:"active"`
+	CreatedAt   time.Time `json:"createdAt"`
+}
+
+type TeamRepositoryRole struct {
+	TeamID       string    `json:"teamId"`
+	RepositoryID string    `json:"repositoryId"`
+	Owner        string    `json:"owner"`
+	Repository   string    `json:"repository"`
+	Role         string    `json:"role"`
+	CreatedAt    time.Time `json:"createdAt"`
+	UpdatedAt    time.Time `json:"updatedAt"`
+}
+
+type Collaborator struct {
+	UserID      string `json:"userId"`
+	Username    string `json:"username"`
+	DisplayName string `json:"displayName"`
+	Role        string `json:"role"`
+	Active      bool   `json:"active"`
+	Source      string `json:"source"`
+}
+
+type OrganizationMember struct {
+	UserID      string    `json:"userId"`
+	Username    string    `json:"username"`
+	DisplayName string    `json:"displayName"`
+	Role        string    `json:"role"`
+	Active      bool      `json:"active"`
+	CreatedAt   time.Time `json:"createdAt"`
+}
+
+type RepositoryLink struct {
+	ID                 string    `json:"id"`
+	SourceRepositoryID string    `json:"sourceRepositoryId"`
+	SourceRepository   string    `json:"sourceRepository"`
+	TargetRepositoryID string    `json:"targetRepositoryId"`
+	TargetRepository   string    `json:"targetRepository"`
+	Kind               string    `json:"kind"`
+	CreatedAt          time.Time `json:"createdAt"`
+}
+
+type SetTeamInput struct {
+	Slug        string
+	DisplayName string
+	Description string
+}
+
+type SetOrganizationMemberInput struct {
+	Username string
+	Role     string
+	Active   bool
+}
+
+type SetTeamMemberInput struct {
+	Username string
+	Role     string
+	Active   bool
+}
+
+type SetTeamRepositoryRoleInput struct {
+	Role string
+}
+
+type SetCollaboratorInput struct {
+	Username string
+	Role     string
+	Active   bool
+}
+
+type SetRepositoryPolicyInput struct {
+	AllowCrossRepositoryLinks bool `json:"allowCrossRepositoryLinks"`
+	ObliterateEnabled         bool `json:"obliterateEnabled"`
+}
+
+type RepositoryPolicy struct {
+	AllowCrossRepositoryLinks bool `json:"allowCrossRepositoryLinks"`
+	ObliterateEnabled         bool `json:"obliterateEnabled"`
+}
+
+type MergeAuthorizationInput struct {
+	RepositoryID string
+	BranchID     string
+	BranchName   string
+	ExpectedBase string
+	ExpectedHead string
+	Lifetime     time.Duration
+}
+
 type CreateIssueInput struct {
 	Title string
 	Body  string

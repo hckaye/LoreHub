@@ -13,8 +13,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lorehub/lorehub/services/api/internal/auth"
+	"github.com/lorehub/lorehub/services/api/internal/authz"
 	"github.com/lorehub/lorehub/services/api/internal/collab"
 	loreclient "github.com/lorehub/lorehub/services/api/internal/lore"
+	"github.com/lorehub/lorehub/services/api/internal/loreauth"
 	"github.com/lorehub/lorehub/services/api/internal/platform"
 )
 
@@ -65,27 +67,132 @@ type Store interface {
 	ListPublicCIRuns(ctx context.Context, owner string, slug string) ([]platform.CIRun, error)
 }
 
+type RepositoryReader interface {
+	RepositoryForRead(
+		ctx context.Context,
+		actor *platform.User,
+		owner string,
+		slug string,
+	) (platform.Repository, error)
+}
+
+type AuthorizedContentReader interface {
+	ListIssuesForRead(
+		ctx context.Context,
+		actor *platform.User,
+		repository platform.Repository,
+		state string,
+	) ([]platform.Issue, error)
+	ListMergeRequestsForRead(
+		ctx context.Context,
+		actor *platform.User,
+		repository platform.Repository,
+		state string,
+	) ([]platform.MergeRequest, error)
+	ListCIRunsForRead(
+		ctx context.Context,
+		actor *platform.User,
+		repository platform.Repository,
+	) ([]platform.CIRun, error)
+}
+
+type BranchStateObserver interface {
+	ObserveBranchState(
+		ctx context.Context,
+		repositoryID string,
+		branchID string,
+		branchName string,
+		latestRevision string,
+	) error
+}
+
 type HealthChecker interface {
 	Ping(ctx context.Context) error
 }
 
+type AuthorizationStore interface {
+	ListOrganizationMembers(
+		ctx context.Context, actor platform.User, organizationSlug string,
+	) ([]platform.OrganizationMember, error)
+	SetOrganizationMember(
+		ctx context.Context, actor platform.User, organizationSlug string,
+		input platform.SetOrganizationMemberInput,
+	) (platform.OrganizationMember, error)
+	ListTeams(ctx context.Context, actor platform.User, organizationSlug string) ([]platform.Team, error)
+	CreateTeam(
+		ctx context.Context, actor platform.User, organizationSlug string, input platform.SetTeamInput,
+	) (platform.Team, error)
+	UpdateTeam(
+		ctx context.Context, actor platform.User, organizationSlug string, teamSlug string, input platform.SetTeamInput,
+	) (platform.Team, error)
+	DeleteTeam(ctx context.Context, actor platform.User, organizationSlug string, teamSlug string) error
+	ListTeamMembers(
+		ctx context.Context, actor platform.User, organizationSlug string, teamSlug string,
+	) ([]platform.TeamMember, error)
+	SetTeamMember(
+		ctx context.Context, actor platform.User, organizationSlug string, teamSlug string,
+		input platform.SetTeamMemberInput,
+	) (platform.TeamMember, error)
+	SetTeamRepositoryRole(
+		ctx context.Context, actor platform.User, organizationSlug string, teamSlug string,
+		owner string, repositorySlug string, input platform.SetTeamRepositoryRoleInput,
+	) (platform.TeamRepositoryRole, error)
+	DeleteTeamRepositoryRole(
+		ctx context.Context, actor platform.User, organizationSlug string, teamSlug string,
+		owner string, repositorySlug string,
+	) error
+	ListRepositoryCollaborators(
+		ctx context.Context, actor platform.User, owner string, repositorySlug string,
+	) ([]platform.Collaborator, error)
+	SetRepositoryCollaborator(
+		ctx context.Context, actor platform.User, owner string, repositorySlug string,
+		input platform.SetCollaboratorInput,
+	) (platform.Collaborator, error)
+	SetRepositoryPolicy(
+		ctx context.Context, actor platform.User, owner string, repositorySlug string,
+		input platform.SetRepositoryPolicyInput,
+	) error
+	GetRepositoryPolicy(
+		ctx context.Context, actor platform.User, owner string, repositorySlug string,
+	) (platform.RepositoryPolicy, error)
+	SetObliterateGrant(
+		ctx context.Context, actor platform.User, owner string, repositorySlug string,
+		username string, active bool,
+	) error
+	DeclareRepositoryLink(
+		ctx context.Context, actor platform.User, sourceOwner string, sourceSlug string,
+		targetOwner string, targetSlug string,
+	) (platform.RepositoryLink, error)
+	ListRepositoryLinks(
+		ctx context.Context, actor platform.User, owner string, repositorySlug string,
+	) ([]platform.RepositoryLink, error)
+	IssueMergeAuthorization(
+		ctx context.Context, actor platform.User, input platform.MergeAuthorizationInput,
+	) (platform.MergeAuthorization, error)
+	CheckPolicy(ctx context.Context, check authz.PolicyCheck) (authz.PolicyDecision, error)
+}
+
 type API struct {
-	store          Store
-	lore           loreclient.Client
-	authenticator  auth.Authenticator
-	health         HealthChecker
-	loreIdentity   string
-	logger         *slog.Logger
-	collabStore    collab.Store
-	loginProvider  auth.LoginProvider
-	loginStore     auth.LoginTransactionStore
-	sessionStore   auth.SessionStore
-	cleanupStore   auth.CleanupStore
-	secrets        *auth.SecretCodec
-	publicOrigin   string
-	cookie         sessionCookieConfig
-	sessionTTL     time.Duration
-	transactionTTL time.Duration
+	store                   Store
+	lore                    loreclient.Client
+	authenticator           auth.Authenticator
+	health                  HealthChecker
+	loreIdentity            string
+	allowLegacyLoreIdentity bool
+	loreCredentialClient    loreclient.CredentialClient
+	logger                  *slog.Logger
+	collabStore             collab.Store
+	authorization           AuthorizationStore
+	loreAuth                *loreauth.Service
+	loginProvider           auth.LoginProvider
+	loginStore              auth.LoginTransactionStore
+	sessionStore            auth.SessionStore
+	cleanupStore            auth.CleanupStore
+	secrets                 *auth.SecretCodec
+	publicOrigin            string
+	cookie                  sessionCookieConfig
+	sessionTTL              time.Duration
+	transactionTTL          time.Duration
 }
 
 func New(
@@ -110,6 +217,9 @@ func New(
 			option(api)
 		}
 	}
+	if credentialClient, ok := lore.(loreclient.CredentialClient); ok {
+		api.loreCredentialClient = credentialClient
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health/live", api.live)
 	mux.HandleFunc("GET /health/ready", api.ready)
@@ -117,6 +227,9 @@ func New(
 	mux.HandleFunc("GET /auth/callback", api.callback)
 	mux.HandleFunc("POST /auth/logout", api.logout)
 	mux.HandleFunc("GET /api/v1/auth/session", api.session)
+	mux.HandleFunc("GET /.well-known/jwks.json", api.jwks)
+	mux.HandleFunc("GET /auth/lore/confirm", api.loreAuthConfirm)
+	mux.HandleFunc("POST /auth/lore/confirm", api.loreAuthConfirm)
 	mux.HandleFunc("GET /api/v1/explore/repositories", api.exploreRepositories)
 	mux.HandleFunc("POST /api/v1/organizations", api.createOrganization)
 	mux.HandleFunc("POST /api/v1/organizations/{organization}/repositories", api.registerRepository)
@@ -130,6 +243,9 @@ func New(
 	if api.collabStore != nil {
 		collab.Register(mux, api.collabStore, api, logger)
 	}
+	if api.authorization != nil {
+		registerAuthorizationRoutes(mux, api)
+	}
 	return api.recoverPanic(api.securityHeaders(api.requestLog(mux)))
 }
 
@@ -138,6 +254,24 @@ func New(
 func WithCollaboration(store collab.Store) Option {
 	return func(api *API) {
 		api.collabStore = store
+	}
+}
+
+func WithAuthorization(store AuthorizationStore) Option {
+	return func(api *API) {
+		api.authorization = store
+	}
+}
+
+func WithLoreAuth(service *loreauth.Service) Option {
+	return func(api *API) {
+		api.loreAuth = service
+	}
+}
+
+func WithLegacyLoreIdentityAllowed(allowed bool) Option {
+	return func(api *API) {
+		api.allowLegacyLoreIdentity = allowed
 	}
 }
 
@@ -203,34 +337,30 @@ func (api *API) exploreRepositories(writer http.ResponseWriter, request *http.Re
 }
 
 func (api *API) publicRepository(writer http.ResponseWriter, request *http.Request) {
-	repository, err := api.store.PublicRepository(
-		request.Context(),
-		request.PathValue("owner"),
-		request.PathValue("repository"),
-	)
-	if err != nil {
-		api.platformError(writer, request, "get repository", err)
+	repository, _, ok := api.repositoryForRead(writer, request)
+	if !ok {
 		return
 	}
 	writeJSON(writer, http.StatusOK, repository)
 }
 
 func (api *API) repositoryBranches(writer http.ResponseWriter, request *http.Request) {
-	repository, err := api.store.PublicRepository(
-		request.Context(),
-		request.PathValue("owner"),
-		request.PathValue("repository"),
-	)
-	if err != nil {
-		api.platformError(writer, request, "get repository branches", err)
+	repository, actor, ok := api.repositoryForRead(writer, request)
+	if !ok {
 		return
 	}
-	branches, err := api.lore.Branches(request.Context(), loreclient.RepositoryRef{
-		CacheKey: repository.ID,
-		URL:      repository.LoreURL,
-	}, api.loreIdentity)
+	if actor == nil {
+		writeProblem(writer, http.StatusUnauthorized, "authentication_required",
+			"Authentication is required to read Lore branch data")
+		return
+	}
+	branches, err := api.listLoreBranches(request.Context(), *actor, repository)
 	if err != nil {
-		api.internalError(writer, request, "list Lore branches", err)
+		if errors.Is(err, errScopedLoreCredentialUnavailable) {
+			api.internalError(writer, request, "get scoped Lore credential", err)
+			return
+		}
+		writeProblem(writer, http.StatusBadGateway, "lore_unavailable", "Lore branches could not be read")
 		return
 	}
 	writeJSON(writer, http.StatusOK, map[string]any{"branches": branches})
@@ -290,7 +420,7 @@ func (api *API) registerRepository(writer http.ResponseWriter, request *http.Req
 		writeProblem(writer, http.StatusBadRequest, "invalid_input", "Repository fields are invalid")
 		return
 	}
-	loreRepository, err := api.lore.RepositoryInfo(request.Context(), input.LoreURL, api.loreIdentity)
+	loreRepository, err := api.repositoryInfoForRegistration(request.Context(), request, actor, input.LoreURL)
 	if err != nil {
 		writeProblem(writer, http.StatusBadGateway, "lore_unavailable", "Lore repository could not be verified")
 		return
@@ -323,12 +453,22 @@ func (api *API) registerRepository(writer http.ResponseWriter, request *http.Req
 }
 
 func (api *API) listIssues(writer http.ResponseWriter, request *http.Request) {
-	issues, err := api.store.ListPublicIssues(
-		request.Context(),
-		request.PathValue("owner"),
-		request.PathValue("repository"),
-		request.URL.Query().Get("state"),
-	)
+	repository, actor, ok := api.repositoryForRead(writer, request)
+	if !ok {
+		return
+	}
+	var issues []platform.Issue
+	var err error
+	if reader, supported := api.store.(AuthorizedContentReader); supported {
+		issues, err = reader.ListIssuesForRead(request.Context(), actor, repository, request.URL.Query().Get("state"))
+	} else {
+		issues, err = api.store.ListPublicIssues(
+			request.Context(),
+			request.PathValue("owner"),
+			request.PathValue("repository"),
+			request.URL.Query().Get("state"),
+		)
+	}
 	if err != nil {
 		api.platformError(writer, request, "list issues", err)
 		return
@@ -353,6 +493,19 @@ func (api *API) createIssue(writer http.ResponseWriter, request *http.Request) {
 		writeProblem(writer, http.StatusBadRequest, "invalid_input", "Issue fields are invalid")
 		return
 	}
+	if reader, supported := api.store.(RepositoryReader); supported {
+		if _, err := reader.RepositoryForRead(
+			request.Context(), &actor, request.PathValue("owner"), request.PathValue("repository"),
+		); err != nil {
+			api.platformError(writer, request, "check issue repository visibility", err)
+			return
+		}
+	}
+	if _, err := api.store.RepositoryForWrite(request.Context(), actor, request.PathValue("owner"),
+		request.PathValue("repository")); err != nil {
+		api.platformError(writer, request, "check issue permission", err)
+		return
+	}
 	issue, err := api.store.CreateIssue(
 		request.Context(),
 		actor,
@@ -368,12 +521,24 @@ func (api *API) createIssue(writer http.ResponseWriter, request *http.Request) {
 }
 
 func (api *API) listMergeRequests(writer http.ResponseWriter, request *http.Request) {
-	mergeRequests, err := api.store.ListPublicMergeRequests(
-		request.Context(),
-		request.PathValue("owner"),
-		request.PathValue("repository"),
-		request.URL.Query().Get("state"),
-	)
+	repository, actor, ok := api.repositoryForRead(writer, request)
+	if !ok {
+		return
+	}
+	var mergeRequests []platform.MergeRequest
+	var err error
+	if reader, supported := api.store.(AuthorizedContentReader); supported {
+		mergeRequests, err = reader.ListMergeRequestsForRead(
+			request.Context(), actor, repository, request.URL.Query().Get("state"),
+		)
+	} else {
+		mergeRequests, err = api.store.ListPublicMergeRequests(
+			request.Context(),
+			request.PathValue("owner"),
+			request.PathValue("repository"),
+			request.URL.Query().Get("state"),
+		)
+	}
 	if err != nil {
 		api.platformError(writer, request, "list merge requests", err)
 		return
@@ -401,6 +566,14 @@ func (api *API) createMergeRequest(writer http.ResponseWriter, request *http.Req
 		writeProblem(writer, http.StatusBadRequest, "invalid_input", "Merge request fields are invalid")
 		return
 	}
+	if reader, supported := api.store.(RepositoryReader); supported {
+		if _, err := reader.RepositoryForRead(
+			request.Context(), &actor, request.PathValue("owner"), request.PathValue("repository"),
+		); err != nil {
+			api.platformError(writer, request, "check merge request repository visibility", err)
+			return
+		}
+	}
 	repository, err := api.store.RepositoryForWrite(
 		request.Context(),
 		actor,
@@ -411,10 +584,7 @@ func (api *API) createMergeRequest(writer http.ResponseWriter, request *http.Req
 		api.platformError(writer, request, "check merge request permission", err)
 		return
 	}
-	branches, err := api.lore.Branches(request.Context(), loreclient.RepositoryRef{
-		CacheKey: repository.ID,
-		URL:      repository.LoreURL,
-	}, api.loreIdentity)
+	branches, err := api.listLoreBranches(request.Context(), actor, repository)
 	if err != nil {
 		writeProblem(writer, http.StatusBadGateway, "lore_unavailable", "Lore branches could not be verified")
 		return
@@ -447,11 +617,21 @@ func (api *API) createMergeRequest(writer http.ResponseWriter, request *http.Req
 }
 
 func (api *API) listCIRuns(writer http.ResponseWriter, request *http.Request) {
-	runs, err := api.store.ListPublicCIRuns(
-		request.Context(),
-		request.PathValue("owner"),
-		request.PathValue("repository"),
-	)
+	repository, actor, ok := api.repositoryForRead(writer, request)
+	if !ok {
+		return
+	}
+	var runs []platform.CIRun
+	var err error
+	if reader, supported := api.store.(AuthorizedContentReader); supported {
+		runs, err = reader.ListCIRunsForRead(request.Context(), actor, repository)
+	} else {
+		runs, err = api.store.ListPublicCIRuns(
+			request.Context(),
+			request.PathValue("owner"),
+			request.PathValue("repository"),
+		)
+	}
 	if err != nil {
 		api.platformError(writer, request, "list CI runs", err)
 		return

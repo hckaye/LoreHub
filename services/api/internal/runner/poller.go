@@ -10,25 +10,36 @@ import (
 )
 
 type BranchClient interface {
-	Branches(ctx context.Context, repository loreclient.RepositoryRef, identity string) ([]loreclient.Branch, error)
+	BranchesWithCredential(
+		ctx context.Context,
+		repository loreclient.RepositoryRef,
+		credential loreclient.Credential,
+	) ([]loreclient.Branch, error)
+}
+
+type CredentialIssuer interface {
+	IssueResourceToken(ctx context.Context, userID string, resourceID string, requested []string) (string, error)
+	AuthURL() string
 }
 
 type Poller struct {
-	store    *Store
-	lore     BranchClient
-	identity string
-	period   time.Duration
-	logger   *slog.Logger
+	store  *Store
+	lore   BranchClient
+	issuer CredentialIssuer
+	userID string
+	period time.Duration
+	logger *slog.Logger
 }
 
 func NewPoller(
 	store *Store,
 	lore BranchClient,
-	identity string,
+	issuer CredentialIssuer,
+	userID string,
 	period time.Duration,
 	logger *slog.Logger,
 ) *Poller {
-	return &Poller{store: store, lore: lore, identity: identity, period: period, logger: logger}
+	return &Poller{store: store, lore: lore, issuer: issuer, userID: userID, period: period, logger: logger}
 }
 
 func (poller *Poller) Run(ctx context.Context) error {
@@ -55,10 +66,20 @@ func (poller *Poller) poll(ctx context.Context) error {
 		return err
 	}
 	for _, repository := range repositories {
-		branches, err := poller.lore.Branches(ctx, loreclient.RepositoryRef{
+		if poller.issuer == nil || poller.userID == "" {
+			return fmt.Errorf("runner requires a dedicated service user")
+		}
+		token, err := poller.issuer.IssueResourceToken(ctx, poller.userID,
+			"urc-"+repository.LoreRepositoryID, []string{"read"})
+		if err != nil {
+			poller.logger.Error("could not mint scoped Lore polling credential",
+				"repository", repository.Owner+"/"+repository.Slug, "error", err)
+			continue
+		}
+		branches, err := poller.lore.BranchesWithCredential(ctx, loreclient.RepositoryRef{
 			CacheKey: repository.ID,
 			URL:      repository.LoreURL,
-		}, poller.identity)
+		}, loreclient.Credential{Token: token, AuthURL: poller.issuer.AuthURL(), Identity: poller.userID})
 		if err != nil {
 			poller.logger.Error(
 				"could not read Lore branches",

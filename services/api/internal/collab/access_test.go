@@ -35,7 +35,7 @@ func TestOrgRolePermission(t *testing.T) {
 	}{
 		{"owner", PermAdmin},
 		{"maintainer", PermWrite},
-		{"member", PermRead},
+		{"member", PermNone},
 		{"bogus", PermNone},
 	}
 	for _, tc := range cases {

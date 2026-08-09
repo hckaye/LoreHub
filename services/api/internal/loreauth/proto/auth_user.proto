@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package epic_urc;
+
+option go_package = "github.com/lorehub/lorehub/services/api/internal/loreauth/epic_urc";
+
+message GetUserInfoRequest {
+  string resource_id = 1;
+  repeated string user_id = 2;
+}
+
+message UserInfo {
+  string user_id = 1;
+  string display_name = 2;
+}
+
+message GetUserInfoResponse { repeated UserInfo user_info = 1; }
+
+message GetUserIdRequest {
+  string resource_id = 1;
+  string user_display_name = 2;
+}
+
+message GetUserIdResponse { UserInfo user_info = 1; }
+
+message GetProviderUserIdRequest { string user_id = 1; }
+
+message GetProviderUserIdResponse {
+  string user_id = 1;
+  string provider_user_id = 2;
+}

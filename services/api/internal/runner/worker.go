@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lorehub/lorehub/services/api/internal/lore"
 )
 
 type WorkerConfig struct {
@@ -23,6 +24,9 @@ type WorkerConfig struct {
 	ArtifactDir string
 	PollPeriod  time.Duration
 	JobTimeout  time.Duration
+	Lore        lore.CredentialClient
+	Issuer      CredentialIssuer
+	UserID      string
 }
 
 type Worker struct {
@@ -120,20 +124,18 @@ func (worker *Worker) runJob(ctx context.Context, job Job) (string, []Artifact, 
 	defer func() { _ = logFile.Close() }()
 
 	repositoryPath := filepath.Join(workspace, "repository")
-	clone := exec.CommandContext(
-		ctx,
-		worker.config.LoreBinary,
-		"clone",
-		"--revision",
-		job.Revision,
-		job.LoreURL,
-		repositoryPath,
-	)
-	clone.Stdout = logFile
-	clone.Stderr = logFile
-	clone.Env = safeEnvironment()
-	if err := clone.Run(); err != nil {
-		return logKey, nil, fmt.Errorf("clone Lore revision: %w", err)
+	if worker.config.Lore == nil || worker.config.Issuer == nil || worker.config.UserID == "" {
+		return logKey, nil, errors.New("CI runner requires scoped Lore credentials")
+	}
+	token, err := worker.config.Issuer.IssueResourceToken(ctx, worker.config.UserID,
+		"urc-"+job.LoreRepositoryID, []string{"read"})
+	if err != nil {
+		return logKey, nil, errors.New("could not mint CI Lore credential")
+	}
+	if err := worker.config.Lore.CloneWithCredential(ctx, job.LoreURL, job.Revision, repositoryPath, lore.Credential{
+		Token: token, AuthURL: worker.config.Issuer.AuthURL(), Identity: worker.config.UserID,
+	}); err != nil {
+		return logKey, nil, errors.New("clone Lore revision was rejected")
 	}
 	if _, err := AdaptWorkflows(repositoryPath); err != nil {
 		return logKey, nil, err

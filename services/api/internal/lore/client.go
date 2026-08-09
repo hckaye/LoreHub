@@ -20,6 +20,24 @@ type RepositoryRef struct {
 	URL      string
 }
 
+type Credential struct {
+	Token    string
+	AuthURL  string
+	Identity string
+}
+
+type CredentialClient interface {
+	RepositoryInfoWithCredential(ctx context.Context, repositoryURL string, credential Credential) (Repository, error)
+	BranchesWithCredential(ctx context.Context, repository RepositoryRef, credential Credential) ([]Branch, error)
+	CloneWithCredential(
+		ctx context.Context,
+		repositoryURL string,
+		revision string,
+		destination string,
+		credential Credential,
+	) error
+}
+
 type Branch struct {
 	ID             string    `json:"id"`
 	Name           string    `json:"name"`

@@ -133,8 +133,8 @@ type ReviewInput struct {
 	Body     string
 }
 
-// BranchRule is a branch protection rule. The configuration is descriptive for
-// the current product and does not claim enforcement beyond existing behavior.
+// BranchRule is a branch protection rule. LoreHub persists it in PostgreSQL,
+// and the pinned Lore server hook enforces direct branch mutations.
 type BranchRule struct {
 	ID                string    `json:"id"`
 	RepositoryID      string    `json:"repositoryId"`

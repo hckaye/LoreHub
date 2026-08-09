@@ -1,6 +1,7 @@
-import { LockKeyhole, ServerOff, Settings2 } from "lucide-react";
+import { LockKeyhole, ServerOff } from "lucide-react";
 
 import { AuthRequired } from "@/components/auth/auth-required";
+import { RepositoryAccessSettings } from "@/components/repositories/repository-access-settings";
 import { RepositoryPanel, RepositorySection } from "@/components/repositories/repository-section";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getDictionary } from "@/i18n";
@@ -50,10 +51,7 @@ export default async function RepositorySettingsPage({ params }: RepositorySetti
   return (
     <RepositorySection description={dictionary.settingsPage.description} title={dictionary.settingsPage.title}>
       <RepositoryPanel description={dictionary.settingsPage.readOnlyBody} title={dictionary.settingsPage.readOnlyTitle}>
-        <div className={styles.readOnly}>
-          <Settings2 aria-hidden="true" size={18} />
-          <span>{dictionary.common.readOnly}</span>
-        </div>
+        <p>{dictionary.settingsPage.readOnlyBody}</p>
       </RepositoryPanel>
       <RepositoryPanel title={dictionary.settingsPage.repositoryIdentity}>
         <dl className={styles.details}>
@@ -86,6 +84,10 @@ export default async function RepositorySettingsPage({ params }: RepositorySetti
             </dd>
           </div>
           <div>
+            <dt>{dictionary.settingsPage.canonicalNote}</dt>
+            <dd>{dictionary.settingsPage.canonicalNote}</dd>
+          </div>
+          <div>
             <dt>{dictionary.settingsPage.loreUrl}</dt>
             <dd>
               <code>{data.loreUrl}</code>
@@ -98,6 +100,12 @@ export default async function RepositorySettingsPage({ params }: RepositorySetti
             </dd>
           </div>
         </dl>
+      </RepositoryPanel>
+      <RepositoryPanel
+        description={dictionary.settingsPage.accessDescription}
+        title={dictionary.settingsPage.accessTitle}
+      >
+        <RepositoryAccessSettings dictionary={dictionary} repository={data} session={session} />
       </RepositoryPanel>
     </RepositorySection>
   );

@@ -62,16 +62,30 @@ func lookupRepository(
 		SELECT r.id, r.organization_id, o.slug, r.slug, r.visibility, r.updated_at
 		FROM repositories r
 		JOIN organizations o ON o.id = r.organization_id
+		JOIN users actor_user ON actor_user.id = $3 AND actor_user.status = 'active'
 		WHERE o.slug = $1 AND r.slug = $2 AND r.archived_at IS NULL
 		  AND (
 		      r.visibility = 'public'
 		      OR EXISTS (
 		          SELECT 1 FROM repository_memberships rm
-		          WHERE rm.repository_id = r.id AND rm.user_id = $3
+		          JOIN organization_memberships om
+		            ON om.organization_id = o.id AND om.user_id = $3 AND om.active
+		          WHERE rm.repository_id = r.id AND rm.user_id = $3 AND rm.active
 		      )
 		      OR EXISTS (
 		          SELECT 1 FROM organization_memberships om
-		          WHERE om.organization_id = o.id AND om.user_id = $3
+		          JOIN users u ON u.id = om.user_id AND u.status = 'active'
+		          WHERE om.organization_id = o.id AND om.user_id = $3 AND om.active
+		            AND om.role IN ('owner', 'maintainer')
+		      )
+		      OR EXISTS (
+		          SELECT 1
+		          FROM team_repository_roles tr
+		          JOIN teams t ON t.id = tr.team_id AND t.organization_id = o.id
+		          JOIN team_memberships tm ON tm.team_id = t.id AND tm.user_id = $3 AND tm.active
+		          JOIN organization_memberships om
+		            ON om.organization_id = o.id AND om.user_id = $3 AND om.active
+		          WHERE tr.repository_id = r.id
 		      )
 		  )
 	`, owner, slug, actor.ID)
@@ -122,10 +136,11 @@ func repositoryPermission(
 		SELECT rm.role, om.role
 		FROM repositories r
 		JOIN organizations o ON o.id = r.organization_id
+		JOIN users actor_user ON actor_user.id = $3 AND actor_user.status = 'active'
 		LEFT JOIN repository_memberships rm
-		    ON rm.repository_id = r.id AND rm.user_id = $3
+		    ON rm.repository_id = r.id AND rm.user_id = $3 AND rm.active
 		LEFT JOIN organization_memberships om
-		    ON om.organization_id = o.id AND om.user_id = $3
+		    ON om.organization_id = o.id AND om.user_id = $3 AND om.active
 		WHERE r.id = $1 AND o.id = $2
 	`, repo.ID, repo.OrganizationID, actor.ID).Scan(&repoRole, &orgRole)
 	if err != nil {
@@ -144,7 +159,32 @@ func repositoryPermission(
 			access.OrgMaintainer = true
 		}
 	}
+	var teamRole *string
+	if err := pool.QueryRow(ctx, `
+		SELECT tr.role
+		FROM team_repository_roles tr
+		JOIN teams t ON t.id = tr.team_id AND t.organization_id = $2
+		JOIN team_memberships tm ON tm.team_id = t.id AND tm.user_id = $3 AND tm.active
+		JOIN organization_memberships om
+		  ON om.organization_id = $2 AND om.user_id = $3 AND om.active
+		WHERE tr.repository_id = $1
+		ORDER BY CASE tr.role
+			WHEN 'admin' THEN 5
+			WHEN 'maintain' THEN 4
+			WHEN 'write' THEN 3
+			WHEN 'triage' THEN 2
+			ELSE 1 END DESC
+		LIMIT 1
+	`, repo.ID, repo.OrganizationID, actor.ID).Scan(&teamRole); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return Access{}, fmt.Errorf("find team repository permission: %w", err)
+	}
+	if teamRole != nil && (repoRole == nil || rolePermission(teamRole) > rolePermission(repoRole)) {
+		access.RepositoryRole = *teamRole
+	}
 	access.Permission = combineRoles(repoRole, orgRole)
+	if team := rolePermission(teamRole); team > access.Permission {
+		access.Permission = team
+	}
 	return access, nil
 }
 
@@ -166,6 +206,8 @@ func rolePermission(role *string) Permission {
 		return PermAdmin
 	case "write":
 		return PermWrite
+	case "maintain":
+		return PermWrite
 	case "triage":
 		return PermTriage
 	case "read":
@@ -184,8 +226,6 @@ func orgRolePermission(role *string) Permission {
 		return PermAdmin
 	case "maintainer":
 		return PermWrite
-	case "member":
-		return PermRead
 	default:
 		return PermNone
 	}

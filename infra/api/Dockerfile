@@ -41,14 +41,14 @@ COPY --from=lore-assets /assets/lore/lore /usr/local/bin/lore
 COPY --from=lore-assets /assets/lore/LICENSE.txt /opt/lore/LICENSE.txt
 COPY --from=lore-assets /assets/lore/THIRD-PARTY-NOTICES.txt /opt/lore/THIRD-PARTY-NOTICES.txt
 COPY --from=lore-assets /assets/act/act /usr/local/bin/act
-RUN chmod 0755 /usr/local/bin/lore /usr/local/bin/act
+COPY infra/api/entrypoint.sh /usr/local/bin/lorehub-entrypoint
+RUN chmod 0755 /usr/local/bin/lore /usr/local/bin/act /usr/local/bin/lorehub-entrypoint
 
 ENV LORE_LIB_PATH=/opt/lore/liblore.so
 ENV LOREHUB_LORE_CACHE_DIR=/var/lib/lorehub/repositories
 ENV LOREHUB_RUNNER_LOG_DIR=/var/lib/lorehub/runner-logs
 ENV LOREHUB_RUNNER_ARTIFACT_DIR=/var/lib/lorehub/runner-artifacts
 ENV LOREHUB_RUNNER_WORK_DIR=/var/lib/lorehub/runner-work
-USER lorehub
 EXPOSE 8080
-ENTRYPOINT ["lorehub"]
+ENTRYPOINT ["lorehub-entrypoint"]
 CMD ["serve"]

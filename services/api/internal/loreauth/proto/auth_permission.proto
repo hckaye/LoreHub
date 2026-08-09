@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package epic_urc;
+
+option go_package = "github.com/lorehub/lorehub/services/api/internal/loreauth/epic_urc";
+
+import "auth_session.proto";
+import "auth_token.proto";
+
+message ResourcePermission {
+  string resource_id = 1;
+  repeated string permission = 2;
+}
+
+message ExchangeUserTokenForMultiresourceTokenRequest {
+  repeated string resource_id = 1;
+}
+
+message ExchangeUserTokenForMultiresourceTokenResponse { UserToken token = 1; }
+
+message CheckUserPermissionRequest {
+  repeated string resource_id = 1;
+  optional TargetUser target_user = 2;
+}
+
+message CheckUserPermissionResponse {
+  repeated ResourcePermission allowed_resource_permission = 1;
+  repeated ResourcePermission denied_resource_permission = 2;
+}
+
+message LookupUserPermissionsRequest {
+  string resource_filter = 1;
+  optional string context_filter = 2;
+  optional int32 page_size = 3;
+  optional string page_token = 4;
+}
+
+message LookupUserPermissionsResponse {
+  repeated ResourcePermission resource_permission = 1;
+  optional string next_page_token = 2;
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -68,14 +69,14 @@ func setupFixture(t *testing.T, pool *pgxpool.Pool, visibility string, repoRole 
 	`, orgID, ownerSlug, alice.ID)
 	mustExec(t, ctx, pool, `
 		INSERT INTO organization_memberships (organization_id, user_id, role) VALUES
-		($1,$2,'owner'),($1,$3,'member')
-	`, orgID, alice.ID, carol.ID)
+		($1,$2,'owner'),($1,$3,'member'),($1,$4,'member')
+	`, orgID, alice.ID, carol.ID, bob.ID)
 	mustExec(t, ctx, pool, `
 		INSERT INTO repositories (
 			id, organization_id, slug, display_name, description, visibility,
 			lore_repository_id, lore_url, default_branch, created_by
 		) VALUES ($1,$2,$3,'Repo','', $4, $5, $6, 'main', $7)
-	`, repoID, orgID, repoSlug, visibility, "lore-"+orgID[:8], "http://lore.test/"+orgID, alice.ID)
+	`, repoID, orgID, repoSlug, visibility, strings.ReplaceAll(orgID, "-", ""), "http://lore.test/"+orgID, alice.ID)
 	mustExec(t, ctx, pool, `INSERT INTO repository_counters (repository_id) VALUES ($1)`, repoID)
 	if repoRole != "" {
 		mustExec(t, ctx, pool, `
@@ -152,8 +153,8 @@ func TestIntegrationRepositoryPermission(t *testing.T) {
 	if err != nil {
 		t.Fatalf("carol permission: %v", err)
 	}
-	if carolAccess.Permission != PermRead {
-		t.Errorf("carol (org member) permission = %v, want PermRead", carolAccess.Permission)
+	if carolAccess.Permission != PermNone {
+		t.Errorf("carol (org member without repository grant) permission = %v, want PermNone", carolAccess.Permission)
 	}
 }
 
@@ -163,7 +164,7 @@ func TestIntegrationIssueUpdatePermissionAndPrecondition(t *testing.T) {
 	fix := setupFixture(t, pool, "public", "triage")
 	number := seedIssue(t, ctx, pool, fix, fix.alice.ID, "open")
 
-	// Author can edit even without triage (carol has no repo role, only org member read).
+	// Author can edit even without triage (carol has no repository role).
 	_, err := s.UpdateIssue(ctx, fix.alice, fix.repoID, number, UpdateIssueInput{
 		Title: ptrString("Edited by author"),
 	})

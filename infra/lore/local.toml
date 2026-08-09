@@ -1,6 +1,36 @@
 [server.quic.certificate]
-cert_file = "/data/certificates/cert.pem"
-pkey_file = "/data/certificates/key.pem"
+cert_file = "/etc/lore/auth-tls/server.crt"
+pkey_file = "/etc/lore/auth-tls/server.key"
+
+[server.grpc]
+verify_client_certs = false
+
+[server.grpc.certificate]
+cert_file = "/etc/lore/auth-tls/server.crt"
+pkey_file = "/etc/lore/auth-tls/server.key"
+
+[server.auth]
+jwt_issuer = "http://api:8080"
+jwt_audience = ["lore"]
+
+[server.quic]
+verify_client_certs = false
+
+[server.auth.jwk]
+endpoint = "http://api:8080/.well-known/jwks.json"
+
+[environment.endpoint]
+# Lore 0.8.6 uses this value for both UCS Auth discovery and its companion
+# Rebac client. The stock client accepts HTTPS as the transitional UCS Auth
+# spelling, while the server-side Rebac client requires the explicit scheme.
+auth_url = "https://api:8443"
+
+[hooks.lorehub_policy]
+enabled = true
+endpoint = "https://api:8444/internal/lore/policy"
+ca_certificate = "/etc/lore/auth-tls/ca.crt"
+client_certificate = "/etc/lore/auth-tls/lore-client.crt"
+client_key = "/etc/lore/auth-tls/lore-client.key"
 
 [immutable_store.local]
 path = "/data/store"
