@@ -16,6 +16,7 @@ services:
       - "${POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql
+    restart: unless-stopped
 
   lore:
     platform: linux/amd64
@@ -33,6 +34,7 @@ services:
       - "41339:41339"
     volumes:
       - lore-data:/data
+    restart: unless-stopped
 
   api:
     platform: linux/amd64
@@ -41,11 +43,16 @@ services:
       dockerfile: infra/api/Dockerfile
     environment:
       DATABASE_URL: postgresql://lorehub:${POSTGRES_PASSWORD:-lorehub-development}@postgres:5432/lorehub
-      LOREHUB_ENV: development
+      LOREHUB_ENV: ${LOREHUB_ENV:-development}
       LOREHUB_HTTP_ADDRESS: :8080
       LOREHUB_LORE_IDENTITY: ${LOREHUB_LORE_IDENTITY:-}
-      LOREHUB_OIDC_AUDIENCE: ${LOREHUB_OIDC_AUDIENCE:-}
+      # OIDC issuer/audience verified by the Go API. When the issuer is empty the
+      # API keeps its current bearer-only-disabled behavior. See
+      # docs/operations/keycloak.md for the local-Docker discovery reachability
+      # note and the production reverse-proxy guidance.
       LOREHUB_OIDC_ISSUER: ${LOREHUB_OIDC_ISSUER:-}
+      LOREHUB_OIDC_AUDIENCE: ${LOREHUB_OIDC_AUDIENCE:-lorehub-api}
+      LOREHUB_OIDC_PUBLIC_ORIGIN: ${LOREHUB_OIDC_PUBLIC_ORIGIN:-http://localhost:3000}
     depends_on:
       postgres:
         condition: service_healthy
@@ -53,6 +60,7 @@ services:
       - "8080:8080"
     volumes:
       - api-data:/var/lib/lorehub
+    restart: unless-stopped
 
   web:
     build:
@@ -60,11 +68,15 @@ services:
       dockerfile: infra/web/Dockerfile
     environment:
       LOREHUB_API_URL: http://api:8080
+      LOREHUB_OIDC_ISSUER: ${LOREHUB_OIDC_ISSUER:-}
+      LOREHUB_OIDC_CLIENT_ID: ${LOREHUB_OIDC_CLIENT_ID:-lorehub-web}
+      LOREHUB_OIDC_PUBLIC_ORIGIN: ${LOREHUB_OIDC_PUBLIC_ORIGIN:-http://localhost:3000}
     depends_on:
       api:
         condition: service_started
     ports:
       - "3000:3000"
+    restart: unless-stopped
 
   runner:
     profiles: ["runner"]
@@ -86,8 +98,102 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - runner-data:/var/lib/lorehub
 
+  # Dedicated PostgreSQL for Keycloak. Deliberately separate from the LoreHub
+  # application database above: Keycloak owns its own credentials, schema, and
+  # backup cadence, and must never mutate or share the LoreHub database.
+  keycloak-postgres:
+    image: postgres:18.4-alpine
+    environment:
+      POSTGRES_DB: ${KEYCLOAK_DB_NAME:-keycloak}
+      POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?KEYCLOAK_DB_PASSWORD is required}
+      POSTGRES_USER: ${KEYCLOAK_DB_USER:-keycloak}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${KEYCLOAK_DB_USER:-keycloak} -d ${KEYCLOAK_DB_NAME:-keycloak}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - keycloak-postgres-data:/var/lib/postgresql
+    restart: unless-stopped
+
+  # Keycloak runs in production mode (`start`, not `start-dev`). Local HTTP is
+  # enabled explicitly via --http-enabled and the hostname is fixed so the
+  # advertised issuer is stable. The image is built from infra/keycloak/Dockerfile
+  # so the PostgreSQL db vendor is set at build time (required for --optimized).
+  # See docs/operations/keycloak.md for TLS / reverse-proxy and local discovery.
+  keycloak:
+    build:
+      context: ..
+      dockerfile: infra/keycloak/Dockerfile
+    image: lorehub/keycloak:26.7.1
+    command:
+      - start
+      - --optimized
+      - --import-realm
+      - --hostname=${KEYCLOAK_HOSTNAME:-http://localhost:8280}
+      - --http-enabled=true
+      - --hostname-strict=false
+      - --proxy-headers=forwarded
+      - --db-url=jdbc:postgresql://keycloak-postgres:5432/${KEYCLOAK_DB_NAME:-keycloak}
+      - --db-username=${KEYCLOAK_DB_USER:-keycloak}
+      - --db-password=${KEYCLOAK_DB_PASSWORD:?KEYCLOAK_DB_PASSWORD is required}
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD is required}
+      # LOREHUB_OIDC_CLIENT_SECRET is substituted into the realm import JSON
+      # for the lorehub-web client's secret field. Required when importing the
+      # realm; generate it with scripts/setup-keycloak-secrets.sh.
+      LOREHUB_OIDC_CLIENT_SECRET: ${LOREHUB_OIDC_CLIENT_SECRET:?LOREHUB_OIDC_CLIENT_SECRET is required}
+    depends_on:
+      keycloak-postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "{ printf 'HEAD /health/ready HTTP/1.0\\r\\n\\r\\n' >&0; grep -q 'HTTP/1.0 200'; } 0<>/dev/tcp/127.0.0.1/9000"
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    ports:
+      - "${KEYCLOAK_HOST_PORT:-8280}:8080"
+    volumes:
+      - ./keycloak/realm-lorehub.json:/opt/keycloak/data/import/realm-lorehub.json:ro
+      - keycloak-data:/opt/keycloak/data
+    restart: unless-stopped
+
+  # One-shot idempotent provisioning of social identity providers via the
+  # Keycloak Admin CLI. A provider is created only when its credentials are
+  # present in the environment, so missing providers never appear as broken
+  # login buttons. Re-runs update existing providers in place.
+  keycloak-bootstrap:
+    image: quay.io/keycloak/keycloak:26.7.1
+    entrypoint: ["/bin/bash", "/bootstrap/bootstrap.sh"]
+    environment:
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD is required}
+      LOREHUB_REALM: ${KEYCLOAK_REALM:-lorehub}
+      LOREHUB_IDP_GOOGLE_CLIENT_ID: ${LOREHUB_IDP_GOOGLE_CLIENT_ID:-}
+      LOREHUB_IDP_GOOGLE_CLIENT_SECRET: ${LOREHUB_IDP_GOOGLE_CLIENT_SECRET:-}
+      LOREHUB_IDP_GOOGLE_HOSTED_DOMAIN: ${LOREHUB_IDP_GOOGLE_HOSTED_DOMAIN:-}
+      LOREHUB_IDP_GITHUB_CLIENT_ID: ${LOREHUB_IDP_GITHUB_CLIENT_ID:-}
+      LOREHUB_IDP_GITHUB_CLIENT_SECRET: ${LOREHUB_IDP_GITHUB_CLIENT_SECRET:-}
+      LOREHUB_IDP_FACEBOOK_CLIENT_ID: ${LOREHUB_IDP_FACEBOOK_CLIENT_ID:-}
+      LOREHUB_IDP_FACEBOOK_CLIENT_SECRET: ${LOREHUB_IDP_FACEBOOK_CLIENT_SECRET:-}
+      LOREHUB_IDP_X_CLIENT_ID: ${LOREHUB_IDP_X_CLIENT_ID:-}
+      LOREHUB_IDP_X_CLIENT_SECRET: ${LOREHUB_IDP_X_CLIENT_SECRET:-}
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    volumes:
+      - ./keycloak/bootstrap.sh:/bootstrap/bootstrap.sh:ro
+    restart: "no"
+
 volumes:
   api-data:
   lore-data:
   postgres-data:
   runner-data:
+  keycloak-postgres-data:
+  keycloak-data:

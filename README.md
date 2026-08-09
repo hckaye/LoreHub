@@ -4,6 +4,11 @@ LoreHubは、Loreリポジトリ向けの共同開発基盤です。LoreをVCS�
 監査、GitHub Actions互換CIを追加します。Gitリポジトリへ変換したり、Loreのファイル本文をPostgreSQLへ
 複製したりしません。
 
+認証とID管理は自己ホストのKeycloakに委譲します。LoreHub本体はユーザーのパスワードを保存せず、Keycloakが
+ローカル認証（メール＋パスワード）とGoogle、GitHub、Facebook、Xのソーシャルログインをブローカーします。
+詳細は[Keycloak運用ガイド](docs/operations/keycloak.md)と[認証とIDの境界](docs/architecture/identity.md)
+を参照してください。
+
 ## 現在実装されている範囲
 
 - Lore公式Go SDKを使ったリポジトリ確認とbranch一覧取得
@@ -66,6 +71,32 @@ docker compose -f infra/compose.yaml up --build postgres lore api web
 - API readiness: <http://localhost:8080/health/ready>
 - Lore health: <http://localhost:41339/health_check>
 
+### Keycloakを含める
+
+既定スタックにKeycloakを含める場合は、永続化するシークレットを事前に生成します。Docker Compose自身は
+永続シークレットを安全に生成できないため、専用スクリプトを使います。生成された値はgit管理外の `.env` に
+書き込まれ、ログには出力されません。
+
+```bash
+cp .env.example .env
+scripts/setup-keycloak-secrets.sh
+docker compose -f infra/compose.yaml up --build
+```
+
+- Keycloak管理コンソール: <http://localhost:8280/admin/master/console>
+  （ユーザー名 `admin`、パスワードは `.env` の `KEYCLOAK_ADMIN_PASSWORD`）
+- LoreHubレルムのOIDC discovery: <http://localhost:8280/realms/lorehub/.well-known/openid-configuration>
+
+Keycloakは専用のPostgreSQL（`keycloak-postgres`）を使い、LoreHubアプリケーションのDBとは分離されます。
+ソーシャルプロバイダーの設定、SMTP、本番のTLSとリバースプロキシ、バックアップについては
+[Keycloak運用ガイド](docs/operations/keycloak.md)を参照してください。
+
+Keycloakを起動せずにAPIの従来挙動（OIDC無効）を維持する場合は、サービスを明示的に指定して起動します。
+
+```bash
+docker compose -f infra/compose.yaml up --build postgres lore api web
+```
+
 開発用Lore Serverはデータと自己署名証明書をDocker volumeへ保存します。認証なしの単一ノード構成なので、公開環境で
 使ってはいけません。本番ではLore公式のストレージ、JWT検証、TLS、バックアップ構成を使用してください。
 
@@ -94,7 +125,10 @@ go run ./services/api/cmd/lorehub serve
 ```
 
 OIDCを有効にする場合は`LOREHUB_OIDC_ISSUER`と`LOREHUB_OIDC_AUDIENCE`を設定します。本番環境では両方が
-必須です。Lore側の読み取りidentityは`LOREHUB_LORE_IDENTITY`で指定します。
+必須です。Keycloakを使う場合はissuerを `http://localhost:8280/realms/lorehub`（ローカル）または公開URLに
+設定し、audienceを `lorehub-api` にします。Lore側の読み取りidentityは`LOREHUB_LORE_IDENTITY`で指定します。
+ローカルDockerでAPIもコンテナ内で動かす場合のdiscovery到達性の注意は
+[Keycloak運用ガイド](docs/operations/keycloak.md)を参照してください。
 
 ## APIの主な入口
 

@@ -3,6 +3,7 @@ set -eu
 
 npm run format:check
 npm run limits
+npm run keycloak:check
 npm run lint
 npm run typecheck
 npm test
