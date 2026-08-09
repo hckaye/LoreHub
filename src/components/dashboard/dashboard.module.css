@@ -1,0 +1,170 @@
+.page {
+  width: min(1180px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 38px 0 72px;
+}
+
+.heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 28px;
+  border-bottom: 1px solid var(--border);
+}
+
+.eyebrow {
+  margin: 0 0 6px;
+  color: var(--accent-fg);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.heading h1 {
+  margin: 0;
+  font-size: clamp(1.6rem, 3vw, 2.25rem);
+  letter-spacing: -0.035em;
+}
+
+.heading h1 + p {
+  max-width: 680px;
+  margin: 10px 0 0;
+  color: var(--fg-muted);
+  line-height: 1.55;
+}
+
+.docsLink {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  color: var(--accent-fg);
+  font-size: 0.84rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.docsLink:hover {
+  text-decoration: underline;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr);
+  gap: 28px;
+  padding-top: 26px;
+}
+
+.sidebar {
+  min-width: 0;
+}
+
+.sidebarHeading {
+  margin-bottom: 12px;
+}
+
+.sidebarHeading h2,
+.sectionTitle h2 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.sidebarHeading p {
+  margin: 5px 0 0;
+  color: var(--fg-muted);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.repositoryList {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.repositoryList a {
+  display: grid;
+  gap: 2px;
+  padding: 8px 9px;
+  border-radius: 6px;
+  color: var(--fg-default);
+  text-decoration: none;
+}
+
+.repositoryList a:hover {
+  background: var(--canvas-subtle);
+}
+
+.repositoryList strong {
+  overflow: hidden;
+  color: var(--accent-fg);
+  font-size: 0.8rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.repositoryList span {
+  color: var(--fg-muted);
+  font-size: 0.72rem;
+}
+
+.main {
+  display: grid;
+  min-width: 0;
+  gap: 30px;
+}
+
+.activity {
+  display: grid;
+  gap: 12px;
+}
+
+.sectionTitle {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.sectionTitle svg {
+  color: var(--fg-muted);
+}
+
+.sectionTitle span {
+  margin-left: auto;
+  color: var(--fg-muted);
+  font-size: 0.73rem;
+  text-align: right;
+}
+
+.cards {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+@media (max-width: 760px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+}
+
+@media (max-width: 640px) {
+  .page {
+    width: min(100% - 20px, 1180px);
+    padding-top: 28px;
+  }
+
+  .heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

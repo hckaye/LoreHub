@@ -10,8 +10,8 @@
 
 .empty[data-tone="warning"] {
   border-style: solid;
-  border-color: #d7b76b;
-  background: #fffaf0;
+  border-color: var(--attention-border);
+  background: var(--attention-bg);
 }
 
 .icon {
@@ -21,8 +21,8 @@
   flex: 0 0 auto;
   place-items: center;
   border-radius: 7px;
-  background: var(--surface-selected);
-  color: var(--accent-strong);
+  background: var(--canvas-subtle);
+  color: var(--accent-fg);
 }
 
 .icon svg {
@@ -31,12 +31,12 @@
 
 .empty h3 {
   margin: 1px 0 4px;
-  color: var(--text-strong);
+  color: var(--fg-default);
   font-size: 0.98rem;
 }
 
 .empty p {
   margin: 0;
-  color: var(--text-muted);
+  color: var(--fg-muted);
   line-height: 1.55;
 }

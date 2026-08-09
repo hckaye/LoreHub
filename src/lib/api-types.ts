@@ -14,6 +14,40 @@ export type Repository = {
   updatedAt: string;
 };
 
+export type Organization = {
+  id: string;
+  slug: string;
+  displayName: string;
+  description: string;
+  visibility: "private" | "internal" | "public";
+  createdAt: string;
+};
+
+export type AuthUser = {
+  id: string;
+  username: string;
+  displayName: string;
+  email: string | null;
+  avatarUrl: string | null;
+  locale: string | null;
+};
+
+export type AuthSession =
+  | {
+      status: "authenticated";
+      user: AuthUser;
+      csrfToken: string;
+    }
+  | {
+      status: "anonymous" | "expired";
+      user: null;
+    }
+  | {
+      status: "unavailable";
+      user: null;
+      reason: "network" | "provider";
+    };
+
 export type Branch = {
   id: string;
   name: string;
@@ -67,4 +101,10 @@ export type CIRun = {
   completedAt: string | null;
 };
 
-export type APIResult<T> = { ok: true; data: T } | { ok: false; reason: "not-found" | "unavailable" };
+export type APIResult<T> =
+  | { ok: true; data: T }
+  | {
+      ok: false;
+      reason: "not-found" | "unauthorized" | "forbidden" | "invalid" | "unavailable";
+      code?: string;
+    };

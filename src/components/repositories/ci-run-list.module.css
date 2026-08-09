@@ -1,6 +1,6 @@
 .list {
   overflow: hidden;
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
 }
@@ -11,7 +11,7 @@
   align-items: center;
   gap: 11px;
   padding: 10px 16px;
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-muted);
   grid-template-columns: auto minmax(160px, 1fr) auto auto;
 }
 
@@ -25,34 +25,27 @@
 
 .row p {
   margin: 4px 0 0;
-  color: var(--text-faint);
+  color: var(--fg-muted);
   font-size: 0.74rem;
 }
 
-.row code {
-  color: var(--accent-strong);
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-}
-
-.status {
-  min-width: 76px;
-  color: var(--text-muted);
-  font-size: 0.72rem;
-  text-align: right;
-}
-
 .success {
-  color: var(--success);
+  color: var(--success-fg);
 }
 
 .failure {
-  color: #b84545;
+  color: var(--danger-fg);
 }
 
 .queued,
 .running {
-  color: #9a6b15;
+  color: var(--attention-fg);
+}
+
+.row code {
+  color: var(--accent-fg);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
 }
 
 @media (max-width: 600px) {

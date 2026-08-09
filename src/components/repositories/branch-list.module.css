@@ -1,6 +1,6 @@
 .list {
   overflow: hidden;
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
 }
@@ -11,8 +11,8 @@
   align-items: center;
   gap: 11px;
   padding: 0 16px;
-  border-bottom: 1px solid var(--border-subtle);
-  color: var(--text-faint);
+  border-bottom: 1px solid var(--border-muted);
+  color: var(--fg-muted);
 }
 
 .row:last-child {
@@ -28,19 +28,33 @@
 
 .name strong {
   overflow: hidden;
-  color: var(--text-strong);
+  color: var(--fg-default);
   font-size: 0.9rem;
   text-overflow: ellipsis;
 }
 
 .name span {
-  color: var(--text-faint);
+  color: var(--fg-subtle);
   font-size: 0.72rem;
 }
 
-.row code {
+.revision {
   margin-left: auto;
-  color: var(--accent-strong);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.row code {
+  color: var(--accent-fg);
   font-family: var(--font-mono);
   font-size: 0.75rem;
+}
+
+@media (max-width: 600px) {
+  .revision {
+    align-items: flex-end;
+    flex-direction: column;
+    gap: 4px;
+  }
 }

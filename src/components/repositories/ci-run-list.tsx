@@ -4,6 +4,7 @@ import type { Dictionary } from "@/i18n";
 import type { CIRun } from "@/lib/api-types";
 
 import { EmptyState } from "../ui/empty-state";
+import { StatusBadge } from "../ui/status-badge";
 import styles from "./ci-run-list.module.css";
 
 type CIRunListProps = {
@@ -16,8 +17,8 @@ export function CIRunList({ runs, dictionary }: CIRunListProps) {
     return (
       <EmptyState
         icon={<PlayCircle aria-hidden="true" />}
-        title={dictionary.repository.noCIRuns}
-        body={dictionary.repository.ciRunsDescription}
+        title={dictionary.actionsPage.noRunsTitle}
+        body={dictionary.actionsPage.noRunsBody}
       />
     );
   }
@@ -28,19 +29,38 @@ export function CIRunList({ runs, dictionary }: CIRunListProps) {
         <div className={styles.row} key={run.id}>
           <StatusIcon conclusion={run.conclusion} status={run.status} />
           <div>
-            <strong>
-              {dictionary.repository.run} #{run.runNumber}
-            </strong>
+            <strong>{dictionary.actionsPage.runNumber.replace("{number}", String(run.runNumber))}</strong>
             <p>
-              {run.eventName} · {run.branch}
+              {dictionary.repository.event}: {run.eventName} · {dictionary.common.branch}: {run.branch}
             </p>
           </div>
           <code title={run.revision}>{shortRevision(run.revision)}</code>
-          <span className={styles.status}>{run.conclusion ?? run.status}</span>
+          <StatusBadge tone={statusTone(run)}>{statusLabel(run, dictionary)}</StatusBadge>
         </div>
       ))}
     </div>
   );
+}
+
+function statusLabel(run: CIRun, dictionary: Dictionary): string {
+  const key = run.conclusion ?? run.status;
+  return (
+    dictionary.actionsPage.statuses[key as keyof typeof dictionary.actionsPage.statuses] ??
+    dictionary.actionsPage.statuses.unknown
+  );
+}
+
+function statusTone(run: CIRun): "neutral" | "success" | "warning" | "danger" {
+  if (run.conclusion === "success") {
+    return "success";
+  }
+  if (run.conclusion && run.conclusion !== "skipped") {
+    return "danger";
+  }
+  if (run.status === "queued" || run.status === "in_progress") {
+    return "warning";
+  }
+  return "neutral";
 }
 
 function StatusIcon({ status, conclusion }: Pick<CIRun, "status" | "conclusion">) {

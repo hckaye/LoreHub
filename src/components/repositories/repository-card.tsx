@@ -4,6 +4,7 @@ import Link from "next/link";
 import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
 import type { Repository } from "@/lib/api-types";
+import { repositoryPath } from "@/lib/routes";
 
 import styles from "./repository-card.module.css";
 
@@ -24,7 +25,7 @@ export function RepositoryCard({ repository, locale, dictionary }: RepositoryCar
         <div>
           <p className={styles.owner}>{repository.owner}</p>
           <h3>
-            <Link href={`/${locale}/${repository.owner}/${repository.slug}`}>{repository.displayName}</Link>
+            <Link href={repositoryPath(locale, repository.owner, repository.slug)}>{repository.displayName}</Link>
           </h3>
         </div>
         <span className={styles.visibility}>
@@ -32,7 +33,7 @@ export function RepositoryCard({ repository, locale, dictionary }: RepositoryCar
           {visibilityLabel}
         </span>
       </div>
-      <p className={styles.description}>{repository.description || dictionary.repository.noDescription}</p>
+      <p className={styles.description}>{repository.description || dictionary.common.noDescription}</p>
       <div className={styles.meta}>
         <span>
           <CircleDot aria-hidden="true" size={15} />
@@ -40,7 +41,7 @@ export function RepositoryCard({ repository, locale, dictionary }: RepositoryCar
         </span>
         <span>
           <GitPullRequest aria-hidden="true" size={15} />
-          {repository.mergeRequestCount} {dictionary.common.reviews}
+          {repository.mergeRequestCount} {dictionary.common.pullRequests}
         </span>
         <code>{repository.defaultBranch}</code>
       </div>

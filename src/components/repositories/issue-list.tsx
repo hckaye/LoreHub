@@ -16,9 +16,9 @@ export function IssueList({ issues, dictionary, locale }: IssueListProps) {
   if (issues.length === 0) {
     return (
       <EmptyState
+        body={dictionary.issuesPage.emptyBody}
         icon={<CircleDot aria-hidden="true" />}
-        title={dictionary.repository.noIssues}
-        body={dictionary.repository.issuesDescription}
+        title={dictionary.issuesPage.emptyTitle}
       />
     );
   }

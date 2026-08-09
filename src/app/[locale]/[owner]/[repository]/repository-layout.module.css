@@ -1,0 +1,17 @@
+.shell {
+  width: min(1180px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 30px 0 72px;
+}
+
+.unavailable {
+  width: min(760px, calc(100% - 32px));
+  margin: 64px auto;
+}
+
+@media (max-width: 640px) {
+  .shell,
+  .unavailable {
+    width: min(100% - 20px, 1180px);
+  }
+}
