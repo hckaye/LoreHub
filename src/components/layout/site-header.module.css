@@ -65,6 +65,16 @@
   color: var(--header-fg);
 }
 
+.notificationCount {
+  min-width: 18px;
+  padding: 1px 5px;
+  border-radius: 10px;
+  background: var(--accent-emphasis);
+  color: var(--fg-on-emphasis);
+  font-size: 0.68rem;
+  text-align: center;
+}
+
 .search {
   display: flex;
   width: min(330px, 30vw);

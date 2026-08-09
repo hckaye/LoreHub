@@ -1,6 +1,7 @@
 package config
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -82,6 +83,81 @@ func TestLoadInteractiveAuthenticationUsesSecureProductionCookie(t *testing.T) {
 	}
 }
 
+func TestLoadAdvertisesOnlyCompleteProvisionedProviderAliases(t *testing.T) {
+	setRequiredEnvironment(t)
+	providerSettings := identityProviderSettings()
+	for _, provider := range providerSettings {
+		t.Setenv(provider.client, "")
+		t.Setenv(provider.secret, "")
+	}
+	t.Setenv("LOREHUB_IDP_GOOGLE_CLIENT_ID", "google-client")
+	t.Setenv("LOREHUB_IDP_GOOGLE_CLIENT_SECRET", "google-secret")
+	t.Setenv("LOREHUB_IDP_GITHUB_CLIENT_ID", "github-client")
+	t.Setenv("LOREHUB_IDP_FACEBOOK_CLIENT_SECRET", "facebook-secret")
+	t.Setenv("LOREHUB_IDP_X_CLIENT_ID", "x-client")
+	t.Setenv("LOREHUB_IDP_X_CLIENT_SECRET", "x-secret")
+
+	settings, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"google", "x"}; !reflect.DeepEqual(settings.IdentityProviders, want) {
+		t.Fatalf("configured provider aliases = %v, want %v", settings.IdentityProviders, want)
+	}
+}
+
+func TestLoadAdvertisesAllFourProviderAliasesWhenFullyConfigured(t *testing.T) {
+	setRequiredEnvironment(t)
+	for _, provider := range identityProviderSettings() {
+		t.Setenv(provider.client, provider.id+"-client")
+		t.Setenv(provider.secret, provider.id+"-secret")
+	}
+
+	settings, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"google", "github", "facebook", "x"}; !reflect.DeepEqual(settings.IdentityProviders, want) {
+		t.Fatalf("configured provider aliases = %v, want %v", settings.IdentityProviders, want)
+	}
+}
+
+func TestLoadRejectsProductionStaticLoreCredentials(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("LOREHUB_ENV", "production")
+	t.Setenv("LOREHUB_LORE_CREDENTIALS", `{"partition":{"identity":"shared","token":"token",`+
+		`"authUrl":"ucs-auth://auth.example.com"}}`)
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "only allowed in development or test") {
+		t.Fatalf("expected static production credential rejection, got %v", err)
+	}
+}
+
+func TestLoadRejectsProductionMissingServiceSubject(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("LOREHUB_ENV", "production")
+	t.Setenv("LOREHUB_PUBLIC_ORIGIN", "https://actions.example")
+	t.Setenv("LOREHUB_LORE_PUBLIC_READER_SUBJECT", "public-reader-subject")
+	t.Setenv("LOREHUB_LORE_ACTIONS_RUNNER_SUBJECT", "actions-runner-subject")
+	t.Setenv("LOREHUB_LORE_REPOSITORY_REGISTRATION_SUBJECT", "")
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "LOREHUB_LORE_REPOSITORY_REGISTRATION_SUBJECT") {
+		t.Fatalf("expected missing production service subject rejection, got %v", err)
+	}
+}
+
+func TestLoadRejectsProductionInvalidServiceSubject(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("LOREHUB_ENV", "production")
+	t.Setenv("LOREHUB_LORE_PUBLIC_READER_SUBJECT", "public reader")
+	t.Setenv("LOREHUB_LORE_ACTIONS_RUNNER_SUBJECT", "actions-runner-subject")
+	t.Setenv("LOREHUB_LORE_REPOSITORY_REGISTRATION_SUBJECT", "registration-subject")
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "LOREHUB_LORE_PUBLIC_READER_SUBJECT") {
+		t.Fatalf("expected invalid production service subject rejection, got %v", err)
+	}
+}
+
 func TestLoadRejectsInvalidLoginBindingCookieName(t *testing.T) {
 	setRequiredEnvironment(t)
 	t.Setenv("LOREHUB_LOGIN_BINDING_COOKIE_NAME", "invalid;name")
@@ -89,6 +165,20 @@ func TestLoadRejectsInvalidLoginBindingCookieName(t *testing.T) {
 	_, err := Load()
 	if err == nil || !strings.Contains(err.Error(), "LOREHUB_LOGIN_BINDING_COOKIE_NAME") {
 		t.Fatalf("expected invalid binding cookie name error, got %v", err)
+	}
+}
+
+func TestLoadRejectsProductionIdentityFallback(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("LOREHUB_ENV", "production")
+	t.Setenv("LOREHUB_LORE_IDENTITY", "legacy-shared-identity")
+	t.Setenv("LOREHUB_LORE_CREDENTIALS",
+		`{"lore-partition":{"identity":"service-identity","token":"short-lived-token",`+
+			`"authUrl":"https://auth.example/login"}}`)
+
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "development-only Lore identity fallback") {
+		t.Fatalf("expected production identity fallback error, got %v", err)
 	}
 }
 
@@ -189,7 +279,7 @@ func TestLoadRejectsUnboundedRunnerTimeout(t *testing.T) {
 	}
 }
 
-func TestLoadRejectsProductionStaticLoreCredentials(t *testing.T) {
+func TestLoadRejectsProductionStaticLoreCredentialsWithHTTPSAuthURL(t *testing.T) {
 	setRequiredEnvironment(t)
 	t.Setenv("LOREHUB_ENV", "production")
 	t.Setenv("LOREHUB_LORE_CREDENTIALS", `{"partition":{"identity":"shared","token":"token",`+
@@ -220,6 +310,16 @@ func setRequiredEnvironment(t *testing.T) {
 	t.Setenv("LOREHUB_RUNNER_SUBJECT", "")
 	t.Setenv("LOREHUB_DEV_ALLOW_LORE_IDENTITY_FALLBACK", "")
 	t.Setenv("LOREHUB_DEV_LORE_IDENTITY", "")
+	t.Setenv("LOREHUB_AUTH_MODE", "")
+	t.Setenv("LOREHUB_OIDC_ISSUER", "")
+	t.Setenv("LOREHUB_OIDC_AUDIENCE", "")
+	t.Setenv("LOREHUB_OIDC_CLIENT_ID", "")
+	t.Setenv("LOREHUB_OIDC_CLIENT_SECRET", "")
+	t.Setenv("LOREHUB_OIDC_REDIRECT_URL", "")
+	t.Setenv("LOREHUB_PUBLIC_ORIGIN", "")
+	t.Setenv("LOREHUB_AUTH_SECRET", "")
+	t.Setenv("LOREHUB_SESSION_TTL", "")
+	t.Setenv("LOREHUB_LOGIN_TRANSACTION_TTL", "")
 	t.Setenv("LOREHUB_LORE_IDENTITY", "")
 	t.Setenv("LOREHUB_LORE_CREDENTIALS", "")
 	t.Setenv("LOREHUB_LORE_AUTHORITY", "")
@@ -251,4 +351,8 @@ func setRequiredEnvironment(t *testing.T) {
 	t.Setenv("LOREHUB_LOGIN_BINDING_COOKIE_NAME", "")
 	t.Setenv("LOREHUB_SESSION_COOKIE_PATH", "")
 	t.Setenv("LOREHUB_SESSION_COOKIE_DOMAIN", "")
+	for _, provider := range identityProviderSettings() {
+		t.Setenv(provider.client, "")
+		t.Setenv(provider.secret, "")
+	}
 }

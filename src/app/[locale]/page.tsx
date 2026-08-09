@@ -6,7 +6,7 @@ import { getDictionary } from "@/i18n";
 import { isLocale } from "@/i18n/config";
 import type { Repository } from "@/lib/api-types";
 import { getAuthSession } from "@/lib/auth-api";
-import { getPublicRepositories } from "@/lib/lorehub-api";
+import { getDashboard, getPublicRepositories } from "@/lib/lorehub-api";
 
 type HomePageProps = {
   params: Promise<{ locale: string }>;
@@ -21,23 +21,21 @@ export default async function HomePage({ params, searchParams }: HomePageProps) 
     notFound();
   }
   const { q = "" } = await searchParams;
-  const [dictionary, repositories, session] = await Promise.all([
-    getDictionary(value),
-    getPublicRepositories(q),
-    getAuthSession(),
-  ]);
-  const availableRepositories = repositories.ok ? filterRepositories(repositories.data, q) : null;
+  const [dictionary, session] = await Promise.all([getDictionary(value), getAuthSession()]);
   if (session.status === "authenticated") {
+    const dashboard = await getDashboard();
     return (
       <Dashboard
+        dashboard={dashboard.ok ? dashboard.data : null}
         dictionary={dictionary}
         locale={value}
-        repositories={availableRepositories}
-        repositoriesUnavailable={!repositories.ok}
+        unavailable={!dashboard.ok}
         userName={session.user.displayName}
       />
     );
   }
+  const repositories = await getPublicRepositories(q);
+  const availableRepositories = repositories.ok ? filterRepositories(repositories.data, q) : null;
   return (
     <PublicExplore
       dictionary={dictionary}

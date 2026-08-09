@@ -24,6 +24,7 @@ type fakeLoginProvider struct {
 	codeVerifier  string
 	nonce         string
 	prompt        string
+	providerHint  string
 	exchangeCalls int
 	principal     auth.Principal
 	exchangeError error
@@ -47,6 +48,17 @@ func (provider *fakeLoginProvider) AuthorizationURL(
 		values.Set("prompt", prompt)
 	}
 	return "https://identity.example/authorize?" + values.Encode()
+}
+
+func (provider *fakeLoginProvider) AuthorizationURLForProvider(
+	state string,
+	codeChallenge string,
+	nonce string,
+	prompt string,
+	providerHint string,
+) string {
+	provider.providerHint = providerHint
+	return provider.AuthorizationURL(state, codeChallenge, nonce, prompt)
 }
 
 func (provider *fakeLoginProvider) Exchange(

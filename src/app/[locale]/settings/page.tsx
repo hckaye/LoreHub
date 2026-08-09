@@ -1,10 +1,13 @@
 import { Languages, Settings2 } from "lucide-react";
 
+import { NotificationSettingsForm } from "@/components/account/notification-settings-form";
+import { ProfileSettingsForm } from "@/components/account/profile-settings-form";
 import { AuthRequired } from "@/components/auth/auth-required";
 import { RepositoryPanel, RepositorySection } from "@/components/repositories/repository-section";
 import { getDictionary } from "@/i18n";
 import { isLocale } from "@/i18n/config";
 import { getAuthSession } from "@/lib/auth-api";
+import { getNotificationPreferences, getUserProfile } from "@/lib/lorehub-api";
 
 import styles from "@/components/repositories/repository-detail.module.css";
 
@@ -25,39 +28,37 @@ export default async function AccountSettingsPage({ params }: AccountSettingsPag
       </RepositorySection>
     );
   }
+  const [profile, preferences] = await Promise.all([
+    getUserProfile(session.user.username),
+    getNotificationPreferences(),
+  ]);
   return (
     <RepositorySection description={dictionary.accountSettings.description} title={dictionary.accountSettings.title}>
       <RepositoryPanel
-        description={dictionary.accountSettings.identityBody}
-        title={dictionary.accountSettings.identityTitle}
+        description={dictionary.accountSettings.profileBody}
+        title={dictionary.accountSettings.profileTitle}
       >
-        <div className={styles.readOnly}>
-          <Settings2 aria-hidden="true" size={18} />
-          {dictionary.common.readOnly}
-        </div>
-        <dl className={styles.details}>
-          <div>
-            <dt>{dictionary.profile.username}</dt>
-            <dd>@{session.user.username}</dd>
+        {profile.ok ? (
+          <ProfileSettingsForm dictionary={dictionary} profile={profile.data} session={session} />
+        ) : (
+          <div className={styles.readOnly}>
+            <Settings2 aria-hidden="true" size={18} />
+            {dictionary.common.readOnly}
           </div>
-          <div>
-            <dt>{dictionary.profile.displayName}</dt>
-            <dd>{session.user.displayName}</dd>
-          </div>
-          <div>
-            <dt>{dictionary.profile.email}</dt>
-            <dd>{session.user.email ?? dictionary.insightsPage.metricUnavailable}</dd>
-          </div>
-        </dl>
+        )}
       </RepositoryPanel>
       <RepositoryPanel
-        description={dictionary.accountSettings.localeBody}
-        title={dictionary.accountSettings.localeTitle}
+        description={dictionary.accountSettings.notificationBody}
+        title={dictionary.accountSettings.notificationTitle}
       >
-        <div className={styles.readOnly}>
-          <Languages aria-hidden="true" size={18} />
-          {locale}
-        </div>
+        {preferences.ok ? (
+          <NotificationSettingsForm dictionary={dictionary} preferences={preferences.data} session={session} />
+        ) : (
+          <div className={styles.readOnly}>
+            <Languages aria-hidden="true" size={18} />
+            {dictionary.common.readOnly}
+          </div>
+        )}
       </RepositoryPanel>
     </RepositorySection>
   );
