@@ -60,7 +60,7 @@ func TestConfiguredLoginProvidersAreReturnedWithoutSecrets(t *testing.T) {
 			PublicOrigin:  "https://app.example",
 			SessionCookie: SessionCookieOptions{Name: "session", Path: "/", Secure: true},
 		}),
-		WithConfiguredLoginProviders([]string{"github"}),
+		WithConfiguredLoginProviders([]string{"google", "github", "facebook", "x", "github", "unknown"}),
 	)
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/auth/providers", nil)
 	response := httptest.NewRecorder()
@@ -76,14 +76,42 @@ func TestConfiguredLoginProvidersAreReturnedWithoutSecrets(t *testing.T) {
 	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
 		t.Fatal(err)
 	}
-	if len(payload.Providers) != 2 || payload.Providers[0].ID != "password" || payload.Providers[1].ID != "github" {
+	providerIDs := make([]string, 0, len(payload.Providers))
+	for _, provider := range payload.Providers {
+		providerIDs = append(providerIDs, provider.ID)
+	}
+	if strings.Join(providerIDs, ",") != "password,google,github,facebook,x" {
 		t.Fatalf("unexpected providers: %+v", payload.Providers)
 	}
-	request = httptest.NewRequest(http.MethodGet, "/auth/login?provider=google", nil)
+	for _, providerID := range []string{"google", "github", "facebook", "x"} {
+		request = httptest.NewRequest(http.MethodGet, "/auth/login?provider="+providerID, nil)
+		response = httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusFound || provider.providerHint != providerID {
+			t.Fatalf("configured provider %q status=%d hint=%q", providerID, response.Code, provider.providerHint)
+		}
+		if strings.Contains(response.Body.String(), "secret") || strings.Contains(response.Body.String(), "client") {
+			t.Fatalf("provider %q response contained credential text: %s", providerID, response.Body.String())
+		}
+	}
+	request = httptest.NewRequest(http.MethodGet, "/auth/login?provider=unknown", nil)
 	response = httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusBadRequest {
-		t.Fatalf("unconfigured provider status = %d, body=%s", response.Code, response.Body.String())
+		t.Fatalf("unknown provider status = %d, body=%s", response.Code, response.Body.String())
+	}
+	request = httptest.NewRequest(http.MethodGet, "/auth/login?provider=github&provider=github", nil)
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("duplicate provider status = %d, body=%s", response.Code, response.Body.String())
+	}
+	provider.providerHint = ""
+	request = httptest.NewRequest(http.MethodGet, "/auth/login?provider=password&prompt=create", nil)
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusFound || provider.providerHint != "" || provider.prompt != auth.RegistrationPrompt {
+		t.Fatalf("password registration status=%d hint=%q prompt=%q", response.Code, provider.providerHint, provider.prompt)
 	}
 }
 
@@ -150,6 +178,11 @@ func TestRepositorySettingsHTTPPreservesRBACDenialAndSuccess(t *testing.T) {
 	response := requestFor(newHandler(deniedStore))
 	if response.Code != http.StatusForbidden || !strings.Contains(response.Body.String(), "forbidden") {
 		t.Fatalf("maintainer denial response = %d %s", response.Code, response.Body.String())
+	}
+	privateStore := &repositorySettingsHTTPIdentityStore{err: platform.ErrNotFound}
+	response = requestFor(newHandler(privateStore))
+	if response.Code != http.StatusNotFound || !strings.Contains(response.Body.String(), "not_found") {
+		t.Fatalf("private repository denial response = %d %s", response.Code, response.Body.String())
 	}
 	allowedStore := &repositorySettingsHTTPIdentityStore{
 		repository: platform.Repository{ID: "repository-1", Slug: "lore"},

@@ -23,48 +23,6 @@ ALTER TABLE organizations
     ADD CONSTRAINT organizations_default_repository_visibility_check
     CHECK (default_repository_visibility IN ('private', 'internal', 'public'));
 
-CREATE TABLE IF NOT EXISTS teams (
-    id uuid PRIMARY KEY,
-    organization_id uuid NOT NULL REFERENCES organizations (id) ON DELETE CASCADE,
-    slug varchar(64) NOT NULL,
-    display_name varchar(160) NOT NULL,
-    description text NOT NULL DEFAULT '',
-    created_by uuid NOT NULL REFERENCES users (id),
-    created_at timestamptz NOT NULL DEFAULT now(),
-    updated_at timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT teams_organization_slug_unique UNIQUE (organization_id, slug)
-);
-
-CREATE INDEX IF NOT EXISTS teams_organization_updated_idx
-    ON teams (organization_id, updated_at DESC);
-
-CREATE TABLE IF NOT EXISTS team_memberships (
-    team_id uuid NOT NULL REFERENCES teams (id) ON DELETE CASCADE,
-    user_id uuid NOT NULL REFERENCES users (id) ON DELETE CASCADE,
-    role varchar(16) NOT NULL DEFAULT 'member',
-    created_at timestamptz NOT NULL DEFAULT now(),
-    PRIMARY KEY (team_id, user_id),
-    CONSTRAINT team_memberships_role_check CHECK (role IN ('maintainer', 'member'))
-);
-
-CREATE INDEX IF NOT EXISTS team_memberships_user_idx
-    ON team_memberships (user_id, team_id);
-
-CREATE TABLE IF NOT EXISTS team_repository_memberships (
-    team_id uuid NOT NULL REFERENCES teams (id) ON DELETE CASCADE,
-    repository_id uuid NOT NULL REFERENCES repositories (id) ON DELETE CASCADE,
-    role varchar(16) NOT NULL DEFAULT 'read',
-    active boolean NOT NULL DEFAULT true,
-    created_at timestamptz NOT NULL DEFAULT now(),
-    PRIMARY KEY (team_id, repository_id),
-    CONSTRAINT team_repository_memberships_role_check
-        CHECK (role IN ('admin', 'write', 'triage', 'read'))
-);
-
-CREATE INDEX IF NOT EXISTS team_repository_memberships_repository_idx
-    ON team_repository_memberships (repository_id, team_id)
-    WHERE active;
-
 CREATE TABLE IF NOT EXISTS notification_preferences (
     user_id uuid PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
     in_app_enabled boolean NOT NULL DEFAULT true,
@@ -85,6 +43,7 @@ CREATE TABLE IF NOT EXISTS notifications (
     href text NOT NULL DEFAULT '/',
     read_at timestamptz,
     created_at timestamptz NOT NULL DEFAULT now(),
+    scope_kind varchar(16),
     CONSTRAINT notifications_recipient_event_unique UNIQUE (recipient_id, source_event_id)
 );
 
@@ -92,7 +51,52 @@ ALTER TABLE notifications
     ADD COLUMN IF NOT EXISTS scope_organization_id uuid,
     ADD COLUMN IF NOT EXISTS scope_repository_id uuid,
     ADD COLUMN IF NOT EXISTS scope_team_id uuid,
-    ADD COLUMN IF NOT EXISTS scope_visibility varchar(16);
+    ADD COLUMN IF NOT EXISTS scope_visibility varchar(16),
+    ADD COLUMN IF NOT EXISTS scope_kind varchar(16);
+
+ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_scope_kind_check;
+ALTER TABLE notifications ADD CONSTRAINT notifications_scope_kind_check
+    CHECK (scope_kind IS NULL OR scope_kind IN ('user', 'organization', 'repository', 'team'));
+
+UPDATE notifications
+SET scope_organization_id = NULL
+WHERE scope_organization_id IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM organizations WHERE organizations.id = notifications.scope_organization_id);
+
+UPDATE notifications
+SET scope_repository_id = NULL
+WHERE scope_repository_id IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM repositories WHERE repositories.id = notifications.scope_repository_id);
+
+UPDATE notifications
+SET scope_team_id = NULL
+WHERE scope_team_id IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM teams WHERE teams.id = notifications.scope_team_id);
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'notifications_scope_organization_fk'
+    ) THEN
+        ALTER TABLE notifications
+            ADD CONSTRAINT notifications_scope_organization_fk
+            FOREIGN KEY (scope_organization_id) REFERENCES organizations (id) ON DELETE SET NULL;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'notifications_scope_repository_fk'
+    ) THEN
+        ALTER TABLE notifications
+            ADD CONSTRAINT notifications_scope_repository_fk
+            FOREIGN KEY (scope_repository_id) REFERENCES repositories (id) ON DELETE SET NULL;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'notifications_scope_team_fk'
+    ) THEN
+        ALTER TABLE notifications
+            ADD CONSTRAINT notifications_scope_team_fk
+            FOREIGN KEY (scope_team_id) REFERENCES teams (id) ON DELETE SET NULL;
+    END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS notifications_recipient_created_idx
     ON notifications (recipient_id, created_at DESC);

@@ -97,9 +97,8 @@ func (store *Store) UserProfile(ctx context.Context, viewer *User, username stri
 		       u.created_at, COUNT(DISTINCT r.id)
 		FROM users u
 		LEFT JOIN organization_memberships owned
-		  ON owned.user_id = u.id AND owned.role IN ('owner', 'maintainer')
+		  ON owned.user_id = u.id AND owned.role IN ('owner', 'maintainer') AND owned.active
 		LEFT JOIN repositories r ON r.organization_id = owned.organization_id
-		  AND r.archived_at IS NULL
 		  AND `+repositoryAccessClause("r", "$2")+`
 		WHERE lower(u.username) = lower($1) AND u.status = 'active'
 		GROUP BY u.id
@@ -141,11 +140,11 @@ func (store *Store) UserRepositories(
 	}
 	rows, err := store.pool.Query(ctx, repositorySelect+`
 		JOIN organization_memberships owner_membership
-		  ON owner_membership.organization_id = r.organization_id
+		  ON owner_membership.organization_id = r.organization_id AND owner_membership.active
 		JOIN users owner ON owner.id = owner_membership.user_id
 		WHERE lower(owner.username) = lower($1)
+		  AND owner.status = 'active'
 		  AND owner_membership.role IN ('owner', 'maintainer')
-		  AND r.archived_at IS NULL
 		  AND `+repositoryAccessClause("r", "$2")+`
 		GROUP BY r.id, o.slug
 		ORDER BY r.updated_at DESC
@@ -205,7 +204,7 @@ func appendProfileUpdate(sets *[]string, args *[]any, column string, value *stri
 
 func (store *Store) accessibleRepositories(ctx context.Context, userID string, limit int) ([]Repository, error) {
 	rows, err := store.pool.Query(ctx, repositorySelect+`
-		WHERE r.archived_at IS NULL
+		WHERE 1 = 1
 		  AND `+repositoryAccessClause("r", "$1")+`
 		GROUP BY r.id, o.slug
 		ORDER BY r.updated_at DESC
@@ -232,14 +231,18 @@ func (store *Store) listOrganizationViews(
 		FROM organizations o
 		LEFT JOIN organization_memberships viewer
 		  ON viewer.organization_id = o.id AND viewer.user_id = $1
+		 AND viewer.active
 		 AND EXISTS (
 		     SELECT 1 FROM users viewer_user
 		     WHERE viewer_user.id = viewer.user_id AND viewer_user.status = 'active'
 		 )
-		LEFT JOIN organization_memberships members ON members.organization_id = o.id
-		LEFT JOIN repositories r ON r.organization_id = o.id AND r.archived_at IS NULL
-		LEFT JOIN teams t ON t.organization_id = o.id
-		WHERE o.visibility = 'public' OR viewer.user_id IS NOT NULL
+		LEFT JOIN organization_memberships members
+		  ON members.organization_id = o.id AND members.active
+		LEFT JOIN users member_user ON member_user.id = members.user_id AND member_user.status = 'active'
+		LEFT JOIN repositories r ON r.organization_id = o.id
+		  AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
+		LEFT JOIN teams t ON t.organization_id = o.id AND t.active
+		WHERE o.active AND (o.visibility = 'public' OR viewer.user_id IS NOT NULL)
 		GROUP BY o.id, viewer.role
 		ORDER BY o.updated_at DESC
 		LIMIT $2
@@ -296,13 +299,17 @@ func (store *Store) searchOrganizations(
 		FROM organizations o
 		LEFT JOIN organization_memberships viewer
 		  ON viewer.organization_id = o.id AND viewer.user_id = NULLIF($2, '')::uuid
+		 AND viewer.active
 		 AND EXISTS (
 		     SELECT 1 FROM users viewer_user
 		     WHERE viewer_user.id = viewer.user_id AND viewer_user.status = 'active'
 		 )
-		LEFT JOIN organization_memberships members ON members.organization_id = o.id
-		LEFT JOIN repositories r ON r.organization_id = o.id AND r.archived_at IS NULL
-		LEFT JOIN teams t ON t.organization_id = o.id
+		LEFT JOIN organization_memberships members
+		  ON members.organization_id = o.id AND members.active
+		LEFT JOIN users member_user ON member_user.id = members.user_id AND member_user.status = 'active'
+		LEFT JOIN repositories r ON r.organization_id = o.id
+		  AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
+		LEFT JOIN teams t ON t.organization_id = o.id AND t.active
 		WHERE (
 		    to_tsvector(
 		        'simple'::regconfig,
@@ -312,7 +319,7 @@ func (store *Store) searchOrganizations(
 		    OR lower(concat_ws(' ', o.slug, o.display_name, o.description))
 		        LIKE '%' || lower($1) || '%'
 		)
-		AND (o.visibility = 'public' OR viewer.user_id IS NOT NULL)
+		AND o.active AND (o.visibility = 'public' OR viewer.user_id IS NOT NULL)
 		GROUP BY o.id, viewer.role
 		ORDER BY o.updated_at DESC
 		LIMIT $3

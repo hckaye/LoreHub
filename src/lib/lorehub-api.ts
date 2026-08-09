@@ -20,12 +20,12 @@ import type {
   NotificationPreferences,
   OrganizationView,
   Repository,
+  ReviewSummary,
+  RevisionHistoryEntry,
   SearchResults,
   Team,
   TeamMember,
   UserProfile,
-  ReviewSummary,
-  RevisionHistoryEntry,
 } from "./api-types";
 
 export async function getDashboard(): Promise<APIResult<DashboardData>> {

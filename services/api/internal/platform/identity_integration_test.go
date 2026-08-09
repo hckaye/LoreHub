@@ -67,7 +67,7 @@ func TestIdentitySearchFiltersPrivateResources(t *testing.T) {
 				id, organization_id, slug, display_name, visibility,
 				lore_repository_id, lore_url, default_branch, created_by
 			) VALUES ($1, $2, $3, 'Search repository', $4, $5, $6, 'main', $7)
-		`, fixture.id, orgID, fixture.slug, fixture.visibility, "lore-"+fixture.slug,
+		`, fixture.id, orgID, fixture.slug, fixture.visibility, canonicalTestLoreID(fixture.id),
 			"lore://"+fixture.slug, alice.ID)
 		mustIdentityExec(t, pool, `INSERT INTO repository_counters (repository_id) VALUES ($1)`, fixture.id)
 	}
@@ -147,7 +147,7 @@ func TestIdentityVisibilityMatrixCoversEveryRepositoryProjection(t *testing.T) {
 				lore_repository_id, lore_url, default_branch, created_by
 			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'main', $9)
 		`, repositoryID, orgID, repositorySlug, "Visibility "+repositoryName, storageVisibility, archivedAt,
-			"lore-"+repositorySlug, "lore://"+repositorySlug, owner.ID)
+			canonicalTestLoreID(repositoryID), "lore://"+repositorySlug, owner.ID)
 		mustIdentityExec(t, pool, `INSERT INTO repository_counters (repository_id) VALUES ($1)`, repositoryID)
 	}
 	mustIdentityExec(t, pool, `
@@ -376,7 +376,7 @@ func TestIdentityNotificationsRespectRepositoryVisibilityAndActiveRecipients(t *
 		INSERT INTO organizations (id, slug, display_name, visibility, created_by)
 		VALUES ($1, $2, 'Notification organization', 'public', $3)
 	`, orgID, orgSlug, owner.ID)
-	for _, userID := range []string{owner.ID, member.ID, suspended.ID} {
+	for _, userID := range []string{owner.ID, member.ID, teamUser.ID, suspended.ID} {
 		mustIdentityExec(t, pool, `
 			INSERT INTO organization_memberships (organization_id, user_id, role) VALUES ($1, $2, 'member')
 		`, orgID, userID)
@@ -402,7 +402,7 @@ func TestIdentityNotificationsRespectRepositoryVisibilityAndActiveRecipients(t *
 				lore_repository_id, lore_url, default_branch, created_by
 			) VALUES ($1, $2, $3, $4, $5, $6, $7, 'main', $8)
 		`, repositoryID, orgID, repositorySlug, "Notification "+visibility, visibility,
-			"lore-"+repositorySlug, "lore://"+repositorySlug, owner.ID)
+			canonicalTestLoreID(repositoryID), "lore://"+repositorySlug, owner.ID)
 		mustIdentityExec(t, pool, `INSERT INTO repository_counters (repository_id) VALUES ($1)`, repositoryID)
 		issueID := uuid.NewString()
 		eventID := uuid.NewString()
@@ -422,9 +422,9 @@ func TestIdentityNotificationsRespectRepositoryVisibilityAndActiveRecipients(t *
 	`, repositoryIDs["public"], owner.ID, repositoryIDs["internal"], grantee.ID, repositoryIDs["private"],
 		grantee.ID, suspended.ID)
 	mustIdentityExec(t, pool, `
-		INSERT INTO team_repository_memberships (team_id, repository_id, role, active)
-		VALUES ($1, $2, 'read', true)
-	`, teamID, repositoryIDs["private"])
+		INSERT INTO team_repository_roles (team_id, repository_id, role, created_by, active)
+		VALUES ($1, $2, 'read', $3, true)
+	`, teamID, repositoryIDs["private"], owner.ID)
 	t.Cleanup(func() {
 		for _, eventID := range eventIDs {
 			_, _ = pool.Exec(ctx, `DELETE FROM outbox_events WHERE id = $1`, eventID)
@@ -457,7 +457,7 @@ func TestIdentityNotificationsRespectRepositoryVisibilityAndActiveRecipients(t *
 		owner.ID:     {"public": true, "internal": true, "private": true},
 		member.ID:    {"internal": true},
 		grantee.ID:   {"private": true},
-		teamUser.ID:  {"private": true},
+		teamUser.ID:  {"internal": true, "private": true},
 		suspended.ID: {},
 	}
 	for index, visibility := range []string{"public", "internal", "private"} {
@@ -476,18 +476,23 @@ func TestIdentityNotificationsRespectRepositoryVisibilityAndActiveRecipients(t *
 			}
 		}
 	}
-	assertRevoked := func(user User, expectedUnread int64) {
+	assertRevoked := func(user User, expectedUnread int64, hideInternal bool) {
 		t.Helper()
 		page, err := store.ListNotifications(ctx, user, false, 20)
 		if err != nil {
 			t.Fatalf("list notifications after revoke for %s: %v", user.Username, err)
 		}
 		assertNoNotificationContent(user, page, "private "+suffix)
-		assertNoNotificationContent(user, page, "internal "+suffix)
-		for _, eventID := range []string{eventIDs[1], eventIDs[2]} {
-			if count := countFor(user.ID, eventID); count != 0 {
-				t.Fatalf("%s retained inaccessible notification %s", user.Username, eventID)
+		if hideInternal {
+			assertNoNotificationContent(user, page, "internal "+suffix)
+		}
+		if hideInternal {
+			if count := countFor(user.ID, eventIDs[1]); count != 0 {
+				t.Fatalf("%s retained inaccessible internal notification %s", user.Username, eventIDs[1])
 			}
+		}
+		if count := countFor(user.ID, eventIDs[2]); count != 0 {
+			t.Fatalf("%s retained inaccessible private notification %s", user.Username, eventIDs[2])
 		}
 		unread, err := store.UnreadNotificationCount(ctx, user)
 		if err != nil {
@@ -500,19 +505,19 @@ func TestIdentityNotificationsRespectRepositoryVisibilityAndActiveRecipients(t *
 	mustIdentityExec(t, pool, `
 		DELETE FROM repository_memberships WHERE repository_id = $1 AND user_id = $2
 	`, repositoryIDs["private"], grantee.ID)
-	assertRevoked(grantee, 0)
+	assertRevoked(grantee, 0, false)
 	mustIdentityExec(t, pool, `
-		DELETE FROM team_repository_memberships WHERE team_id = $1 AND repository_id = $2
+		DELETE FROM team_repository_roles WHERE team_id = $1 AND repository_id = $2
 	`, teamID, repositoryIDs["private"])
-	assertRevoked(teamUser, 0)
+	assertRevoked(teamUser, 1, false)
 	mustIdentityExec(t, pool, `
 		DELETE FROM organization_memberships WHERE organization_id = $1 AND user_id = $2
 	`, orgID, member.ID)
-	assertRevoked(member, 0)
+	assertRevoked(member, 0, true)
 	mustIdentityExec(t, pool, `
 		DELETE FROM organization_memberships WHERE organization_id = $1 AND user_id = $2
 	`, orgID, owner.ID)
-	assertRevoked(owner, 1)
+	assertRevoked(owner, 1, true)
 }
 
 func TestRepositorySettingsRequireExplicitAdminOrOrganizationOwner(t *testing.T) {
@@ -543,7 +548,7 @@ func TestRepositorySettingsRequireExplicitAdminOrOrganizationOwner(t *testing.T)
 			id, organization_id, slug, display_name, visibility,
 			lore_repository_id, lore_url, default_branch, created_by
 		) VALUES ($1, $2, $3, 'Original settings', 'private', $4, $5, 'main', $6)
-	`, repositoryID, orgID, repositorySlug, "lore-"+repositorySlug, "lore://"+repositorySlug, owner.ID)
+	`, repositoryID, orgID, repositorySlug, canonicalTestLoreID(repositoryID), "lore://"+repositorySlug, owner.ID)
 	mustIdentityExec(t, pool, `INSERT INTO repository_counters (repository_id) VALUES ($1)`, repositoryID)
 	mustIdentityExec(t, pool, `
 		INSERT INTO repository_memberships (repository_id, user_id, role) VALUES ($1, $2, 'admin')
@@ -555,8 +560,8 @@ func TestRepositorySettingsRequireExplicitAdminOrOrganizationOwner(t *testing.T)
 
 	maintainerName := "Maintainer must not change repository"
 	if _, err := store.UpdateRepositorySettings(ctx, maintainer, orgSlug, repositorySlug,
-		UpdateRepositorySettingsInput{DisplayName: &maintainerName}); !errors.Is(err, ErrForbidden) {
-		t.Fatalf("organization maintainer update error = %v, want forbidden", err)
+		UpdateRepositorySettingsInput{DisplayName: &maintainerName}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("organization maintainer private update error = %v, want not found", err)
 	}
 	var displayName string
 	if err := pool.QueryRow(ctx, `SELECT display_name FROM repositories WHERE id = $1`, repositoryID).
@@ -613,7 +618,7 @@ func TestIdentityNotificationProjectionLedgerIsBoundedIdempotentAndConcurrent(t 
 			id, organization_id, slug, display_name, visibility,
 			lore_repository_id, lore_url, default_branch, created_by
 		) VALUES ($1, $2, $3, 'Ledger repository', 'public', $4, $5, 'main', $6)
-	`, repositoryID, orgID, repositorySlug, "lore-"+repositorySlug, "lore://"+repositorySlug, owner.ID)
+	`, repositoryID, orgID, repositorySlug, canonicalTestLoreID(repositoryID), "lore://"+repositorySlug, owner.ID)
 	mustIdentityExec(t, pool, `INSERT INTO repository_counters (repository_id) VALUES ($1)`, repositoryID)
 	mustIdentityExec(t, pool, `
 		INSERT INTO issues (id, repository_id, number, title, author_id)
@@ -761,7 +766,7 @@ func TestIdentityNotificationsProjectRealOutboxEvent(t *testing.T) {
 			id, organization_id, slug, display_name, visibility,
 			lore_repository_id, lore_url, default_branch, created_by
 		) VALUES ($1, $2, $3, 'Notify repository', 'private', $4, $5, 'main', $6)
-	`, repositoryID, orgID, repoSlug, "lore-"+repoSlug, "lore://"+repoSlug, alice.ID)
+	`, repositoryID, orgID, repoSlug, canonicalTestLoreID(repositoryID), "lore://"+repoSlug, alice.ID)
 	mustIdentityExec(t, pool, `INSERT INTO repository_counters (repository_id) VALUES ($1)`, repositoryID)
 	mustIdentityExec(t, pool, `
 		INSERT INTO repository_memberships (repository_id, user_id, role) VALUES ($1, $2, 'admin')
@@ -864,6 +869,10 @@ func TestIdentityOrganizationAndTeamAccess(t *testing.T) {
 	if err != nil || len(members) != 2 {
 		t.Fatalf("team members = %+v, err=%v", members, err)
 	}
+}
+
+func canonicalTestLoreID(repositoryID string) string {
+	return strings.ReplaceAll(repositoryID, "-", "")
 }
 
 func platformTestUser(username string) User {

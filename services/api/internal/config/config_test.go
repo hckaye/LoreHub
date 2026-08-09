@@ -1,6 +1,7 @@
 package config
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -90,6 +91,45 @@ func TestLoadInteractiveAuthenticationUsesSecureProductionCookie(t *testing.T) {
 	}
 }
 
+func TestLoadAdvertisesOnlyCompleteProvisionedProviderAliases(t *testing.T) {
+	setRequiredEnvironment(t)
+	providerSettings := identityProviderSettings()
+	for _, provider := range providerSettings {
+		t.Setenv(provider.client, "")
+		t.Setenv(provider.secret, "")
+	}
+	t.Setenv("LOREHUB_IDP_GOOGLE_CLIENT_ID", "google-client")
+	t.Setenv("LOREHUB_IDP_GOOGLE_CLIENT_SECRET", "google-secret")
+	t.Setenv("LOREHUB_IDP_GITHUB_CLIENT_ID", "github-client")
+	t.Setenv("LOREHUB_IDP_FACEBOOK_CLIENT_SECRET", "facebook-secret")
+	t.Setenv("LOREHUB_IDP_X_CLIENT_ID", "x-client")
+	t.Setenv("LOREHUB_IDP_X_CLIENT_SECRET", "x-secret")
+
+	settings, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"google", "x"}; !reflect.DeepEqual(settings.IdentityProviders, want) {
+		t.Fatalf("configured provider aliases = %v, want %v", settings.IdentityProviders, want)
+	}
+}
+
+func TestLoadAdvertisesAllFourProviderAliasesWhenFullyConfigured(t *testing.T) {
+	setRequiredEnvironment(t)
+	for _, provider := range identityProviderSettings() {
+		t.Setenv(provider.client, provider.id+"-client")
+		t.Setenv(provider.secret, provider.id+"-secret")
+	}
+
+	settings, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"google", "github", "facebook", "x"}; !reflect.DeepEqual(settings.IdentityProviders, want) {
+		t.Fatalf("configured provider aliases = %v, want %v", settings.IdentityProviders, want)
+	}
+}
+
 func TestLoadRejectsProductionStaticLoreCredentials(t *testing.T) {
 	setRequiredEnvironment(t)
 	t.Setenv("LOREHUB_ENV", "production")
@@ -151,6 +191,7 @@ func TestLoadRejectsProductionIdentityFallback(t *testing.T) {
 func setRequiredEnvironment(t *testing.T) {
 	t.Helper()
 	t.Setenv("DATABASE_URL", "postgres://localhost/lorehub")
+	t.Setenv("LOREHUB_AUTH_MODE", "")
 	t.Setenv("LOREHUB_OIDC_ISSUER", "")
 	t.Setenv("LOREHUB_OIDC_AUDIENCE", "")
 	t.Setenv("LOREHUB_OIDC_CLIENT_ID", "")
@@ -171,4 +212,8 @@ func setRequiredEnvironment(t *testing.T) {
 	t.Setenv("LOREHUB_LOGIN_BINDING_COOKIE_NAME", "")
 	t.Setenv("LOREHUB_SESSION_COOKIE_PATH", "")
 	t.Setenv("LOREHUB_SESSION_COOKIE_DOMAIN", "")
+	for _, provider := range identityProviderSettings() {
+		t.Setenv(provider.client, "")
+		t.Setenv(provider.secret, "")
+	}
 }

@@ -161,21 +161,27 @@ func Load() (Config, error) {
 
 func configuredIdentityProviders() []string {
 	providers := make([]string, 0, 4)
-	for _, provider := range []struct {
-		id     string
-		client string
-		secret string
-	}{
-		{id: "google", client: "LOREHUB_IDP_GOOGLE_CLIENT_ID", secret: "LOREHUB_IDP_GOOGLE_CLIENT_SECRET"},
-		{id: "github", client: "LOREHUB_IDP_GITHUB_CLIENT_ID", secret: "LOREHUB_IDP_GITHUB_CLIENT_SECRET"},
-		{id: "facebook", client: "LOREHUB_IDP_FACEBOOK_CLIENT_ID", secret: "LOREHUB_IDP_FACEBOOK_CLIENT_SECRET"},
-		{id: "x", client: "LOREHUB_IDP_X_CLIENT_ID", secret: "LOREHUB_IDP_X_CLIENT_SECRET"},
-	} {
+	for _, provider := range identityProviderSettings() {
 		if strings.TrimSpace(os.Getenv(provider.client)) != "" && strings.TrimSpace(os.Getenv(provider.secret)) != "" {
 			providers = append(providers, provider.id)
 		}
 	}
 	return providers
+}
+
+type identityProviderSetting struct {
+	id     string
+	client string
+	secret string
+}
+
+func identityProviderSettings() []identityProviderSetting {
+	return []identityProviderSetting{
+		{id: "google", client: "LOREHUB_IDP_GOOGLE_CLIENT_ID", secret: "LOREHUB_IDP_GOOGLE_CLIENT_SECRET"},
+		{id: "github", client: "LOREHUB_IDP_GITHUB_CLIENT_ID", secret: "LOREHUB_IDP_GITHUB_CLIENT_SECRET"},
+		{id: "facebook", client: "LOREHUB_IDP_FACEBOOK_CLIENT_ID", secret: "LOREHUB_IDP_FACEBOOK_CLIENT_SECRET"},
+		{id: "x", client: "LOREHUB_IDP_X_CLIENT_ID", secret: "LOREHUB_IDP_X_CLIENT_SECRET"},
+	}
 }
 
 func authModeFromEnvironment(

@@ -22,20 +22,27 @@ func (store *Store) Organization(
 	query := `
 		SELECT o.id, o.slug, o.display_name, o.description, o.visibility,
 		       o.website_url, o.contact_email, o.default_repository_visibility,
-		       COALESCE(viewer.role, ''), COUNT(DISTINCT members.user_id),
+		       COALESCE(viewer.role, ''),
+		       COUNT(DISTINCT member_org.user_id) FILTER (WHERE member_user.id IS NOT NULL),
 		       COUNT(DISTINCT r.id) FILTER (WHERE ` + repositoryAccessClause("r", "$2") + `),
 		       COUNT(DISTINCT t.id), o.created_at
 		FROM organizations o
 		LEFT JOIN organization_memberships viewer
 		  ON viewer.organization_id = o.id AND viewer.user_id = NULLIF($2, '')::uuid
+		 AND viewer.active
 		 AND EXISTS (
 		     SELECT 1 FROM users viewer_user
 		     WHERE viewer_user.id = viewer.user_id AND viewer_user.status = 'active'
 		 )
-		LEFT JOIN organization_memberships members ON members.organization_id = o.id
-		LEFT JOIN repositories r ON r.organization_id = o.id AND r.archived_at IS NULL
-		LEFT JOIN teams t ON t.organization_id = o.id
-		WHERE o.slug = $1 AND (o.visibility = 'public' OR viewer.user_id IS NOT NULL)
+		LEFT JOIN organization_memberships members
+		  ON members.organization_id = o.id AND members.active
+		LEFT JOIN users member_user ON member_user.id = members.user_id AND member_user.status = 'active'
+		LEFT JOIN organization_memberships member_org
+		  ON member_org.organization_id = o.id AND member_org.user_id = members.user_id AND member_org.active
+		LEFT JOIN repositories r ON r.organization_id = o.id
+		  AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
+		LEFT JOIN teams t ON t.organization_id = o.id AND t.active
+		WHERE o.slug = $1 AND o.active AND (o.visibility = 'public' OR viewer.user_id IS NOT NULL)
 		GROUP BY o.id, viewer.role
 	`
 	row := store.pool.QueryRow(ctx, query, slug, viewerID)
@@ -59,13 +66,14 @@ func (store *Store) OrganizationRepositories(
 		viewerID = viewer.ID
 	}
 	rows, err := store.pool.Query(ctx, repositorySelect+`
-		WHERE o.slug = $1 AND r.archived_at IS NULL
+		WHERE o.slug = $1 AND o.active AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
 		  AND (
 		      o.visibility = 'public'
 		      OR ($2 <> '' AND EXISTS (
 		          SELECT 1 FROM organization_memberships om
 		          JOIN users viewer_user ON viewer_user.id = om.user_id
 		          WHERE om.organization_id = o.id AND om.user_id = NULLIF($2, '')::uuid
+		            AND om.active AND o.active
 		            AND viewer_user.status = 'active'
 		      ))
 		  )
@@ -108,7 +116,7 @@ func (store *Store) UpdateOrganization(
 		    contact_email = COALESCE($6, contact_email),
 		    default_repository_visibility = COALESCE($7, default_repository_visibility),
 		    updated_at = now()
-		WHERE id = $1
+		WHERE id = $1 AND active
 	`, organizationID, input.DisplayName, input.Description, input.Visibility, input.WebsiteURL,
 		input.ContactEmail, input.DefaultRepositoryVisibility)
 	if err != nil {
@@ -193,16 +201,27 @@ func (store *Store) Teams(
 	}
 	rows, err := store.pool.Query(ctx, `
 		SELECT t.id, t.organization_id, o.slug, t.slug, t.display_name, t.description,
-		       COALESCE(viewer.role, ''), COUNT(DISTINCT members.user_id),
+		       COALESCE(viewer.role, ''),
+		       COUNT(DISTINCT member_org.user_id) FILTER (WHERE member_user.id IS NOT NULL),
 		       t.created_at, t.updated_at
 		FROM teams t
-		JOIN organizations o ON o.id = t.organization_id
+		JOIN organizations o ON o.id = t.organization_id AND o.active
 		LEFT JOIN team_memberships viewer
-		  ON viewer.team_id = t.id AND viewer.user_id = NULLIF($2, '')::uuid
-		LEFT JOIN team_memberships members ON members.team_id = t.id
+		  ON viewer.team_id = t.id AND viewer.user_id = NULLIF($2, '')::uuid AND viewer.active
+		 AND EXISTS (
+		     SELECT 1 FROM organization_memberships active_org_member
+		     WHERE active_org_member.organization_id = t.organization_id
+		       AND active_org_member.user_id = viewer.user_id AND active_org_member.active
+		 )
+		LEFT JOIN team_memberships members ON members.team_id = t.id AND members.active
+		LEFT JOIN users member_user ON member_user.id = members.user_id AND member_user.status = 'active'
+		LEFT JOIN organization_memberships member_org
+		  ON member_org.organization_id = o.id AND member_org.user_id = members.user_id AND member_org.active
 		LEFT JOIN organization_memberships organization_viewer
 		  ON organization_viewer.organization_id = o.id AND organization_viewer.user_id = NULLIF($2, '')::uuid
-		WHERE o.slug = $1 AND (o.visibility = 'public' OR organization_viewer.user_id IS NOT NULL)
+		 AND organization_viewer.active
+		WHERE o.slug = $1 AND t.active
+		  AND (o.visibility = 'public' OR organization_viewer.user_id IS NOT NULL)
 		GROUP BY t.id, o.slug, viewer.role, organization_viewer.role
 		ORDER BY t.display_name ASC
 	`, organizationSlug, viewerID)
@@ -225,16 +244,27 @@ func (store *Store) Team(
 	}
 	row := store.pool.QueryRow(ctx, `
 		SELECT t.id, t.organization_id, o.slug, t.slug, t.display_name, t.description,
-		       COALESCE(viewer.role, organization_viewer.role, ''), COUNT(DISTINCT members.user_id),
+		       COALESCE(viewer.role, organization_viewer.role, ''),
+		       COUNT(DISTINCT member_org.user_id) FILTER (WHERE member_user.id IS NOT NULL),
 		       t.created_at, t.updated_at
 		FROM teams t
-		JOIN organizations o ON o.id = t.organization_id
+		JOIN organizations o ON o.id = t.organization_id AND o.active
 		LEFT JOIN team_memberships viewer
-		  ON viewer.team_id = t.id AND viewer.user_id = NULLIF($3, '')::uuid
-		LEFT JOIN team_memberships members ON members.team_id = t.id
+		  ON viewer.team_id = t.id AND viewer.user_id = NULLIF($3, '')::uuid AND viewer.active
+		 AND EXISTS (
+		     SELECT 1 FROM organization_memberships active_org_member
+		     WHERE active_org_member.organization_id = t.organization_id
+		       AND active_org_member.user_id = viewer.user_id AND active_org_member.active
+		 )
+		LEFT JOIN team_memberships members ON members.team_id = t.id AND members.active
+		LEFT JOIN users member_user ON member_user.id = members.user_id AND member_user.status = 'active'
+		LEFT JOIN organization_memberships member_org
+		  ON member_org.organization_id = o.id AND member_org.user_id = members.user_id AND member_org.active
 		LEFT JOIN organization_memberships organization_viewer
 		  ON organization_viewer.organization_id = o.id AND organization_viewer.user_id = NULLIF($3, '')::uuid
+		 AND organization_viewer.active
 		WHERE o.slug = $1 AND t.slug = $2
+		  AND t.active
 		  AND (o.visibility = 'public' OR organization_viewer.user_id IS NOT NULL)
 		GROUP BY t.id, o.slug, viewer.role, organization_viewer.role
 	`, organizationSlug, teamSlug, viewerID)
@@ -264,8 +294,12 @@ func (store *Store) TeamMembers(
 	rows, err := store.pool.Query(ctx, `
 		SELECT u.id, u.username, u.display_name, tm.role, tm.created_at
 		FROM team_memberships tm
-		JOIN users u ON u.id = tm.user_id
-		WHERE tm.team_id = $1
+		JOIN teams t ON t.id = tm.team_id AND t.active
+		JOIN organizations o ON o.id = t.organization_id AND o.active
+		JOIN organization_memberships om
+		  ON om.organization_id = o.id AND om.user_id = tm.user_id AND om.active
+		JOIN users u ON u.id = tm.user_id AND u.status = 'active'
+		WHERE tm.team_id = $1 AND tm.active
 		ORDER BY u.username ASC
 	`, team.ID)
 	if err != nil {
@@ -310,7 +344,7 @@ func (store *Store) UpdateTeam(
 	_, err = transaction.Exec(ctx, `
 		UPDATE teams
 		SET display_name = COALESCE($2, display_name), description = COALESCE($3, description), updated_at = now()
-		WHERE id = $1
+		WHERE id = $1 AND active
 	`, team.ID, input.DisplayName, input.Description)
 	if err != nil {
 		return Team{}, translateConstraintError("update team", err)
@@ -352,7 +386,8 @@ func (store *Store) AddTeamMember(
 		SELECT u.id, u.username, u.display_name, $3, now()
 		FROM users u
 		JOIN organization_memberships om ON om.user_id = u.id
-		WHERE lower(u.username) = lower($1) AND om.organization_id = $2 AND u.status = 'active'
+		WHERE lower(u.username) = lower($1) AND om.organization_id = $2
+		  AND om.active AND u.status = 'active'
 	`, username, team.OrganizationID, role).Scan(
 		&member.UserID, &member.Username, &member.DisplayName, &member.Role, &member.JoinedAt,
 	)
@@ -467,19 +502,20 @@ func (store *Store) UpdateRepositorySettings(
 		    visibility = COALESCE($4, visibility),
 		    homepage_url = COALESCE($5, homepage_url),
 		    updated_at = now()
-		WHERE id = $1
+		WHERE id = $1 AND lifecycle_state = 'active' AND archived_at IS NULL
+		  AND EXISTS (SELECT 1 FROM organizations o WHERE o.id = repositories.organization_id AND o.active)
 		  AND (
 		      EXISTS (
 		          SELECT 1 FROM repository_memberships rm
 		          JOIN users repository_user ON repository_user.id = rm.user_id
 		          WHERE rm.repository_id = repositories.id AND rm.user_id = $6
-		            AND rm.role = 'admin' AND repository_user.status = 'active'
+		            AND rm.role = 'admin' AND rm.active AND repository_user.status = 'active'
 		      )
 		      OR EXISTS (
 		          SELECT 1 FROM organization_memberships om
 		          JOIN users organization_user ON organization_user.id = om.user_id
 		          WHERE om.organization_id = repositories.organization_id AND om.user_id = $6
-		            AND om.role = 'owner' AND organization_user.status = 'active'
+		            AND om.role = 'owner' AND om.active AND organization_user.status = 'active'
 		      )
 		  )
 	`, repository.ID, input.DisplayName, input.Description, input.Visibility, input.HomepageURL, actor.ID)
@@ -517,25 +553,33 @@ func (store *Store) repositoryManager(
 	slug string,
 ) (Repository, string, string, string, error) {
 	row := store.pool.QueryRow(ctx, repositorySelect+`
-		WHERE o.slug = $1 AND r.slug = $2 AND r.archived_at IS NULL
+		WHERE o.slug = $1 AND r.slug = $2 AND o.active
+		  AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
 		  AND (
 		      EXISTS (
 		          SELECT 1 FROM repository_memberships rm
 		          JOIN users repository_user ON repository_user.id = rm.user_id
 		          WHERE rm.repository_id = r.id AND rm.user_id = $3
-		            AND rm.role = 'admin' AND repository_user.status = 'active'
+		            AND rm.role = 'admin' AND rm.active AND repository_user.status = 'active'
 		      )
 		      OR EXISTS (
 		          SELECT 1 FROM organization_memberships om
 		          JOIN users organization_user ON organization_user.id = om.user_id
 		          WHERE om.organization_id = o.id AND om.user_id = $3
-		            AND om.role = 'owner' AND organization_user.status = 'active'
+		            AND om.role = 'owner' AND om.active AND organization_user.status = 'active'
 		      )
 		  )
 		GROUP BY r.id, o.slug
 	`, owner, slug, userID)
 	repository, err := scanRepository(row)
 	if errors.Is(err, pgx.ErrNoRows) {
+		visible, visibilityErr := store.repositoryVisibleForActor(ctx, userID, owner, slug)
+		if visibilityErr != nil {
+			return Repository{}, "", "", "", visibilityErr
+		}
+		if !visible {
+			return Repository{}, "", "", "", ErrNotFound
+		}
 		return Repository{}, "", "", "", ErrForbidden
 	}
 	if err != nil {
@@ -544,9 +588,9 @@ func (store *Store) repositoryManager(
 	var role, orgRole string
 	err = store.pool.QueryRow(ctx, `
 		SELECT COALESCE((SELECT rm.role FROM repository_memberships rm
-		                WHERE rm.repository_id = $1 AND rm.user_id = $2), ''),
+		                WHERE rm.repository_id = $1 AND rm.user_id = $2 AND rm.active), ''),
 		       COALESCE((SELECT om.role FROM organization_memberships om
-		                 WHERE om.organization_id = $3 AND om.user_id = $2), '')
+		                 WHERE om.organization_id = $3 AND om.user_id = $2 AND om.active), '')
 	`, repository.ID, userID, repository.OrganizationID).Scan(&role, &orgRole)
 	if err != nil {
 		return Repository{}, "", "", "", fmt.Errorf("read repository settings role: %w", err)
@@ -559,9 +603,9 @@ func (store *Store) organizationRole(ctx context.Context, userID string, slug st
 	err := store.pool.QueryRow(ctx, `
 		SELECT o.id, m.role
 		FROM organizations o
-		JOIN organization_memberships m ON m.organization_id = o.id AND m.user_id = $2
+		JOIN organization_memberships m ON m.organization_id = o.id AND m.user_id = $2 AND m.active
 		JOIN users u ON u.id = m.user_id AND u.status = 'active'
-		WHERE o.slug = $1
+		WHERE o.slug = $1 AND o.active
 	`, slug, userID).Scan(&organizationID, &role)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", "", ErrForbidden

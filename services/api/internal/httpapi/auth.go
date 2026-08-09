@@ -89,8 +89,28 @@ func WithIdentityStore(store IdentityStore) Option {
 
 func WithConfiguredLoginProviders(providers []string) Option {
 	return func(api *API) {
-		api.loginProviders = append([]string(nil), providers...)
+		api.loginProviders = normalizeLoginProviders(providers)
 	}
+}
+
+func normalizeLoginProviders(providers []string) []string {
+	known := map[string]struct{}{
+		"google": {}, "github": {}, "facebook": {}, "x": {},
+	}
+	result := make([]string, 0, len(providers))
+	seen := make(map[string]struct{}, len(providers))
+	for _, value := range providers {
+		provider := strings.ToLower(strings.TrimSpace(value))
+		if _, ok := known[provider]; !ok {
+			continue
+		}
+		if _, ok := seen[provider]; ok {
+			continue
+		}
+		seen[provider] = struct{}{}
+		result = append(result, provider)
+	}
+	return result
 }
 
 func (api *API) login(writer http.ResponseWriter, request *http.Request) {

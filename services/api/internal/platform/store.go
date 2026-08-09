@@ -204,7 +204,8 @@ func (store *Store) RegisterRepository(
 		SELECT o.id, m.role
 		FROM organizations o
 		JOIN organization_memberships m ON m.organization_id = o.id
-		WHERE o.slug = $1 AND m.user_id = $2
+		JOIN users u ON u.id = m.user_id AND u.status = 'active'
+		WHERE o.slug = $1 AND o.active AND m.user_id = $2 AND m.active
 	`, organizationSlug, actor.ID).Scan(&organizationID, &role)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Repository{}, ErrForbidden
@@ -269,7 +270,7 @@ func (store *Store) ExploreRepositories(ctx context.Context, limit int) ([]Repos
 		limit = 30
 	}
 	rows, err := store.pool.Query(ctx, repositorySelect+`
-		WHERE r.visibility = 'public' AND r.archived_at IS NULL
+		WHERE o.active AND r.lifecycle_state = 'active' AND r.visibility = 'public' AND r.archived_at IS NULL
 		GROUP BY r.id, o.slug
 		ORDER BY r.updated_at DESC
 		LIMIT $1
@@ -283,7 +284,8 @@ func (store *Store) ExploreRepositories(ctx context.Context, limit int) ([]Repos
 
 func (store *Store) PublicRepository(ctx context.Context, owner string, slug string) (Repository, error) {
 	row := store.pool.QueryRow(ctx, repositorySelect+`
-		WHERE o.slug = $1 AND r.slug = $2 AND r.visibility = 'public' AND r.archived_at IS NULL
+		WHERE o.slug = $1 AND o.active AND r.slug = $2 AND r.lifecycle_state = 'active'
+		  AND r.visibility = 'public' AND r.archived_at IS NULL
 		GROUP BY r.id, o.slug
 	`, owner, slug)
 	repository, err := scanRepository(row)
@@ -303,22 +305,32 @@ func (store *Store) RepositoryForWrite(
 	slug string,
 ) (Repository, error) {
 	row := store.pool.QueryRow(ctx, repositorySelect+`
-		WHERE o.slug = $1 AND r.slug = $2 AND r.archived_at IS NULL
+		WHERE o.slug = $1 AND o.active AND r.slug = $2
+		  AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
+		  AND EXISTS (SELECT 1 FROM users actor_user WHERE actor_user.id = $3 AND actor_user.status = 'active')
 		  AND (
 		      EXISTS (
 		          SELECT 1 FROM repository_memberships rm
-		          WHERE rm.repository_id = r.id AND rm.user_id = $3 AND rm.role IN ('admin', 'write')
+		          WHERE rm.repository_id = r.id AND rm.user_id = $3
+		            AND rm.role IN ('admin', 'write') AND rm.active
 		      )
 		      OR EXISTS (
 		          SELECT 1 FROM organization_memberships om
 		          WHERE om.organization_id = o.id AND om.user_id = $3
-		            AND om.role IN ('owner', 'maintainer')
+		            AND om.role = 'owner' AND om.active
 		      )
 		  )
 		GROUP BY r.id, o.slug
 	`, owner, slug, actor.ID)
 	repository, err := scanRepository(row)
 	if errors.Is(err, pgx.ErrNoRows) {
+		visible, visibilityErr := store.repositoryVisibleForActor(ctx, actor.ID, owner, slug)
+		if visibilityErr != nil {
+			return Repository{}, visibilityErr
+		}
+		if !visible {
+			return Repository{}, ErrNotFound
+		}
 		return Repository{}, ErrForbidden
 	}
 	if err != nil {
@@ -341,7 +353,8 @@ func (store *Store) ListPublicIssues(
 		       assignee.username, COUNT(c.id), i.created_at, i.updated_at
 		FROM issues i
 		JOIN repositories r ON r.id = i.repository_id
-		JOIN organizations o ON o.id = r.organization_id
+		  AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
+		JOIN organizations o ON o.id = r.organization_id AND o.active
 		JOIN users author ON author.id = i.author_id
 		LEFT JOIN users assignee ON assignee.id = i.assignee_id
 		LEFT JOIN issue_comments c ON c.issue_id = i.id
@@ -382,8 +395,8 @@ func (store *Store) CreateIssue(
 	err := store.pool.QueryRow(ctx, `
 		SELECT r.id, r.organization_id, r.visibility
 		FROM repositories r
-		JOIN organizations o ON o.id = r.organization_id
-		WHERE o.slug = $1 AND r.slug = $2 AND r.archived_at IS NULL
+		JOIN organizations o ON o.id = r.organization_id AND o.active
+		WHERE o.slug = $1 AND r.slug = $2 AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
 	`, owner, slug).Scan(&repositoryID, &organizationID, &visibility)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Issue{}, ErrNotFound
@@ -466,7 +479,8 @@ func (store *Store) ListPublicMergeRequests(
 		       mr.created_at, mr.updated_at
 		FROM merge_requests mr
 		JOIN repositories r ON r.id = mr.repository_id
-		JOIN organizations o ON o.id = r.organization_id
+		  AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
+		JOIN organizations o ON o.id = r.organization_id AND o.active
 		JOIN users author ON author.id = mr.author_id
 		LEFT JOIN merge_request_reviews review ON review.merge_request_id = mr.id
 		WHERE o.slug = $1 AND r.slug = $2 AND r.visibility = 'public' AND mr.state = $3
@@ -582,7 +596,8 @@ func (store *Store) ListPublicCIRuns(
 		       run.status, run.conclusion, run.queued_at, run.started_at, run.completed_at
 		FROM ci_runs run
 		JOIN repositories r ON r.id = run.repository_id
-		JOIN organizations o ON o.id = r.organization_id
+		  AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
+		JOIN organizations o ON o.id = r.organization_id AND o.active
 		WHERE o.slug = $1 AND r.slug = $2 AND r.visibility = 'public'
 		ORDER BY run.run_number DESC
 		LIMIT 50
@@ -629,15 +644,17 @@ func (store *Store) writableRepository(
 		SELECT r.id, r.organization_id,
 		       EXISTS (
 		           SELECT 1 FROM repository_memberships rm
-		           WHERE rm.repository_id = r.id AND rm.user_id = $3 AND rm.role IN ('admin', 'write')
+		           WHERE rm.repository_id = r.id AND rm.user_id = $3
+		             AND rm.role IN ('admin', 'write') AND rm.active
 		           UNION ALL
 		           SELECT 1 FROM organization_memberships om
 		           WHERE om.organization_id = o.id AND om.user_id = $3
-		             AND om.role IN ('owner', 'maintainer')
+		             AND om.role = 'owner' AND om.active
 		       )
 		FROM repositories r
-		JOIN organizations o ON o.id = r.organization_id
-		WHERE o.slug = $1 AND r.slug = $2 AND r.archived_at IS NULL
+		JOIN organizations o ON o.id = r.organization_id AND o.active
+		WHERE o.slug = $1 AND r.slug = $2 AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
+		  AND EXISTS (SELECT 1 FROM users actor_user WHERE actor_user.id = $3 AND actor_user.status = 'active')
 	`, owner, slug, userID).Scan(&repositoryID, &organizationID, &allowed)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", "", ErrNotFound
@@ -646,9 +663,38 @@ func (store *Store) writableRepository(
 		return "", "", fmt.Errorf("check repository write permission: %w", err)
 	}
 	if !allowed {
+		visible, visibilityErr := store.repositoryVisibleForActor(ctx, userID, owner, slug)
+		if visibilityErr != nil {
+			return "", "", visibilityErr
+		}
+		if !visible {
+			return "", "", ErrNotFound
+		}
 		return "", "", ErrForbidden
 	}
 	return repositoryID, organizationID, nil
+}
+
+func (store *Store) repositoryVisibleForActor(
+	ctx context.Context,
+	userID string,
+	owner string,
+	slug string,
+) (bool, error) {
+	var visible bool
+	err := store.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM repositories r
+			JOIN organizations o ON o.id = r.organization_id
+			WHERE o.slug = $1 AND r.slug = $2
+			  AND `+repositoryAccessClause("r", "$3")+`
+		)
+	`, owner, slug, userID).Scan(&visible)
+	if err != nil {
+		return false, fmt.Errorf("check repository visibility: %w", err)
+	}
+	return visible, nil
 }
 
 func (store *Store) canReadRepository(
@@ -660,11 +706,10 @@ func (store *Store) canReadRepository(
 	var allowed bool
 	err := store.pool.QueryRow(ctx, `
 		SELECT EXISTS (
-			SELECT 1 FROM repository_memberships
-			WHERE repository_id = $1 AND user_id = $2
-			UNION ALL
-			SELECT 1 FROM organization_memberships
-			WHERE organization_id = $3 AND user_id = $2
+			SELECT 1
+			FROM repositories r
+			WHERE r.id = $1 AND r.organization_id = $3
+			  AND `+repositoryAccessClause("r", "$2")+`
 		)
 	`, repositoryID, userID, organizationID).Scan(&allowed)
 	if err != nil {
@@ -680,7 +725,7 @@ const repositorySelect = `
 	       COUNT(DISTINCT i.id) FILTER (WHERE i.state = 'open'),
 	       COUNT(DISTINCT mr.id) FILTER (WHERE mr.state = 'open'), r.updated_at
 	FROM repositories r
-	JOIN organizations o ON o.id = r.organization_id
+	JOIN organizations o ON o.id = r.organization_id AND o.active
 	LEFT JOIN issues i ON i.repository_id = r.id
 	LEFT JOIN merge_requests mr ON mr.repository_id = r.id
 `
