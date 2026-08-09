@@ -1,0 +1,93 @@
+.form {
+  display: grid;
+  gap: 16px;
+  margin-top: 30px;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.heading h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.heading p {
+  margin: 5px 0 0;
+  color: var(--fg-muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.form label {
+  display: grid;
+  gap: 6px;
+  color: var(--fg-muted);
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.form input,
+.form textarea,
+.form select {
+  width: 100%;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface-raised);
+  color: var(--fg-default);
+}
+
+.form input,
+.form select {
+  min-height: 38px;
+  padding: 0 10px;
+}
+
+.form textarea {
+  padding: 9px 10px;
+  resize: vertical;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.actions button {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--accent-emphasis);
+  border-radius: 6px;
+  background: var(--accent-emphasis);
+  color: var(--fg-on-emphasis);
+  font-weight: 650;
+}
+
+.actions button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.actions span {
+  color: var(--success-fg);
+  font-size: 0.8rem;
+}
+
+.actions span[role="alert"] {
+  color: var(--danger-fg);
+}
+
+@media (max-width: 620px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}

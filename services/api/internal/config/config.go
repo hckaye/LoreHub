@@ -43,6 +43,7 @@ type Config struct {
 	SessionCookieSecure               bool
 	SessionTTL                        time.Duration
 	LoginTransactionTTL               time.Duration
+	IdentityProviders                 []string
 	LoreCacheDir                      string
 	LoreIdentity                      string
 	LoreCredentials                   map[string]loreclient.CredentialMaterial
@@ -95,6 +96,7 @@ func Load() (Config, error) {
 		return Config{}, errors.New("LOREHUB_LORE_ALLOW_DEVELOPMENT_FALLBACK must be true or false")
 	}
 	config := Config{
+		// The rest of this literal contains the merged runtime and identity settings.
 		Environment:                       environment,
 		HTTPAddress:                       envOrDefault("LOREHUB_HTTP_ADDRESS", ":8080"),
 		DatabaseURL:                       os.Getenv("DATABASE_URL"),
@@ -115,6 +117,7 @@ func Load() (Config, error) {
 		SessionCookieSecure:               cookieSecure,
 		SessionTTL:                        sessionTTL,
 		LoginTransactionTTL:               transactionTTL,
+		IdentityProviders:                 configuredIdentityProviders(),
 		LoreCacheDir:                      envOrDefault("LOREHUB_LORE_CACHE_DIR", ".cache/lorehub/repositories"),
 		LoreIdentity:                      os.Getenv("LOREHUB_LORE_IDENTITY"),
 		LoreCredentials:                   credentials,
@@ -154,6 +157,31 @@ func Load() (Config, error) {
 	}
 
 	return config, nil
+}
+
+func configuredIdentityProviders() []string {
+	providers := make([]string, 0, 4)
+	for _, provider := range identityProviderSettings() {
+		if strings.TrimSpace(os.Getenv(provider.client)) != "" && strings.TrimSpace(os.Getenv(provider.secret)) != "" {
+			providers = append(providers, provider.id)
+		}
+	}
+	return providers
+}
+
+type identityProviderSetting struct {
+	id     string
+	client string
+	secret string
+}
+
+func identityProviderSettings() []identityProviderSetting {
+	return []identityProviderSetting{
+		{id: "google", client: "LOREHUB_IDP_GOOGLE_CLIENT_ID", secret: "LOREHUB_IDP_GOOGLE_CLIENT_SECRET"},
+		{id: "github", client: "LOREHUB_IDP_GITHUB_CLIENT_ID", secret: "LOREHUB_IDP_GITHUB_CLIENT_SECRET"},
+		{id: "facebook", client: "LOREHUB_IDP_FACEBOOK_CLIENT_ID", secret: "LOREHUB_IDP_FACEBOOK_CLIENT_SECRET"},
+		{id: "x", client: "LOREHUB_IDP_X_CLIENT_ID", secret: "LOREHUB_IDP_X_CLIENT_SECRET"},
+	}
 }
 
 func authModeFromEnvironment(

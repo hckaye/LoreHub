@@ -6,6 +6,7 @@ import type {
   APIResult,
   Branch,
   CIRun,
+  DashboardData,
   FileHistoryEntry,
   Issue,
   LoreDiff,
@@ -15,10 +16,70 @@ import type {
   MergeOperation,
   MergeReadiness,
   MergeRequest,
+  Notification,
+  NotificationPreferences,
+  OrganizationView,
   Repository,
   ReviewSummary,
   RevisionHistoryEntry,
+  SearchResults,
+  Team,
+  TeamMember,
+  UserProfile,
 } from "./api-types";
+
+export async function getDashboard(): Promise<APIResult<DashboardData>> {
+  return request<DashboardData>("/api/v1/dashboard");
+}
+
+export async function getSearchResults(query: string): Promise<APIResult<SearchResults>> {
+  const params = new URLSearchParams({ q: query, type: "all", limit: "30" });
+  return request<SearchResults>(`/api/v1/search?${params.toString()}`);
+}
+
+export async function getUserProfile(username: string): Promise<APIResult<UserProfile>> {
+  return request<UserProfile>(`/api/v1/users/${encodeURIComponent(username)}`);
+}
+
+export async function getUserRepositories(username: string): Promise<APIResult<Repository[]>> {
+  const result = await request<{ repositories: Repository[] }>(
+    `/api/v1/users/${encodeURIComponent(username)}/repositories`,
+  );
+  return result.ok ? { ok: true, data: result.data.repositories } : result;
+}
+
+export async function getOrganization(slug: string): Promise<APIResult<OrganizationView>> {
+  return request<OrganizationView>(`/api/v1/organizations/${encodeURIComponent(slug)}`);
+}
+
+export async function getOrganizationRepositories(slug: string): Promise<APIResult<Repository[]>> {
+  const result = await request<{ repositories: Repository[] }>(
+    `/api/v1/organizations/${encodeURIComponent(slug)}/repositories`,
+  );
+  return result.ok ? { ok: true, data: result.data.repositories } : result;
+}
+
+export async function getTeams(slug: string): Promise<APIResult<Team[]>> {
+  const result = await request<{ teams: Team[] }>(`/api/v1/organizations/${encodeURIComponent(slug)}/teams`);
+  return result.ok ? { ok: true, data: result.data.teams } : result;
+}
+
+export async function getTeam(slug: string, team: string): Promise<APIResult<{ team: Team; members?: TeamMember[] }>> {
+  return request<{ team: Team; members?: TeamMember[] }>(
+    `/api/v1/organizations/${encodeURIComponent(slug)}/teams/${encodeURIComponent(team)}`,
+  );
+}
+
+export async function getNotifications(unreadOnly = false): Promise<APIResult<Notification[]>> {
+  const result = await request<{ items: Notification[] }>(
+    `/api/v1/notifications?unread=${String(unreadOnly)}&limit=100`,
+  );
+  return result.ok ? { ok: true, data: result.data.items } : result;
+}
+
+export async function getNotificationPreferences(): Promise<APIResult<NotificationPreferences>> {
+  return request<NotificationPreferences>("/api/v1/account/notification-preferences");
+}
 
 const apiOrigin = process.env.LOREHUB_API_URL ?? "http://127.0.0.1:8080";
 
@@ -33,6 +94,10 @@ export async function getPublicRepositories(query = ""): Promise<APIResult<Repos
 
 export function getPublicRepository(owner: string, repository: string): Promise<APIResult<Repository>> {
   return request(`/api/v1/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}`);
+}
+
+export function getRepositorySettings(owner: string, repository: string): Promise<APIResult<Repository>> {
+  return request(`/api/v1/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/settings`);
 }
 
 export async function getBranches(owner: string, repository: string): Promise<APIResult<Branch[]>> {

@@ -142,6 +142,8 @@ func run(logger *slog.Logger) error {
 				Secure:           settings.SessionCookieSecure,
 			},
 		}),
+		httpapi.WithIdentityStore(store),
+		httpapi.WithConfiguredLoginProviders(settings.IdentityProviders),
 		httpapi.WithCollaboration(collab.NewStore(pool)),
 		httpapi.WithLoreCredentials(loreCredentials),
 		httpapi.WithLoreServiceSubjects(loreclient.ServiceSubjects{

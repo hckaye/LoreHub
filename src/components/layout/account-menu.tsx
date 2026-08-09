@@ -58,6 +58,8 @@ export function AccountMenu({ locale, dictionary, session }: AccountMenuProps) {
           </div>
         </div>
         <Link href={`/${locale}/profile`}>{dictionary.common.profile}</Link>
+        <Link href={`/${locale}/notifications`}>{dictionary.common.notifications}</Link>
+        <Link href={`/${locale}/organizations`}>{dictionary.common.organizations}</Link>
         <Link href={`/${locale}/settings`}>{dictionary.common.accountSettings}</Link>
         {error && <p className={styles.error}>{dictionary.auth.logoutFailed}</p>}
         <button disabled={pending} onClick={handleLogout} type="button">

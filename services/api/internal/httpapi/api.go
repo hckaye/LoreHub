@@ -67,6 +67,81 @@ type Store interface {
 	ListPublicCIRuns(ctx context.Context, owner string, slug string) ([]platform.CIRun, error)
 }
 
+type IdentityStore interface {
+	Dashboard(ctx context.Context, actor platform.User) (platform.Dashboard, error)
+	Search(ctx context.Context, viewer *platform.User, query, kind string, limit int) (platform.SearchResults, error)
+	UserProfile(ctx context.Context, viewer *platform.User, username string) (platform.UserProfile, error)
+	UserRepositories(ctx context.Context, viewer *platform.User, username string) ([]platform.Repository, error)
+	UpdateProfile(
+		ctx context.Context,
+		actor platform.User,
+		input platform.UpdateProfileInput,
+	) (platform.UserProfile, error)
+	Organization(ctx context.Context, viewer *platform.User, slug string) (platform.OrganizationView, error)
+	OrganizationRepositories(
+		ctx context.Context,
+		viewer *platform.User,
+		slug string,
+	) ([]platform.Repository, error)
+	UpdateOrganization(
+		ctx context.Context,
+		actor platform.User,
+		slug string,
+		input platform.UpdateOrganizationInput,
+	) (platform.OrganizationView, error)
+	CreateTeam(
+		ctx context.Context,
+		actor platform.User,
+		organizationSlug string,
+		input platform.CreateTeamInput,
+	) (platform.Team, error)
+	Teams(ctx context.Context, viewer *platform.User, organizationSlug string) ([]platform.Team, error)
+	Team(ctx context.Context, viewer *platform.User, organizationSlug, teamSlug string) (platform.Team, error)
+	TeamMembers(
+		ctx context.Context,
+		viewer *platform.User,
+		organizationSlug string,
+		teamSlug string,
+	) ([]platform.TeamMember, error)
+	UpdateTeam(
+		ctx context.Context,
+		actor platform.User,
+		organizationSlug, teamSlug string,
+		input platform.UpdateTeamInput,
+	) (platform.Team, error)
+	AddTeamMember(
+		ctx context.Context,
+		actor platform.User,
+		organizationSlug, teamSlug, username, role string,
+	) (platform.TeamMember, error)
+	RemoveTeamMember(
+		ctx context.Context,
+		actor platform.User,
+		organizationSlug, teamSlug, username string,
+	) error
+	UpdateRepositorySettings(
+		ctx context.Context,
+		actor platform.User,
+		owner, slug string,
+		input platform.UpdateRepositorySettingsInput,
+	) (platform.Repository, error)
+	ListNotifications(
+		ctx context.Context,
+		actor platform.User,
+		unreadOnly bool,
+		limit int,
+	) (platform.NotificationPage, error)
+	UnreadNotificationCount(ctx context.Context, actor platform.User) (int64, error)
+	MarkNotificationRead(ctx context.Context, actor platform.User, notificationID string) error
+	MarkAllNotificationsRead(ctx context.Context, actor platform.User) error
+	NotificationPreferences(ctx context.Context, actor platform.User) (platform.NotificationPreferences, error)
+	UpdateNotificationPreferences(
+		ctx context.Context,
+		actor platform.User,
+		input platform.UpdateNotificationPreferencesInput,
+	) (platform.NotificationPreferences, error)
+}
+
 type HealthChecker interface {
 	Ping(ctx context.Context) error
 }
@@ -90,6 +165,8 @@ type API struct {
 	cookie          sessionCookieConfig
 	sessionTTL      time.Duration
 	transactionTTL  time.Duration
+	identityStore   IdentityStore
+	loginProviders  []string
 }
 
 func New(
@@ -121,16 +198,40 @@ func New(
 	mux.HandleFunc("GET /auth/callback", api.callback)
 	mux.HandleFunc("POST /auth/logout", api.logout)
 	mux.HandleFunc("GET /api/v1/auth/session", api.session)
+	mux.HandleFunc("GET /api/v1/auth/providers", api.providers)
+	mux.HandleFunc("GET /api/v1/dashboard", api.dashboard)
+	mux.HandleFunc("GET /api/v1/search", api.search)
+	mux.HandleFunc("GET /api/v1/users/{username}", api.userProfile)
+	mux.HandleFunc("GET /api/v1/users/{username}/repositories", api.userRepositories)
+	mux.HandleFunc("PATCH /api/v1/account/profile", api.updateProfile)
+	mux.HandleFunc("GET /api/v1/account/notification-preferences", api.notificationPreferences)
+	mux.HandleFunc("PATCH /api/v1/account/notification-preferences", api.updateNotificationPreferences)
+	mux.HandleFunc("GET /api/v1/notifications", api.notifications)
+	mux.HandleFunc("GET /api/v1/notifications/unread-count", api.unreadNotificationCount)
+	mux.HandleFunc("PATCH /api/v1/notifications/{notificationID}/read", api.markNotificationRead)
+	mux.HandleFunc("POST /api/v1/notifications/read-all", api.markAllNotificationsRead)
 	mux.HandleFunc("GET /api/v1/explore/repositories", api.exploreRepositories)
 	mux.HandleFunc("POST /api/v1/organizations", api.createOrganization)
+	mux.HandleFunc("GET /api/v1/organizations/{organization}", api.organization)
+	mux.HandleFunc("PATCH /api/v1/organizations/{organization}/settings", api.updateOrganization)
+	mux.HandleFunc("GET /api/v1/organizations/{organization}/repositories", api.organizationRepositories)
+	mux.HandleFunc("GET /api/v1/organizations/{organization}/teams", api.teams)
+	mux.HandleFunc("POST /api/v1/organizations/{organization}/teams", api.createTeam)
+	mux.HandleFunc("GET /api/v1/organizations/{organization}/teams/{team}", api.team)
+	mux.HandleFunc("PATCH /api/v1/organizations/{organization}/teams/{team}/settings", api.updateTeam)
+	mux.HandleFunc("GET /api/v1/organizations/{organization}/teams/{team}/members", api.teamMembers)
+	mux.HandleFunc("POST /api/v1/organizations/{organization}/teams/{team}/members", api.addTeamMember)
+	mux.HandleFunc("DELETE /api/v1/organizations/{organization}/teams/{team}/members/{username}", api.removeTeamMember)
 	mux.HandleFunc("POST /api/v1/organizations/{organization}/repositories", api.registerRepository)
 	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}", api.publicRepository)
+	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/settings", api.repositorySettings)
 	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/branches", api.repositoryBranches)
 	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/issues", api.listIssues)
 	mux.HandleFunc("POST /api/v1/repositories/{owner}/{repository}/issues", api.createIssue)
 	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/merge-requests", api.listMergeRequests)
 	mux.HandleFunc("POST /api/v1/repositories/{owner}/{repository}/merge-requests", api.createMergeRequest)
 	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/actions/runs", api.listCIRuns)
+	mux.HandleFunc("PATCH /api/v1/repositories/{owner}/{repository}/settings", api.updateRepositorySettings)
 	if api.collabStore != nil {
 		collab.Register(mux, api.collabStore, api, logger)
 		if codeClient, ok := api.lore.(loreclient.CodeClient); ok {
