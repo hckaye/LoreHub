@@ -12,7 +12,8 @@ import (
 
 type OIDCProvider struct {
 	OIDCAuthenticator
-	oauthConfig oauth2.Config
+	idTokenVerifier *oidc.IDTokenVerifier
+	oauthConfig     oauth2.Config
 }
 
 func NewOIDCProvider(ctx context.Context, config OIDCConfig) (*OIDCProvider, error) {
@@ -20,19 +21,21 @@ func NewOIDCProvider(ctx context.Context, config OIDCConfig) (*OIDCProvider, err
 }
 
 func newOIDCProvider(ctx context.Context, config OIDCConfig) (*OIDCProvider, error) {
-	if config.Issuer == "" || config.ClientID == "" {
-		return nil, errors.New("OIDC issuer and client ID are required")
+	if config.Issuer == "" || config.ClientID == "" || config.Audience == "" {
+		return nil, errors.New("OIDC issuer, client ID, and audience are required")
 	}
 	provider, err := oidc.NewProvider(ctx, config.Issuer)
 	if err != nil {
 		return nil, fmt.Errorf("discover OIDC provider: %w", err)
 	}
-	verifier := provider.Verifier(&oidc.Config{ClientID: config.ClientID})
+	idTokenVerifier := provider.Verifier(&oidc.Config{ClientID: config.ClientID})
+	accessTokenVerifier := provider.Verifier(&oidc.Config{ClientID: config.Audience})
 	return &OIDCProvider{
 		OIDCAuthenticator: OIDCAuthenticator{
-			issuer:   config.Issuer,
-			verifier: verifier,
+			issuer:              config.Issuer,
+			accessTokenVerifier: accessTokenVerifier,
 		},
+		idTokenVerifier: idTokenVerifier,
 		oauthConfig: oauth2.Config{
 			ClientID:     config.ClientID,
 			ClientSecret: config.ClientSecret,
@@ -78,7 +81,7 @@ func (provider *OIDCProvider) Exchange(
 	if !ok || rawIDToken == "" {
 		return Principal{}, errors.New("OIDC token response has no ID token")
 	}
-	idToken, err := provider.verifier.Verify(ctx, rawIDToken)
+	idToken, err := provider.idTokenVerifier.Verify(ctx, rawIDToken)
 	if err != nil {
 		return Principal{}, fmt.Errorf("verify OIDC ID token: %w", err)
 	}

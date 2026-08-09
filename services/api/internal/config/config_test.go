@@ -28,6 +28,7 @@ func TestLoadRejectsIncompleteInteractiveAuthentication(t *testing.T) {
 	setRequiredEnvironment(t)
 	t.Setenv("LOREHUB_AUTH_MODE", AuthModeInteractive)
 	t.Setenv("LOREHUB_OIDC_ISSUER", "https://keycloak.example/realms/lorehub")
+	t.Setenv("LOREHUB_OIDC_AUDIENCE", "lorehub-api")
 	t.Setenv("LOREHUB_OIDC_CLIENT_ID", "lorehub-web")
 	t.Setenv("LOREHUB_OIDC_CLIENT_SECRET", "")
 	t.Setenv("LOREHUB_OIDC_REDIRECT_URL", "https://app.example/auth/callback")
@@ -40,11 +41,28 @@ func TestLoadRejectsIncompleteInteractiveAuthentication(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsInteractiveAuthenticationWithoutAudience(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("LOREHUB_AUTH_MODE", AuthModeInteractive)
+	t.Setenv("LOREHUB_OIDC_ISSUER", "https://keycloak.example/realms/lorehub")
+	t.Setenv("LOREHUB_OIDC_CLIENT_ID", "lorehub-web")
+	t.Setenv("LOREHUB_OIDC_CLIENT_SECRET", "client-secret")
+	t.Setenv("LOREHUB_OIDC_REDIRECT_URL", "https://app.example/auth/callback")
+	t.Setenv("LOREHUB_PUBLIC_ORIGIN", "https://app.example")
+	t.Setenv("LOREHUB_AUTH_SECRET", strings.Repeat("a", 32))
+
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "OIDC issuer and audience") {
+		t.Fatalf("expected a clear missing audience error, got %v", err)
+	}
+}
+
 func TestLoadInteractiveAuthenticationUsesSecureProductionCookie(t *testing.T) {
 	setRequiredEnvironment(t)
 	t.Setenv("LOREHUB_ENV", "production")
 	t.Setenv("LOREHUB_AUTH_MODE", AuthModeInteractive)
 	t.Setenv("LOREHUB_OIDC_ISSUER", "https://keycloak.example/realms/lorehub")
+	t.Setenv("LOREHUB_OIDC_AUDIENCE", "lorehub-api")
 	t.Setenv("LOREHUB_OIDC_CLIENT_ID", "lorehub-web")
 	t.Setenv("LOREHUB_OIDC_CLIENT_SECRET", "client-secret")
 	t.Setenv("LOREHUB_OIDC_REDIRECT_URL", "https://app.example/auth/callback")
@@ -58,7 +76,8 @@ func TestLoadInteractiveAuthenticationUsesSecureProductionCookie(t *testing.T) {
 		t.Fatal(err)
 	}
 	if settings.AuthMode != AuthModeInteractive || !settings.SessionCookieSecure ||
-		settings.OIDCClientID != "lorehub-web" || settings.LoginBindingCookieName != "lorehub_login_binding" {
+		settings.OIDCClientID != "lorehub-web" || settings.OIDCAudience != "lorehub-api" ||
+		settings.LoginBindingCookieName != "lorehub_login_binding" {
 		t.Fatalf("unexpected interactive production settings: %#v", settings)
 	}
 }
@@ -76,6 +95,13 @@ func TestLoadRejectsInvalidLoginBindingCookieName(t *testing.T) {
 func setRequiredEnvironment(t *testing.T) {
 	t.Helper()
 	t.Setenv("DATABASE_URL", "postgres://localhost/lorehub")
+	t.Setenv("LOREHUB_OIDC_ISSUER", "")
+	t.Setenv("LOREHUB_OIDC_AUDIENCE", "")
+	t.Setenv("LOREHUB_OIDC_CLIENT_ID", "")
+	t.Setenv("LOREHUB_OIDC_CLIENT_SECRET", "")
+	t.Setenv("LOREHUB_OIDC_REDIRECT_URL", "")
+	t.Setenv("LOREHUB_PUBLIC_ORIGIN", "")
+	t.Setenv("LOREHUB_AUTH_SECRET", "")
 	t.Setenv("LOREHUB_SESSION_TTL", "")
 	t.Setenv("LOREHUB_LOGIN_TRANSACTION_TTL", "")
 	t.Setenv("LOREHUB_SESSION_COOKIE_SECURE", "")

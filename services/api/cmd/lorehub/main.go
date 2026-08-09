@@ -74,6 +74,7 @@ func run(logger *slog.Logger) error {
 		provider, err := auth.NewOIDCProvider(rootContext, auth.OIDCConfig{
 			Issuer:       settings.OIDCIssuer,
 			ClientID:     settings.OIDCClientID,
+			Audience:     settings.OIDCAudience,
 			ClientSecret: settings.OIDCClientSecret,
 			RedirectURL:  settings.OIDCRedirectURL,
 		})

@@ -57,12 +57,6 @@ func Load() (Config, error) {
 	oidcIssuer := os.Getenv("LOREHUB_OIDC_ISSUER")
 	oidcAudience := os.Getenv("LOREHUB_OIDC_AUDIENCE")
 	oidcClientID := os.Getenv("LOREHUB_OIDC_CLIENT_ID")
-	if oidcClientID == "" {
-		oidcClientID = oidcAudience
-	}
-	if oidcAudience == "" {
-		oidcAudience = oidcClientID
-	}
 	authMode := authModeFromEnvironment(
 		os.Getenv("LOREHUB_AUTH_MODE"),
 		oidcIssuer,
@@ -180,7 +174,7 @@ func validate(config Config) error {
 	}
 	if config.AuthMode == AuthModeBearer || config.AuthMode == AuthModeInteractive {
 		if config.OIDCIssuer == "" || config.OIDCAudience == "" {
-			return errors.New("OIDC issuer and audience are required for bearer authentication")
+			return errors.New("OIDC issuer and audience are required for bearer or interactive authentication")
 		}
 		if err := validateURL("LOREHUB_OIDC_ISSUER", config.OIDCIssuer, config.Environment, false); err != nil {
 			return err

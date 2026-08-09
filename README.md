@@ -98,8 +98,10 @@ Bearer認証だけを使う場合は、`LOREHUB_AUTH_MODE=bearer`、`LOREHUB_OID
 設定します。
 
 ブラウザログインを有効にする場合は、KeycloakをOIDC providerとして`LOREHUB_AUTH_MODE=interactive`を設定し、
-`LOREHUB_OIDC_ISSUER`、`LOREHUB_OIDC_CLIENT_ID`、`LOREHUB_OIDC_CLIENT_SECRET`、
+`LOREHUB_OIDC_ISSUER`、`LOREHUB_OIDC_AUDIENCE`、`LOREHUB_OIDC_CLIENT_ID`、`LOREHUB_OIDC_CLIENT_SECRET`、
 `LOREHUB_OIDC_REDIRECT_URL`、`LOREHUB_PUBLIC_ORIGIN`、32文字以上の`LOREHUB_AUTH_SECRET`を設定します。
+`LOREHUB_OIDC_CLIENT_ID`はID tokenの対象（例:`lorehub-web`）、`LOREHUB_OIDC_AUDIENCE`はAPI access tokenの対象
+（例:`lorehub-api`）です。両方を同じ値にせず、Keycloakの各tokenに設定したaudienceと一致させます。
 Google、GitHub、Facebook、XなどのログインはKeycloak側のbroker設定で追加します。ログイン状態はLoreHubの
 サーバー側セッションで管理し、ブラウザCookieへOIDC tokenは保存しません。ログイン開始時は`/auth`専用の短命な
 HttpOnly、SameSite=Laxのbinding cookieで開始ブラウザを記録し、callbackでstateと照合します。CookieのSecure属性は

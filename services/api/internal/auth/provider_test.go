@@ -20,8 +20,10 @@ func TestOIDCProviderExchangesAndVerifiesIDToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	validToken := ""
-	wrongAudienceToken := ""
+	validIDToken := ""
+	wrongIDAudienceToken := ""
+	validAccessToken := ""
+	wrongAccessAudienceToken := ""
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		switch request.URL.Path {
@@ -50,24 +52,27 @@ func TestOIDCProviderExchangesAndVerifiesIDToken(t *testing.T) {
 				http.Error(writer, "missing PKCE verifier", http.StatusBadRequest)
 				return
 			}
-			token := validToken
-			if request.Form.Get("code") == "wrong-audience" {
-				token = wrongAudienceToken
+			idToken := validIDToken
+			switch request.Form.Get("code") {
+			case "wrong-id-audience":
+				idToken = wrongIDAudienceToken
+			case "access-token-as-id":
+				idToken = validAccessToken
 			}
 			writeJSONForTest(writer, map[string]string{
-				"access_token": "access-token",
+				"access_token": validAccessToken,
 				"token_type":   "Bearer",
-				"id_token":     token,
+				"id_token":     idToken,
 			})
 		default:
 			http.NotFound(writer, request)
 		}
 	}))
 	defer server.Close()
-	validToken = signedIDToken(t, privateKey, map[string]any{
+	validIDToken = signedToken(t, privateKey, map[string]any{
 		"iss":                server.URL,
 		"sub":                "subject-1",
-		"aud":                "client-1",
+		"aud":                "lorehub-web",
 		"nonce":              "nonce-1",
 		"preferred_username": "alice",
 		"name":               "Alice",
@@ -75,18 +80,36 @@ func TestOIDCProviderExchangesAndVerifiesIDToken(t *testing.T) {
 		"exp":                time.Now().Add(5 * time.Minute).Unix(),
 		"iat":                time.Now().Add(-time.Minute).Unix(),
 	})
-	wrongAudienceToken = signedIDToken(t, privateKey, map[string]any{
+	wrongIDAudienceToken = signedToken(t, privateKey, map[string]any{
 		"iss":   server.URL,
 		"sub":   "subject-1",
-		"aud":   "different-client",
+		"aud":   "lorehub-api",
 		"nonce": "nonce-1",
 		"exp":   time.Now().Add(5 * time.Minute).Unix(),
 		"iat":   time.Now().Add(-time.Minute).Unix(),
 	})
+	validAccessToken = signedToken(t, privateKey, map[string]any{
+		"iss":                server.URL,
+		"sub":                "subject-1",
+		"aud":                "lorehub-api",
+		"preferred_username": "alice",
+		"name":               "Alice",
+		"email":              "alice@example.com",
+		"exp":                time.Now().Add(5 * time.Minute).Unix(),
+		"iat":                time.Now().Add(-time.Minute).Unix(),
+	})
+	wrongAccessAudienceToken = signedToken(t, privateKey, map[string]any{
+		"iss": server.URL,
+		"sub": "subject-1",
+		"aud": "lorehub-web",
+		"exp": time.Now().Add(5 * time.Minute).Unix(),
+		"iat": time.Now().Add(-time.Minute).Unix(),
+	})
 
 	provider, err := NewOIDCProvider(t.Context(), OIDCConfig{
 		Issuer:       server.URL,
-		ClientID:     "client-1",
+		ClientID:     "lorehub-web",
+		Audience:     "lorehub-api",
 		ClientSecret: "client-secret",
 		RedirectURL:  server.URL + "/auth/callback",
 	})
@@ -128,12 +151,49 @@ func TestOIDCProviderExchangesAndVerifiesIDToken(t *testing.T) {
 	if _, err := provider.Exchange(t.Context(), "authorization-code", "code-verifier", "wrong-nonce"); err == nil {
 		t.Fatal("expected a mismatched nonce to be rejected")
 	}
-	if _, err := provider.Exchange(t.Context(), "wrong-audience", "code-verifier", "nonce-1"); err == nil {
-		t.Fatal("expected a mismatched audience to be rejected")
+	accessPrincipal, err := provider.Authenticate(t.Context(), "Bearer "+validAccessToken)
+	if err != nil {
+		t.Fatalf("expected access token audience to pass: %v", err)
+	}
+	if accessPrincipal.Subject != "subject-1" || accessPrincipal.LoreAccessToken != validAccessToken {
+		t.Fatalf("unexpected access-token principal: %#v", accessPrincipal)
+	}
+	if _, err := provider.Authenticate(t.Context(), "Bearer "+validIDToken); err == nil {
+		t.Fatal("expected an ID token with the web audience to fail access-token verification")
+	}
+	if _, err := provider.Authenticate(t.Context(), "Bearer "+wrongAccessAudienceToken); err == nil {
+		t.Fatal("expected an access token with the web audience to be rejected")
+	}
+	if _, err := provider.Exchange(t.Context(), "wrong-id-audience", "code-verifier", "nonce-1"); err == nil {
+		t.Fatal("expected an ID token with the API audience to be rejected")
+	}
+	if _, err := provider.Exchange(t.Context(), "access-token-as-id", "code-verifier", "nonce-1"); err == nil {
+		t.Fatal("expected an access token to be rejected as an ID token")
+	}
+
+	bearerAuthenticator, err := NewOIDC(t.Context(), server.URL, "lorehub-api")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bearerAuthenticator.Authenticate(t.Context(), "Bearer "+validAccessToken); err != nil {
+		t.Fatalf("bearer-only authenticator rejected the API audience: %v", err)
+	}
+	if _, err := bearerAuthenticator.Authenticate(t.Context(), "Bearer "+validIDToken); err == nil {
+		t.Fatal("bearer-only authenticator accepted the web audience")
 	}
 }
 
-func signedIDToken(t *testing.T, privateKey *rsa.PrivateKey, claims map[string]any) string {
+func TestNewOIDCProviderRequiresAudience(t *testing.T) {
+	_, err := NewOIDCProvider(t.Context(), OIDCConfig{
+		Issuer:   "https://identity.example/realms/lorehub",
+		ClientID: "lorehub-web",
+	})
+	if err == nil {
+		t.Fatal("expected an OIDC audience requirement")
+	}
+}
+
+func signedToken(t *testing.T, privateKey *rsa.PrivateKey, claims map[string]any) string {
 	t.Helper()
 	encode := func(value any) string {
 		encoded, err := json.Marshal(value)

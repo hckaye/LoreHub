@@ -40,13 +40,14 @@ type LoginProvider interface {
 type OIDCConfig struct {
 	Issuer       string
 	ClientID     string
+	Audience     string
 	ClientSecret string
 	RedirectURL  string
 }
 
 type OIDCAuthenticator struct {
-	issuer   string
-	verifier *oidc.IDTokenVerifier
+	issuer              string
+	accessTokenVerifier *oidc.IDTokenVerifier
 }
 
 type DisabledAuthenticator struct{}
@@ -65,7 +66,7 @@ func NewOIDC(ctx context.Context, issuer string, audience string) (Authenticator
 	if issuer == "" || audience == "" {
 		return DisabledAuthenticator{}, nil
 	}
-	provider, err := newOIDCProvider(ctx, OIDCConfig{Issuer: issuer, ClientID: audience})
+	provider, err := newOIDCProvider(ctx, OIDCConfig{Issuer: issuer, ClientID: audience, Audience: audience})
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +81,7 @@ func (authenticator *OIDCAuthenticator) Authenticate(
 	if err != nil {
 		return Principal{}, err
 	}
-	token, err := authenticator.verifier.Verify(ctx, rawToken)
+	token, err := authenticator.accessTokenVerifier.Verify(ctx, rawToken)
 	if err != nil {
 		return Principal{}, fmt.Errorf("verify OIDC token: %w", err)
 	}

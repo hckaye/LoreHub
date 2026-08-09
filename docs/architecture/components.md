@@ -3,8 +3,8 @@
 ## Web
 
 Next.jsは画面表示、ロケール選択、OIDCログイン／登録開始、Go APIへのリクエストを担当する。DBやLore SDKへ直接接続しない。
-OIDCのauthorization code交換、PKCE、ログイン開始ブラウザのbinding cookie、利用者の紐付け、サーバー側セッション、
-CSRF tokenはGo APIが担当する。
+OIDCのauthorization code交換、ID tokenとaccess tokenの別々のaudience検証、PKCE、ログイン開始ブラウザのbinding
+cookie、利用者の紐付け、サーバー側セッション、CSRF tokenはGo APIが担当する。
 
 ## API
 
