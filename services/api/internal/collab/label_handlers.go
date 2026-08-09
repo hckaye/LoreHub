@@ -59,7 +59,7 @@ func (api *API) createLabel(writer http.ResponseWriter, request *http.Request) {
 }
 
 func (api *API) patchLabel(writer http.ResponseWriter, request *http.Request) {
-	actor, ok := api.actor(writer, request)
+	actor, repo, ok := api.requireMutationActor(writer, request)
 	if !ok {
 		return
 	}
@@ -72,7 +72,7 @@ func (api *API) patchLabel(writer http.ResponseWriter, request *http.Request) {
 	if !ok {
 		return
 	}
-	label, err := api.store.UpdateLabel(requestContext(request), actor, labelID, input)
+	label, err := api.store.UpdateLabel(requestContext(request), actor, repo.ID, labelID, input)
 	if err != nil {
 		storeError(writer, request, "update label", err, api.logger)
 		return
@@ -81,7 +81,7 @@ func (api *API) patchLabel(writer http.ResponseWriter, request *http.Request) {
 }
 
 func (api *API) deleteLabel(writer http.ResponseWriter, request *http.Request) {
-	actor, ok := api.actor(writer, request)
+	actor, repo, ok := api.requireMutationActor(writer, request)
 	if !ok {
 		return
 	}
@@ -90,7 +90,7 @@ func (api *API) deleteLabel(writer http.ResponseWriter, request *http.Request) {
 		writeProblem(writer, http.StatusNotFound, "not_found", "The requested resource was not found")
 		return
 	}
-	if err := api.store.DeleteLabel(requestContext(request), actor, labelID); err != nil {
+	if err := api.store.DeleteLabel(requestContext(request), actor, repo.ID, labelID); err != nil {
 		storeError(writer, request, "delete label", err, api.logger)
 		return
 	}

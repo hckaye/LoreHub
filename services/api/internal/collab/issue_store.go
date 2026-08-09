@@ -18,14 +18,15 @@ func (s *store) GetIssue(ctx context.Context, repoID string, number int64) (Issu
 		       author.username, i.author_id,
 		       assignee.username,
 		       COUNT(DISTINCT il.label_id), COUNT(DISTINCT c.id),
-		       i.created_at, i.updated_at, i.closed_at
+		       i.created_at, i.updated_at, closed_by.username, i.closed_at
 		FROM issues i
 		JOIN users author ON author.id = i.author_id
 		LEFT JOIN users assignee ON assignee.id = i.assignee_id
+		LEFT JOIN users closed_by ON closed_by.id = i.closed_by
 		LEFT JOIN issue_labels il ON il.issue_id = i.id
 		LEFT JOIN issue_comments c ON c.issue_id = i.id
 		WHERE i.repository_id = $1 AND i.number = $2
-		GROUP BY i.id, author.username, assignee.username
+		GROUP BY i.id, author.username, assignee.username, closed_by.username
 	`, repoID, number)
 	issue, err := scanIssue(row)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -52,6 +53,7 @@ func scanIssue(row pgx.Row) (Issue, error) {
 		&issue.CommentCount,
 		&issue.CreatedAt,
 		&issue.UpdatedAt,
+		&issue.ClosedBy,
 		&issue.ClosedAt,
 	)
 	return issue, err
@@ -82,7 +84,7 @@ func (s *store) UpdateIssue(
 	defer rollback(ctx, tx)
 
 	now := nowUTC()
-	query, args, err := buildIssueUpdateQuery(repoID, number, input, now)
+	query, args, err := buildIssueUpdateQuery(repoID, number, actor.ID, input, now)
 	if err != nil {
 		return Issue{}, err
 	}
@@ -158,6 +160,7 @@ func (s *store) checkIssueMutation(
 func buildIssueUpdateQuery(
 	repoID string,
 	number int64,
+	actorID string,
 	input UpdateIssueInput,
 	now time.Time,
 ) (string, []any, error) {
@@ -178,11 +181,19 @@ func buildIssueUpdateQuery(
 		state := *input.State
 		switch state {
 		case "closed":
-			sets = append(sets, fmt.Sprintf("state = $%d", idx), "closed_at = $1")
+			sets = append(sets,
+				fmt.Sprintf("state = $%d", idx),
+				fmt.Sprintf("closed_by = $%d", idx+1),
+				"closed_at = $1",
+			)
 			args = append(args, state)
 			idx++
+			args = append(args, actorID)
+			idx++
 		case "open":
-			sets = append(sets, fmt.Sprintf("state = $%d", idx), "closed_at = NULL")
+			sets = append(sets,
+				fmt.Sprintf("state = $%d", idx), "closed_by = NULL", "closed_at = NULL",
+			)
 			args = append(args, state)
 			idx++
 		default:
@@ -208,14 +219,15 @@ func scanIssueByTx(ctx context.Context, tx pgx.Tx, repoID string, number int64) 
 		       author.username, i.author_id,
 		       assignee.username,
 		       COUNT(DISTINCT il.label_id), COUNT(DISTINCT c.id),
-		       i.created_at, i.updated_at, i.closed_at
+		       i.created_at, i.updated_at, closed_by.username, i.closed_at
 		FROM issues i
 		JOIN users author ON author.id = i.author_id
 		LEFT JOIN users assignee ON assignee.id = i.assignee_id
+		LEFT JOIN users closed_by ON closed_by.id = i.closed_by
 		LEFT JOIN issue_labels il ON il.issue_id = i.id
 		LEFT JOIN issue_comments c ON c.issue_id = i.id
 		WHERE i.repository_id = $1 AND i.number = $2
-		GROUP BY i.id, author.username, assignee.username
+		GROUP BY i.id, author.username, assignee.username, closed_by.username
 	`, repoID, number)
 	return scanIssue(row)
 }

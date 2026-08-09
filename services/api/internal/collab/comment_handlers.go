@@ -63,7 +63,11 @@ func (api *API) createIssueComment(writer http.ResponseWriter, request *http.Req
 }
 
 func (api *API) patchIssueComment(writer http.ResponseWriter, request *http.Request) {
-	actor, ok := api.actor(writer, request)
+	actor, repo, ok := api.requireMutationActor(writer, request)
+	if !ok {
+		return
+	}
+	number, ok := parseNumber(writer, request.PathValue("number"))
 	if !ok {
 		return
 	}
@@ -81,7 +85,9 @@ func (api *API) patchIssueComment(writer http.ResponseWriter, request *http.Requ
 		writeProblem(writer, http.StatusNotFound, "not_found", "The requested resource was not found")
 		return
 	}
-	updated, err := api.store.UpdateIssueComment(requestContext(request), actor, commentID, value)
+	updated, err := api.store.UpdateIssueComment(
+		requestContext(request), actor, repo.ID, number, commentID, value,
+	)
 	if err != nil {
 		storeError(writer, request, "update issue comment", err, api.logger)
 		return
@@ -90,7 +96,11 @@ func (api *API) patchIssueComment(writer http.ResponseWriter, request *http.Requ
 }
 
 func (api *API) deleteIssueComment(writer http.ResponseWriter, request *http.Request) {
-	actor, ok := api.actor(writer, request)
+	actor, repo, ok := api.requireMutationActor(writer, request)
+	if !ok {
+		return
+	}
+	number, ok := parseNumber(writer, request.PathValue("number"))
 	if !ok {
 		return
 	}
@@ -99,7 +109,9 @@ func (api *API) deleteIssueComment(writer http.ResponseWriter, request *http.Req
 		writeProblem(writer, http.StatusNotFound, "not_found", "The requested resource was not found")
 		return
 	}
-	if err := api.store.DeleteIssueComment(requestContext(request), actor, commentID); err != nil {
+	if err := api.store.DeleteIssueComment(
+		requestContext(request), actor, repo.ID, number, commentID,
+	); err != nil {
 		storeError(writer, request, "delete issue comment", err, api.logger)
 		return
 	}

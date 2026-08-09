@@ -17,6 +17,15 @@ func (s *store) ListIssueComments(
 	number int64,
 	page Page,
 ) (Result[IssueComment], error) {
+	var issueExists bool
+	if err := s.pool.QueryRow(ctx, `
+		SELECT EXISTS (SELECT 1 FROM issues WHERE repository_id = $1 AND number = $2)
+	`, repoID, number).Scan(&issueExists); err != nil {
+		return Result[IssueComment]{}, fmt.Errorf("check issue for comments: %w", err)
+	}
+	if !issueExists {
+		return Result[IssueComment]{}, platform.ErrNotFound
+	}
 	offset, err := pageOffset(page)
 	if err != nil {
 		return Result[IssueComment]{}, err
@@ -139,10 +148,12 @@ func (s *store) CreateIssueComment(
 func (s *store) UpdateIssueComment(
 	ctx context.Context,
 	actor platform.User,
+	repoID string,
+	issueNumber int64,
 	commentID string,
 	body string,
 ) (IssueComment, error) {
-	existing, err := s.findCommentForMutation(ctx, commentID)
+	existing, err := s.findCommentForMutation(ctx, repoID, issueNumber, commentID)
 	if err != nil {
 		return IssueComment{}, err
 	}
@@ -163,8 +174,9 @@ func (s *store) UpdateIssueComment(
 
 	editedAt := nowUTC()
 	tag, err := tx.Exec(ctx, `
-		UPDATE issue_comments SET body = $2, edited_at = $3 WHERE id = $1
-	`, commentID, body, editedAt)
+		UPDATE issue_comments SET body = $3, edited_at = $4
+		WHERE id = $1 AND issue_id = $2
+	`, commentID, existing.IssueID, body, editedAt)
 	if err != nil {
 		return IssueComment{}, translateConstraintError("update comment", err)
 	}
@@ -197,9 +209,11 @@ func (s *store) UpdateIssueComment(
 func (s *store) DeleteIssueComment(
 	ctx context.Context,
 	actor platform.User,
+	repoID string,
+	issueNumber int64,
 	commentID string,
 ) error {
-	existing, err := s.findCommentForMutation(ctx, commentID)
+	existing, err := s.findCommentForMutation(ctx, repoID, issueNumber, commentID)
 	if err != nil {
 		return err
 	}
@@ -218,7 +232,9 @@ func (s *store) DeleteIssueComment(
 	}
 	defer rollback(ctx, tx)
 
-	tag, err := tx.Exec(ctx, `DELETE FROM issue_comments WHERE id = $1`, commentID)
+	tag, err := tx.Exec(ctx, `
+		DELETE FROM issue_comments WHERE id = $1 AND issue_id = $2
+	`, commentID, existing.IssueID)
 	if err != nil {
 		return translateConstraintError("delete comment", err)
 	}
@@ -232,6 +248,9 @@ func (s *store) DeleteIssueComment(
 	}
 	if err := insertAudit(ctx, tx, actor.ID, existing.OrgID, existing.RepoID,
 		"issue_comment.delete", "issue_comment", commentID); err != nil {
+		return err
+	}
+	if err := insertOutbox(ctx, tx, "issue_comment.deleted", commentID+":"+uuidArg(), existing.IssueComment); err != nil {
 		return err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -250,7 +269,12 @@ func (ref commentRef) canEdit(actor platform.User) bool {
 	return ref.AuthorID == actor.ID
 }
 
-func (s *store) findCommentForMutation(ctx context.Context, commentID string) (commentRef, error) {
+func (s *store) findCommentForMutation(
+	ctx context.Context,
+	repoID string,
+	issueNumber int64,
+	commentID string,
+) (commentRef, error) {
 	var ref commentRef
 	err := s.pool.QueryRow(ctx, `
 		SELECT c.id, c.issue_id, author.username, c.author_id, c.body,
@@ -259,8 +283,8 @@ func (s *store) findCommentForMutation(ctx context.Context, commentID string) (c
 		JOIN users author ON author.id = c.author_id
 		JOIN issues i ON i.id = c.issue_id
 		JOIN repositories r ON r.id = i.repository_id
-		WHERE c.id = $1
-	`, commentID).Scan(
+		WHERE c.id = $1 AND r.id = $2 AND i.number = $3
+	`, commentID, repoID, issueNumber).Scan(
 		&ref.ID, &ref.IssueID, &ref.Author, &ref.AuthorID, &ref.Body,
 		&ref.CreatedAt, &ref.EditedAt, &ref.RepoID, &ref.OrgID,
 	)

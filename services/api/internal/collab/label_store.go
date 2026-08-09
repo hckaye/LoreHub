@@ -110,10 +110,11 @@ func (s *store) CreateLabel(
 func (s *store) UpdateLabel(
 	ctx context.Context,
 	actor platform.User,
+	repoID string,
 	labelID string,
 	input LabelInput,
 ) (Label, error) {
-	existing, err := s.findLabel(ctx, labelID)
+	existing, err := s.findLabel(ctx, repoID, labelID)
 	if err != nil {
 		return Label{}, err
 	}
@@ -130,8 +131,10 @@ func (s *store) UpdateLabel(
 	}
 	defer rollback(ctx, tx)
 	tag, err := tx.Exec(ctx, `
-		UPDATE labels SET name = $2, description = $3, color = $4 WHERE id = $1
-	`, labelID, input.Name, input.Description, input.Color)
+		UPDATE labels
+		SET name = $3, description = $4, color = $5
+		WHERE id = $1 AND repository_id = $2
+	`, labelID, repoID, input.Name, input.Description, input.Color)
 	if err != nil {
 		return Label{}, translateConstraintError("update label", err)
 	}
@@ -146,7 +149,7 @@ func (s *store) UpdateLabel(
 	updated.Name = input.Name
 	updated.Description = input.Description
 	updated.Color = input.Color
-	if err := insertOutbox(ctx, tx, "label.updated", labelID, updated); err != nil {
+	if err := insertOutbox(ctx, tx, "label.updated", labelID+":"+uuidArg(), updated); err != nil {
 		return Label{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -157,8 +160,13 @@ func (s *store) UpdateLabel(
 
 // DeleteLabel removes a label definition and its issue associations (via
 // cascade). Requires write+ permission on the label's repository.
-func (s *store) DeleteLabel(ctx context.Context, actor platform.User, labelID string) error {
-	existing, err := s.findLabel(ctx, labelID)
+func (s *store) DeleteLabel(
+	ctx context.Context,
+	actor platform.User,
+	repoID string,
+	labelID string,
+) error {
+	existing, err := s.findLabel(ctx, repoID, labelID)
 	if err != nil {
 		return err
 	}
@@ -174,7 +182,9 @@ func (s *store) DeleteLabel(ctx context.Context, actor platform.User, labelID st
 		return fmt.Errorf("begin label delete: %w", err)
 	}
 	defer rollback(ctx, tx)
-	tag, err := tx.Exec(ctx, `DELETE FROM labels WHERE id = $1`, labelID)
+	tag, err := tx.Exec(ctx, `
+		DELETE FROM labels WHERE id = $1 AND repository_id = $2
+	`, labelID, repoID)
 	if err != nil {
 		return translateConstraintError("delete label", err)
 	}
@@ -183,6 +193,9 @@ func (s *store) DeleteLabel(ctx context.Context, actor platform.User, labelID st
 	}
 	if err := insertAudit(ctx, tx, actor.ID, existing.OrgID,
 		existing.RepositoryID, "label.delete", "label", labelID); err != nil {
+		return err
+	}
+	if err := insertOutbox(ctx, tx, "label.deleted", labelID+":"+uuidArg(), existing.Label); err != nil {
 		return err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -202,12 +215,9 @@ func (s *store) ApplyLabel(
 	issueNumber int64,
 	labelID string,
 ) (Label, bool, error) {
-	label, err := s.findLabel(ctx, labelID)
+	label, err := s.findLabel(ctx, repoID, labelID)
 	if err != nil {
 		return Label{}, false, err
-	}
-	if label.RepositoryID != repoID {
-		return Label{}, false, platform.ErrNotFound
 	}
 	access, err := s.permFromRef(ctx, actor, repoID, label.OrgID)
 	if err != nil {
@@ -241,8 +251,16 @@ func (s *store) ApplyLabel(
 		return Label{}, false, translateConstraintError("apply label", err)
 	}
 	applied := tag.RowsAffected() > 0
-	if err := insertAudit(ctx, tx, actor.ID, label.OrgID, repoID, "issue_label.apply", "issue", issueID); err != nil {
-		return Label{}, false, err
+	if applied {
+		if err := insertAudit(ctx, tx, actor.ID, label.OrgID, repoID,
+			"issue_label.apply", "issue", issueID); err != nil {
+			return Label{}, false, err
+		}
+		if err := insertOutbox(ctx, tx, "issue_label.applied", issueID+":"+labelID+":"+uuidArg(), map[string]any{
+			"issueId": issueID, "labelId": labelID,
+		}); err != nil {
+			return Label{}, false, err
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return Label{}, false, fmt.Errorf("commit apply label: %w", err)
@@ -260,12 +278,9 @@ func (s *store) RemoveLabel(
 	issueNumber int64,
 	labelID string,
 ) error {
-	label, err := s.findLabel(ctx, labelID)
+	label, err := s.findLabel(ctx, repoID, labelID)
 	if err != nil {
 		return err
-	}
-	if label.RepositoryID != repoID {
-		return platform.ErrNotFound
 	}
 	access, err := s.permFromRef(ctx, actor, repoID, label.OrgID)
 	if err != nil {
@@ -290,13 +305,22 @@ func (s *store) RemoveLabel(
 	if err != nil {
 		return fmt.Errorf("find issue for label removal: %w", err)
 	}
-	if _, err := tx.Exec(ctx, `
+	tag, err := tx.Exec(ctx, `
 		DELETE FROM issue_labels WHERE issue_id = $1 AND label_id = $2
-	`, issueID, labelID); err != nil {
+	`, issueID, labelID)
+	if err != nil {
 		return translateConstraintError("remove label", err)
 	}
-	if err := insertAudit(ctx, tx, actor.ID, label.OrgID, repoID, "issue_label.remove", "issue", issueID); err != nil {
-		return err
+	if tag.RowsAffected() > 0 {
+		if err := insertAudit(ctx, tx, actor.ID, label.OrgID, repoID,
+			"issue_label.remove", "issue", issueID); err != nil {
+			return err
+		}
+		if err := insertOutbox(ctx, tx, "issue_label.removed", issueID+":"+labelID+":"+uuidArg(), map[string]any{
+			"issueId": issueID, "labelId": labelID,
+		}); err != nil {
+			return err
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit remove label: %w", err)
@@ -309,15 +333,15 @@ type labelRef struct {
 	OrgID string
 }
 
-func (s *store) findLabel(ctx context.Context, labelID string) (labelRef, error) {
+func (s *store) findLabel(ctx context.Context, repoID, labelID string) (labelRef, error) {
 	var ref labelRef
 	err := s.pool.QueryRow(ctx, `
 		SELECT l.id, l.repository_id, l.name, l.description, l.color, l.created_at,
 		       r.organization_id
 		FROM labels l
 		JOIN repositories r ON r.id = l.repository_id
-		WHERE l.id = $1
-	`, labelID).Scan(
+		WHERE l.repository_id = $1 AND l.id = $2
+	`, repoID, labelID).Scan(
 		&ref.ID, &ref.RepositoryID, &ref.Name, &ref.Description, &ref.Color,
 		&ref.CreatedAt, &ref.OrgID,
 	)

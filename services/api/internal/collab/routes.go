@@ -3,8 +3,6 @@ package collab
 import (
 	"log/slog"
 	"net/http"
-
-	"github.com/lorehub/lorehub/services/api/internal/auth"
 )
 
 // Register mounts all collaboration routes onto the provided mux, constructing
@@ -35,8 +33,8 @@ import (
 //	POST   /api/v1/repositories/{owner}/{repository}/branch-rules
 //	PATCH  /api/v1/repositories/{owner}/{repository}/branch-rules/{ruleID}
 //	DELETE /api/v1/repositories/{owner}/{repository}/branch-rules/{ruleID}
-func Register(mux *http.ServeMux, store Store, authenticator auth.Authenticator, logger *slog.Logger) {
-	api := NewAPI(store, authenticator, logger)
+func Register(mux *http.ServeMux, store Store, actors ActorResolver, logger *slog.Logger) {
+	api := NewAPI(store, actors, logger)
 	base := "/api/v1/repositories/{owner}/{repository}"
 
 	mux.HandleFunc("GET "+base+"/issues/{number}", api.getIssue)

@@ -21,15 +21,16 @@ const (
 )
 
 var (
-	ErrBlankBody        = errors.New("body must not be blank")
-	ErrTitleTooLong     = errors.New("title is too long")
-	ErrBodyTooLong      = errors.New("body is too long")
-	ErrInvalidState     = errors.New("state is invalid")
-	ErrInvalidColor     = errors.New("color must be a six-digit hex value")
-	ErrInvalidLabel     = errors.New("label name is invalid")
-	ErrInvalidDecision  = errors.New("review decision is invalid")
-	ErrInvalidPattern   = errors.New("branch pattern is invalid")
-	ErrInvalidApprovals = errors.New("required approvals must be between 0 and 100")
+	ErrBlankBody           = errors.New("body must not be blank")
+	ErrTitleTooLong        = errors.New("title is too long")
+	ErrBodyTooLong         = errors.New("body is too long")
+	ErrInvalidState        = errors.New("state is invalid")
+	ErrInvalidColor        = errors.New("color must be a six-digit hex value")
+	ErrInvalidLabel        = errors.New("label name is invalid")
+	ErrInvalidDecision     = errors.New("review decision is invalid")
+	ErrInvalidPattern      = errors.New("branch pattern is invalid")
+	ErrInvalidApprovals    = errors.New("required approvals must be between 0 and 100")
+	ErrInvalidPrecondition = errors.New("If-Match must be a valid timestamp")
 )
 
 var (

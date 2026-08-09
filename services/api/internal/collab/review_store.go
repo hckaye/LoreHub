@@ -19,7 +19,7 @@ func (s *store) GetMergeRequest(
 	row := s.pool.QueryRow(ctx, `
 		SELECT mr.id, mr.number, mr.title, mr.body, mr.state,
 		       mr.source_branch, mr.target_branch, mr.source_revision, mr.target_revision,
-		       author.username, mr.author_id, mr.created_at, mr.updated_at
+		       author.username, mr.author_id, mr.created_at, mr.updated_at, mr.closed_at
 		FROM merge_requests mr
 		JOIN users author ON author.id = mr.author_id
 		WHERE mr.repository_id = $1 AND mr.number = $2
@@ -39,7 +39,7 @@ func scanMergeRequest(row pgx.Row) (MergeRequest, error) {
 	err := row.Scan(
 		&mr.ID, &mr.Number, &mr.Title, &mr.Body, &mr.State,
 		&mr.SourceBranch, &mr.TargetBranch, &mr.SourceRevision, &mr.TargetRevision,
-		&mr.Author, &mr.AuthorID, &mr.CreatedAt, &mr.UpdatedAt,
+		&mr.Author, &mr.AuthorID, &mr.CreatedAt, &mr.UpdatedAt, &mr.ClosedAt,
 	)
 	return mr, err
 }
@@ -53,9 +53,12 @@ func (s *store) UpdateMergeRequest(
 	number int64,
 	input UpdateMergeRequestInput,
 ) (MergeRequest, error) {
-	allowed, authorID, orgID, err := s.checkMergeRequestMutation(ctx, actor, repoID, number)
+	allowed, authorID, orgID, state, err := s.checkMergeRequestMutation(ctx, actor, repoID, number)
 	if err != nil {
 		return MergeRequest{}, err
+	}
+	if state == "merged" {
+		return MergeRequest{}, platform.ErrConflict
 	}
 	if !allowed && authorID != actor.ID {
 		return MergeRequest{}, platform.ErrForbidden
@@ -114,25 +117,25 @@ func (s *store) checkMergeRequestMutation(
 	actor platform.User,
 	repoID string,
 	number int64,
-) (bool, string, string, error) {
-	var authorID, orgID string
+) (bool, string, string, string, error) {
+	var authorID, orgID, state string
 	err := s.pool.QueryRow(ctx, `
-		SELECT mr.author_id, r.organization_id
+		SELECT mr.author_id, r.organization_id, mr.state
 		FROM merge_requests mr
 		JOIN repositories r ON r.id = mr.repository_id
 		WHERE mr.repository_id = $1 AND mr.number = $2
-	`, repoID, number).Scan(&authorID, &orgID)
+	`, repoID, number).Scan(&authorID, &orgID, &state)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return false, "", "", platform.ErrNotFound
+		return false, "", "", "", platform.ErrNotFound
 	}
 	if err != nil {
-		return false, "", "", fmt.Errorf("find merge request for mutation: %w", err)
+		return false, "", "", "", fmt.Errorf("find merge request for mutation: %w", err)
 	}
 	access, err := s.permFromRef(ctx, actor, repoID, orgID)
 	if err != nil {
-		return false, "", "", err
+		return false, "", "", "", err
 	}
-	return access.AtLeast(PermTriage), authorID, orgID, nil
+	return access.AtLeast(PermTriage), authorID, orgID, state, nil
 }
 
 func buildMergeRequestUpdateQuery(
@@ -191,7 +194,7 @@ func scanMergeRequestByTx(
 	row := tx.QueryRow(ctx, `
 		SELECT mr.id, mr.number, mr.title, mr.body, mr.state,
 		       mr.source_branch, mr.target_branch, mr.source_revision, mr.target_revision,
-		       author.username, mr.author_id, mr.created_at, mr.updated_at
+		       author.username, mr.author_id, mr.created_at, mr.updated_at, mr.closed_at
 		FROM merge_requests mr
 		JOIN users author ON author.id = mr.author_id
 		WHERE mr.repository_id = $1 AND mr.number = $2
@@ -242,7 +245,11 @@ func (s *store) ListReviews(
 }
 
 func summarizeReviews(currentRevision string, reviews []Review) ReviewSummary {
-	summary := ReviewSummary{CurrentRevision: currentRevision, Reviews: reviews}
+	summary := ReviewSummary{
+		CurrentRevision: currentRevision,
+		Reviews:         reviews,
+		CurrentReviews:  make([]Review, 0),
+	}
 	for _, review := range reviews {
 		if review.SourceRevision != currentRevision {
 			continue
@@ -270,28 +277,28 @@ func (s *store) CreateReview(
 	repoID string,
 	number int64,
 	input ReviewInput,
-) (Review, error) {
+) (Review, bool, error) {
 	mr, err := s.GetMergeRequest(ctx, repoID, number)
 	if err != nil {
-		return Review{}, err
+		return Review{}, false, err
 	}
 	if mr.AuthorID == actor.ID {
-		return Review{}, ErrCannotReviewOwn
+		return Review{}, false, ErrCannotReviewOwn
 	}
 	orgID, err := s.repoOrgID(ctx, repoID)
 	if err != nil {
-		return Review{}, err
+		return Review{}, false, err
 	}
 	access, err := s.permFromRef(ctx, actor, repoID, orgID)
 	if err != nil {
-		return Review{}, err
+		return Review{}, false, err
 	}
 	if !access.AtLeast(PermRead) {
-		return Review{}, platform.ErrForbidden
+		return Review{}, false, platform.ErrForbidden
 	}
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		return Review{}, fmt.Errorf("begin review transaction: %w", err)
+		return Review{}, false, fmt.Errorf("begin review transaction: %w", err)
 	}
 	defer rollback(ctx, tx)
 
@@ -305,25 +312,38 @@ func (s *store) CreateReview(
 		Body:           input.Body,
 		CreatedAt:      nowUTC(),
 	}
-	_, err = tx.Exec(ctx, `
+	proposedID := review.ID
+	err = tx.QueryRow(ctx, `
 		INSERT INTO merge_request_reviews
 			(id, merge_request_id, reviewer_id, source_revision, decision, body, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		ON CONFLICT (merge_request_id, source_revision, reviewer_id)
 		DO UPDATE SET decision = EXCLUDED.decision, body = EXCLUDED.body, created_at = EXCLUDED.created_at
-	`, review.ID, mr.ID, actor.ID, review.SourceRevision, review.Decision, review.Body, review.CreatedAt)
+		RETURNING id, merge_request_id, reviewer_id, source_revision, decision, body, created_at
+	`, review.ID, mr.ID, actor.ID, review.SourceRevision, review.Decision, review.Body, review.CreatedAt).Scan(
+		&review.ID, &review.MergeRequestID, &review.ReviewerID, &review.SourceRevision,
+		&review.Decision, &review.Body, &review.CreatedAt,
+	)
 	if err != nil {
-		return Review{}, translateConstraintError("create review", err)
+		return Review{}, false, translateConstraintError("create review", err)
+	}
+	review.Reviewer = actor.Username
+	created := review.ID == proposedID
+	action := "merge_request_review.update"
+	topic := "merge_request_review.updated"
+	if created {
+		action = "merge_request_review.create"
+		topic = "merge_request_review.created"
 	}
 	if err := insertAudit(ctx, tx, actor.ID, orgID, repoID,
-		"merge_request_review.create", "merge_request_review", review.ID); err != nil {
-		return Review{}, err
+		action, "merge_request_review", review.ID); err != nil {
+		return Review{}, false, err
 	}
-	if err := insertOutbox(ctx, tx, "merge_request_review.created", review.ID, review); err != nil {
-		return Review{}, err
+	if err := insertOutbox(ctx, tx, topic, review.ID+":"+uuidArg(), review); err != nil {
+		return Review{}, false, err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return Review{}, fmt.Errorf("commit review transaction: %w", err)
+		return Review{}, false, fmt.Errorf("commit review transaction: %w", err)
 	}
-	return review, nil
+	return review, created, nil
 }

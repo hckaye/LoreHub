@@ -178,6 +178,18 @@ func TestIntegrationIssueUpdatePermissionAndPrecondition(t *testing.T) {
 	if closed.State != "closed" || closed.ClosedAt == nil {
 		t.Fatalf("expected closed issue, got %+v", closed)
 	}
+	if closed.ClosedBy == nil || *closed.ClosedBy != fix.bob.Username {
+		t.Fatalf("closed by = %v, want %q", closed.ClosedBy, fix.bob.Username)
+	}
+	reopened, err := s.UpdateIssue(ctx, fix.bob, fix.repoID, number, UpdateIssueInput{
+		State: ptrString("open"),
+	})
+	if err != nil {
+		t.Fatalf("reopen issue: %v", err)
+	}
+	if reopened.State != "open" || reopened.ClosedAt != nil || reopened.ClosedBy != nil {
+		t.Fatalf("reopened issue retained close metadata: %+v", reopened)
+	}
 	// Carol (read only, not author) cannot edit.
 	_, err = s.UpdateIssue(ctx, fix.carol, fix.repoID, number, UpdateIssueInput{Title: ptrString("nope")})
 	if !errors.Is(err, platform.ErrForbidden) {
@@ -211,24 +223,44 @@ func TestIntegrationIssueComments(t *testing.T) {
 		t.Fatalf("comment author = %q, want %q", comment.Author, fix.alice.Username)
 	}
 	// Author can edit.
-	edited, err := s.UpdateIssueComment(ctx, fix.alice, comment.ID, "edited body")
+	edited, err := s.UpdateIssueComment(ctx, fix.alice, fix.repoID, number, comment.ID, "edited body")
 	if err != nil {
 		t.Fatalf("edit own comment: %v", err)
 	}
 	if edited.Body != "edited body" || edited.EditedAt == nil {
 		t.Fatalf("edited comment = %+v", edited)
 	}
+	if _, err := s.UpdateIssueComment(ctx, fix.alice, fix.repoID, number, comment.ID, "edited again"); err != nil {
+		t.Fatalf("second comment edit: %v", err)
+	}
+	other := setupFixture(t, pool, "public", "write")
+	if _, err := s.UpdateIssueComment(
+		ctx, fix.alice, other.repoID, number, comment.ID, "cross-repository",
+	); !errors.Is(err, platform.ErrNotFound) {
+		t.Fatalf("cross-repository comment edit expected ErrNotFound, got %v", err)
+	}
+	if err := s.DeleteIssueComment(
+		ctx, fix.alice, other.repoID, number, comment.ID,
+	); !errors.Is(err, platform.ErrNotFound) {
+		t.Fatalf("cross-repository comment delete expected ErrNotFound, got %v", err)
+	}
 	// Carol (not author, read only) cannot edit.
-	_, err = s.UpdateIssueComment(ctx, fix.carol, comment.ID, "hacked")
+	_, err = s.UpdateIssueComment(ctx, fix.carol, fix.repoID, number, comment.ID, "hacked")
 	if !errors.Is(err, platform.ErrForbidden) {
 		t.Fatalf("carol edit comment expected ErrForbidden, got %v", err)
 	}
 	// Author can delete.
-	if err := s.DeleteIssueComment(ctx, fix.alice, comment.ID); err != nil {
+	if err := s.DeleteIssueComment(ctx, fix.alice, fix.repoID, number, comment.ID); err != nil {
 		t.Fatalf("delete comment: %v", err)
 	}
-	if err := s.DeleteIssueComment(ctx, fix.alice, comment.ID); !errors.Is(err, platform.ErrNotFound) {
+	if err := s.DeleteIssueComment(ctx, fix.alice, fix.repoID, number, comment.ID); !errors.Is(err, platform.ErrNotFound) {
 		t.Fatalf("second delete expected ErrNotFound, got %v", err)
+	}
+	if got := countTopic(t, ctx, pool, "issue_comment.updated"); got < 2 {
+		t.Fatalf("comment updates outbox count = %d, want at least 2", got)
+	}
+	if got := countTopic(t, ctx, pool, "issue_comment.deleted"); got < 1 {
+		t.Fatalf("comment delete outbox count = %d, want at least 1", got)
 	}
 }
 
@@ -252,14 +284,41 @@ func TestIntegrationLabels(t *testing.T) {
 	if !errors.Is(err, platform.ErrConflict) {
 		t.Fatalf("duplicate label expected ErrConflict, got %v", err)
 	}
+	if _, err := s.UpdateLabel(ctx, fix.alice, fix.repoID, label.ID,
+		LabelInput{Name: "bug", Description: "first", Color: "ff0000"}); err != nil {
+		t.Fatalf("first label update: %v", err)
+	}
+	if _, err := s.UpdateLabel(ctx, fix.alice, fix.repoID, label.ID,
+		LabelInput{Name: "bug", Description: "second", Color: "00ff00"}); err != nil {
+		t.Fatalf("second label update: %v", err)
+	}
+	if got := countTopic(t, ctx, pool, "label.updated"); got < 2 {
+		t.Fatalf("label update outbox count = %d, want at least 2", got)
+	}
+	other := setupFixture(t, pool, "public", "triage")
+	if _, err := s.UpdateLabel(ctx, fix.alice, other.repoID, label.ID,
+		LabelInput{Name: "bug", Color: "ffffff"}); !errors.Is(err, platform.ErrNotFound) {
+		t.Fatalf("cross-repository label update expected ErrNotFound, got %v", err)
+	}
+	if err := s.DeleteLabel(ctx, fix.alice, other.repoID, label.ID); !errors.Is(err, platform.ErrNotFound) {
+		t.Fatalf("cross-repository label delete expected ErrNotFound, got %v", err)
+	}
 	// Apply label to issue (bob triage).
 	number := seedIssue(t, ctx, pool, fix, fix.alice.ID, "open")
+	appliedBefore := countTopic(t, ctx, pool, "issue_label.applied")
+	appliedAuditBefore := countAuditAction(t, ctx, pool, "issue_label.apply")
 	_, applied, err := s.ApplyLabel(ctx, fix.bob, fix.repoID, number, label.ID)
 	if err != nil {
 		t.Fatalf("apply label: %v", err)
 	}
 	if !applied {
 		t.Fatal("first apply should report applied=true")
+	}
+	if got := countTopic(t, ctx, pool, "issue_label.applied"); got != appliedBefore+1 {
+		t.Fatalf("first label apply outbox count = %d, want %d", got, appliedBefore+1)
+	}
+	if got := countAuditAction(t, ctx, pool, "issue_label.apply"); got != appliedAuditBefore+1 {
+		t.Fatalf("first label apply audit count = %d, want %d", got, appliedAuditBefore+1)
 	}
 	_, appliedAgain, err := s.ApplyLabel(ctx, fix.bob, fix.repoID, number, label.ID)
 	if err != nil {
@@ -268,22 +327,53 @@ func TestIntegrationLabels(t *testing.T) {
 	if appliedAgain {
 		t.Fatal("duplicate apply should report applied=false")
 	}
+	if got := countTopic(t, ctx, pool, "issue_label.applied"); got != appliedBefore+1 {
+		t.Fatalf("duplicate label apply outbox count = %d, want unchanged %d", got, appliedBefore+1)
+	}
+	if got := countAuditAction(t, ctx, pool, "issue_label.apply"); got != appliedAuditBefore+1 {
+		t.Fatalf("duplicate label apply audit count = %d, want unchanged %d", got, appliedAuditBefore+1)
+	}
 	// Carol (read) cannot apply labels.
 	_, _, err = s.ApplyLabel(ctx, fix.carol, fix.repoID, number, label.ID)
 	if !errors.Is(err, platform.ErrForbidden) {
 		t.Fatalf("carol apply label expected ErrForbidden, got %v", err)
 	}
 	// Remove label idempotent.
+	removedBefore := countTopic(t, ctx, pool, "issue_label.removed")
+	removedAuditBefore := countAuditAction(t, ctx, pool, "issue_label.remove")
 	if err := s.RemoveLabel(ctx, fix.bob, fix.repoID, number, label.ID); err != nil {
 		t.Fatalf("remove label: %v", err)
 	}
+	if got := countTopic(t, ctx, pool, "issue_label.removed"); got != removedBefore+1 {
+		t.Fatalf("first label remove outbox count = %d, want %d", got, removedBefore+1)
+	}
+	if got := countAuditAction(t, ctx, pool, "issue_label.remove"); got != removedAuditBefore+1 {
+		t.Fatalf("first label remove audit count = %d, want %d", got, removedAuditBefore+1)
+	}
 	if err := s.RemoveLabel(ctx, fix.bob, fix.repoID, number, label.ID); err != nil {
 		t.Fatalf("idempotent remove label: %v", err)
+	}
+	if got := countTopic(t, ctx, pool, "issue_label.removed"); got != removedBefore+1 {
+		t.Fatalf("duplicate label remove outbox count = %d, want unchanged %d", got, removedBefore+1)
+	}
+	if got := countAuditAction(t, ctx, pool, "issue_label.remove"); got != removedAuditBefore+1 {
+		t.Fatalf("duplicate label remove audit count = %d, want unchanged %d", got, removedAuditBefore+1)
 	}
 	// Apply to missing issue returns 404.
 	_, _, err = s.ApplyLabel(ctx, fix.bob, fix.repoID, 9999, label.ID)
 	if !errors.Is(err, platform.ErrNotFound) {
 		t.Fatalf("apply to missing issue expected ErrNotFound, got %v", err)
+	}
+	deletedLabel, err := s.CreateLabel(ctx, fix.alice, fix.repoID,
+		LabelInput{Name: "docs", Color: "abcdef"})
+	if err != nil {
+		t.Fatalf("create label for delete: %v", err)
+	}
+	if err := s.DeleteLabel(ctx, fix.alice, fix.repoID, deletedLabel.ID); err != nil {
+		t.Fatalf("delete label: %v", err)
+	}
+	if got := countTopic(t, ctx, pool, "label.deleted"); got < 1 {
+		t.Fatalf("label delete outbox count = %d, want at least 1", got)
 	}
 }
 
@@ -292,14 +382,33 @@ func TestIntegrationReviews(t *testing.T) {
 	ctx := context.Background()
 	fix := setupFixture(t, pool, "public", "read")
 	number := seedMergeRequest(t, ctx, pool, fix, fix.alice.ID, "rev-1")
+	closed, err := s.UpdateMergeRequest(ctx, fix.alice, fix.repoID, number,
+		UpdateMergeRequestInput{State: ptrString("closed")})
+	if err != nil || closed.State != "closed" || closed.ClosedAt == nil {
+		t.Fatalf("close merge request: result=%+v err=%v", closed, err)
+	}
+	reopened, err := s.UpdateMergeRequest(ctx, fix.alice, fix.repoID, number,
+		UpdateMergeRequestInput{State: ptrString("open")})
+	if err != nil || reopened.State != "open" || reopened.ClosedAt != nil {
+		t.Fatalf("reopen merge request: result=%+v err=%v", reopened, err)
+	}
+	mustExec(t, ctx, pool, `UPDATE merge_requests SET state = 'merged' WHERE repository_id = $1 AND number = $2`,
+		fix.repoID, number)
+	if _, err := s.UpdateMergeRequest(ctx, fix.alice, fix.repoID, number,
+		UpdateMergeRequestInput{Title: ptrString("must stay merged")}); !errors.Is(err, platform.ErrConflict) {
+		t.Fatalf("merged request edit expected ErrConflict, got %v", err)
+	}
+	mustExec(t, ctx, pool,
+		`UPDATE merge_requests SET state = 'open', closed_at = NULL WHERE repository_id = $1 AND number = $2`,
+		fix.repoID, number)
 
 	// Author cannot review own MR.
-	_, err := s.CreateReview(ctx, fix.alice, fix.repoID, number, ReviewInput{Decision: "approved"})
+	_, _, err = s.CreateReview(ctx, fix.alice, fix.repoID, number, ReviewInput{Decision: "approved"})
 	if !errors.Is(err, ErrCannotReviewOwn) {
 		t.Fatalf("self review expected ErrCannotReviewOwn, got %v", err)
 	}
 	// Bob can review.
-	review, err := s.CreateReview(ctx, fix.bob, fix.repoID, number,
+	review, _, err := s.CreateReview(ctx, fix.bob, fix.repoID, number,
 		ReviewInput{Decision: "changes_requested", Body: "please fix"})
 	if err != nil {
 		t.Fatalf("create review: %v", err)
@@ -308,9 +417,12 @@ func TestIntegrationReviews(t *testing.T) {
 		t.Fatalf("review revision = %q, want rev-1", review.SourceRevision)
 	}
 	// Upsert: bob reviews again on same revision updates the decision.
-	review2, err := s.CreateReview(ctx, fix.bob, fix.repoID, number, ReviewInput{Decision: "approved"})
+	review2, created, err := s.CreateReview(ctx, fix.bob, fix.repoID, number, ReviewInput{Decision: "approved"})
 	if err != nil {
 		t.Fatalf("upsert review: %v", err)
+	}
+	if created {
+		t.Fatal("repeated review should update the existing decision")
 	}
 	summary, err := s.ListReviews(ctx, fix.repoID, number)
 	if err != nil {
@@ -324,6 +436,15 @@ func TestIntegrationReviews(t *testing.T) {
 	}
 	if review2.Decision != "approved" {
 		t.Fatalf("upserted decision = %q, want approved", review2.Decision)
+	}
+	if review2.ID != review.ID {
+		t.Fatalf("upsert returned ID %q, want persisted ID %q", review2.ID, review.ID)
+	}
+	if got := countTopic(t, ctx, pool, "merge_request_review.created"); got < 1 {
+		t.Fatalf("review create outbox count = %d, want at least 1", got)
+	}
+	if got := countTopic(t, ctx, pool, "merge_request_review.updated"); got < 1 {
+		t.Fatalf("review update outbox count = %d, want at least 1", got)
 	}
 }
 
@@ -348,7 +469,7 @@ func TestIntegrationBranchRules(t *testing.T) {
 		t.Fatalf("duplicate rule expected ErrConflict, got %v", err)
 	}
 	// Update and delete.
-	updated, err := s.UpdateBranchRule(ctx, fix.alice, rule.ID,
+	updated, err := s.UpdateBranchRule(ctx, fix.alice, fix.repoID, rule.ID,
 		BranchRuleInput{Pattern: "release/*", RequiredApprovals: 3})
 	if err != nil {
 		t.Fatalf("update rule: %v", err)
@@ -356,8 +477,26 @@ func TestIntegrationBranchRules(t *testing.T) {
 	if updated.Pattern != "release/*" || updated.RequiredApprovals != 3 {
 		t.Fatalf("updated rule = %+v", updated)
 	}
-	if err := s.DeleteBranchRule(ctx, fix.alice, rule.ID); err != nil {
+	if _, err := s.UpdateBranchRule(ctx, fix.alice, fix.repoID, rule.ID,
+		BranchRuleInput{Pattern: "release/*", RequiredApprovals: 4}); err != nil {
+		t.Fatalf("second rule update: %v", err)
+	}
+	other := setupFixture(t, pool, "public", "write")
+	if _, err := s.UpdateBranchRule(ctx, fix.alice, other.repoID, rule.ID,
+		BranchRuleInput{Pattern: "wrong", RequiredApprovals: 0}); !errors.Is(err, platform.ErrNotFound) {
+		t.Fatalf("cross-repository branch rule update expected ErrNotFound, got %v", err)
+	}
+	if err := s.DeleteBranchRule(ctx, fix.alice, other.repoID, rule.ID); !errors.Is(err, platform.ErrNotFound) {
+		t.Fatalf("cross-repository branch rule delete expected ErrNotFound, got %v", err)
+	}
+	if err := s.DeleteBranchRule(ctx, fix.alice, fix.repoID, rule.ID); err != nil {
 		t.Fatalf("delete rule: %v", err)
+	}
+	if got := countTopic(t, ctx, pool, "branch_rule.updated"); got < 2 {
+		t.Fatalf("branch rule update outbox count = %d, want at least 2", got)
+	}
+	if got := countTopic(t, ctx, pool, "branch_rule.deleted"); got < 1 {
+		t.Fatalf("branch rule delete outbox count = %d, want at least 1", got)
 	}
 }
 
@@ -402,3 +541,21 @@ func seedMergeRequest(t *testing.T, ctx context.Context, pool *pgxpool.Pool, fix
 }
 
 func ptrString(value string) *string { return &value }
+
+func countTopic(t *testing.T, ctx context.Context, pool *pgxpool.Pool, topic string) int {
+	t.Helper()
+	var count int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM outbox_events WHERE topic = $1`, topic).Scan(&count); err != nil {
+		t.Fatalf("count outbox topic %q: %v", topic, err)
+	}
+	return count
+}
+
+func countAuditAction(t *testing.T, ctx context.Context, pool *pgxpool.Pool, action string) int {
+	t.Helper()
+	var count int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM audit_events WHERE action = $1`, action).Scan(&count); err != nil {
+		t.Fatalf("count audit action %q: %v", action, err)
+	}
+	return count
+}

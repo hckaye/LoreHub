@@ -3,12 +3,13 @@ package collab
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/lorehub/lorehub/services/api/internal/auth"
 	"github.com/lorehub/lorehub/services/api/internal/platform"
@@ -45,18 +46,21 @@ type Store interface {
 		number int64, body string,
 	) (IssueComment, error)
 	UpdateIssueComment(
-		ctx context.Context, actor platform.User, commentID, body string,
+		ctx context.Context, actor platform.User, repoID string, issueNumber int64,
+		commentID, body string,
 	) (IssueComment, error)
-	DeleteIssueComment(ctx context.Context, actor platform.User, commentID string) error
+	DeleteIssueComment(
+		ctx context.Context, actor platform.User, repoID string, issueNumber int64, commentID string,
+	) error
 
 	ListLabels(ctx context.Context, repoID string, page Page) (Result[Label], error)
 	CreateLabel(
 		ctx context.Context, actor platform.User, repoID string, input LabelInput,
 	) (Label, error)
 	UpdateLabel(
-		ctx context.Context, actor platform.User, labelID string, input LabelInput,
+		ctx context.Context, actor platform.User, repoID, labelID string, input LabelInput,
 	) (Label, error)
-	DeleteLabel(ctx context.Context, actor platform.User, labelID string) error
+	DeleteLabel(ctx context.Context, actor platform.User, repoID, labelID string) error
 	ApplyLabel(
 		ctx context.Context, actor platform.User, repoID string,
 		issueNumber int64, labelID string,
@@ -75,16 +79,16 @@ type Store interface {
 	CreateReview(
 		ctx context.Context, actor platform.User, repoID string,
 		number int64, input ReviewInput,
-	) (Review, error)
+	) (Review, bool, error)
 
 	ListBranchRules(ctx context.Context, repoID string) ([]BranchRule, error)
 	CreateBranchRule(
 		ctx context.Context, actor platform.User, repoID string, input BranchRuleInput,
 	) (BranchRule, error)
 	UpdateBranchRule(
-		ctx context.Context, actor platform.User, ruleID string, input BranchRuleInput,
+		ctx context.Context, actor platform.User, repoID, ruleID string, input BranchRuleInput,
 	) (BranchRule, error)
-	DeleteBranchRule(ctx context.Context, actor platform.User, ruleID string) error
+	DeleteBranchRule(ctx context.Context, actor platform.User, repoID, ruleID string) error
 }
 
 // store is the concrete PostgreSQL-backed implementation of Store.
@@ -144,11 +148,8 @@ func translateConstraintError(operation string, err error) error {
 }
 
 func isDuplicateKeyError(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := err.Error()
-	return strings.Contains(msg, "duplicate key") || strings.Contains(msg, "unique constraint")
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
 // nowUTC returns the current UTC time used for mutation timestamps.

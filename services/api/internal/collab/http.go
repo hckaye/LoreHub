@@ -6,10 +6,10 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"mime"
 	"net/http"
 	"strings"
 
-	"github.com/lorehub/lorehub/services/api/internal/auth"
 	"github.com/lorehub/lorehub/services/api/internal/platform"
 )
 
@@ -41,6 +41,12 @@ func writeProblem(writer http.ResponseWriter, status int, code string, detail st
 // decodeJSON decodes a single JSON value into target, enforcing a 1 MiB limit
 // and rejecting unknown fields and trailing content.
 func decodeJSON(writer http.ResponseWriter, request *http.Request, target any) bool {
+	mediaType, _, err := mime.ParseMediaType(request.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/json" {
+		writeProblem(writer, http.StatusUnsupportedMediaType, "unsupported_media_type",
+			"Content-Type must be application/json")
+		return false
+	}
 	request.Body = http.MaxBytesReader(writer, request.Body, maxRequestBytes)
 	decoder := json.NewDecoder(request.Body)
 	decoder.DisallowUnknownFields()
@@ -53,33 +59,6 @@ func decodeJSON(writer http.ResponseWriter, request *http.Request, target any) b
 		return false
 	}
 	return true
-}
-
-// resolveActor authenticates the request and provisions the local user. It
-// returns ok=false after writing an error response on failure.
-func resolveActor(
-	writer http.ResponseWriter,
-	request *http.Request,
-	authenticator auth.Authenticator,
-	ensurer UserEnsurer,
-	logger *slog.Logger,
-) (platform.User, bool) {
-	principal, err := authenticator.Authenticate(request.Context(), request.Header.Get("Authorization"))
-	if err != nil {
-		if errors.Is(err, auth.ErrNotConfigured) {
-			writeProblem(writer, http.StatusServiceUnavailable, "authentication_unavailable", err.Error())
-		} else {
-			writeProblem(writer, http.StatusUnauthorized, "authentication_required", "Authentication is required")
-		}
-		return platform.User{}, false
-	}
-	user, err := ensurer.EnsureUser(request.Context(), principal)
-	if err != nil {
-		logger.Error("provision authenticated user", "error", err, "path", request.URL.Path)
-		writeProblem(writer, http.StatusInternalServerError, "internal_error", "The request could not be completed")
-		return platform.User{}, false
-	}
-	return user, true
 }
 
 // writeLocation sets a Location header for a newly created resource.
@@ -122,8 +101,7 @@ func storeError(
 	}
 }
 
-// requestContextWithTimeout returns the request context unchanged for now; it
-// exists as a single seam so handlers can adopt per-request deadlines later.
+// requestContext keeps store calls tied to request cancellation.
 func requestContext(request *http.Request) context.Context {
 	return request.Context()
 }

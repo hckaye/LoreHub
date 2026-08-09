@@ -91,6 +91,8 @@ func buildIssueUpdateInput(body issuePatchRequest, ifMatchHeader string) (Update
 	if ifMatchHeader != "" {
 		if updated, ok := parseIfMatch(ifMatchHeader); ok {
 			input.IfMatch = &updated
+		} else {
+			return UpdateIssueInput{}, ErrInvalidPrecondition
 		}
 	}
 	return input, nil

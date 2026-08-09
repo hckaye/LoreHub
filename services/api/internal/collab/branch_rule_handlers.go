@@ -56,7 +56,7 @@ func (api *API) createBranchRule(writer http.ResponseWriter, request *http.Reque
 }
 
 func (api *API) patchBranchRule(writer http.ResponseWriter, request *http.Request) {
-	actor, ok := api.actor(writer, request)
+	actor, repo, ok := api.requireMutationActor(writer, request)
 	if !ok {
 		return
 	}
@@ -69,7 +69,7 @@ func (api *API) patchBranchRule(writer http.ResponseWriter, request *http.Reques
 	if !ok {
 		return
 	}
-	rule, err := api.store.UpdateBranchRule(requestContext(request), actor, ruleID, input)
+	rule, err := api.store.UpdateBranchRule(requestContext(request), actor, repo.ID, ruleID, input)
 	if err != nil {
 		storeError(writer, request, "update branch rule", err, api.logger)
 		return
@@ -78,7 +78,7 @@ func (api *API) patchBranchRule(writer http.ResponseWriter, request *http.Reques
 }
 
 func (api *API) deleteBranchRule(writer http.ResponseWriter, request *http.Request) {
-	actor, ok := api.actor(writer, request)
+	actor, repo, ok := api.requireMutationActor(writer, request)
 	if !ok {
 		return
 	}
@@ -87,7 +87,7 @@ func (api *API) deleteBranchRule(writer http.ResponseWriter, request *http.Reque
 		writeProblem(writer, http.StatusNotFound, "not_found", "The requested resource was not found")
 		return
 	}
-	if err := api.store.DeleteBranchRule(requestContext(request), actor, ruleID); err != nil {
+	if err := api.store.DeleteBranchRule(requestContext(request), actor, repo.ID, ruleID); err != nil {
 		storeError(writer, request, "delete branch rule", err, api.logger)
 		return
 	}

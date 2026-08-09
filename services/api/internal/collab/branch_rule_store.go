@@ -103,10 +103,11 @@ func (s *store) CreateBranchRule(
 func (s *store) UpdateBranchRule(
 	ctx context.Context,
 	actor platform.User,
+	repoID string,
 	ruleID string,
 	input BranchRuleInput,
 ) (BranchRule, error) {
-	existing, err := s.findBranchRule(ctx, ruleID)
+	existing, err := s.findBranchRule(ctx, repoID, ruleID)
 	if err != nil {
 		return BranchRule{}, err
 	}
@@ -125,10 +126,10 @@ func (s *store) UpdateBranchRule(
 	now := nowUTC()
 	tag, err := tx.Exec(ctx, `
 		UPDATE branch_rules
-		SET pattern = $2, required_approvals = $3,
-		    require_ci_success = $4, block_direct_push = $5, updated_at = $6
-		WHERE id = $1
-	`, ruleID, input.Pattern, input.RequiredApprovals,
+		SET pattern = $3, required_approvals = $4,
+		    require_ci_success = $5, block_direct_push = $6, updated_at = $7
+		WHERE id = $1 AND repository_id = $2
+	`, ruleID, repoID, input.Pattern, input.RequiredApprovals,
 		input.RequireCISuccess, input.BlockDirectPush, now)
 	if err != nil {
 		return BranchRule{}, translateConstraintError("update branch rule", err)
@@ -146,7 +147,7 @@ func (s *store) UpdateBranchRule(
 	updated.RequireCISuccess = input.RequireCISuccess
 	updated.BlockDirectPush = input.BlockDirectPush
 	updated.UpdatedAt = now
-	if err := insertOutbox(ctx, tx, "branch_rule.updated", ruleID, updated); err != nil {
+	if err := insertOutbox(ctx, tx, "branch_rule.updated", ruleID+":"+uuidArg(), updated); err != nil {
 		return BranchRule{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -157,8 +158,13 @@ func (s *store) UpdateBranchRule(
 
 // DeleteBranchRule removes a branch protection rule. Requires admin or
 // organization maintainer/owner permission.
-func (s *store) DeleteBranchRule(ctx context.Context, actor platform.User, ruleID string) error {
-	existing, err := s.findBranchRule(ctx, ruleID)
+func (s *store) DeleteBranchRule(
+	ctx context.Context,
+	actor platform.User,
+	repoID string,
+	ruleID string,
+) error {
+	existing, err := s.findBranchRule(ctx, repoID, ruleID)
 	if err != nil {
 		return err
 	}
@@ -174,7 +180,9 @@ func (s *store) DeleteBranchRule(ctx context.Context, actor platform.User, ruleI
 		return fmt.Errorf("begin branch rule delete: %w", err)
 	}
 	defer rollback(ctx, tx)
-	tag, err := tx.Exec(ctx, `DELETE FROM branch_rules WHERE id = $1`, ruleID)
+	tag, err := tx.Exec(ctx, `
+		DELETE FROM branch_rules WHERE id = $1 AND repository_id = $2
+	`, ruleID, repoID)
 	if err != nil {
 		return translateConstraintError("delete branch rule", err)
 	}
@@ -183,6 +191,9 @@ func (s *store) DeleteBranchRule(ctx context.Context, actor platform.User, ruleI
 	}
 	if err := insertAudit(ctx, tx, actor.ID, existing.OrgID,
 		existing.RepositoryID, "branch_rule.delete", "branch_rule", ruleID); err != nil {
+		return err
+	}
+	if err := insertOutbox(ctx, tx, "branch_rule.deleted", ruleID+":"+uuidArg(), existing.BranchRule); err != nil {
 		return err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -196,7 +207,7 @@ type branchRuleRef struct {
 	OrgID string
 }
 
-func (s *store) findBranchRule(ctx context.Context, ruleID string) (branchRuleRef, error) {
+func (s *store) findBranchRule(ctx context.Context, repoID, ruleID string) (branchRuleRef, error) {
 	var ref branchRuleRef
 	err := s.pool.QueryRow(ctx, `
 		SELECT br.id, br.repository_id, br.pattern, br.required_approvals,
@@ -204,8 +215,8 @@ func (s *store) findBranchRule(ctx context.Context, ruleID string) (branchRuleRe
 		       r.organization_id
 		FROM branch_rules br
 		JOIN repositories r ON r.id = br.repository_id
-		WHERE br.id = $1
-	`, ruleID).Scan(
+		WHERE br.repository_id = $1 AND br.id = $2
+	`, repoID, ruleID).Scan(
 		&ref.ID, &ref.RepositoryID, &ref.Pattern, &ref.RequiredApprovals,
 		&ref.RequireCISuccess, &ref.BlockDirectPush, &ref.CreatedAt, &ref.UpdatedAt,
 		&ref.OrgID,

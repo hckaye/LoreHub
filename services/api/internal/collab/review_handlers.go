@@ -96,6 +96,8 @@ func buildMergeRequestUpdateInput(
 	if ifMatchHeader != "" {
 		if updated, ok := parseIfMatch(ifMatchHeader); ok {
 			input.IfMatch = &updated
+		} else {
+			return UpdateMergeRequestInput{}, ErrInvalidPrecondition
 		}
 	}
 	return input, nil
@@ -144,11 +146,15 @@ func (api *API) createReview(writer http.ResponseWriter, request *http.Request) 
 		validationError(writer, err)
 		return
 	}
-	review, err := api.store.CreateReview(requestContext(request), actor, repo.ID, number, input)
+	review, created, err := api.store.CreateReview(requestContext(request), actor, repo.ID, number, input)
 	if err != nil {
 		storeError(writer, request, "create review", err, api.logger)
 		return
 	}
-	writeLocation(writer, request, review.ID)
-	writeJSON(writer, http.StatusCreated, review)
+	status := http.StatusOK
+	if created {
+		status = http.StatusCreated
+		writeLocation(writer, request, review.ID)
+	}
+	writeJSON(writer, status, review)
 }

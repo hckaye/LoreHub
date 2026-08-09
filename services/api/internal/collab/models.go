@@ -35,6 +35,7 @@ type Issue struct {
 	CommentCount int64      `json:"commentCount"`
 	CreatedAt    time.Time  `json:"createdAt"`
 	UpdatedAt    time.Time  `json:"updatedAt"`
+	ClosedBy     *string    `json:"closedBy"`
 	ClosedAt     *time.Time `json:"closedAt"`
 }
 
@@ -77,21 +78,22 @@ type LabelInput struct {
 }
 
 // MergeRequest is the collab projection of a merge_request (UI "pull request").
-// Merge execution is intentionally not exposed; Lore merge is not implemented.
+// Merge execution is not exposed by this API.
 type MergeRequest struct {
-	ID             string    `json:"id"`
-	Number         int64     `json:"number"`
-	Title          string    `json:"title"`
-	Body           string    `json:"body"`
-	State          string    `json:"state"`
-	SourceBranch   string    `json:"sourceBranch"`
-	TargetBranch   string    `json:"targetBranch"`
-	SourceRevision string    `json:"sourceRevision"`
-	TargetRevision string    `json:"targetRevision"`
-	Author         string    `json:"author"`
-	AuthorID       string    `json:"-"`
-	CreatedAt      time.Time `json:"createdAt"`
-	UpdatedAt      time.Time `json:"updatedAt"`
+	ID             string     `json:"id"`
+	Number         int64      `json:"number"`
+	Title          string     `json:"title"`
+	Body           string     `json:"body"`
+	State          string     `json:"state"`
+	SourceBranch   string     `json:"sourceBranch"`
+	TargetBranch   string     `json:"targetBranch"`
+	SourceRevision string     `json:"sourceRevision"`
+	TargetRevision string     `json:"targetRevision"`
+	Author         string     `json:"author"`
+	AuthorID       string     `json:"-"`
+	CreatedAt      time.Time  `json:"createdAt"`
+	UpdatedAt      time.Time  `json:"updatedAt"`
+	ClosedAt       *time.Time `json:"closedAt"`
 }
 
 // UpdateMergeRequestInput captures mutable merge_request fields.

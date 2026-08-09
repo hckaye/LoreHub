@@ -4,41 +4,39 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"strings"
 
-	"github.com/lorehub/lorehub/services/api/internal/auth"
 	"github.com/lorehub/lorehub/services/api/internal/platform"
 )
 
+// ActorResolver is implemented by the top-level HTTP API. It centralizes
+// bearer authentication, browser session lookup and cookie CSRF checks for
+// every route, including collaboration routes.
+type ActorResolver interface {
+	ResolveActor(http.ResponseWriter, *http.Request) (platform.User, bool)
+	ResolveOptionalActor(http.ResponseWriter, *http.Request) (*platform.User, bool)
+}
+
 // API holds the dependencies shared by all collaboration handlers.
 type API struct {
-	store         Store
-	authenticator auth.Authenticator
-	logger        *slog.Logger
+	store  Store
+	actors ActorResolver
+	logger *slog.Logger
 }
 
 // NewAPI constructs a collaboration API backed by the given store.
-func NewAPI(store Store, authenticator auth.Authenticator, logger *slog.Logger) *API {
-	return &API{store: store, authenticator: authenticator, logger: logger}
+func NewAPI(store Store, actors ActorResolver, logger *slog.Logger) *API {
+	return &API{store: store, actors: actors, logger: logger}
 }
 
 // actor authenticates a mutating request and provisions the local user.
 func (api *API) actor(writer http.ResponseWriter, request *http.Request) (platform.User, bool) {
-	return resolveActor(writer, request, api.authenticator, api.store, api.logger)
+	return api.actors.ResolveActor(writer, request)
 }
 
-// optionalActor authenticates only when an Authorization header is present.
-// Anonymous callers (no header) receive a nil user so that public repositories
-// remain readable without authentication.
+// optionalActor delegates optional browser-session or bearer resolution to the
+// shared HTTP authentication layer; anonymous callers receive a nil user.
 func (api *API) optionalActor(writer http.ResponseWriter, request *http.Request) (*platform.User, bool) {
-	if strings.TrimSpace(request.Header.Get("Authorization")) == "" {
-		return nil, true
-	}
-	user, ok := api.actor(writer, request)
-	if !ok {
-		return nil, false
-	}
-	return &user, true
+	return api.actors.ResolveOptionalActor(writer, request)
 }
 
 // lookup resolves a repository visible to the actor. On failure it writes the
@@ -138,7 +136,8 @@ func validationError(writer http.ResponseWriter, err error) bool {
 		errors.Is(err, ErrInvalidLabel),
 		errors.Is(err, ErrInvalidDecision),
 		errors.Is(err, ErrInvalidPattern),
-		errors.Is(err, ErrInvalidApprovals):
+		errors.Is(err, ErrInvalidApprovals),
+		errors.Is(err, ErrInvalidPrecondition):
 		writeProblem(writer, http.StatusBadRequest, "invalid_input", err.Error())
 		return true
 	}

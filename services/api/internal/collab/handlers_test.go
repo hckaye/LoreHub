@@ -26,6 +26,45 @@ func (testAuthenticator) Authenticate(_ context.Context, authorization string) (
 	return auth.Principal{Issuer: "test", Subject: strings.TrimSpace(token), Username: token}, nil
 }
 
+type testActorResolver struct {
+	store Store
+}
+
+func (resolver testActorResolver) ResolveActor(
+	writer http.ResponseWriter,
+	request *http.Request,
+) (platform.User, bool) {
+	principal, err := (testAuthenticator{}).Authenticate(
+		request.Context(), request.Header.Get("Authorization"),
+	)
+	if err != nil {
+		writeProblem(writer, http.StatusUnauthorized, "authentication_required",
+			"Authentication is required")
+		return platform.User{}, false
+	}
+	user, err := resolver.store.EnsureUser(request.Context(), principal)
+	if err != nil {
+		writeProblem(writer, http.StatusInternalServerError, "internal_error",
+			"The request could not be completed")
+		return platform.User{}, false
+	}
+	return user, true
+}
+
+func (resolver testActorResolver) ResolveOptionalActor(
+	writer http.ResponseWriter,
+	request *http.Request,
+) (*platform.User, bool) {
+	if strings.TrimSpace(request.Header.Get("Authorization")) == "" {
+		return nil, true
+	}
+	user, ok := resolver.ResolveActor(writer, request)
+	if !ok {
+		return nil, false
+	}
+	return &user, true
+}
+
 // fakeStore is a configurable Store implementation for handler tests. Each
 // operation delegates to a function field so individual tests can inject
 // success, validation, auth and not-found behavior without a database.
@@ -38,12 +77,14 @@ type fakeStore struct {
 	updateIssue   func(actor platform.User, repoID string, number int64, input UpdateIssueInput) (Issue, error)
 	listComments  func(repoID string, number int64, page Page) (Result[IssueComment], error)
 	createComment func(actor platform.User, repoID string, number int64, body string) (IssueComment, error)
-	updateComment func(actor platform.User, commentID, body string) (IssueComment, error)
-	deleteComment func(actor platform.User, commentID string) error
+	updateComment func(
+		actor platform.User, repoID string, number int64, commentID, body string,
+	) (IssueComment, error)
+	deleteComment func(actor platform.User, repoID string, number int64, commentID string) error
 	listLabels    func(repoID string, page Page) (Result[Label], error)
 	createLabel   func(actor platform.User, repoID string, input LabelInput) (Label, error)
-	updateLabel   func(actor platform.User, labelID string, input LabelInput) (Label, error)
-	deleteLabel   func(actor platform.User, labelID string) error
+	updateLabel   func(actor platform.User, repoID, labelID string, input LabelInput) (Label, error)
+	deleteLabel   func(actor platform.User, repoID, labelID string) error
 	applyLabel    func(actor platform.User, repoID string, number int64, labelID string) (Label, bool, error)
 	removeLabel   func(actor platform.User, repoID string, number int64, labelID string) error
 	getMR         func(repoID string, number int64) (MergeRequest, error)
@@ -53,8 +94,8 @@ type fakeStore struct {
 	createReview func(actor platform.User, repoID string, number int64, input ReviewInput) (Review, error)
 	listRules    func(repoID string) ([]BranchRule, error)
 	createRule   func(actor platform.User, repoID string, input BranchRuleInput) (BranchRule, error)
-	updateRule   func(actor platform.User, ruleID string, input BranchRuleInput) (BranchRule, error)
-	deleteRule   func(actor platform.User, ruleID string) error
+	updateRule   func(actor platform.User, repoID, ruleID string, input BranchRuleInput) (BranchRule, error)
+	deleteRule   func(actor platform.User, repoID, ruleID string) error
 }
 
 func (s *fakeStore) EnsureUser(context.Context, auth.Principal) (platform.User, error) {
@@ -113,17 +154,19 @@ func (s *fakeStore) CreateIssueComment(_ context.Context, actor platform.User, r
 }
 
 func (s *fakeStore) UpdateIssueComment(_ context.Context, actor platform.User,
-	commentID, body string,
+	repoID string, number int64, commentID, body string,
 ) (IssueComment, error) {
 	if s.updateComment != nil {
-		return s.updateComment(actor, commentID, body)
+		return s.updateComment(actor, repoID, number, commentID, body)
 	}
 	return IssueComment{}, platform.ErrNotFound
 }
 
-func (s *fakeStore) DeleteIssueComment(_ context.Context, actor platform.User, commentID string) error {
+func (s *fakeStore) DeleteIssueComment(
+	_ context.Context, actor platform.User, repoID string, number int64, commentID string,
+) error {
 	if s.deleteComment != nil {
-		return s.deleteComment(actor, commentID)
+		return s.deleteComment(actor, repoID, number, commentID)
 	}
 	return platform.ErrNotFound
 }
@@ -144,18 +187,18 @@ func (s *fakeStore) CreateLabel(_ context.Context, actor platform.User, repoID s
 	return Label{}, platform.ErrNotFound
 }
 
-func (s *fakeStore) UpdateLabel(_ context.Context, actor platform.User, labelID string,
+func (s *fakeStore) UpdateLabel(_ context.Context, actor platform.User, repoID, labelID string,
 	input LabelInput,
 ) (Label, error) {
 	if s.updateLabel != nil {
-		return s.updateLabel(actor, labelID, input)
+		return s.updateLabel(actor, repoID, labelID, input)
 	}
 	return Label{}, platform.ErrNotFound
 }
 
-func (s *fakeStore) DeleteLabel(_ context.Context, actor platform.User, labelID string) error {
+func (s *fakeStore) DeleteLabel(_ context.Context, actor platform.User, repoID, labelID string) error {
 	if s.deleteLabel != nil {
-		return s.deleteLabel(actor, labelID)
+		return s.deleteLabel(actor, repoID, labelID)
 	}
 	return platform.ErrNotFound
 }
@@ -203,11 +246,12 @@ func (s *fakeStore) ListReviews(_ context.Context, repoID string, number int64) 
 
 func (s *fakeStore) CreateReview(_ context.Context, actor platform.User, repoID string,
 	number int64, input ReviewInput,
-) (Review, error) {
+) (Review, bool, error) {
 	if s.createReview != nil {
-		return s.createReview(actor, repoID, number, input)
+		review, err := s.createReview(actor, repoID, number, input)
+		return review, true, err
 	}
-	return Review{}, platform.ErrNotFound
+	return Review{}, false, platform.ErrNotFound
 }
 
 func (s *fakeStore) ListBranchRules(_ context.Context, repoID string) ([]BranchRule, error) {
@@ -226,25 +270,27 @@ func (s *fakeStore) CreateBranchRule(_ context.Context, actor platform.User, rep
 	return BranchRule{}, platform.ErrNotFound
 }
 
-func (s *fakeStore) UpdateBranchRule(_ context.Context, actor platform.User, ruleID string,
+func (s *fakeStore) UpdateBranchRule(_ context.Context, actor platform.User, repoID, ruleID string,
 	input BranchRuleInput,
 ) (BranchRule, error) {
 	if s.updateRule != nil {
-		return s.updateRule(actor, ruleID, input)
+		return s.updateRule(actor, repoID, ruleID, input)
 	}
 	return BranchRule{}, platform.ErrNotFound
 }
 
-func (s *fakeStore) DeleteBranchRule(_ context.Context, actor platform.User, ruleID string) error {
+func (s *fakeStore) DeleteBranchRule(
+	_ context.Context, actor platform.User, repoID, ruleID string,
+) error {
 	if s.deleteRule != nil {
-		return s.deleteRule(actor, ruleID)
+		return s.deleteRule(actor, repoID, ruleID)
 	}
 	return platform.ErrNotFound
 }
 
 func newTestAPI(store Store) http.Handler {
 	mux := http.NewServeMux()
-	Register(mux, store, testAuthenticator{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	Register(mux, store, testActorResolver{store: store}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	return mux
 }
 
@@ -460,8 +506,11 @@ func TestCreateCommentBlankBody(t *testing.T) {
 func TestDeleteCommentNoContent(t *testing.T) {
 	t.Parallel()
 	store := &fakeStore{
-		user:          alice(),
-		deleteComment: func(platform.User, string) error { return nil },
+		user: alice(),
+		lookupRepo: func(_ *platform.User, owner, slug string) (Repository, error) {
+			return repoFor(owner, slug), nil
+		},
+		deleteComment: func(platform.User, string, int64, string) error { return nil },
 	}
 	handler := newTestAPI(store)
 	recorder := doRequest(handler, http.MethodDelete,
@@ -469,6 +518,76 @@ func TestDeleteCommentNoContent(t *testing.T) {
 		"Authorization", "Bearer alice")
 	if recorder.Code != http.StatusNoContent {
 		t.Fatalf("expected 204, got %d", recorder.Code)
+	}
+}
+
+func TestCommentMutationUsesIssueRouteScope(t *testing.T) {
+	t.Parallel()
+	store := &fakeStore{
+		user: alice(),
+		lookupRepo: func(_ *platform.User, owner, slug string) (Repository, error) {
+			return repoFor(owner, slug), nil
+		},
+		updateComment: func(_ platform.User, repoID string, number int64, commentID, body string) (IssueComment, error) {
+			if repoID != "repo-1" || number != 9 || commentID != "comment-1" {
+				t.Fatalf("store received wrong comment scope: repo=%q number=%d id=%q", repoID, number, commentID)
+			}
+			return IssueComment{}, platform.ErrNotFound
+		},
+	}
+	handler := newTestAPI(store)
+	recorder := doRequest(handler, http.MethodPatch,
+		"/api/v1/repositories/acme/lore/issues/9/comments/comment-1", `{"body":"edited"}`,
+		"Authorization", "Bearer alice", "Content-Type", "application/json")
+	if recorder.Code != http.StatusNotFound || errorCode(t, recorder) != "not_found" {
+		t.Fatalf("cross-issue comment mutation: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestLabelMutationUsesRepositoryRouteScope(t *testing.T) {
+	t.Parallel()
+	store := &fakeStore{
+		user: alice(),
+		lookupRepo: func(_ *platform.User, owner, slug string) (Repository, error) {
+			return repoFor(owner, slug), nil
+		},
+		updateLabel: func(_ platform.User, repoID, labelID string, input LabelInput) (Label, error) {
+			if repoID != "repo-1" || labelID != "label-1" {
+				t.Fatalf("store received wrong label scope: repo=%q id=%q", repoID, labelID)
+			}
+			return Label{}, platform.ErrNotFound
+		},
+	}
+	handler := newTestAPI(store)
+	recorder := doRequest(handler, http.MethodPatch,
+		"/api/v1/repositories/acme/lore/labels/label-1", `{"name":"bug","color":"ff0000"}`,
+		"Authorization", "Bearer alice", "Content-Type", "application/json")
+	if recorder.Code != http.StatusNotFound || errorCode(t, recorder) != "not_found" {
+		t.Fatalf("cross-repository label mutation: status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestBranchRuleMutationUsesRepositoryRouteScope(t *testing.T) {
+	t.Parallel()
+	store := &fakeStore{
+		user: alice(),
+		lookupRepo: func(_ *platform.User, owner, slug string) (Repository, error) {
+			return repoFor(owner, slug), nil
+		},
+		updateRule: func(_ platform.User, repoID, ruleID string, input BranchRuleInput) (BranchRule, error) {
+			if repoID != "repo-1" || ruleID != "rule-1" {
+				t.Fatalf("store received wrong branch-rule scope: repo=%q id=%q", repoID, ruleID)
+			}
+			return BranchRule{}, platform.ErrNotFound
+		},
+	}
+	handler := newTestAPI(store)
+	recorder := doRequest(handler, http.MethodPatch,
+		"/api/v1/repositories/acme/lore/branch-rules/rule-1",
+		`{"pattern":"main","requiredApprovals":1}`,
+		"Authorization", "Bearer alice", "Content-Type", "application/json")
+	if recorder.Code != http.StatusNotFound || errorCode(t, recorder) != "not_found" {
+		t.Fatalf("cross-repository branch-rule mutation: status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 }
 
@@ -840,6 +959,23 @@ func TestInvalidJSONReturns400(t *testing.T) {
 		"Authorization", "Bearer alice", "Content-Type", "application/json")
 	if recorder.Code != http.StatusBadRequest || errorCode(t, recorder) != "invalid_json" {
 		t.Fatalf("expected 400 invalid_json, got %d %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestJSONMutationRequiresJSONContentType(t *testing.T) {
+	t.Parallel()
+	store := &fakeStore{
+		user: alice(),
+		lookupRepo: func(_ *platform.User, owner, slug string) (Repository, error) {
+			return repoFor(owner, slug), nil
+		},
+	}
+	handler := newTestAPI(store)
+	recorder := doRequest(handler, http.MethodPost,
+		"/api/v1/repositories/acme/lore/issues/3/comments", `{"body":"comment"}`,
+		"Authorization", "Bearer alice", "Content-Type", "text/plain")
+	if recorder.Code != http.StatusUnsupportedMediaType || errorCode(t, recorder) != "unsupported_media_type" {
+		t.Fatalf("expected 415 unsupported_media_type, got %d %s", recorder.Code, recorder.Body.String())
 	}
 }
 

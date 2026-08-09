@@ -174,6 +174,20 @@ func TestParseIfMatch(t *testing.T) {
 	}
 }
 
+func TestMalformedIfMatchIsRejected(t *testing.T) {
+	t.Parallel()
+	if _, err := buildIssueUpdateInput(
+		issuePatchRequest{Title: ptrString("new")}, " ",
+	); !errors.Is(err, ErrInvalidPrecondition) {
+		t.Fatalf("malformed issue If-Match: got %v", err)
+	}
+	if _, err := buildMergeRequestUpdateInput(
+		mergeRequestPatchRequest{Title: ptrString("new")}, "not-a-time",
+	); !errors.Is(err, ErrInvalidPrecondition) {
+		t.Fatalf("malformed merge request If-Match: got %v", err)
+	}
+}
+
 func TestEncodeCursor(t *testing.T) {
 	t.Parallel()
 	if cursor := encodeCursor(0, 30, 10); cursor != "" {
