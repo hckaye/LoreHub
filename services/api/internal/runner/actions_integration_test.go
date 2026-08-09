@@ -762,7 +762,7 @@ func TestActionsPermissionMatrixPostgres(t *testing.T) {
 		INSERT INTO repositories (
 			id, organization_id, slug, display_name, visibility, lore_repository_id, lore_url, default_branch, created_by
 		) VALUES ($1, $2, $3, 'Internal', 'internal', $4, $5, 'main', $6)
-		`, internalID, fixture.organizationID, internalSlug, "lore-"+internalID,
+		`, internalID, fixture.organizationID, internalSlug, strings.ReplaceAll(internalID, "-", ""),
 		"lore://"+internalID, fixture.userID); err != nil {
 		t.Fatal(err)
 	}
@@ -784,7 +784,8 @@ func TestActionsPermissionMatrixPostgres(t *testing.T) {
 		INSERT INTO repositories (
 			id, organization_id, slug, display_name, visibility, lore_repository_id, lore_url, default_branch, created_by
 		) VALUES ($1, $2, $3, 'Public', 'public', $4, $5, 'main', $6)
-	`, publicID, fixture.organizationID, publicSlug, "lore-"+publicID, "lore://"+publicID, fixture.userID); err != nil {
+	`, publicID, fixture.organizationID, publicSlug, strings.ReplaceAll(publicID, "-", ""),
+		"lore://"+publicID, fixture.userID); err != nil {
 		t.Fatal(err)
 	}
 	access, err = store.RepositoryForActions(ctx, fixture.owner, publicSlug, "")

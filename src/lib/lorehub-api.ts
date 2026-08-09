@@ -4,11 +4,11 @@ import { cookies } from "next/headers";
 
 import type {
   APIResult,
-	Branch,
-	CIRun,
-	CIRunDetail,
-	CIRunPage,
-	CIWorkflowPage,
+  Branch,
+  CIRun,
+  CIRunDetail,
+  CIRunPage,
+  CIWorkflowPage,
   FileHistoryEntry,
   Issue,
   LoreDiff,
@@ -54,20 +54,20 @@ export async function getOpenMergeRequests(owner: string, repository: string): P
 }
 
 export async function getCIRuns(owner: string, repository: string): Promise<APIResult<CIRun[]>> {
-	const result = await getActionRuns(owner, repository);
-	return result.ok ? { ok: true, data: result.data.runs } : result;
+  const result = await getActionRuns(owner, repository);
+  return result.ok ? { ok: true, data: result.data.runs } : result;
 }
 
 export async function getActionWorkflows(owner: string, repository: string): Promise<APIResult<CIWorkflowPage>> {
-	return request(repositoryPath(owner, repository, "/actions/workflows"));
+  return request(repositoryPath(owner, repository, "/actions/workflows"));
 }
 
 export async function getActionRuns(owner: string, repository: string): Promise<APIResult<CIRunPage>> {
-	return request(repositoryPath(owner, repository, "/actions/runs?per_page=50"));
+  return request(repositoryPath(owner, repository, "/actions/runs?per_page=50"));
 }
 
 export function getActionRun(owner: string, repository: string, runNumber: number): Promise<APIResult<CIRunDetail>> {
-	return request(repositoryPath(owner, repository, `/actions/runs/${encodeURIComponent(String(runNumber))}`));
+  return request(repositoryPath(owner, repository, `/actions/runs/${encodeURIComponent(String(runNumber))}`));
 }
 
 export type IssueFilter = "open" | "closed" | "all";

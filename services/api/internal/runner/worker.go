@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -48,10 +49,13 @@ type WorkerConfig struct {
 	ArtifactMaxTotalBytes int64
 	ProxyURL              string
 	EngineProxyURL        string
+	ArtifactServerAddress string
 }
 
 const containerOptions = "--privileged=false --cpus=1 --memory=1g --pids-limit=256 " +
 	"--cap-drop=ALL --security-opt=no-new-privileges:true"
+
+const defaultArtifactServerAddress = "172.28.244.2"
 
 const (
 	maxJobTimeout    = 24 * time.Hour
@@ -100,6 +104,12 @@ func NewWorker(store *Store, config WorkerConfig, logger *slog.Logger) (*Worker,
 	}
 	if strings.TrimSpace(config.EngineProxyURL) == "" {
 		return nil, errors.New("engine forward proxy URL is required")
+	}
+	if strings.TrimSpace(config.ArtifactServerAddress) == "" {
+		config.ArtifactServerAddress = defaultArtifactServerAddress
+	}
+	if net.ParseIP(strings.TrimSpace(config.ArtifactServerAddress)) == nil {
+		return nil, errors.New("artifact server address must be an IP address")
 	}
 	if config.JobTimeout <= 0 || config.JobTimeout > maxJobTimeout {
 		return nil, errors.New("job timeout is outside its bounds")
@@ -256,6 +266,9 @@ func (worker *Worker) monitorJob(ctx context.Context, job Job, cancel context.Ca
 }
 
 func (worker *Worker) runJob(ctx context.Context, job Job, logKey string) (string, []Artifact, error) {
+	if err := worker.removeStaleWorkspaces(job.ID); err != nil {
+		return "", nil, err
+	}
 	workspace, err := os.MkdirTemp(worker.config.WorkDir, "job-"+job.ID+"-")
 	if err != nil {
 		return "", nil, fmt.Errorf("create CI workspace: %w", err)
@@ -370,11 +383,12 @@ func (worker *Worker) runJob(ctx context.Context, job Job, logKey string) (strin
 		jobNetwork.networkName,
 		jobNetwork.proxyURL,
 		actInvocation{
-			ActionRepositories: actionRepositories,
-			PlatformImages:     worker.config.PlatformImages,
-			GitHub:             worker.config.GitHubContext,
-			Variables:          execution.Variables,
-			SecretFile:         secretFile,
+			ActionRepositories:    actionRepositories,
+			PlatformImages:        worker.config.PlatformImages,
+			GitHub:                worker.config.GitHubContext,
+			Variables:             execution.Variables,
+			SecretFile:            secretFile,
+			ArtifactServerAddress: worker.config.ArtifactServerAddress,
 		},
 	)
 	act := exec.CommandContext(actContext, worker.config.ActBinary, arguments...)
@@ -399,6 +413,24 @@ func (worker *Worker) runJob(ctx context.Context, job Job, logKey string) (strin
 	return logKey, artifacts, nil
 }
 
+func (worker *Worker) removeStaleWorkspaces(jobID string) error {
+	entries, err := os.ReadDir(worker.config.WorkDir)
+	if err != nil {
+		return fmt.Errorf("list stale CI workspaces: %w", err)
+	}
+	prefix := "job-" + jobID + "-"
+	for _, entry := range entries {
+		if !strings.HasPrefix(entry.Name(), prefix) {
+			continue
+		}
+		path := filepath.Join(worker.config.WorkDir, entry.Name())
+		if err := os.RemoveAll(path); err != nil {
+			return fmt.Errorf("remove stale CI workspace %q: %w", path, err)
+		}
+	}
+	return nil
+}
+
 func actArguments(
 	job Job,
 	repositoryPath string,
@@ -409,13 +441,16 @@ func actArguments(
 	proxyURL string,
 	config actInvocation,
 ) []string {
+	if strings.TrimSpace(config.ArtifactServerAddress) == "" {
+		config.ArtifactServerAddress = defaultArtifactServerAddress
+	}
 	arguments := []string{
 		job.EventName,
 		"--directory", repositoryPath,
 		"--workflows", workflowPath,
 		"--eventpath", eventPath,
 		"--artifact-server-path", artifactPath,
-		"--artifact-server-addr", "0.0.0.0",
+		"--artifact-server-addr", config.ArtifactServerAddress,
 		"--container-daemon-socket", "-",
 		"--container-architecture", "linux/amd64",
 		"--network", networkName,
@@ -463,11 +498,12 @@ func actArguments(
 }
 
 type actInvocation struct {
-	ActionRepositories []string
-	PlatformImages     map[string]string
-	GitHub             GitHubContext
-	Variables          map[string]string
-	SecretFile         string
+	ActionRepositories    []string
+	PlatformImages        map[string]string
+	GitHub                GitHubContext
+	Variables             map[string]string
+	SecretFile            string
+	ArtifactServerAddress string
 }
 
 func sortedVariables(variables map[string]string) []string {

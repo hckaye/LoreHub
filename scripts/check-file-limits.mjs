@@ -2,7 +2,18 @@ import { readdir, readFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 
 const root = new URL("../", import.meta.url);
-const ignoredDirectories = new Set([".git", ".next", ".cache", ".vinext", "coverage", "dist", "node_modules", "out"]);
+const ignoredDirectories = new Set([
+  ".git",
+  ".lore",
+  ".next",
+  ".cache",
+  ".tmp",
+  ".vinext",
+  "coverage",
+  "dist",
+  "node_modules",
+  "out",
+]);
 const ignoredFiles = new Set(["go.sum", "package-lock.json"]);
 const checkedExtensions = new Set([
   "",

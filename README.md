@@ -174,25 +174,23 @@ APIをDockerコンテナで起動する場合のdiscovery到達性について�
 
 ## APIの主な入口
 
-| Method | Path                                           | 認証 | 目的                   |
-| ------ | ---------------------------------------------- | ---- | ---------------------- |
-| `GET`  | `/health/live`                                 | 不要 | プロセスの確認         |
-| `GET`  | `/health/ready`                                | 不要 | PostgreSQL接続の確認   |
-| `GET`  | `/auth/login`                                  | 不要 | OIDCログイン／登録開始 |
-| `GET`  | `/auth/callback`                               | 不要 | OIDCログイン完了       |
-| `POST` | `/auth/logout`                                 | CSRF | セッション終了         |
-| `GET`  | `/api/v1/auth/session`                         | 不要 | ログイン状態の確認     |
-| `GET`  | `/api/v1/explore/repositories`                 | 不要 | 公開リポジトリ一覧     |
-| `POST` | `/api/v1/organizations`                        | OIDC | 組織作成               |
-| `POST` | `/api/v1/organizations/{org}/repositories`     | OIDC | Loreリポジトリ登録     |
-| `GET`  | `/api/v1/repositories/{owner}/{repo}/branches` | 不要 | Lore branch一覧        |
-| `GET`  | `/api/v1/repositories/{owner}/{repo}/tree`、`/file` | 任意認証 | Loreのツリーとファイル |
-| `GET`  | `/api/v1/repositories/{owner}/{repo}/revisions`、`/diff` | 任意認証 | 履歴と差分 |
-| `GET`  | `/api/v1/repositories/{owner}/{repo}/issues`   | 不要 | 公開Issue一覧          |
-| `POST` | `/api/v1/repositories/{owner}/{repo}/issues`   | OIDC | Issue作成              |
-| `GET`  | `/api/v1/repositories/{owner}/{repo}/merge-requests/{number}/merge-readiness` | 任意認証 | merge条件確認 |
-| `POST` | `/api/v1/repositories/{owner}/{repo}/merge-requests/{number}/merge/start` | CSRF/write | Lore merge開始 |
-| `POST` | `/api/v1/repositories/{owner}/{repo}/merge-requests/{number}/merge` | CSRF/write | Lore pushとDB確定 |
+- `GET /health/live` — 認証不要 — プロセスの確認
+- `GET /health/ready` — 認証不要 — PostgreSQL接続の確認
+- `GET /auth/login` — 認証不要 — OIDCログイン／登録開始
+- `GET /auth/callback` — 認証不要 — OIDCログイン完了
+- `POST /auth/logout` — CSRF — セッション終了
+- `GET /api/v1/auth/session` — 認証不要 — ログイン状態の確認
+- `GET /api/v1/explore/repositories` — 認証不要 — 公開リポジトリ一覧
+- `POST /api/v1/organizations` — OIDC — 組織作成
+- `POST /api/v1/organizations/{org}/repositories` — OIDC — Loreリポジトリ登録
+- `GET /api/v1/repositories/{owner}/{repo}/branches` — 認証不要 — Lore branch一覧
+- `GET /api/v1/repositories/{owner}/{repo}/tree`、`/file` — 任意認証 — Loreのツリーとファイル
+- `GET /api/v1/repositories/{owner}/{repo}/revisions`、`/diff` — 任意認証 — 履歴と差分
+- `GET /api/v1/repositories/{owner}/{repo}/issues` — 認証不要 — 公開Issue一覧
+- `POST /api/v1/repositories/{owner}/{repo}/issues` — OIDC — Issue作成
+- `GET /api/v1/repositories/{owner}/{repo}/merge-requests/{number}/merge-readiness` — 任意認証 — merge条件確認
+- `POST /api/v1/repositories/{owner}/{repo}/merge-requests/{number}/merge/start` — CSRF/write — Lore merge開始
+- `POST /api/v1/repositories/{owner}/{repo}/merge-requests/{number}/merge` — CSRF/write — Lore pushとDB確定
 
 更新APIは、既存クライアントからは`Authorization: Bearer <token>`で利用できます。ブラウザセッションで利用する場合は、
 `GET /api/v1/auth/session`が返すCSRF tokenを`X-CSRF-Token`ヘッダーに付けます。APIはOIDCのissuer、audience、署名、

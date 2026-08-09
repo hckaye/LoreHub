@@ -76,7 +76,7 @@ func newActionsFixture(t *testing.T, pool *pgxpool.Pool) actionsFixture {
 			id, organization_id, slug, display_name, lore_repository_id, lore_url, default_branch, created_by
 		) VALUES ($1, $2, $3, 'Runtime', $5, $6, 'main', $4)
 	`, fixture.repositoryID, fixture.organizationID, fixture.repositorySlug, fixture.userID,
-		"lore-"+fixture.repositoryID, "lore://fixture/"+fixture.repositoryID)
+		strings.ReplaceAll(fixture.repositoryID, "-", ""), "lore://fixture/"+fixture.repositoryID)
 	if err != nil {
 		t.Fatal(err)
 	}

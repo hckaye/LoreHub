@@ -16,14 +16,28 @@ import (
 
 func TestPrepareRemoteActionsFetchesSubpathsAndNestedCompositeActions(t *testing.T) {
 	rootArchive := actionArchive(t, map[string]string{
-		"root-v1/actions/action.yml": "name: root\nruns:\n  using: composite\n  steps:\n    - uses: nested/composite/subdir@v2\n",
-		"root-v1/actions/run.sh":     "echo root\n",
+		"root-v1/actions/action.yml": `name: root
+runs:
+  using: composite
+  steps:
+    - uses: nested/composite/subdir@v2
+`,
+		"root-v1/actions/run.sh": "echo root\n",
 	})
 	nestedArchive := actionArchive(t, map[string]string{
-		"nested-v2/subdir/action.yaml": "name: nested\nruns:\n  using: composite\n  steps:\n    - uses: leaf/action@0123456789012345678901234567890123456789\n",
+		"nested-v2/subdir/action.yaml": `name: nested
+runs:
+  using: composite
+  steps:
+    - uses: leaf/action@0123456789012345678901234567890123456789
+`,
 	})
 	leafArchive := actionArchive(t, map[string]string{
-		"0123456789012345678901234567890123456789/action.yml": "name: leaf\nruns:\n  using: node24\n  main: dist/index.js\n",
+		"0123456789012345678901234567890123456789/action.yml": `name: leaf
+runs:
+  using: node24
+  main: dist/index.js
+`,
 	})
 	githubScriptArchive := actionArchive(t, map[string]string{
 		"github-script-v8/action.yml":    "name: github-script\nruns:\n  using: node24\n  main: dist/index.js\n",
@@ -86,7 +100,12 @@ jobs:
 
 func TestPrepareRemoteActionsRequiresHTTPSInProduction(t *testing.T) {
 	workflow := filepath.Join(t.TempDir(), "workflow.yml")
-	if err := os.WriteFile(workflow, []byte("jobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/test@v1\n"), 0o600); err != nil {
+	if err := os.WriteFile(workflow, []byte(`jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/test@v1
+`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	_, err := prepareRemoteActions(context.Background(), workflow, filepath.Join(t.TempDir(), "actions"),
@@ -98,9 +117,16 @@ func TestPrepareRemoteActionsRequiresHTTPSInProduction(t *testing.T) {
 
 func TestPrepareRemoteActionsAllowsSameRepositorySubpath(t *testing.T) {
 	archive := actionArchive(t, map[string]string{
-		"repo-v1/action.yml":        "runs:\n  using: composite\n  steps:\n    - uses: owner/repo/subdir@v1\n",
-		"repo-v1/subdir/action.yml": "runs:\n  using: node24\n  main: index.js\n",
-		"repo-v1/subdir/index.js":   "console.log('subpath')\n",
+		"repo-v1/action.yml": `runs:
+  using: composite
+  steps:
+    - uses: owner/repo/subdir@v1
+`,
+		"repo-v1/subdir/action.yml": `runs:
+  using: node24
+  main: index.js
+`,
+		"repo-v1/subdir/index.js": "console.log('subpath')\n",
 	})
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.URL.Path != "/owner/repo/archive/refs/tags/v1.tar.gz" {
@@ -111,7 +137,12 @@ func TestPrepareRemoteActionsAllowsSameRepositorySubpath(t *testing.T) {
 	}))
 	defer server.Close()
 	workflow := filepath.Join(t.TempDir(), "workflow.yml")
-	if err := os.WriteFile(workflow, []byte("jobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: owner/repo@v1\n"), 0o600); err != nil {
+	if err := os.WriteFile(workflow, []byte(`jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: owner/repo@v1
+`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	mappings, err := prepareRemoteActions(context.Background(), workflow, filepath.Join(t.TempDir(), "actions"),
@@ -150,7 +181,12 @@ func TestPrepareRemoteActionsRejectsCompositeDependencyCycles(t *testing.T) {
 	}))
 	defer server.Close()
 	workflow := filepath.Join(t.TempDir(), "workflow.yml")
-	if err := os.WriteFile(workflow, []byte("jobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: owner/a@v1\n"), 0o600); err != nil {
+	if err := os.WriteFile(workflow, []byte(`jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: owner/a@v1
+`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	_, err := prepareRemoteActions(context.Background(), workflow, filepath.Join(t.TempDir(), "actions"),
@@ -178,10 +214,12 @@ func TestParseRemoteActionRejectsExpressionsAndInvalidRefs(t *testing.T) {
 		"owner/repository@0123456789012345678901234567890123456789" {
 		t.Fatalf("subpath or immutable ref was not preserved: %#v, %v", action, err)
 	}
-	if action.identity() != "owner/repository@0123456789012345678901234567890123456789#sub/path" {
+	wantIdentity := "owner/repository@0123456789012345678901234567890123456789#sub/path"
+	if action.identity() != wantIdentity {
 		t.Fatalf("subpath was not included in the recursion identity: %q", action.identity())
 	}
-	if _, err := parseRemoteAction("owner/repository@0123456789012345678901234567890123456789012345678901234567890123"); err != nil {
+	immutableRef := "owner/repository@0123456789012345678901234567890123456789012345678901234567890123"
+	if _, err := parseRemoteAction(immutableRef); err != nil {
 		t.Fatalf("64-character immutable ref was rejected: %v", err)
 	}
 }

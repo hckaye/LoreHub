@@ -157,7 +157,7 @@ func (worker *Worker) createJobNetwork(ctx context.Context, jobID string) (*engi
 		"Container": network.proxyID,
 	}, nil); err != nil {
 		_ = network.Close(context.WithoutCancel(ctx))
-		return nil, fmt.Errorf("connect internal proxy gateway to disposable engine bridge: %w", err)
+		return nil, fmt.Errorf("connect proxy gateway to disposable engine uplink: %w", err)
 	}
 	var inspected struct {
 		NetworkSettings struct {

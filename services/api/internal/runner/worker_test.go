@@ -43,6 +43,7 @@ func TestActArgumentsPreserveSupportedEventAndExactWorkflow(t *testing.T) {
 			}
 			assertArgumentValue(t, args, "--workflows", "/work/repository/.github/workflows/ci.yml")
 			assertArgumentValue(t, args, "--eventpath", "/work/event.json")
+			assertArgumentValue(t, args, "--artifact-server-addr", defaultArtifactServerAddress)
 			assertArgumentValue(t, args, "--network", "lorehub-job-test")
 			assertArgumentValue(t, args, "--env", "SHA_REF=lore-revision")
 			assertArgumentValue(t, args, "--env", "GITHUB_SHA=lore-revision")
@@ -87,6 +88,31 @@ func TestActArgumentsPassVariablesAndSecretFilePathOnly(t *testing.T) {
 	assertArgumentValue(t, args, "--secret-file", "/tmp/actions-secrets-123")
 	if strings.Contains(strings.Join(args, "\x00"), "super-secret") {
 		t.Fatal("secret value appeared in act arguments")
+	}
+}
+
+func TestRemoveStaleWorkspacesOnlyRemovesMatchingJob(t *testing.T) {
+	workDir := t.TempDir()
+	worker := &Worker{config: WorkerConfig{WorkDir: workDir}}
+	stale := filepath.Join(workDir, "job-job-1-old")
+	other := filepath.Join(workDir, "job-job-2-old")
+	if err := os.MkdirAll(stale, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stale, "actions-secrets"), []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(other, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := worker.removeStaleWorkspaces("job-1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Fatalf("stale workspace remained: %v", err)
+	}
+	if _, err := os.Stat(other); err != nil {
+		t.Fatalf("unrelated workspace was removed: %v", err)
 	}
 }
 
