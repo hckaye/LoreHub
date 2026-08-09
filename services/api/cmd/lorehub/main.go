@@ -13,6 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/lorehub/lorehub/services/api/internal/auth"
+	"github.com/lorehub/lorehub/services/api/internal/collab"
 	"github.com/lorehub/lorehub/services/api/internal/config"
 	"github.com/lorehub/lorehub/services/api/internal/database"
 	"github.com/lorehub/lorehub/services/api/internal/httpapi"
@@ -123,6 +124,7 @@ func run(logger *slog.Logger) error {
 			},
 		}),
 		httpapi.WithActions(actionsStore),
+		httpapi.WithCollaboration(collab.NewStore(pool)),
 	)
 	server := &http.Server{
 		Addr:              settings.HTTPAddress,

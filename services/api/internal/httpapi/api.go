@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lorehub/lorehub/services/api/internal/auth"
+	"github.com/lorehub/lorehub/services/api/internal/collab"
 	loreclient "github.com/lorehub/lorehub/services/api/internal/lore"
 	"github.com/lorehub/lorehub/services/api/internal/platform"
 )
@@ -76,6 +77,7 @@ type API struct {
 	health         HealthChecker
 	loreIdentity   string
 	logger         *slog.Logger
+	collabStore    collab.Store
 	loginProvider  auth.LoginProvider
 	loginStore     auth.LoginTransactionStore
 	sessionStore   auth.SessionStore
@@ -105,7 +107,9 @@ func New(
 		logger:        logger,
 	}
 	for _, option := range options {
-		option(api)
+		if option != nil {
+			option(api)
+		}
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health/live", api.live)
@@ -137,7 +141,55 @@ func New(
 		api.actionArtifact)
 	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/actions/artifacts/{artifactID}/download",
 		api.actionArtifact)
+	if api.collabStore != nil {
+		collab.Register(mux, api.collabStore, api, logger)
+	}
 	return api.recoverPanic(api.securityHeaders(api.requestLog(mux)))
+}
+
+// WithCollaboration mounts the collaboration API using the same actor and
+// session resolver as the rest of this HTTP API.
+func WithCollaboration(store collab.Store) Option {
+	return func(api *API) {
+		api.collabStore = store
+	}
+}
+
+// ResolveActor exposes the common authenticated-actor path to route packages
+// mounted by this API. Cookie sessions require CSRF on state-changing methods;
+// bearer requests retain their existing compatibility behavior.
+func (api *API) ResolveActor(writer http.ResponseWriter, request *http.Request) (platform.User, bool) {
+	return api.actor(writer, request)
+}
+
+// ResolveOptionalActor resolves a valid browser session or bearer actor when
+// present, while allowing anonymous public reads. Invalid or expired cookies
+// are treated as anonymous and never authorize access to private resources.
+func (api *API) ResolveOptionalActor(
+	writer http.ResponseWriter,
+	request *http.Request,
+) (*platform.User, bool) {
+	if strings.TrimSpace(request.Header.Get("Authorization")) == "" {
+		session, _, found, err := api.lookupSession(request)
+		if err != nil {
+			api.internalError(writer, request, "look up authentication session", err)
+			return nil, false
+		}
+		if !found {
+			return nil, true
+		}
+		if stateChangingMethod(request.Method) && !api.validCSRF(request, session.CSRFDigest) {
+			writeProblem(writer, http.StatusForbidden, "csrf_failed", "A valid CSRF token is required")
+			return nil, false
+		}
+		user := userFromSession(session)
+		return &user, true
+	}
+	user, ok := api.actor(writer, request)
+	if !ok {
+		return nil, false
+	}
+	return &user, true
 }
 
 func (api *API) live(writer http.ResponseWriter, _ *http.Request) {
@@ -459,6 +511,10 @@ func (api *API) actor(writer http.ResponseWriter, request *http.Request) (platfo
 	}
 	user, err := api.store.EnsureUser(request.Context(), principal)
 	if err != nil {
+		if errors.Is(err, platform.ErrForbidden) {
+			writeProblem(writer, http.StatusForbidden, "forbidden", "This operation is not permitted")
+			return platform.User{}, false
+		}
 		api.internalError(writer, request, "provision authenticated user", err)
 		return platform.User{}, false
 	}

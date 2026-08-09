@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/lorehub/lorehub/services/api/internal/auth"
 )
@@ -32,19 +33,24 @@ func NewStore(pool *pgxpool.Pool) *Store {
 
 func (store *Store) EnsureUser(ctx context.Context, principal auth.Principal) (User, error) {
 	var user User
+	var status string
 	err := store.pool.QueryRow(ctx, `
-		SELECT u.id, u.username, u.display_name, COALESCE(u.email, ''), u.locale
+		SELECT u.id, u.username, u.display_name, COALESCE(u.email, ''), u.locale, u.status
 		FROM user_identities i
 		JOIN users u ON u.id = i.user_id
-		WHERE i.issuer = $1 AND i.subject = $2 AND u.status = 'active'
+		WHERE i.issuer = $1 AND i.subject = $2
 	`, principal.Issuer, principal.Subject).Scan(
 		&user.ID,
 		&user.Username,
 		&user.DisplayName,
 		&user.Email,
 		&user.Locale,
+		&status,
 	)
 	if err == nil {
+		if status != "active" {
+			return User{}, ErrForbidden
+		}
 		displayName := strings.TrimSpace(principal.Name)
 		if displayName == "" {
 			displayName = user.DisplayName
@@ -756,7 +762,8 @@ func limitText(value string, limit int) string {
 }
 
 func translateConstraintError(operation string, err error) error {
-	if strings.Contains(err.Error(), "duplicate key") {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 		return fmt.Errorf("%s: %w", operation, ErrConflict)
 	}
 	return fmt.Errorf("%s: %w", operation, err)

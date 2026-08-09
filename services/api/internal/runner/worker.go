@@ -212,6 +212,9 @@ func (worker *Worker) runJob(ctx context.Context, job Job, logKey string) (strin
 	if err := worker.cloneRevision(ctx, job, repositoryPath, logWriter); err != nil {
 		return logKey, nil, err
 	}
+	if err := removeLoreMetadata(repositoryPath); err != nil {
+		return logKey, nil, err
+	}
 	if _, err := AdaptWorkflow(repositoryPath, job.WorkflowPath); err != nil {
 		return logKey, nil, err
 	}
@@ -315,6 +318,14 @@ func (worker *Worker) cloneRevision(ctx context.Context, job Job, destination st
 	clone.Env = safeEnvironment()
 	if err := clone.Run(); err != nil {
 		return fmt.Errorf("clone Lore revision: %w", err)
+	}
+	return nil
+}
+
+func removeLoreMetadata(repositoryPath string) error {
+	metadataPath := filepath.Join(repositoryPath, ".lore")
+	if err := os.RemoveAll(metadataPath); err != nil {
+		return fmt.Errorf("remove Lore metadata before the job: %w", err)
 	}
 	return nil
 }
@@ -458,7 +469,16 @@ func (worker *Worker) logObjectKey(job Job) string {
 }
 
 func safeEnvironment() []string {
-	allowed := []string{"PATH", "HOME", "DOCKER_HOST", "DOCKER_CONFIG", "XDG_RUNTIME_DIR", "TMPDIR"}
+	allowed := []string{
+		"PATH",
+		"HOME",
+		"DOCKER_HOST",
+		"DOCKER_TLS_VERIFY",
+		"DOCKER_CERT_PATH",
+		"DOCKER_CONFIG",
+		"XDG_RUNTIME_DIR",
+		"TMPDIR",
+	}
 	environment := make([]string, 0, len(allowed))
 	for _, key := range allowed {
 		if value := os.Getenv(key); value != "" {

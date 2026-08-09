@@ -4,6 +4,11 @@ LoreHubは、Loreリポジトリ向けの共同開発基盤です。LoreをVCS�
 監査、GitHub Actions互換CIを追加します。Gitリポジトリへ変換したり、Loreのファイル本文をPostgreSQLへ
 複製したりしません。
 
+認証とID管理は自己ホストのKeycloakに委譲します。LoreHub本体はユーザーのパスワードを保存せず、Keycloakが
+ローカル認証（メール＋パスワード）とGoogle、GitHub、Facebook、Xのソーシャルログインをブローカーします。
+詳細は[Keycloak運用ガイド](docs/operations/keycloak.md)と[認証とIDの境界](docs/architecture/identity.md)
+を参照してください。
+
 ## 現在実装されている範囲
 
 - Lore公式Go SDKを使ったリポジトリ確認とbranch一覧取得
@@ -56,15 +61,29 @@ TypeScript 6.0.3を使用します。
 ## ローカル実行
 
 Webだけを確認する場合も、埋め込みデータには切り替わりません。APIが停止していることを画面に表示します。
+既定のCompose構成はKeycloakを含むため、最初にシークレットを生成します。
 
 ```bash
-cp .env.example .env
-docker compose -f infra/compose.yaml up --build postgres lore api web
+scripts/setup-keycloak-secrets.sh
+docker compose -f infra/compose.yaml up --build
 ```
 
 - Web: <http://localhost:3000>
 - API readiness: <http://localhost:8080/health/ready>
 - Lore health: <http://localhost:41339/health_check>
+- Keycloak管理コンソール: <http://keycloak.localhost:8280/admin/master/console>
+
+Keycloakを使わずAPIの従来挙動を維持する場合は、ホスト上のAPIを `LOREHUB_AUTH_MODE=disabled` で起動します。
+ComposeのAPIサービスは既定でKeycloakのhealthcheckを待つため、Keycloakを使わないCompose実行では
+`LOREHUB_AUTH_MODE=disabled docker compose -f infra/compose.yaml run --rm --no-deps api` のように
+依存サービスを明示的に外してください。
+
+```bash
+LOREHUB_AUTH_MODE=disabled go run ./services/api/cmd/lorehub serve
+```
+
+Keycloakの構成、ソーシャルプロバイダー、SMTP、本番のTLSとリバースプロキシ、バックアップについては
+[Keycloak運用ガイド](docs/operations/keycloak.md)を参照してください。
 
 開発用Lore Serverはデータと自己署名証明書をDocker volumeへ保存します。認証なしの単一ノード構成なので、公開環境で
 使ってはいけません。本番ではLore公式のストレージ、JWT検証、TLS、バックアップ構成を使用してください。
@@ -75,11 +94,14 @@ docker compose -f infra/compose.yaml up --build postgres lore api web
 docker compose -f infra/compose.yaml --profile runner up --build
 ```
 
-runner profileは、ホストのDocker socketを使わず、runner専用のrootless
-Docker-in-Docker engineへ接続します。engine境界には必要な権限がありますが、job containerには特権、host network、
-host mountを渡しません。任意コードを実行するため、信頼ドメインごとにAPIとは別の専用・短命なrunner基盤へ配置し、
-CPU、メモリ、PID、ログ、成果物の制限を維持してください。検証方法は[runner運用ドキュメント](docs/runner-actions.md)を
-参照してください。
+runner profileは、ホストのDocker socketを使わず、runner専用のDocker-in-Docker engine（`docker:29.4.0-dind`）へ
+mTLS（2376）で接続します。rootless版はnested bridgeからホスト側のサービスネットワークへ到達できることを確認したため、
+この構成では採用していません。
+runner-dataにはrunner、PostgreSQL、Lore、APIだけを接続し、
+runner-controlにはrunnerとengineだけを接続します。engineだけがrunner-egressへ接続し、API／Webは
+runner-controlへ接続しません。job containerには特権、host network、host mount、Docker client証明書を渡しません。
+任意コードを実行するため、信頼ドメインごとにAPIとは別の専用・短命なrunner基盤へ配置し、CPU、メモリ、PID、ログ、
+成果物の制限を維持してください。検証方法は[runner運用ドキュメント](docs/runner-actions.md)を参照してください。
 
 ## ホスト上での開発
 
@@ -91,7 +113,10 @@ npm run dev
 別のターミナルでAPIを起動します。
 
 ```bash
-export DATABASE_URL=postgresql://lorehub:lorehub-development@localhost:5432/lorehub
+set -a
+. ./.env
+set +a
+export DATABASE_URL=postgresql://lorehub:${POSTGRES_PASSWORD}@localhost:5432/lorehub
 export LORE_LIB_PATH=/absolute/path/to/liblore.dylib
 go run ./services/api/cmd/lorehub serve
 ```
@@ -119,7 +144,13 @@ transactionは最大15分）。
 `GET /auth/login?prompt=create`を使います。互換性のため`kc_action=register`も受け付けますが、値は厳密に検証し、
 認証プロバイダーへは`prompt=create`だけを渡します。その他の`prompt`や`kc_action`は400を返します。
 
-Lore側の読み取りidentityは`LOREHUB_LORE_IDENTITY`で指定します。
+Lore側の読み取りidentityは現在`LOREHUB_LORE_IDENTITY`で指定します。これはjobごとの最小権限credentialではありません。
+control-plane auth unitがcredential providerを接続するまで、設定したidentityを信頼ドメイン全体の権限として扱ってください。
+
+Keycloakを使う場合、ローカルのissuerは
+`http://keycloak.localhost:8280/realms/lorehub`、audienceは`lorehub-api`です。本番では公開HTTPSのissuerを設定します。
+APIをDockerコンテナで起動する場合のdiscovery到達性については
+[Keycloak運用ガイド](docs/operations/keycloak.md)を参照してください。
 
 ## APIの主な入口
 
@@ -144,8 +175,11 @@ Lore側の読み取りidentityは`LOREHUB_LORE_IDENTITY`で指定します。
 
 ## GitHub Actions互換範囲
 
-runnerは`.github/workflows/*.yml`を`act`へ渡します。`actions/checkout`は、workerが取得済みのLore revisionを
-使う処理へ置き換えます。`push`イベントの`before`と`after`にはLore revisionが入ります。
+runnerは対象revisionの`.github/workflows/*.yml`と`.yaml`だけを検出し、対応するworkflowごとにrunを作って
+`act`へ正確に1ファイルずつ渡します。`actions/checkout`はGitを使わず、workerが取得済みのLore revisionを
+remote jobへコピーするworkspace adapterとして動作します。`push`イベントの`before`と`after`にはLore revisionが入ります。
+job／serviceのnon-empty `options`、host mount・device・特権・host namespace・daemon credentialにつながる定義は、
+成功扱いにせずworkflowをdisabled/errorとして記録します。
 
 Linuxコンテナで実行できるworkflowを対象にしています。GitHubのAPIそのもの、Git固有コマンド、Windows／macOS
 runner、GitHubが管理するrunner imageとの完全一致は提供しません。互換範囲外の機能を黙って成功扱いにはしません。

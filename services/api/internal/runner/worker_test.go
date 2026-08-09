@@ -25,6 +25,24 @@ func TestBoundedLogWriter(t *testing.T) {
 	}
 }
 
+func TestSafeEnvironmentPassesDockerTLSConfiguration(t *testing.T) {
+	t.Setenv("DOCKER_HOST", "tcp://runner-engine:2376")
+	t.Setenv("DOCKER_TLS_VERIFY", "1")
+	t.Setenv("DOCKER_CERT_PATH", "/etc/lorehub/docker-client")
+	t.Setenv("DOCKER_CONFIG", "")
+	environment := safeEnvironment()
+	joined := strings.Join(environment, "\n")
+	for _, expected := range []string{
+		"DOCKER_HOST=tcp://runner-engine:2376",
+		"DOCKER_TLS_VERIFY=1",
+		"DOCKER_CERT_PATH=/etc/lorehub/docker-client",
+	} {
+		if !strings.Contains(joined, expected) {
+			t.Fatalf("safe environment omitted %q: %q", expected, joined)
+		}
+	}
+}
+
 func TestPersistArtifactsQuotasAndPathSafety(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	artifactDirectory := t.TempDir()

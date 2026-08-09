@@ -60,8 +60,13 @@ outboxへ記録し、workerが再送する。重複通知は外部イベントID
 対応範囲をAPIと画面で明示し、GitHub公開のワークフロー例を使った実行テストで差を検出する。
 
 任意コードを実行するrunnerはAPIと同じホストへ置かない。本番では信頼ドメインごとに専用・短命なrunner基盤を
-使い、ホストのDocker socketを直接渡さない。Composeの明示的なprofileもrunner専用のrootless Docker-in-Docker
-engineを使い、engine境界の権限とjob containerの制限を分けて管理する。
+使い、ホストのDocker socketを直接渡さない。Composeの明示的なprofileは`docker:29.4.0-dind`へmTLS（2376）で
+接続する。rootless版はnested bridgeからホスト側のサービスネットワークへ到達できるため採用しない。
+runner-data（runner／PostgreSQL／Lore／API）、runner-control（runner／engine）、
+runner-egress（engineのみ）を分離し、API／Webはrunner-controlへ接続しない。engine境界の権限とjob containerの
+CPU、メモリ、PID、capability、namespace制限を分けて管理する。`LOREHUB_LORE_IDENTITY`は現在信頼ドメイン全体で
+共有されるLore identityであり、jobごとの最小権限credentialではない。credential providerの接続はcontrol-plane
+auth unitに委ねる。
 
 ### 画面と翻訳
 

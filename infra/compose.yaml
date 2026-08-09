@@ -5,7 +5,7 @@ services:
     image: postgres:18.4-alpine
     environment:
       POSTGRES_DB: lorehub
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lorehub-development}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_USER: lorehub
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U lorehub -d lorehub"]
@@ -14,9 +14,10 @@ services:
       retries: 20
     ports:
       - "${POSTGRES_HOST_PORT:-5432}:5432"
-    networks: [default, runner-network]
+    networks: [runner-data]
     volumes:
       - postgres-data:/var/lib/postgresql
+    restart: unless-stopped
 
   lore:
     platform: linux/amd64
@@ -29,12 +30,13 @@ services:
       timeout: 3s
       retries: 30
     ports:
-      - "41337:41337/tcp"
-      - "41337:41337/udp"
-      - "41339:41339"
-    networks: [default, runner-network]
+      - "${LORE_P2P_HOST_PORT:-41337}:41337/tcp"
+      - "${LORE_P2P_HOST_PORT:-41337}:41337/udp"
+      - "${LORE_HTTP_HOST_PORT:-41339}:41339"
+    networks: [runner-data]
     volumes:
       - lore-data:/data
+    restart: unless-stopped
 
   api:
     platform: linux/amd64
@@ -42,22 +44,43 @@ services:
       context: ..
       dockerfile: infra/api/Dockerfile
     environment:
-      DATABASE_URL: postgresql://lorehub:${POSTGRES_PASSWORD:-lorehub-development}@postgres:5432/lorehub
-      LOREHUB_ENV: development
+      DATABASE_URL: postgresql://lorehub:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/lorehub
+      LOREHUB_ENV: ${LOREHUB_ENV:-development}
+      LOREHUB_AUTH_MODE: ${LOREHUB_AUTH_MODE:-interactive}
       LOREHUB_HTTP_ADDRESS: :8080
       LOREHUB_LORE_IDENTITY: ${LOREHUB_LORE_IDENTITY:-}
-      LOREHUB_OIDC_AUDIENCE: ${LOREHUB_OIDC_AUDIENCE:-}
-      LOREHUB_OIDC_ISSUER: ${LOREHUB_OIDC_ISSUER:-}
+      LOREHUB_OIDC_ISSUER: ${LOREHUB_OIDC_ISSUER:-http://keycloak.localhost:8280/realms/lorehub}
+      LOREHUB_OIDC_AUDIENCE: ${LOREHUB_OIDC_AUDIENCE:-lorehub-api}
+      LOREHUB_OIDC_CLIENT_ID: ${LOREHUB_OIDC_CLIENT_ID:-lorehub-web}
+      LOREHUB_OIDC_CLIENT_SECRET: ${LOREHUB_OIDC_CLIENT_SECRET:-}
+      LOREHUB_OIDC_REDIRECT_URL: ${LOREHUB_OIDC_REDIRECT_URL:-http://localhost:3000/auth/callback}
+      LOREHUB_PUBLIC_ORIGIN: ${LOREHUB_PUBLIC_ORIGIN:-http://localhost:3000}
+      LOREHUB_AUTH_SECRET: ${LOREHUB_AUTH_SECRET:-}
+      LOREHUB_SESSION_COOKIE_NAME: ${LOREHUB_SESSION_COOKIE_NAME:-lorehub_session}
+      LOREHUB_LOGIN_BINDING_COOKIE_NAME: ${LOREHUB_LOGIN_BINDING_COOKIE_NAME:-lorehub_login_binding}
+      LOREHUB_SESSION_COOKIE_PATH: ${LOREHUB_SESSION_COOKIE_PATH:-/}
+      LOREHUB_SESSION_COOKIE_DOMAIN: ${LOREHUB_SESSION_COOKIE_DOMAIN:-}
+      LOREHUB_SESSION_COOKIE_SECURE: ${LOREHUB_SESSION_COOKIE_SECURE:-false}
+      LOREHUB_SESSION_TTL: ${LOREHUB_SESSION_TTL:-720h}
+      LOREHUB_LOGIN_TRANSACTION_TTL: ${LOREHUB_LOGIN_TRANSACTION_TTL:-10m}
       LOREHUB_RUNNER_ARTIFACT_DIR: /var/lib/lorehub/runner-data/runner-artifacts
       LOREHUB_RUNNER_LOG_DIR: /var/lib/lorehub/runner-data/runner-logs
     depends_on:
       postgres:
         condition: service_healthy
+      keycloak:
+        condition: service_healthy
+      keycloak-bootstrap:
+        condition: service_completed_successfully
+    extra_hosts:
+      - "keycloak.localhost:host-gateway"
+    networks: [default, runner-data]
     ports:
-      - "8080:8080"
+      - "${API_HOST_PORT:-8080}:8080"
     volumes:
       - api-data:/var/lib/lorehub
       - runner-data:/var/lib/lorehub/runner-data:ro
+    restart: unless-stopped
 
   web:
     build:
@@ -65,11 +88,14 @@ services:
       dockerfile: infra/web/Dockerfile
     environment:
       LOREHUB_API_URL: http://api:8080
+      LOREHUB_OIDC_ISSUER: ${LOREHUB_OIDC_ISSUER:-http://keycloak.localhost:8280/realms/lorehub}
+      LOREHUB_OIDC_CLIENT_ID: ${LOREHUB_OIDC_CLIENT_ID:-lorehub-web}
     depends_on:
       api:
         condition: service_started
     ports:
-      - "3000:3000"
+      - "${WEB_HOST_PORT:-3000}:3000"
+    restart: unless-stopped
 
   runner:
     profiles: ["runner"]
@@ -79,8 +105,10 @@ services:
       dockerfile: infra/api/Dockerfile
     command: ["runner"]
     environment:
-      DATABASE_URL: postgresql://lorehub:${POSTGRES_PASSWORD:-lorehub-development}@postgres:5432/lorehub
-      DOCKER_HOST: tcp://runner-engine:2375
+      DATABASE_URL: postgresql://lorehub:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/lorehub
+      DOCKER_HOST: tcp://runner-engine:2376
+      DOCKER_TLS_VERIFY: "1"
+      DOCKER_CERT_PATH: /etc/lorehub/docker-client
       LOREHUB_ENV: development
       LOREHUB_LORE_IDENTITY: ${LOREHUB_LORE_IDENTITY:-}
       LOREHUB_LORE_CACHE_DIR: /var/lib/lorehub/runner-data/repositories
@@ -94,6 +122,8 @@ services:
         condition: service_healthy
       runner-engine:
         condition: service_healthy
+      runner-cert-init:
+        condition: service_completed_successfully
       runner-data-init:
         condition: service_completed_successfully
     cpus: 2
@@ -101,9 +131,10 @@ services:
     pids_limit: 512
     cap_drop: ["ALL"]
     security_opt: ["no-new-privileges:true"]
-    networks: [runner-network]
+    networks: [runner-data, runner-control]
     volumes:
       - runner-data:/var/lib/lorehub/runner-data
+      - runner-engine-client-certs:/etc/lorehub/docker-client:ro
 
   runner-data-init:
     profiles: ["runner"]
@@ -126,21 +157,166 @@ services:
   runner-engine:
     profiles: ["runner"]
     platform: linux/amd64
-    image: docker:29.4.0-dind-rootless
+    image: docker:29.4.0-dind
     environment:
-      DOCKER_TLS_CERTDIR: ""
+      DOCKER_TLS_CERTDIR: /certs
+      DOCKER_TLS_SAN: DNS:runner-engine
     privileged: true
     cpus: 3
     mem_limit: 4g
     pids_limit: 1024
     healthcheck:
-      test: ["CMD-SHELL", "docker -H tcp://127.0.0.1:2375 info >/dev/null 2>&1"]
+      test:
+        - CMD-SHELL
+        - >-
+          docker -H tcp://127.0.0.1:2376 --tlsverify
+          --tlscacert=/certs/client/ca.pem
+          --tlscert=/certs/client/cert.pem
+          --tlskey=/certs/client/key.pem info >/dev/null 2>&1
       interval: 5s
       timeout: 5s
       retries: 30
-    networks: [runner-network, runner-egress]
+    networks: [runner-control, runner-egress]
     volumes:
       - runner-engine-data:/home/rootless/.local/share/docker
+      - runner-engine-certs:/certs
+
+  runner-cert-init:
+    profiles: ["runner"]
+    platform: linux/amd64
+    build:
+      context: ..
+      dockerfile: infra/api/Dockerfile
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        set -eu;
+        test -r /engine-certs/client/ca.pem;
+        test -r /engine-certs/client/cert.pem;
+        test -r /engine-certs/client/key.pem;
+        install -d -m 0750 /client-certs;
+        install -m 0644 /engine-certs/client/ca.pem /client-certs/ca.pem;
+        install -m 0644 /engine-certs/client/cert.pem /client-certs/cert.pem;
+        install -m 0600 /engine-certs/client/key.pem /client-certs/key.pem;
+        chown -R lorehub:lorehub /client-certs
+    user: "0:0"
+    restart: "no"
+    depends_on:
+      runner-engine:
+        condition: service_healthy
+    volumes:
+      - runner-engine-certs:/engine-certs:ro
+      - runner-engine-client-certs:/client-certs
+
+  # Dedicated PostgreSQL for Keycloak. Deliberately separate from the LoreHub
+  # application database above: Keycloak owns its own credentials, schema, and
+  # backup cadence, and must never mutate or share the LoreHub database.
+  keycloak-postgres:
+    image: postgres:18.4-alpine
+    environment:
+      POSTGRES_DB: ${KEYCLOAK_DB_NAME:-keycloak}
+      POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?KEYCLOAK_DB_PASSWORD is required}
+      POSTGRES_USER: ${KEYCLOAK_DB_USER:-keycloak}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${KEYCLOAK_DB_USER:-keycloak} -d ${KEYCLOAK_DB_NAME:-keycloak}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - keycloak-postgres-data:/var/lib/postgresql
+    restart: unless-stopped
+
+  # Keycloak runs in production mode (`start`, not `start-dev`). Local HTTP is
+  # enabled explicitly via --http-enabled and the hostname is fixed so the
+  # advertised issuer is stable. The image is built from infra/keycloak/Dockerfile
+  # so the PostgreSQL db vendor is set at build time (required for --optimized).
+  # See docs/operations/keycloak.md for TLS / reverse-proxy and local discovery.
+  keycloak:
+    build:
+      context: ..
+      dockerfile: infra/keycloak/Dockerfile
+    image: lorehub/keycloak:26.7.1
+    command:
+      - start
+      - --optimized
+      - --import-realm
+      - --hostname=${KEYCLOAK_HOSTNAME:-http://keycloak.localhost:8280}
+      - --http-enabled=true
+      - --hostname-strict=false
+      - --proxy-headers=forwarded
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD is required}
+      KC_DB_URL: jdbc:postgresql://keycloak-postgres:5432/${KEYCLOAK_DB_NAME:-keycloak}
+      KC_DB_USERNAME: ${KEYCLOAK_DB_USER:-keycloak}
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?KEYCLOAK_DB_PASSWORD is required}
+      # LOREHUB_OIDC_CLIENT_SECRET is substituted into the realm import JSON
+      # for the lorehub-web client's secret field. Required when importing the
+      # realm; generate it with scripts/setup-keycloak-secrets.sh.
+      LOREHUB_OIDC_CLIENT_SECRET: ${LOREHUB_OIDC_CLIENT_SECRET:?LOREHUB_OIDC_CLIENT_SECRET is required}
+    depends_on:
+      keycloak-postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "{ printf 'HEAD /health/ready HTTP/1.0\\r\\n\\r\\n' >&0; grep -q 'HTTP/1.0 200'; } 0<>/dev/tcp/127.0.0.1/9000"
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    ports:
+      - "${KEYCLOAK_HOST_PORT:-8280}:8080"
+    volumes:
+      - ./keycloak/realm-lorehub.json:/opt/keycloak/data/import/realm-lorehub.json:ro
+      - keycloak-data:/opt/keycloak/data
+    restart: unless-stopped
+
+  # One-shot idempotent provisioning of social identity providers via the
+  # Keycloak Admin CLI. A provider is created only when its credentials are
+  # present in the environment, so missing providers never appear as broken
+  # login buttons. Re-runs update existing providers in place.
+  keycloak-bootstrap:
+    image: quay.io/keycloak/keycloak:26.7.1
+    entrypoint: ["/bin/bash", "/bootstrap/bootstrap.sh"]
+    environment:
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD is required}
+      LOREHUB_REALM: ${KEYCLOAK_REALM:-lorehub}
+      LOREHUB_ENV: ${LOREHUB_ENV:-development}
+      LOREHUB_VERIFY_EMAIL: ${LOREHUB_VERIFY_EMAIL:-false}
+      LOREHUB_OIDC_CLIENT_ID: ${LOREHUB_OIDC_CLIENT_ID:-lorehub-web}
+      LOREHUB_OIDC_CLIENT_SECRET: ${LOREHUB_OIDC_CLIENT_SECRET:?LOREHUB_OIDC_CLIENT_SECRET is required}
+      LOREHUB_OIDC_REDIRECT_URL: ${LOREHUB_OIDC_REDIRECT_URL:-http://localhost:3000/auth/callback}
+      LOREHUB_OIDC_LOGOUT_REDIRECT_URL: ${LOREHUB_OIDC_LOGOUT_REDIRECT_URL:-http://localhost:3000/}
+      LOREHUB_PUBLIC_ORIGIN: ${LOREHUB_PUBLIC_ORIGIN:-http://localhost:3000}
+      KEYCLOAK_SMTP_HOST: ${KEYCLOAK_SMTP_HOST:-}
+      KEYCLOAK_SMTP_PORT: ${KEYCLOAK_SMTP_PORT:-587}
+      KEYCLOAK_SMTP_FROM: ${KEYCLOAK_SMTP_FROM:-}
+      KEYCLOAK_SMTP_FROM_DISPLAY_NAME: ${KEYCLOAK_SMTP_FROM_DISPLAY_NAME:-LoreHub}
+      KEYCLOAK_SMTP_REPLY_TO: ${KEYCLOAK_SMTP_REPLY_TO:-}
+      KEYCLOAK_SMTP_REPLY_TO_DISPLAY_NAME: ${KEYCLOAK_SMTP_REPLY_TO_DISPLAY_NAME:-LoreHub}
+      KEYCLOAK_SMTP_AUTH: ${KEYCLOAK_SMTP_AUTH:-true}
+      KEYCLOAK_SMTP_USER: ${KEYCLOAK_SMTP_USER:-}
+      KEYCLOAK_SMTP_PASSWORD: ${KEYCLOAK_SMTP_PASSWORD:-}
+      KEYCLOAK_SMTP_STARTTLS: ${KEYCLOAK_SMTP_STARTTLS:-true}
+      KEYCLOAK_SMTP_SSL: ${KEYCLOAK_SMTP_SSL:-false}
+      LOREHUB_IDP_GOOGLE_CLIENT_ID: ${LOREHUB_IDP_GOOGLE_CLIENT_ID:-}
+      LOREHUB_IDP_GOOGLE_CLIENT_SECRET: ${LOREHUB_IDP_GOOGLE_CLIENT_SECRET:-}
+      LOREHUB_IDP_GOOGLE_HOSTED_DOMAIN: ${LOREHUB_IDP_GOOGLE_HOSTED_DOMAIN:-}
+      LOREHUB_IDP_GITHUB_CLIENT_ID: ${LOREHUB_IDP_GITHUB_CLIENT_ID:-}
+      LOREHUB_IDP_GITHUB_CLIENT_SECRET: ${LOREHUB_IDP_GITHUB_CLIENT_SECRET:-}
+      LOREHUB_IDP_FACEBOOK_CLIENT_ID: ${LOREHUB_IDP_FACEBOOK_CLIENT_ID:-}
+      LOREHUB_IDP_FACEBOOK_CLIENT_SECRET: ${LOREHUB_IDP_FACEBOOK_CLIENT_SECRET:-}
+      LOREHUB_IDP_X_CLIENT_ID: ${LOREHUB_IDP_X_CLIENT_ID:-}
+      LOREHUB_IDP_X_CLIENT_SECRET: ${LOREHUB_IDP_X_CLIENT_SECRET:-}
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    volumes:
+      - ./keycloak/bootstrap.sh:/bootstrap/bootstrap.sh:ro
+    restart: "no"
 
 volumes:
   api-data:
@@ -148,8 +324,14 @@ volumes:
   postgres-data:
   runner-data:
   runner-engine-data:
+  runner-engine-certs:
+  runner-engine-client-certs:
+  keycloak-postgres-data:
+  keycloak-data:
 
 networks:
-  runner-network:
+  runner-data:
+    internal: true
+  runner-control:
     internal: true
   runner-egress:

@@ -375,22 +375,14 @@ func actionRunLocation(owner string, repository string, runNumber int64) string 
 }
 
 func (api *API) optionalActor(writer http.ResponseWriter, request *http.Request) (string, bool) {
-	if strings.TrimSpace(request.Header.Get("Authorization")) == "" && !api.hasSessionCookie(request) {
-		return "", true
-	}
-	actor, ok := api.actor(writer, request)
+	actor, ok := api.ResolveOptionalActor(writer, request)
 	if !ok {
 		return "", false
 	}
-	return actor.ID, true
-}
-
-func (api *API) hasSessionCookie(request *http.Request) bool {
-	if api.cookie.name == "" {
-		return false
+	if actor == nil {
+		return "", true
 	}
-	_, err := request.Cookie(api.cookie.name)
-	return err == nil
+	return actor.ID, true
 }
 
 func (api *API) actionsError(writer http.ResponseWriter, request *http.Request, operation string, err error) {

@@ -13,61 +13,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const checkoutAction = `name: Lore checkout adapter
-description: Uses the Lore revision that LoreHub prepared before the job starts.
-inputs:
-  clean:
-    required: false
-  filter:
-    required: false
-  fetch-depth:
-    required: false
-  lfs:
-    required: false
-  path:
-    required: false
-  persist-credentials:
-    required: false
-  ref:
-    required: false
-  repository:
-    required: false
-  ssh-key:
-    required: false
-  sparse-checkout:
-    required: false
-  submodules:
-    required: false
-runs:
-  using: composite
-  steps:
-    - name: Validate checkout options
-      shell: bash
-      env:
-        LORE_CHECKOUT_FILTER: ${{ inputs.filter }}
-        LORE_CHECKOUT_LFS: ${{ inputs.lfs }}
-        LORE_CHECKOUT_PATH: ${{ inputs.path }}
-        LORE_CHECKOUT_REF: ${{ inputs.ref }}
-        LORE_CHECKOUT_REPOSITORY: ${{ inputs.repository }}
-        LORE_CHECKOUT_SPARSE: ${{ inputs.sparse-checkout }}
-        LORE_CHECKOUT_SSH_KEY: ${{ inputs.ssh-key }}
-        LORE_CHECKOUT_SUBMODULES: ${{ inputs.submodules }}
-      run: |
-        if [[ -n "$LORE_CHECKOUT_FILTER" || -n "$LORE_CHECKOUT_PATH" || -n "$LORE_CHECKOUT_REF" ]]; then
-          echo "Lore checkout does not support filter, path, or ref inputs." >&2
-          exit 1
-        fi
-        if [[ -n "$LORE_CHECKOUT_REPOSITORY" || -n "$LORE_CHECKOUT_SPARSE" || -n "$LORE_CHECKOUT_SSH_KEY" ]]; then
-          echo "Lore checkout does not support repository, sparse-checkout, or ssh-key inputs." >&2
-          exit 1
-        fi
-        if [[ "$LORE_CHECKOUT_LFS" == "true" || ( -n "$LORE_CHECKOUT_SUBMODULES" && \
-          "$LORE_CHECKOUT_SUBMODULES" != "false" ) ]]; then
-          echo "Lore checkout does not support Git LFS or submodules." >&2
-          exit 1
-        fi
-`
-
 type PushTrigger struct {
 	Branches       []string `json:"branches,omitempty"`
 	BranchesIgnore []string `json:"branches_ignore,omitempty"`
@@ -128,19 +73,11 @@ func AdaptWorkflow(workspace string, workflowPath string) (int, error) {
 	if err := validateWorkflowPath(workflowPath); err != nil {
 		return 0, err
 	}
-	actionDirectory := filepath.Join(workspace, ".lorehub", "actions", "checkout")
-	if err := os.MkdirAll(actionDirectory, 0o750); err != nil {
-		return 0, fmt.Errorf("create checkout adapter directory: %w", err)
-	}
-	if err := os.WriteFile(filepath.Join(actionDirectory, "action.yml"), []byte(checkoutAction), 0o600); err != nil {
-		return 0, fmt.Errorf("write checkout adapter: %w", err)
-	}
-
 	path := filepath.Join(workspace, filepath.FromSlash(workflowPath))
 	if err := validateWorkflowFile(path); err != nil {
 		return 0, err
 	}
-	return adaptWorkflow(path)
+	return validateCheckoutWorkflow(path)
 }
 
 func AdaptWorkflows(workspace string) (int, error) {
@@ -153,7 +90,7 @@ func AdaptWorkflows(workspace string) (int, error) {
 		return 0, fmt.Errorf("read workflow directory: %w", err)
 	}
 
-	replacements := 0
+	adapted := 0
 	for _, entry := range entries {
 		if entry.IsDir() || !isWorkflowFile(entry.Name()) {
 			continue
@@ -163,9 +100,9 @@ func AdaptWorkflows(workspace string) (int, error) {
 		if err != nil {
 			return 0, err
 		}
-		replacements += count
+		adapted += count
 	}
-	return replacements, nil
+	return adapted, nil
 }
 
 func parseWorkflowFile(filePath string, workflowPath string) (WorkflowDefinition, error) {
@@ -211,6 +148,9 @@ func parseWorkflowFile(filePath string, workflowPath string) (WorkflowDefinition
 	if jobs == nil || jobs.Kind != yaml.MappingNode || len(jobs.Content) == 0 {
 		return workflow, errors.New("workflow must define at least one job")
 	}
+	if err := validateJobRuntimeDefinitions(jobs); err != nil {
+		return workflow, err
+	}
 	on := mappingValue(root, "on")
 	if on == nil {
 		return workflow, errors.New("workflow must define an on trigger")
@@ -229,6 +169,125 @@ func parseWorkflowFile(filePath string, workflowPath string) (WorkflowDefinition
 		return workflow, errors.New("workflow has no supported trigger")
 	}
 	return workflow, nil
+}
+
+func validateJobRuntimeDefinitions(jobs *yaml.Node) error {
+	for index := 0; index+1 < len(jobs.Content); index += 2 {
+		jobID := jobs.Content[index].Value
+		job := jobs.Content[index+1]
+		if job.Kind != yaml.MappingNode {
+			return fmt.Errorf("job %q must be a map", jobID)
+		}
+		if err := validateJobContainer(jobID, mappingValue(job, "container")); err != nil {
+			return err
+		}
+		if err := validateJobServices(jobID, mappingValue(job, "services")); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateJobContainer(jobID string, node *yaml.Node) error {
+	if node == nil || isNullNode(node) {
+		return nil
+	}
+	switch node.Kind {
+	case yaml.ScalarNode:
+		_, err := scalarString(node, fmt.Sprintf("job %q container image", jobID))
+		return err
+	case yaml.MappingNode:
+		if mappingValue(node, "image") == nil {
+			return fmt.Errorf("unsupported container definition in job %q: image is required", jobID)
+		}
+		if image := mappingValue(node, "image"); image != nil {
+			if _, err := scalarString(image, fmt.Sprintf("job %q container image", jobID)); err != nil {
+				return err
+			}
+		}
+		for index := 0; index+1 < len(node.Content); index += 2 {
+			key := node.Content[index].Value
+			switch key {
+			case "image":
+			case "options":
+				if err := validateEmptyRuntimeOptions(node.Content[index+1], "container", jobID); err != nil {
+					return err
+				}
+			default:
+				return fmt.Errorf("unsupported container field %q in job %q", key, jobID)
+			}
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported container definition in job %q: expected an image or map", jobID)
+	}
+}
+
+func validateJobServices(jobID string, node *yaml.Node) error {
+	if node == nil || isNullNode(node) {
+		return nil
+	}
+	if node.Kind != yaml.MappingNode {
+		return fmt.Errorf("unsupported service definition in job %q: services must be a map", jobID)
+	}
+	for index := 0; index+1 < len(node.Content); index += 2 {
+		serviceID := node.Content[index].Value
+		service := node.Content[index+1]
+		switch service.Kind {
+		case yaml.ScalarNode:
+			if _, err := scalarString(service, fmt.Sprintf("job %q service %q image", jobID, serviceID)); err != nil {
+				return err
+			}
+		case yaml.MappingNode:
+			if mappingValue(service, "image") == nil {
+				return fmt.Errorf(
+					"unsupported service definition %q in job %q: image is required",
+					serviceID,
+					jobID,
+				)
+			}
+			if image := mappingValue(service, "image"); image != nil {
+				if _, err := scalarString(
+					image,
+					fmt.Sprintf("job %q service %q image", jobID, serviceID),
+				); err != nil {
+					return err
+				}
+			}
+			for fieldIndex := 0; fieldIndex+1 < len(service.Content); fieldIndex += 2 {
+				key := service.Content[fieldIndex].Value
+				switch key {
+				case "image":
+				case "options":
+					if err := validateEmptyRuntimeOptions(
+						service.Content[fieldIndex+1],
+						"service",
+						jobID+"/"+serviceID,
+					); err != nil {
+						return err
+					}
+				default:
+					return fmt.Errorf("unsupported service field %q in job %q", key, jobID)
+				}
+			}
+		default:
+			return fmt.Errorf("unsupported service definition %q in job %q", serviceID, jobID)
+		}
+	}
+	return nil
+}
+
+func validateEmptyRuntimeOptions(node *yaml.Node, kind string, name string) error {
+	if node == nil || isNullNode(node) {
+		return nil
+	}
+	if node.Kind != yaml.ScalarNode {
+		return fmt.Errorf("unsupported %s options in %q: options must be empty", kind, name)
+	}
+	if strings.TrimSpace(node.Value) != "" {
+		return fmt.Errorf("unsupported %s options in %q: non-empty options are not supported", kind, name)
+	}
+	return nil
 }
 
 func parseTriggers(node *yaml.Node) (*PushTrigger, bool, error) {
@@ -443,6 +502,9 @@ func validateWorkflowPath(workflowPath string) error {
 }
 
 func workflowErrorCode(err error) string {
+	if strings.Contains(err.Error(), "unsupported container") || strings.Contains(err.Error(), "unsupported service") {
+		return "unsupported_runtime_definition"
+	}
 	if strings.Contains(err.Error(), "unsupported workflow event") ||
 		strings.Contains(err.Error(), "unsupported push filter") ||
 		strings.Contains(err.Error(), "unsupported workflow_dispatch") ||
@@ -500,7 +562,7 @@ func globMatch(pattern string, value string) bool {
 	return regexp.MustCompile(expression.String()).MatchString(value)
 }
 
-func adaptWorkflow(path string) (int, error) {
+func validateCheckoutWorkflow(path string) (int, error) {
 	contents, err := os.ReadFile(path)
 	if err != nil {
 		return 0, fmt.Errorf("read workflow %q: %w", path, err)
@@ -509,35 +571,74 @@ func adaptWorkflow(path string) (int, error) {
 	if err := yaml.Unmarshal(contents, &document); err != nil {
 		return 0, fmt.Errorf("parse workflow %q: %w", path, err)
 	}
-	replacements := replaceCheckoutUses(&document)
-	if replacements == 0 {
-		return 0, nil
-	}
-	encoded, err := yaml.Marshal(&document)
+	// act handles actions/checkout by copying the prepared --directory workspace into the job.
+	// Keep the reference intact: a local action would be resolved inside the remote job first.
+	adapted, err := validateCheckoutUses(&document)
 	if err != nil {
-		return 0, fmt.Errorf("encode workflow %q: %w", path, err)
+		return 0, fmt.Errorf("validate Lore checkout adapter in %q: %w", path, err)
 	}
-	if err := os.WriteFile(path, encoded, 0o600); err != nil {
-		return 0, fmt.Errorf("write adapted workflow %q: %w", path, err)
-	}
-	return replacements, nil
+	return adapted, nil
 }
 
-func replaceCheckoutUses(node *yaml.Node) int {
-	replacements := 0
+func validateCheckoutUses(node *yaml.Node) (int, error) {
+	adapted := 0
 	if node.Kind == yaml.MappingNode {
 		for index := 0; index+1 < len(node.Content); index += 2 {
 			key := node.Content[index]
 			value := node.Content[index+1]
 			if key.Value == "uses" && value.Kind == yaml.ScalarNode &&
 				strings.HasPrefix(value.Value, "actions/checkout@") {
-				value.Value = "./.lorehub/actions/checkout"
-				replacements++
+				adapted++
+				if err := validateCheckoutInputs(mappingValue(node, "with")); err != nil {
+					return 0, err
+				}
 			}
 		}
 	}
 	for _, child := range node.Content {
-		replacements += replaceCheckoutUses(child)
+		count, err := validateCheckoutUses(child)
+		if err != nil {
+			return 0, err
+		}
+		adapted += count
 	}
-	return replacements
+	return adapted, nil
+}
+
+func validateCheckoutInputs(node *yaml.Node) error {
+	if node == nil || isNullNode(node) {
+		return nil
+	}
+	if node.Kind != yaml.MappingNode {
+		return errors.New("actions/checkout with must be a map")
+	}
+	for index := 0; index+1 < len(node.Content); index += 2 {
+		key := node.Content[index].Value
+		value := node.Content[index+1]
+		switch key {
+		case "clean", "fetch-depth", "persist-credentials":
+		case "filter", "path", "ref", "repository", "sparse-checkout", "ssh-key":
+			if value.Kind != yaml.ScalarNode || !isNullNode(value) && strings.TrimSpace(value.Value) != "" {
+				return fmt.Errorf("actions/checkout input %q is not supported by the Lore adapter", key)
+			}
+		case "lfs":
+			if value.Kind != yaml.ScalarNode {
+				return errors.New("actions/checkout input lfs must be a scalar")
+			}
+			if strings.EqualFold(strings.TrimSpace(value.Value), "true") {
+				return errors.New("actions/checkout input lfs=true is not supported by the Lore adapter")
+			}
+		case "submodules":
+			if value.Kind != yaml.ScalarNode {
+				return errors.New("actions/checkout input submodules must be a scalar")
+			}
+			if !isNullNode(value) && strings.TrimSpace(value.Value) != "" &&
+				!strings.EqualFold(strings.TrimSpace(value.Value), "false") {
+				return errors.New("actions/checkout submodules are not supported by the Lore adapter")
+			}
+		default:
+			return fmt.Errorf("actions/checkout input %q is not supported by the Lore adapter", key)
+		}
+	}
+	return nil
 }

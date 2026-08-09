@@ -41,6 +41,8 @@ jobs:
       - run: npm ci
       - run: npm run format:check
       - run: npm run limits
+      - run: npm run keycloak:check
+      - run: npm run keycloak:test
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
