@@ -527,7 +527,9 @@ func (worker *Worker) cloneRevision(ctx context.Context, job Job, destination st
 	if worker.config.RevisionClient != nil {
 		repository := loreclient.RepositoryRef{CacheKey: job.RepositoryID, URL: job.LoreURL}
 		if client, ok := worker.config.RevisionClient.(loreclient.CredentialRevisionClient); ok {
-			err = client.CloneRevisionWithCredential(ctx, repository, loreCredential(credential), job.Revision, destination)
+			err = client.CloneRevisionWithCredential(ctx, repository,
+				loreCredential(credential, worker.config.CredentialPrincipal, job.RepositoryID,
+					issuerIsDevelopmentOnly(worker.config.CredentialIssuer)), job.Revision, destination)
 		} else if credential.Identity != "" &&
 			(worker.config.Environment == "development" || worker.config.Environment == "local") &&
 			issuerIsDevelopmentOnly(worker.config.CredentialIssuer) {
@@ -560,9 +562,21 @@ func (worker *Worker) cloneRevision(ctx context.Context, job Job, destination st
 	return nil
 }
 
-func loreCredential(credential LoreCredential) loreclient.Credential {
+func loreCredential(
+	credential LoreCredential,
+	principal CredentialPrincipal,
+	partition string,
+	insecureDevelopment bool,
+) loreclient.Credential {
 	return loreclient.Credential{
-		Token: credential.Token, AuthURL: credential.AuthURL, Identity: credential.Identity,
+		Partition:           partition,
+		Scope:               loreclient.ScopeRead,
+		Principal:           loreclient.ServicePrincipal(loreclient.ServicePurposeActionsRunner, principal.Subject),
+		Token:               credential.Token,
+		AuthURL:             credential.AuthURL,
+		Identity:            credential.Identity,
+		ExpiresAt:           credential.ExpiresAt,
+		InsecureDevelopment: insecureDevelopment,
 	}
 }
 

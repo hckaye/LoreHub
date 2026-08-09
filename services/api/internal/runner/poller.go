@@ -84,7 +84,9 @@ func (poller *Poller) poll(ctx context.Context) error {
 		repositoryRef := loreclient.RepositoryRef{CacheKey: repository.ID, URL: repository.LoreURL}
 		var branches []loreclient.Branch
 		if client, ok := poller.lore.(loreclient.CredentialBranchClient); ok {
-			branches, err = client.BranchesWithCredential(ctx, repositoryRef, loreCredential(credential))
+			branches, err = client.BranchesWithCredential(ctx, repositoryRef,
+				loreCredential(credential, poller.principal, repository.ID,
+					issuerIsDevelopmentOnly(poller.issuer)))
 		} else if credential.Identity != "" && issuerIsDevelopmentOnly(poller.issuer) {
 			branches, err = poller.lore.Branches(ctx, repositoryRef, credential.Identity)
 		} else {
@@ -114,7 +116,8 @@ func (poller *Poller) poll(ctx context.Context) error {
 			var cloneErr error
 			if client, ok := poller.lore.(loreclient.CredentialRevisionClient); ok {
 				cloneErr = client.CloneRevisionWithCredential(
-					ctx, repositoryRef, loreCredential(credential), branch.LatestRevision, workspace,
+					ctx, repositoryRef, loreCredential(credential, poller.principal, repository.ID,
+						issuerIsDevelopmentOnly(poller.issuer)), branch.LatestRevision, workspace,
 				)
 			} else if credential.Identity != "" && issuerIsDevelopmentOnly(poller.issuer) {
 				cloneErr = revisionClient.CloneRevision(
