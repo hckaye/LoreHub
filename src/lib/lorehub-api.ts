@@ -4,12 +4,12 @@ import { cookies } from "next/headers";
 
 import type {
   APIResult,
-	Branch,
-	CIRun,
-	CIRunDetail,
-	CIRunPage,
-	CIWorkflowPage,
-	DashboardData,
+  Branch,
+  CIRun,
+  CIRunDetail,
+  CIRunPage,
+  CIWorkflowPage,
+  DashboardData,
   FileHistoryEntry,
   Issue,
   LoreDiff,
