@@ -115,6 +115,7 @@ func TestExploreRepositories(t *testing.T) {
 		healthy{},
 		"",
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		nil,
 	)
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/explore/repositories", nil)
 	response := httptest.NewRecorder()

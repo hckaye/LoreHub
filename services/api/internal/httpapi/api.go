@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lorehub/lorehub/services/api/internal/auth"
+	"github.com/lorehub/lorehub/services/api/internal/collab"
 	loreclient "github.com/lorehub/lorehub/services/api/internal/lore"
 	"github.com/lorehub/lorehub/services/api/internal/platform"
 )
@@ -84,6 +85,7 @@ func New(
 	health HealthChecker,
 	loreIdentity string,
 	logger *slog.Logger,
+	collabStore collab.Store,
 ) http.Handler {
 	api := &API{
 		store:         store,
@@ -106,6 +108,9 @@ func New(
 	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/merge-requests", api.listMergeRequests)
 	mux.HandleFunc("POST /api/v1/repositories/{owner}/{repository}/merge-requests", api.createMergeRequest)
 	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/actions/runs", api.listCIRuns)
+	if collabStore != nil {
+		collab.Register(mux, collabStore, authenticator, logger)
+	}
 	return api.recoverPanic(api.securityHeaders(api.requestLog(mux)))
 }
 
