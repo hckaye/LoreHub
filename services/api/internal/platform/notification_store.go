@@ -26,6 +26,7 @@ type notificationScope struct {
 	TeamID             string
 	OrganizationSlug   string
 	RepositorySlug     string
+	Visibility         string
 	IssueNumber        *int64
 	MergeRequestNumber *int64
 	Title              string
@@ -231,28 +232,49 @@ func (store *Store) readNotificationPreferences(ctx context.Context, userID stri
 	return preferences, nil
 }
 
+const notificationProjectionBatchSize = 100
+
 func (store *Store) syncNotifications(ctx context.Context, transaction pgx.Tx) error {
 	rows, err := transaction.Query(ctx, `
-		SELECT id, topic, event_key, payload, created_at
-		FROM outbox_events
-		WHERE topic IN (
-		    'organization.created', 'organization.updated', 'repository.registered',
-		    'repository.settings_updated', 'issue.created', 'issue.updated',
-		    'issue_comment.created', 'issue_comment.updated', 'issue_comment.deleted',
-		    'merge_request.created', 'merge_request.updated',
-		    'merge_request_review.created', 'merge_request_review.updated',
-		    'label.created', 'label.updated', 'label.deleted', 'branch_rule.created',
-		    'branch_rule.updated', 'branch_rule.deleted', 'team.created', 'team.updated',
-		    'team.member_added', 'team.member_removed'
+		WITH candidates AS MATERIALIZED (
+			SELECT events.id, events.topic, events.event_key, events.payload, events.created_at
+			FROM outbox_events events
+			LEFT JOIN notification_projection_ledger ledger
+			  ON ledger.source_event_id = events.id
+			WHERE events.topic IN (
+			    'organization.created', 'organization.updated', 'repository.registered',
+			    'repository.settings_updated', 'issue.created', 'issue.updated',
+			    'issue_comment.created', 'issue_comment.updated', 'issue_comment.deleted',
+			    'merge_request.created', 'merge_request.updated',
+			    'merge_request_review.created', 'merge_request_review.updated',
+			    'label.created', 'label.updated', 'label.deleted', 'branch_rule.created',
+			    'branch_rule.updated', 'branch_rule.deleted', 'team.created', 'team.updated',
+			    'team.member_added', 'team.member_removed'
+			)
+			AND (
+				ledger.source_event_id IS NULL
+				OR (
+					ledger.status = 'processing'
+					AND ledger.claimed_at < now() - interval '5 minutes'
+				)
+			)
+			ORDER BY events.created_at ASC, events.id ASC
+			LIMIT `+fmt.Sprint(notificationProjectionBatchSize)+`
+			FOR UPDATE OF events SKIP LOCKED
+		), claimed AS (
+			INSERT INTO notification_projection_ledger (source_event_id, status, claimed_at, processed_at)
+			SELECT id, 'processing', now(), NULL FROM candidates
+			ON CONFLICT (source_event_id) DO UPDATE SET
+				status = 'processing', claimed_at = EXCLUDED.claimed_at, processed_at = NULL
+			RETURNING source_event_id
 		)
-		AND NOT EXISTS (
-		    SELECT 1 FROM notifications existing
-		    WHERE existing.source_event_id = outbox_events.id
-		)
-		ORDER BY created_at ASC, id ASC
+		SELECT candidates.id, candidates.topic, candidates.event_key, candidates.payload, candidates.created_at
+		FROM candidates
+		JOIN claimed ON claimed.source_event_id = candidates.id
+		ORDER BY candidates.created_at ASC, candidates.id ASC
 	`)
 	if err != nil {
-		return fmt.Errorf("list notification source events: %w", err)
+		return fmt.Errorf("claim notification source events: %w", err)
 	}
 	events := make([]notificationEvent, 0)
 	for rows.Next() {
@@ -264,8 +286,7 @@ func (store *Store) syncNotifications(ctx context.Context, transaction pgx.Tx) e
 		events = append(events, event)
 	}
 	if err := rows.Err(); err != nil {
-		rows.Close()
-		return fmt.Errorf("iterate notification source events: %w", err)
+		return fmt.Errorf("iterate claimed notification source events: %w", err)
 	}
 	rows.Close()
 	for _, event := range events {
@@ -273,25 +294,31 @@ func (store *Store) syncNotifications(ctx context.Context, transaction pgx.Tx) e
 		if err != nil {
 			return err
 		}
-		if !found {
-			continue
-		}
-		preferences, err := store.notificationRecipients(ctx, transaction, scope, event.Topic)
-		if err != nil {
-			return err
-		}
-		for _, recipient := range preferences {
-			message := notificationMessage(event, scope)
-			_, err := transaction.Exec(ctx, `
-				INSERT INTO notifications (
-				    id, recipient_id, source_event_id, topic, title, body, href, created_at
-				) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-				ON CONFLICT (recipient_id, source_event_id) DO NOTHING
-			`, uuid.NewString(), recipient, event.ID, event.Topic, message.title, message.body, message.href,
-				event.CreatedAt)
+		if found {
+			preferences, err := store.notificationRecipients(ctx, transaction, scope, event.Topic)
 			if err != nil {
-				return fmt.Errorf("materialize notification: %w", err)
+				return err
 			}
+			message := notificationMessage(event, scope)
+			for _, recipient := range preferences {
+				_, err := transaction.Exec(ctx, `
+					INSERT INTO notifications (
+					    id, recipient_id, source_event_id, topic, title, body, href, created_at
+					) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+					ON CONFLICT (recipient_id, source_event_id) DO NOTHING
+				`, uuid.NewString(), recipient, event.ID, event.Topic, message.title, message.body, message.href,
+					event.CreatedAt)
+				if err != nil {
+					return fmt.Errorf("materialize notification: %w", err)
+				}
+			}
+		}
+		if _, err := transaction.Exec(ctx, `
+			UPDATE notification_projection_ledger
+			SET status = 'processed', processed_at = now()
+			WHERE source_event_id = $1 AND status = 'processing'
+		`, event.ID); err != nil {
+			return fmt.Errorf("mark notification source event processed: %w", err)
 		}
 	}
 	return nil
@@ -306,79 +333,90 @@ func (store *Store) resolveNotificationScope(
 	var issueNumber, mergeRequestNumber *int64
 	scope.IssueNumber = issueNumber
 	scope.MergeRequestNumber = mergeRequestNumber
+	eventID, valid := notificationEventID(event)
+	if !valid {
+		return notificationScope{}, false, nil
+	}
 	var err error
 	switch {
 	case strings.HasPrefix(event.Topic, "organization."):
 		err = transaction.QueryRow(ctx, `
 			SELECT id, '', slug, '', NULL, NULL, display_name
 			FROM organizations WHERE id = split_part($1, ':', 1)::uuid
-		`, event.EventKey).Scan(&scope.OrganizationID, &scope.RepositoryID, &scope.OrganizationSlug,
+		`, eventID).Scan(&scope.OrganizationID, &scope.RepositoryID, &scope.OrganizationSlug,
 			&scope.RepositorySlug, &scope.IssueNumber, &scope.MergeRequestNumber, &scope.Title)
 	case strings.HasPrefix(event.Topic, "repository."):
 		err = transaction.QueryRow(ctx, `
-			SELECT r.organization_id, r.id, o.slug, r.slug, NULL, NULL, r.display_name
+			SELECT r.organization_id, r.id, o.slug, r.slug, r.visibility, NULL, NULL, r.display_name
 			FROM repositories r JOIN organizations o ON o.id = r.organization_id
 			WHERE r.id = split_part($1, ':', 1)::uuid
-		`, event.EventKey).Scan(&scope.OrganizationID, &scope.RepositoryID, &scope.OrganizationSlug,
-			&scope.RepositorySlug, &scope.IssueNumber, &scope.MergeRequestNumber, &scope.Title)
+		`, eventID).Scan(&scope.OrganizationID, &scope.RepositoryID, &scope.OrganizationSlug,
+			&scope.RepositorySlug, &scope.Visibility, &scope.IssueNumber, &scope.MergeRequestNumber,
+			&scope.Title)
 	case strings.HasPrefix(event.Topic, "issue_comment."):
 		err = transaction.QueryRow(ctx, `
-			SELECT r.organization_id, r.id, o.slug, r.slug, i.number, NULL, i.title
+			SELECT r.organization_id, r.id, o.slug, r.slug, r.visibility, i.number, NULL, i.title
 			FROM issue_comments c
 			JOIN issues i ON i.id = c.issue_id
 			JOIN repositories r ON r.id = i.repository_id
 			JOIN organizations o ON o.id = r.organization_id
 			WHERE c.id = split_part($1, ':', 1)::uuid
-		`, event.EventKey).Scan(&scope.OrganizationID, &scope.RepositoryID, &scope.OrganizationSlug,
-			&scope.RepositorySlug, &scope.IssueNumber, &scope.MergeRequestNumber, &scope.Title)
+		`, eventID).Scan(&scope.OrganizationID, &scope.RepositoryID, &scope.OrganizationSlug,
+			&scope.RepositorySlug, &scope.Visibility, &scope.IssueNumber, &scope.MergeRequestNumber,
+			&scope.Title)
 	case strings.HasPrefix(event.Topic, "issue."):
 		err = transaction.QueryRow(ctx, `
-			SELECT r.organization_id, r.id, o.slug, r.slug, i.number, NULL, i.title
+			SELECT r.organization_id, r.id, o.slug, r.slug, r.visibility, i.number, NULL, i.title
 			FROM issues i JOIN repositories r ON r.id = i.repository_id
 			JOIN organizations o ON o.id = r.organization_id
 			WHERE i.id = split_part($1, ':', 1)::uuid
-		`, event.EventKey).Scan(&scope.OrganizationID, &scope.RepositoryID, &scope.OrganizationSlug,
-			&scope.RepositorySlug, &scope.IssueNumber, &scope.MergeRequestNumber, &scope.Title)
+		`, eventID).Scan(&scope.OrganizationID, &scope.RepositoryID, &scope.OrganizationSlug,
+			&scope.RepositorySlug, &scope.Visibility, &scope.IssueNumber, &scope.MergeRequestNumber,
+			&scope.Title)
 	case strings.HasPrefix(event.Topic, "merge_request_review."):
 		err = transaction.QueryRow(ctx, `
-			SELECT r.organization_id, r.id, o.slug, r.slug, NULL, mr.number, mr.title
+			SELECT r.organization_id, r.id, o.slug, r.slug, r.visibility, NULL, mr.number, mr.title
 			FROM merge_request_reviews review
 			JOIN merge_requests mr ON mr.id = review.merge_request_id
 			JOIN repositories r ON r.id = mr.repository_id
 			JOIN organizations o ON o.id = r.organization_id
 			WHERE review.id = split_part($1, ':', 1)::uuid
-		`, event.EventKey).Scan(&scope.OrganizationID, &scope.RepositoryID, &scope.OrganizationSlug,
-			&scope.RepositorySlug, &scope.IssueNumber, &scope.MergeRequestNumber, &scope.Title)
+		`, eventID).Scan(&scope.OrganizationID, &scope.RepositoryID, &scope.OrganizationSlug,
+			&scope.RepositorySlug, &scope.Visibility, &scope.IssueNumber, &scope.MergeRequestNumber,
+			&scope.Title)
 	case strings.HasPrefix(event.Topic, "merge_request."):
 		err = transaction.QueryRow(ctx, `
-			SELECT r.organization_id, r.id, o.slug, r.slug, NULL, mr.number, mr.title
+			SELECT r.organization_id, r.id, o.slug, r.slug, r.visibility, NULL, mr.number, mr.title
 			FROM merge_requests mr JOIN repositories r ON r.id = mr.repository_id
 			JOIN organizations o ON o.id = r.organization_id
 			WHERE mr.id = split_part($1, ':', 1)::uuid
-		`, event.EventKey).Scan(&scope.OrganizationID, &scope.RepositoryID, &scope.OrganizationSlug,
-			&scope.RepositorySlug, &scope.IssueNumber, &scope.MergeRequestNumber, &scope.Title)
+		`, eventID).Scan(&scope.OrganizationID, &scope.RepositoryID, &scope.OrganizationSlug,
+			&scope.RepositorySlug, &scope.Visibility, &scope.IssueNumber, &scope.MergeRequestNumber,
+			&scope.Title)
 	case strings.HasPrefix(event.Topic, "label."):
 		err = transaction.QueryRow(ctx, `
-			SELECT r.organization_id, r.id, o.slug, r.slug, NULL, NULL, l.name
+			SELECT r.organization_id, r.id, o.slug, r.slug, r.visibility, NULL, NULL, l.name
 			FROM labels l JOIN repositories r ON r.id = l.repository_id
 			JOIN organizations o ON o.id = r.organization_id
 			WHERE l.id = split_part($1, ':', 1)::uuid
-		`, event.EventKey).Scan(&scope.OrganizationID, &scope.RepositoryID, &scope.OrganizationSlug,
-			&scope.RepositorySlug, &scope.IssueNumber, &scope.MergeRequestNumber, &scope.Title)
+		`, eventID).Scan(&scope.OrganizationID, &scope.RepositoryID, &scope.OrganizationSlug,
+			&scope.RepositorySlug, &scope.Visibility, &scope.IssueNumber, &scope.MergeRequestNumber,
+			&scope.Title)
 	case strings.HasPrefix(event.Topic, "branch_rule."):
 		err = transaction.QueryRow(ctx, `
-			SELECT r.organization_id, r.id, o.slug, r.slug, NULL, NULL, br.pattern
+			SELECT r.organization_id, r.id, o.slug, r.slug, r.visibility, NULL, NULL, br.pattern
 			FROM branch_rules br JOIN repositories r ON r.id = br.repository_id
 			JOIN organizations o ON o.id = r.organization_id
 			WHERE br.id = split_part($1, ':', 1)::uuid
-		`, event.EventKey).Scan(&scope.OrganizationID, &scope.RepositoryID, &scope.OrganizationSlug,
-			&scope.RepositorySlug, &scope.IssueNumber, &scope.MergeRequestNumber, &scope.Title)
+		`, eventID).Scan(&scope.OrganizationID, &scope.RepositoryID, &scope.OrganizationSlug,
+			&scope.RepositorySlug, &scope.Visibility, &scope.IssueNumber, &scope.MergeRequestNumber,
+			&scope.Title)
 	case strings.HasPrefix(event.Topic, "team."):
 		err = transaction.QueryRow(ctx, `
 			SELECT o.id, '', o.slug, '', NULL, NULL, t.display_name
 			FROM teams t JOIN organizations o ON o.id = t.organization_id
 			WHERE t.id = split_part($1, ':', 1)::uuid
-		`, event.EventKey).Scan(&scope.OrganizationID, &scope.RepositoryID, &scope.OrganizationSlug,
+		`, eventID).Scan(&scope.OrganizationID, &scope.RepositoryID, &scope.OrganizationSlug,
 			&scope.RepositorySlug, &scope.IssueNumber, &scope.MergeRequestNumber, &scope.Title)
 	default:
 		return notificationScope{}, false, nil
@@ -390,7 +428,7 @@ func (store *Store) resolveNotificationScope(
 		return notificationScope{}, false, fmt.Errorf("resolve notification scope: %w", err)
 	}
 	if strings.HasPrefix(event.Topic, "team.") {
-		scope.TeamID = strings.SplitN(event.EventKey, ":", 2)[0]
+		scope.TeamID = eventID
 	}
 	scope.Href = notificationHref(scope)
 	return scope, true, nil
@@ -413,13 +451,17 @@ func (store *Store) resolveDeletedNotificationScope(
 	var scope notificationScope
 	switch {
 	case strings.HasPrefix(event.Topic, "issue_comment.") && payload.IssueID != "":
+		if _, err := uuid.Parse(payload.IssueID); err != nil {
+			return notificationScope{}, false, nil
+		}
 		err := transaction.QueryRow(ctx, `
-			SELECT r.organization_id, r.id, o.slug, r.slug, i.number, NULL, i.title
+			SELECT r.organization_id, r.id, o.slug, r.slug, r.visibility, i.number, NULL, i.title
 			FROM issues i JOIN repositories r ON r.id = i.repository_id
 			JOIN organizations o ON o.id = r.organization_id
 			WHERE i.id = $1
 		`, payload.IssueID).Scan(&scope.OrganizationID, &scope.RepositoryID, &scope.OrganizationSlug,
-			&scope.RepositorySlug, &scope.IssueNumber, &scope.MergeRequestNumber, &scope.Title)
+			&scope.RepositorySlug, &scope.Visibility, &scope.IssueNumber, &scope.MergeRequestNumber,
+			&scope.Title)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return notificationScope{}, false, nil
@@ -428,12 +470,15 @@ func (store *Store) resolveDeletedNotificationScope(
 		}
 	case (strings.HasPrefix(event.Topic, "label.") && payload.RepositoryID != "") ||
 		(strings.HasPrefix(event.Topic, "branch_rule.") && payload.RepositoryID != ""):
+		if _, err := uuid.Parse(payload.RepositoryID); err != nil {
+			return notificationScope{}, false, nil
+		}
 		err := transaction.QueryRow(ctx, `
-			SELECT r.organization_id, r.id, o.slug, r.slug
+			SELECT r.organization_id, r.id, o.slug, r.slug, r.visibility
 			FROM repositories r JOIN organizations o ON o.id = r.organization_id
 			WHERE r.id = $1
 		`, payload.RepositoryID).Scan(&scope.OrganizationID, &scope.RepositoryID, &scope.OrganizationSlug,
-			&scope.RepositorySlug)
+			&scope.RepositorySlug, &scope.Visibility)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return notificationScope{}, false, nil
@@ -450,6 +495,14 @@ func (store *Store) resolveDeletedNotificationScope(
 	}
 	scope.Href = notificationHref(scope)
 	return scope, true, nil
+}
+
+func notificationEventID(event notificationEvent) (string, bool) {
+	eventID := strings.SplitN(event.EventKey, ":", 2)[0]
+	if _, err := uuid.Parse(eventID); err != nil {
+		return "", false
+	}
+	return eventID, true
 }
 
 func (store *Store) notificationRecipients(
@@ -469,6 +522,7 @@ func (store *Store) notificationRecipients(
 		rows, err := transaction.Query(ctx, `
 			SELECT DISTINCT tm.user_id::text
 			FROM team_memberships tm
+			JOIN users recipient ON recipient.id = tm.user_id AND recipient.status = 'active'
 			LEFT JOIN notification_preferences preferences ON preferences.user_id = tm.user_id
 			WHERE tm.team_id = $1
 			  AND COALESCE(preferences.in_app_enabled, true)
@@ -479,23 +533,50 @@ func (store *Store) notificationRecipients(
 		}
 		return scanNotificationRecipients(rows)
 	}
+	if scope.RepositoryID == "" {
+		rows, err := transaction.Query(ctx, `
+			SELECT DISTINCT members.user_id::text
+			FROM organization_memberships members
+			JOIN users recipient ON recipient.id = members.user_id AND recipient.status = 'active'
+			LEFT JOIN notification_preferences preferences ON preferences.user_id = members.user_id
+			WHERE members.organization_id = $1
+			  AND COALESCE(preferences.in_app_enabled, true)
+		`, scope.OrganizationID)
+		if err != nil {
+			return nil, fmt.Errorf("list organization notification recipients: %w", err)
+		}
+		return scanNotificationRecipients(rows)
+	}
 	rows, err := transaction.Query(ctx, `
-		SELECT DISTINCT m.user_id::text
-		FROM organization_memberships m
-		LEFT JOIN notification_preferences preferences ON preferences.user_id = m.user_id
-		WHERE m.organization_id = $1
-		  AND COALESCE(preferences.in_app_enabled, true)
-		  AND ($3 <> 'team' OR COALESCE(preferences.team_enabled, true))
-		  AND ($3 <> 'repository' OR COALESCE(preferences.repository_enabled, true))
-		UNION
-		SELECT DISTINCT rm.user_id::text
-		FROM repository_memberships rm
-		LEFT JOIN notification_preferences preferences ON preferences.user_id = rm.user_id
-		WHERE rm.repository_id = NULLIF($2, '')::uuid
-		  AND COALESCE(preferences.in_app_enabled, true)
-		  AND ($3 <> 'team' OR COALESCE(preferences.team_enabled, true))
-		  AND ($3 <> 'repository' OR COALESCE(preferences.repository_enabled, true))
-	`, scope.OrganizationID, scope.RepositoryID, category)
+		WITH eligible AS (
+			SELECT members.user_id
+			FROM organization_memberships members
+			JOIN users recipient ON recipient.id = members.user_id AND recipient.status = 'active'
+			WHERE members.organization_id = $1 AND $3 = 'internal'
+			UNION
+			SELECT repository_members.user_id
+			FROM repository_memberships repository_members
+			JOIN users recipient ON recipient.id = repository_members.user_id
+			WHERE repository_members.repository_id = $2
+			  AND recipient.status = 'active'
+			  AND $3 IN ('public', 'private')
+			UNION
+			SELECT team_members.user_id
+			FROM team_memberships team_members
+			JOIN team_repository_memberships team_repositories
+			  ON team_repositories.team_id = team_members.team_id
+			JOIN users recipient ON recipient.id = team_members.user_id
+			WHERE team_repositories.repository_id = $2
+			  AND team_repositories.active
+			  AND recipient.status = 'active'
+			  AND $3 IN ('public', 'private')
+		)
+		SELECT DISTINCT eligible.user_id::text
+		FROM eligible
+		LEFT JOIN notification_preferences preferences ON preferences.user_id = eligible.user_id
+		WHERE COALESCE(preferences.in_app_enabled, true)
+		  AND COALESCE(preferences.repository_enabled, true)
+	`, scope.OrganizationID, scope.RepositoryID, scope.Visibility)
 	if err != nil {
 		return nil, fmt.Errorf("list notification recipients: %w", err)
 	}

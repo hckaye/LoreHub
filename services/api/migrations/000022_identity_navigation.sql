@@ -50,6 +50,21 @@ CREATE TABLE IF NOT EXISTS team_memberships (
 CREATE INDEX IF NOT EXISTS team_memberships_user_idx
     ON team_memberships (user_id, team_id);
 
+CREATE TABLE IF NOT EXISTS team_repository_memberships (
+    team_id uuid NOT NULL REFERENCES teams (id) ON DELETE CASCADE,
+    repository_id uuid NOT NULL REFERENCES repositories (id) ON DELETE CASCADE,
+    role varchar(16) NOT NULL DEFAULT 'read',
+    active boolean NOT NULL DEFAULT true,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (team_id, repository_id),
+    CONSTRAINT team_repository_memberships_role_check
+        CHECK (role IN ('admin', 'write', 'triage', 'read'))
+);
+
+CREATE INDEX IF NOT EXISTS team_repository_memberships_repository_idx
+    ON team_repository_memberships (repository_id, team_id)
+    WHERE active;
+
 CREATE TABLE IF NOT EXISTS notification_preferences (
     user_id uuid PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
     in_app_enabled boolean NOT NULL DEFAULT true,
@@ -82,6 +97,18 @@ CREATE INDEX IF NOT EXISTS notifications_unread_idx
 
 CREATE INDEX IF NOT EXISTS notifications_source_event_idx
     ON notifications (source_event_id);
+
+CREATE TABLE IF NOT EXISTS notification_projection_ledger (
+    source_event_id uuid PRIMARY KEY REFERENCES outbox_events (id) ON DELETE CASCADE,
+    status varchar(16) NOT NULL DEFAULT 'processing',
+    claimed_at timestamptz NOT NULL DEFAULT now(),
+    processed_at timestamptz,
+    CONSTRAINT notification_projection_ledger_status_check
+        CHECK (status IN ('processing', 'processed'))
+);
+
+CREATE INDEX IF NOT EXISTS notification_projection_ledger_claim_idx
+    ON notification_projection_ledger (status, claimed_at);
 
 CREATE INDEX IF NOT EXISTS users_profile_search_idx
     ON users USING gin (

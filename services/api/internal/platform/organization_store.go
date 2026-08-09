@@ -19,20 +19,26 @@ func (store *Store) Organization(
 	if viewer != nil {
 		viewerID = viewer.ID
 	}
-	row := store.pool.QueryRow(ctx, `
+	query := `
 		SELECT o.id, o.slug, o.display_name, o.description, o.visibility,
 		       o.website_url, o.contact_email, o.default_repository_visibility,
 		       COALESCE(viewer.role, ''), COUNT(DISTINCT members.user_id),
-		       COUNT(DISTINCT r.id), COUNT(DISTINCT t.id), o.created_at
+		       COUNT(DISTINCT r.id) FILTER (WHERE ` + repositoryAccessClause("r", "$2") + `),
+		       COUNT(DISTINCT t.id), o.created_at
 		FROM organizations o
 		LEFT JOIN organization_memberships viewer
 		  ON viewer.organization_id = o.id AND viewer.user_id = NULLIF($2, '')::uuid
+		 AND EXISTS (
+		     SELECT 1 FROM users viewer_user
+		     WHERE viewer_user.id = viewer.user_id AND viewer_user.status = 'active'
+		 )
 		LEFT JOIN organization_memberships members ON members.organization_id = o.id
 		LEFT JOIN repositories r ON r.organization_id = o.id AND r.archived_at IS NULL
 		LEFT JOIN teams t ON t.organization_id = o.id
 		WHERE o.slug = $1 AND (o.visibility = 'public' OR viewer.user_id IS NOT NULL)
 		GROUP BY o.id, viewer.role
-	`, slug, viewerID)
+	`
+	row := store.pool.QueryRow(ctx, query, slug, viewerID)
 	view, err := scanOrganizationView(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return OrganizationView{}, ErrNotFound
@@ -58,23 +64,12 @@ func (store *Store) OrganizationRepositories(
 		      o.visibility = 'public'
 		      OR ($2 <> '' AND EXISTS (
 		          SELECT 1 FROM organization_memberships om
+		          JOIN users viewer_user ON viewer_user.id = om.user_id
 		          WHERE om.organization_id = o.id AND om.user_id = NULLIF($2, '')::uuid
+		            AND viewer_user.status = 'active'
 		      ))
 		  )
-		  AND (
-		      r.visibility = 'public'
-		          OR ($2 <> '' AND (
-		              EXISTS (
-		                  SELECT 1 FROM organization_memberships om
-		                  WHERE om.organization_id = o.id AND om.user_id = NULLIF($2, '')::uuid
-		              )
-		              OR EXISTS (
-		                  SELECT 1 FROM repository_memberships rm
-		                  WHERE rm.repository_id = r.id
-		                    AND rm.user_id = NULLIF($2, '')::uuid
-		              )
-		      ))
-		  )
+		  AND `+repositoryAccessClause("r", "$2")+`
 		GROUP BY r.id, o.slug
 		ORDER BY r.updated_at DESC
 		LIMIT 100
@@ -123,7 +118,8 @@ func (store *Store) UpdateOrganization(
 		organizationID); err != nil {
 		return OrganizationView{}, err
 	}
-	if err := insertOutbox(ctx, transaction, "organization.updated", organizationID, input); err != nil {
+	if err := insertOutbox(ctx, transaction, "organization.updated",
+		organizationID+":"+uuid.NewString(), input); err != nil {
 		return OrganizationView{}, err
 	}
 	if err := transaction.Commit(ctx); err != nil {
@@ -324,7 +320,7 @@ func (store *Store) UpdateTeam(
 	); err != nil {
 		return Team{}, err
 	}
-	if err := insertOutbox(ctx, transaction, "team.updated", team.ID, input); err != nil {
+	if err := insertOutbox(ctx, transaction, "team.updated", team.ID+":"+uuid.NewString(), input); err != nil {
 		return Team{}, err
 	}
 	if err := transaction.Commit(ctx); err != nil {
@@ -456,7 +452,7 @@ func (store *Store) UpdateRepositorySettings(
 	if err != nil {
 		return Repository{}, err
 	}
-	if role != "admin" && orgRole != "owner" && orgRole != "maintainer" {
+	if role != "admin" && orgRole != "owner" {
 		return Repository{}, ErrForbidden
 	}
 	transaction, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
@@ -464,7 +460,7 @@ func (store *Store) UpdateRepositorySettings(
 		return Repository{}, fmt.Errorf("begin repository settings update: %w", err)
 	}
 	defer func() { _ = transaction.Rollback(context.WithoutCancel(ctx)) }()
-	_, err = transaction.Exec(ctx, `
+	updateTag, err := transaction.Exec(ctx, `
 		UPDATE repositories
 		SET display_name = COALESCE($2, display_name),
 		    description = COALESCE($3, description),
@@ -472,15 +468,33 @@ func (store *Store) UpdateRepositorySettings(
 		    homepage_url = COALESCE($5, homepage_url),
 		    updated_at = now()
 		WHERE id = $1
-	`, repository.ID, input.DisplayName, input.Description, input.Visibility, input.HomepageURL)
+		  AND (
+		      EXISTS (
+		          SELECT 1 FROM repository_memberships rm
+		          JOIN users repository_user ON repository_user.id = rm.user_id
+		          WHERE rm.repository_id = repositories.id AND rm.user_id = $6
+		            AND rm.role = 'admin' AND repository_user.status = 'active'
+		      )
+		      OR EXISTS (
+		          SELECT 1 FROM organization_memberships om
+		          JOIN users organization_user ON organization_user.id = om.user_id
+		          WHERE om.organization_id = repositories.organization_id AND om.user_id = $6
+		            AND om.role = 'owner' AND organization_user.status = 'active'
+		      )
+		  )
+	`, repository.ID, input.DisplayName, input.Description, input.Visibility, input.HomepageURL, actor.ID)
 	if err != nil {
 		return Repository{}, translateConstraintError("update repository settings", err)
+	}
+	if updateTag.RowsAffected() == 0 {
+		return Repository{}, ErrForbidden
 	}
 	if err := insertAudit(ctx, transaction, actor.ID, organizationID, repository.ID, "repository.settings_update",
 		"repository", repository.ID); err != nil {
 		return Repository{}, err
 	}
-	if err := insertOutbox(ctx, transaction, "repository.settings_updated", repository.ID, input); err != nil {
+	if err := insertOutbox(ctx, transaction, "repository.settings_updated",
+		repository.ID+":"+uuid.NewString(), input); err != nil {
 		return Repository{}, err
 	}
 	updated, err := scanRepository(transaction.QueryRow(ctx, repositorySelect+`
@@ -505,10 +519,18 @@ func (store *Store) repositoryManager(
 	row := store.pool.QueryRow(ctx, repositorySelect+`
 		WHERE o.slug = $1 AND r.slug = $2 AND r.archived_at IS NULL
 		  AND (
-		      EXISTS (SELECT 1 FROM repository_memberships rm
-		              WHERE rm.repository_id = r.id AND rm.user_id = $3)
-		      OR EXISTS (SELECT 1 FROM organization_memberships om
-		                 WHERE om.organization_id = o.id AND om.user_id = $3)
+		      EXISTS (
+		          SELECT 1 FROM repository_memberships rm
+		          JOIN users repository_user ON repository_user.id = rm.user_id
+		          WHERE rm.repository_id = r.id AND rm.user_id = $3
+		            AND rm.role = 'admin' AND repository_user.status = 'active'
+		      )
+		      OR EXISTS (
+		          SELECT 1 FROM organization_memberships om
+		          JOIN users organization_user ON organization_user.id = om.user_id
+		          WHERE om.organization_id = o.id AND om.user_id = $3
+		            AND om.role = 'owner' AND organization_user.status = 'active'
+		      )
 		  )
 		GROUP BY r.id, o.slug
 	`, owner, slug, userID)
@@ -538,6 +560,7 @@ func (store *Store) organizationRole(ctx context.Context, userID string, slug st
 		SELECT o.id, m.role
 		FROM organizations o
 		JOIN organization_memberships m ON m.organization_id = o.id AND m.user_id = $2
+		JOIN users u ON u.id = m.user_id AND u.status = 'active'
 		WHERE o.slug = $1
 	`, slug, userID).Scan(&organizationID, &role)
 	if errors.Is(err, pgx.ErrNoRows) {

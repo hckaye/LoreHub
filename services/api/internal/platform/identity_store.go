@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -99,21 +100,7 @@ func (store *Store) UserProfile(ctx context.Context, viewer *User, username stri
 		  ON owned.user_id = u.id AND owned.role IN ('owner', 'maintainer')
 		LEFT JOIN repositories r ON r.organization_id = owned.organization_id
 		  AND r.archived_at IS NULL
-		  AND (
-		      r.visibility = 'public'
-		      OR ($2 <> '' AND (
-		          EXISTS (
-		              SELECT 1 FROM organization_memberships viewer_org
-		              WHERE viewer_org.organization_id = r.organization_id
-		                AND viewer_org.user_id = NULLIF($2, '')::uuid
-		          )
-		          OR EXISTS (
-		              SELECT 1 FROM repository_memberships viewer_repo
-		              WHERE viewer_repo.repository_id = r.id
-		                AND viewer_repo.user_id = NULLIF($2, '')::uuid
-		          )
-		      ))
-		  )
+		  AND `+repositoryAccessClause("r", "$2")+`
 		WHERE lower(u.username) = lower($1) AND u.status = 'active'
 		GROUP BY u.id
 	`, username, viewerID).Scan(
@@ -159,21 +146,7 @@ func (store *Store) UserRepositories(
 		WHERE lower(owner.username) = lower($1)
 		  AND owner_membership.role IN ('owner', 'maintainer')
 		  AND r.archived_at IS NULL
-		  AND (
-		      r.visibility = 'public'
-		      OR ($2 <> '' AND (
-		          EXISTS (
-		              SELECT 1 FROM organization_memberships viewer_org
-		              WHERE viewer_org.organization_id = r.organization_id
-		                AND viewer_org.user_id = NULLIF($2, '')::uuid
-		          )
-		          OR EXISTS (
-		              SELECT 1 FROM repository_memberships viewer_repo
-		              WHERE viewer_repo.repository_id = r.id
-		                AND viewer_repo.user_id = NULLIF($2, '')::uuid
-		          )
-		      ))
-		  )
+		  AND `+repositoryAccessClause("r", "$2")+`
 		GROUP BY r.id, o.slug
 		ORDER BY r.updated_at DESC
 		LIMIT 100
@@ -213,7 +186,7 @@ func (store *Store) UpdateProfile(ctx context.Context, actor User, input UpdateP
 	if err := insertAudit(ctx, transaction, actor.ID, "", "", "profile.update", "user", actor.ID); err != nil {
 		return UserProfile{}, err
 	}
-	if err := insertOutbox(ctx, transaction, "profile.updated", actor.ID, input); err != nil {
+	if err := insertOutbox(ctx, transaction, "profile.updated", actor.ID+":"+uuid.NewString(), input); err != nil {
 		return UserProfile{}, err
 	}
 	if err := transaction.Commit(ctx); err != nil {
@@ -233,17 +206,7 @@ func appendProfileUpdate(sets *[]string, args *[]any, column string, value *stri
 func (store *Store) accessibleRepositories(ctx context.Context, userID string, limit int) ([]Repository, error) {
 	rows, err := store.pool.Query(ctx, repositorySelect+`
 		WHERE r.archived_at IS NULL
-		  AND (
-		      r.visibility = 'public'
-		      OR EXISTS (
-		          SELECT 1 FROM organization_memberships om
-		          WHERE om.organization_id = r.organization_id AND om.user_id = $1
-		      )
-		      OR EXISTS (
-		          SELECT 1 FROM repository_memberships rm
-		          WHERE rm.repository_id = r.id AND rm.user_id = $1
-		      )
-		  )
+		  AND `+repositoryAccessClause("r", "$1")+`
 		GROUP BY r.id, o.slug
 		ORDER BY r.updated_at DESC
 		LIMIT $2
@@ -260,14 +223,19 @@ func (store *Store) listOrganizationViews(
 	userID string,
 	limit int,
 ) ([]OrganizationView, error) {
-	rows, err := store.pool.Query(ctx, `
+	query := `
 		SELECT o.id, o.slug, o.display_name, o.description, o.visibility,
 		       o.website_url, o.contact_email, o.default_repository_visibility,
 		       COALESCE(viewer.role, ''), COUNT(DISTINCT members.user_id),
-		       COUNT(DISTINCT r.id), COUNT(DISTINCT t.id), o.created_at
+		       COUNT(DISTINCT r.id) FILTER (WHERE ` + repositoryAccessClause("r", "$1") + `),
+		       COUNT(DISTINCT t.id), o.created_at
 		FROM organizations o
 		LEFT JOIN organization_memberships viewer
 		  ON viewer.organization_id = o.id AND viewer.user_id = $1
+		 AND EXISTS (
+		     SELECT 1 FROM users viewer_user
+		     WHERE viewer_user.id = viewer.user_id AND viewer_user.status = 'active'
+		 )
 		LEFT JOIN organization_memberships members ON members.organization_id = o.id
 		LEFT JOIN repositories r ON r.organization_id = o.id AND r.archived_at IS NULL
 		LEFT JOIN teams t ON t.organization_id = o.id
@@ -275,7 +243,8 @@ func (store *Store) listOrganizationViews(
 		GROUP BY o.id, viewer.role
 		ORDER BY o.updated_at DESC
 		LIMIT $2
-	`, userID, limit)
+	`
+	rows, err := store.pool.Query(ctx, query, userID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list organizations: %w", err)
 	}
@@ -300,21 +269,7 @@ func (store *Store) searchRepositories(
 		      OR lower(concat_ws(' ', o.slug, r.slug, r.display_name, r.description))
 		          LIKE '%' || lower($1) || '%'
 		  )
-		  AND (
-		      r.visibility = 'public'
-		      OR ($2 <> '' AND (
-		          EXISTS (
-		              SELECT 1 FROM organization_memberships om
-		              WHERE om.organization_id = r.organization_id
-		                AND om.user_id = NULLIF($2, '')::uuid
-		          )
-		          OR EXISTS (
-		              SELECT 1 FROM repository_memberships rm
-		              WHERE rm.repository_id = r.id
-		                AND rm.user_id = NULLIF($2, '')::uuid
-		          )
-		      ))
-		  )
+		  AND `+repositoryAccessClause("r", "$2")+`
 		GROUP BY r.id, o.slug
 		ORDER BY r.updated_at DESC
 		LIMIT $3
@@ -332,14 +287,19 @@ func (store *Store) searchOrganizations(
 	viewerID string,
 	limit int,
 ) ([]OrganizationView, error) {
-	rows, err := store.pool.Query(ctx, `
+	sqlQuery := `
 		SELECT o.id, o.slug, o.display_name, o.description, o.visibility,
 		       o.website_url, o.contact_email, o.default_repository_visibility,
 		       COALESCE(viewer.role, ''), COUNT(DISTINCT members.user_id),
-		       COUNT(DISTINCT r.id), COUNT(DISTINCT t.id), o.created_at
+		       COUNT(DISTINCT r.id) FILTER (WHERE ` + repositoryAccessClause("r", "$2") + `),
+		       COUNT(DISTINCT t.id), o.created_at
 		FROM organizations o
 		LEFT JOIN organization_memberships viewer
 		  ON viewer.organization_id = o.id AND viewer.user_id = NULLIF($2, '')::uuid
+		 AND EXISTS (
+		     SELECT 1 FROM users viewer_user
+		     WHERE viewer_user.id = viewer.user_id AND viewer_user.status = 'active'
+		 )
 		LEFT JOIN organization_memberships members ON members.organization_id = o.id
 		LEFT JOIN repositories r ON r.organization_id = o.id AND r.archived_at IS NULL
 		LEFT JOIN teams t ON t.organization_id = o.id
@@ -356,7 +316,8 @@ func (store *Store) searchOrganizations(
 		GROUP BY o.id, viewer.role
 		ORDER BY o.updated_at DESC
 		LIMIT $3
-	`, query, viewerID, limit)
+	`
+	rows, err := store.pool.Query(ctx, sqlQuery, query, viewerID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("search organizations: %w", err)
 	}
