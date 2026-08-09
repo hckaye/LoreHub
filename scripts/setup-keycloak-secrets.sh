@@ -62,10 +62,16 @@ fi
 set_var() {
   key=$1
   value=$2
-  if grep -Fq "${key}=" "$env_file"; then
-    current=$(awk -v key="$key" '
-      index($0, key "=") == 1 { print substr($0, length(key) + 2); exit }
-    ' "$env_file")
+  key_present=1
+  current=$(awk -v key="$key" '
+    index($0, key "=") == 1 {
+      print substr($0, length(key) + 2)
+      found=1
+      exit
+    }
+    END { if (!found) exit 1 }
+  ' "$env_file") || key_present=0
+  if [ "$key_present" -eq 1 ]; then
     if [ "$force" -eq 0 ] && [ -n "$current" ]; then
       return
     fi
