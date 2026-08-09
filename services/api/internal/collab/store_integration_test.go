@@ -279,6 +279,28 @@ func TestIntegrationLabels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create label: %v", err)
 	}
+	japanese, err := s.CreateLabel(ctx, fix.alice, fix.repoID, LabelInput{
+		Name: "障害対応", Description: "日本語のラベル", Color: "123abc",
+	})
+	if err != nil {
+		t.Fatalf("create Japanese label: %v", err)
+	}
+	labels, err := s.ListLabels(ctx, fix.repoID, Page{Limit: maxPageLimit})
+	if err != nil {
+		t.Fatalf("list labels after Japanese label: %v", err)
+	}
+	foundJapanese := false
+	for _, listed := range labels.Items {
+		if listed.ID == japanese.ID {
+			foundJapanese = true
+			if listed.Name != "障害対応" || listed.Description != "日本語のラベル" {
+				t.Fatalf("Japanese label round-trip: got %+v", listed)
+			}
+		}
+	}
+	if !foundJapanese {
+		t.Fatalf("Japanese label %s was not returned by list", japanese.ID)
+	}
 	// Duplicate name conflicts.
 	_, err = s.CreateLabel(ctx, fix.alice, fix.repoID, LabelInput{Name: "bug", Color: "00ff00"})
 	if !errors.Is(err, platform.ErrConflict) {

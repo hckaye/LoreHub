@@ -3,6 +3,7 @@ package collab
 import (
 	"errors"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 )
@@ -26,6 +27,18 @@ func TestValidateTitle(t *testing.T) {
 	long := makeTitle(600)
 	if _, err := validateTitle(long); !errors.Is(err, ErrTitleTooLong) {
 		t.Errorf("long title: got %v, want ErrTitleTooLong", err)
+	}
+}
+
+func TestValidateTitleCountsUnicodeCodePoints(t *testing.T) {
+	t.Parallel()
+	accepted := strings.Repeat("日", maxTitleLen)
+	if title, err := validateTitle(accepted); err != nil || title != accepted {
+		t.Errorf("512 Japanese code points: got %d code points and %v",
+			len([]rune(title)), err)
+	}
+	if _, err := validateTitle(accepted + "日"); !errors.Is(err, ErrTitleTooLong) {
+		t.Errorf("513 Japanese code points: got %v, want ErrTitleTooLong", err)
 	}
 }
 
@@ -88,6 +101,46 @@ func TestValidateLabelInput(t *testing.T) {
 		Name: "bug", Description: makeBody(maxDescriptionLen + 1), Color: "000000",
 	}); !errors.Is(err, ErrBodyTooLong) {
 		t.Errorf("long description: got %v, want ErrBodyTooLong", err)
+	}
+}
+
+func TestValidateUnicodeLabelInput(t *testing.T) {
+	t.Parallel()
+	input := LabelInput{
+		Name:        "\u3000障害\u00a0\u3000対応\u3000",
+		Description: "日本語のラベル",
+		Color:       "123abc",
+	}
+	label, err := validateLabelInput(input)
+	if err != nil || label.Name != "障害 対応" || label.Description != input.Description {
+		t.Errorf("Japanese label normalization: got %+v %v", label, err)
+	}
+	for _, name := range []string{"修正/再現: [UI] #1", "🙂 日本語ラベル"} {
+		if _, err := validateLabelInput(LabelInput{Name: name, Color: "123abc"}); err != nil {
+			t.Errorf("safe Unicode punctuation %q: %v", name, err)
+		}
+	}
+}
+
+func TestValidateLabelUnicodeBoundariesAndControls(t *testing.T) {
+	t.Parallel()
+	accepted := strings.Repeat("界", maxLabelNameLen)
+	if _, err := validateLabelInput(LabelInput{Name: accepted, Color: "123abc"}); err != nil {
+		t.Errorf("128 Japanese code points: %v", err)
+	}
+	if _, err := validateLabelInput(LabelInput{Name: accepted + "界", Color: "123abc"}); !errors.Is(err,
+		ErrInvalidLabel) {
+		t.Errorf("129 Japanese code points: got %v, want ErrInvalidLabel", err)
+	}
+	emojis := strings.Repeat("🙂", maxLabelNameLen)
+	if _, err := validateLabelInput(LabelInput{Name: emojis, Color: "123abc"}); err != nil {
+		t.Errorf("128 emoji code points: %v", err)
+	}
+	for _, name := range []string{"\u3000\u00a0", "表示\x00名", "表示\n名", "表示\u2028名"} {
+		if _, err := validateLabelInput(LabelInput{Name: name, Color: "123abc"}); !errors.Is(err,
+			ErrInvalidLabel) {
+			t.Errorf("forbidden label name %q: got %v, want ErrInvalidLabel", name, err)
+		}
 	}
 }
 

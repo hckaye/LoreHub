@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 const (
@@ -34,8 +36,7 @@ var (
 )
 
 var (
-	labelNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 _-]{0,127}$`)
-	hexColorPattern  = regexp.MustCompile(`^[0-9A-Fa-f]{6}$`)
+	hexColorPattern = regexp.MustCompile(`^[0-9A-Fa-f]{6}$`)
 )
 
 // validateIssueTitle trims and validates an issue/merge-request title.
@@ -44,7 +45,7 @@ func validateTitle(value string) (string, error) {
 	if title == "" {
 		return "", ErrBlankBody
 	}
-	if len(title) > maxTitleLen {
+	if utf8.RuneCountInString(title) > maxTitleLen {
 		return "", ErrTitleTooLong
 	}
 	return title, nil
@@ -84,19 +85,43 @@ func validateMergeRequestState(value string) (string, error) {
 	}
 }
 
-// normalizeLabelName trims surrounding whitespace and collapses internal runs
-// of whitespace into single spaces, matching the stored normalized form.
+// normalizeLabelName trims surrounding Unicode whitespace and collapses
+// internal runs of Unicode whitespace into single spaces.
 func normalizeLabelName(value string) string {
-	value = strings.TrimSpace(value)
-	for strings.Contains(value, "  ") {
-		value = strings.ReplaceAll(value, "  ", " ")
+	var builder strings.Builder
+	builder.Grow(len(value))
+	spacePending := false
+	for _, r := range value {
+		if unicode.IsSpace(r) {
+			if builder.Len() > 0 {
+				spacePending = true
+			}
+			continue
+		}
+		if spacePending {
+			builder.WriteByte(' ')
+		}
+		builder.WriteRune(r)
+		spacePending = false
 	}
-	return value
+	return builder.String()
+}
+
+func hasForbiddenLabelRune(value string) bool {
+	for _, r := range value {
+		if unicode.IsControl(r) || r == '\u2028' || r == '\u2029' {
+			return true
+		}
+	}
+	return false
 }
 
 func validateLabelInput(input LabelInput) (LabelInput, error) {
+	if hasForbiddenLabelRune(input.Name) {
+		return LabelInput{}, ErrInvalidLabel
+	}
 	name := normalizeLabelName(input.Name)
-	if !labelNamePattern.MatchString(name) {
+	if name == "" || utf8.RuneCountInString(name) > maxLabelNameLen {
 		return LabelInput{}, ErrInvalidLabel
 	}
 	description := strings.TrimSpace(input.Description)
