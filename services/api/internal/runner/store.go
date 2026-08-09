@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -90,6 +91,24 @@ func (store *Store) Repositories(ctx context.Context) ([]Repository, error) {
 		return nil, fmt.Errorf("iterate repositories for branch polling: %w", err)
 	}
 	return repositories, nil
+}
+
+func (store *Store) LatestBranchRevision(ctx context.Context, repositoryID string, branch string) (string, error) {
+	var revision string
+	err := store.pool.QueryRow(ctx, `
+		SELECT latest_revision
+		FROM repository_branch_states
+		WHERE repository_id = $1 AND branch_name = $2
+		ORDER BY observed_at DESC
+		LIMIT 1
+	`, repositoryID, branch).Scan(&revision)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrActionNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("read observed Lore branch revision: %w", err)
+	}
+	return revision, nil
 }
 
 func (store *Store) ObserveBranch(
@@ -333,9 +352,6 @@ func (store *Store) enqueuePushes(
 				return fmt.Errorf("find Lore workflow revision %q", workflow.Path)
 			}
 			revisionWorkflowID = &id
-			_ = transaction.QueryRow(ctx, `
-				SELECT id FROM ci_workflows WHERE repository_id = $1 AND path = $2
-			`, repository.ID, workflow.Path).Scan(&workflowID)
 		}
 		if _, err := store.enqueueRun(ctx, transaction, repository, workflowID, revisionWorkflowID,
 			workflow.Name, workflow.Path, "push", branch.Name, branch.LatestRevision, payload, "", nil); err != nil {
@@ -343,6 +359,314 @@ func (store *Store) enqueuePushes(
 		}
 	}
 	return nil
+}
+
+type PullRequestEvent struct {
+	Action         string `json:"action"`
+	Number         int64  `json:"number"`
+	SourceBranch   string `json:"source_branch"`
+	TargetBranch   string `json:"target_branch"`
+	SourceRevision string `json:"source_revision"`
+	TargetRevision string `json:"target_revision"`
+}
+
+type RepositoryDispatchEvent struct {
+	EventType     string          `json:"event_type"`
+	Branch        string          `json:"branch"`
+	Revision      string          `json:"revision,omitempty"`
+	ClientPayload json.RawMessage `json:"client_payload"`
+}
+
+func (store *Store) EnqueueScheduledRuns(
+	ctx context.Context,
+	repository Repository,
+	revision string,
+	now time.Time,
+) ([]RunRecord, error) {
+	if repository.DefaultBranch == "" || revision == "" {
+		return nil, ErrActionInvalid
+	}
+	transaction, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("begin scheduled Actions runs: %w", err)
+	}
+	defer func() { _ = transaction.Rollback(context.WithoutCancel(ctx)) }()
+	rows, err := transaction.Query(ctx, `
+		SELECT id, path, name, enabled, state, trigger_config
+		FROM ci_workflows
+		WHERE repository_id = $1
+		ORDER BY path
+		FOR UPDATE
+	`, repository.ID)
+	if err != nil {
+		return nil, fmt.Errorf("list scheduled Actions workflows: %w", err)
+	}
+	type workflowRow struct {
+		id, path, name, state string
+		enabled               bool
+		triggerConfig         json.RawMessage
+	}
+	workflowRows := make([]workflowRow, 0)
+	for rows.Next() {
+		var workflow workflowRow
+		if err := rows.Scan(
+			&workflow.id, &workflow.path, &workflow.name, &workflow.enabled, &workflow.state,
+			&workflow.triggerConfig,
+		); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("scan scheduled Actions workflow: %w", err)
+		}
+		workflowRows = append(workflowRows, workflow)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, fmt.Errorf("iterate scheduled Actions workflows: %w", err)
+	}
+	rows.Close()
+	runIDs := make([]uuid.UUID, 0)
+	for _, row := range workflowRows {
+		definition, err := workflowFromTriggerConfig(
+			row.path, row.name, row.enabled, row.state, row.triggerConfig,
+		)
+		if err != nil {
+			return nil, err
+		}
+		for _, occurrence := range definition.ScheduleOccurrences(now) {
+			key := repository.ID + ":" + row.id + ":" + occurrence.Key + ":" + occurrence.At.Format(time.RFC3339)
+			if _, err := transaction.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, key); err != nil {
+				return nil, fmt.Errorf("lock scheduled Actions occurrence: %w", err)
+			}
+			var alreadyQueued bool
+			if err := transaction.QueryRow(ctx, `
+				SELECT EXISTS (
+					SELECT 1 FROM ci_schedule_occurrences
+					WHERE workflow_id = $1 AND schedule_key = $2 AND occurrence_at = $3
+				)
+			`, row.id, occurrence.Key, occurrence.At).Scan(&alreadyQueued); err != nil {
+				return nil, fmt.Errorf("check scheduled Actions occurrence: %w", err)
+			}
+			if alreadyQueued {
+				continue
+			}
+			payload, err := json.Marshal(map[string]any{
+				"ref":          "refs/heads/" + repository.DefaultBranch,
+				"after":        revision,
+				"schedule":     occurrence.Key,
+				"scheduled_at": occurrence.At.Format(time.RFC3339),
+				"repository": map[string]string{
+					"name": repository.Slug, "full_name": repository.Owner + "/" + repository.Slug,
+				},
+			})
+			if err != nil {
+				return nil, fmt.Errorf("encode scheduled Actions event: %w", err)
+			}
+			runID, err := store.enqueueRun(
+				ctx, transaction, repository, row.id, nil, row.name, row.path, "schedule",
+				repository.DefaultBranch, revision, payload, "", nil,
+			)
+			if err != nil {
+				return nil, err
+			}
+			if _, err := transaction.Exec(ctx, `
+				INSERT INTO ci_schedule_occurrences (workflow_id, schedule_key, occurrence_at, run_id)
+				VALUES ($1, $2, $3, $4)
+			`, row.id, occurrence.Key, occurrence.At, runID); err != nil {
+				return nil, fmt.Errorf("record scheduled Actions occurrence: %w", err)
+			}
+			runIDs = append(runIDs, runID)
+		}
+	}
+	if err := transaction.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit scheduled Actions runs: %w", err)
+	}
+	return store.actionRunsByIDs(ctx, runIDs)
+}
+
+func (store *Store) DispatchRepositoryEvent(
+	ctx context.Context,
+	access RepositoryAccess,
+	event RepositoryDispatchEvent,
+	actorID string,
+) ([]RunRecord, error) {
+	if !access.CanWrite || strings.TrimSpace(event.EventType) == "" || len(event.EventType) > 100 ||
+		event.Branch == "" || event.Revision == "" {
+		return nil, ErrActionInvalid
+	}
+	if len(event.ClientPayload) == 0 {
+		event.ClientPayload = json.RawMessage(`{}`)
+	}
+	if !json.Valid(event.ClientPayload) {
+		return nil, ErrActionInvalid
+	}
+	transaction, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("begin repository dispatch: %w", err)
+	}
+	defer func() { _ = transaction.Rollback(context.WithoutCancel(ctx)) }()
+	runIDs, err := store.enqueueCanonicalEvent(
+		ctx,
+		transaction,
+		access,
+		"repository_dispatch",
+		event.Branch,
+		event.Revision,
+		actorID,
+		func(definition WorkflowDefinition) bool {
+			return definition.MatchesRepositoryDispatch(event.EventType)
+		},
+		func(repository Repository) ([]byte, error) {
+			return json.Marshal(map[string]any{
+				"event_type":     event.EventType,
+				"client_payload": json.RawMessage(event.ClientPayload),
+				"ref":            "refs/heads/" + event.Branch,
+				"after":          event.Revision,
+				"repository": map[string]string{
+					"name": repository.Slug, "full_name": repository.Owner + "/" + repository.Slug,
+				},
+			})
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	for _, runID := range runIDs {
+		if err := recordActionEvent(ctx, transaction, access, actorID, "actions.repository_dispatch",
+			runID.String(), map[string]any{"event_type": event.EventType}); err != nil {
+			return nil, err
+		}
+	}
+	if err := transaction.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit repository dispatch: %w", err)
+	}
+	return store.actionRunsByIDs(ctx, runIDs)
+}
+
+func (store *Store) EnqueuePullRequest(
+	ctx context.Context,
+	access RepositoryAccess,
+	event PullRequestEvent,
+	actorID string,
+) ([]RunRecord, error) {
+	if !access.CanWrite || event.Action == "" || event.SourceBranch == "" || event.TargetBranch == "" ||
+		event.SourceRevision == "" || event.TargetRevision == "" || event.Number < 1 {
+		return nil, ErrActionInvalid
+	}
+	transaction, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("begin pull request Actions event: %w", err)
+	}
+	defer func() { _ = transaction.Rollback(context.WithoutCancel(ctx)) }()
+	payload, err := json.Marshal(map[string]any{
+		"action": event.Action,
+		"number": event.Number,
+		"ref":    fmt.Sprintf("refs/pull/%d/merge", event.Number),
+		"after":  event.SourceRevision,
+		"pull_request": map[string]any{
+			"head": map[string]string{"ref": event.SourceBranch, "sha": event.SourceRevision},
+			"base": map[string]string{"ref": event.TargetBranch, "sha": event.TargetRevision},
+		},
+		"repository": map[string]string{
+			"name": access.Slug, "full_name": access.Owner + "/" + access.Slug,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("encode pull request Actions event: %w", err)
+	}
+	runIDs, err := store.enqueueCanonicalEvent(
+		ctx,
+		transaction,
+		access,
+		"pull_request",
+		event.TargetBranch,
+		event.SourceRevision,
+		actorID,
+		func(definition WorkflowDefinition) bool {
+			return definition.MatchesPullRequest(event.TargetBranch, event.Action)
+		},
+		func(Repository) ([]byte, error) { return payload, nil },
+	)
+	if err != nil {
+		return nil, err
+	}
+	for _, runID := range runIDs {
+		if err := recordActionEvent(ctx, transaction, access, actorID, "actions.pull_request",
+			runID.String(), map[string]any{"action": event.Action, "number": event.Number}); err != nil {
+			return nil, err
+		}
+	}
+	if err := transaction.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit pull request Actions event: %w", err)
+	}
+	return store.actionRunsByIDs(ctx, runIDs)
+}
+
+func (store *Store) enqueueCanonicalEvent(
+	ctx context.Context,
+	transaction pgx.Tx,
+	access RepositoryAccess,
+	eventName string,
+	branch string,
+	revision string,
+	actorID string,
+	matches func(WorkflowDefinition) bool,
+	encode func(Repository) ([]byte, error),
+) ([]uuid.UUID, error) {
+	rows, err := transaction.Query(ctx, `
+		SELECT id, path, name, enabled, state, trigger_config
+		FROM ci_workflows WHERE repository_id = $1 ORDER BY path FOR UPDATE
+	`, access.ID)
+	if err != nil {
+		return nil, fmt.Errorf("list canonical Actions workflows: %w", err)
+	}
+	type workflowRow struct {
+		id, path, name, state string
+		enabled               bool
+		triggerConfig         json.RawMessage
+	}
+	workflowRows := make([]workflowRow, 0)
+	for rows.Next() {
+		var workflow workflowRow
+		if err := rows.Scan(&workflow.id, &workflow.path, &workflow.name, &workflow.enabled,
+			&workflow.state, &workflow.triggerConfig); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("scan canonical Actions workflow: %w", err)
+		}
+		workflowRows = append(workflowRows, workflow)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, fmt.Errorf("iterate canonical Actions workflows: %w", err)
+	}
+	rows.Close()
+	repository := Repository{
+		ID: access.ID, Owner: access.Owner, Slug: access.Slug, LoreURL: access.LoreURL,
+		DefaultBranch: access.DefaultBranch,
+	}
+	runIDs := make([]uuid.UUID, 0)
+	for _, workflow := range workflowRows {
+		definition, err := workflowFromTriggerConfig(
+			workflow.path, workflow.name, workflow.enabled, workflow.state, workflow.triggerConfig,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if !matches(definition) {
+			continue
+		}
+		payload, err := encode(repository)
+		if err != nil {
+			return nil, err
+		}
+		runID, err := store.enqueueRun(
+			ctx, transaction, repository, workflow.id, nil, workflow.name, workflow.path, eventName,
+			branch, revision, payload, actorID, nil,
+		)
+		if err != nil {
+			return nil, err
+		}
+		runIDs = append(runIDs, runID)
+	}
+	return runIDs, nil
 }
 
 func (store *Store) enqueueRun(

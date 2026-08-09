@@ -70,8 +70,8 @@ runner-controlへ接続しない。job containerは専用internal networkと使�
 engine境界の権限とjob containerのCPU、メモリ、PID、capability、namespace制限を分けて管理する。Docker
 Desktopでcgroupが使えない場合、Composeの上限はouter engine全体の上限であり、jobごとのsecurity limitではない。
 本番の各trust domainにはAPIから分離した専用・使い捨てrunner node／podと、gVisor、Kata等の検証済み隔離層を
-必須とする。Lore読み取りはrepository partitionとread scopeを受けるcredential providerを必須とし、production
-で共有identityへfallbackしない。開発環境だけ明示的なfallbackを許可する。
+必須とする。Lore読み取りはservice subject、repository partition、read scopeを受ける短命credential issuerを
+必須とし、productionで共有identityやファイルcredentialへfallbackしない。開発環境だけ明示的なfallbackを許可する。
 
 ### 画面と翻訳
 

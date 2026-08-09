@@ -15,30 +15,28 @@ type BranchClient interface {
 }
 
 type Poller struct {
-	store       *Store
-	lore        BranchClient
-	credentials CredentialProvider
-	period      time.Duration
-	logger      *slog.Logger
+	store     *Store
+	lore      BranchClient
+	issuer    CredentialIssuer
+	principal CredentialPrincipal
+	period    time.Duration
+	logger    *slog.Logger
 }
 
 func NewPoller(
 	store *Store,
 	lore BranchClient,
-	credentials CredentialProvider,
+	issuer CredentialIssuer,
+	principal CredentialPrincipal,
 	period time.Duration,
 	logger *slog.Logger,
 ) *Poller {
-	if credentials == nil {
-		credentials = missingCredentialProvider{}
+	if issuer == nil {
+		issuer = NewFailClosedCredentialIssuer()
 	}
-	return &Poller{store: store, lore: lore, credentials: credentials, period: period, logger: logger}
-}
-
-type missingCredentialProvider struct{}
-
-func (missingCredentialProvider) Read(context.Context, CredentialSubject, string) (string, error) {
-	return "", fmt.Errorf("repository-scoped Lore credential provider is not configured")
+	return &Poller{
+		store: store, lore: lore, issuer: issuer, principal: principal, period: period, logger: logger,
+	}
 }
 
 func (poller *Poller) Run(ctx context.Context) error {
@@ -65,10 +63,7 @@ func (poller *Poller) poll(ctx context.Context) error {
 		return err
 	}
 	for _, repository := range repositories {
-		identity, err := poller.credentials.Read(ctx, CredentialSubject{
-			RepositoryID: repository.ID,
-			LoreURL:      repository.LoreURL,
-		}, ReadLoreScope)
+		identity, err := issueLoreIdentity(ctx, poller.issuer, poller.principal, repository.ID, repository.LoreURL)
 		if err != nil {
 			poller.logger.Error(
 				"could not read repository Lore credential",
@@ -131,6 +126,13 @@ func (poller *Poller) poll(ctx context.Context) error {
 					"branch", branch.Name,
 					"revision", branch.LatestRevision,
 				)
+			}
+			if branch.Name == repository.DefaultBranch {
+				if _, err := poller.store.EnqueueScheduledRuns(
+					ctx, repository, branch.LatestRevision, time.Now().UTC(),
+				); err != nil {
+					return fmt.Errorf("enqueue scheduled runs for %s/%s: %w", repository.Owner, repository.Slug, err)
+				}
 			}
 		}
 	}

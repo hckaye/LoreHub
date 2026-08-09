@@ -36,6 +36,7 @@ type ActionsStore interface {
 		actorID string,
 		filter runner.RunFilter,
 	) (runner.RunPage, error)
+	LatestBranchRevision(ctx context.Context, repositoryID string, branch string) (string, error)
 	ActionRunDetail(
 		ctx context.Context,
 		owner string,
@@ -52,6 +53,18 @@ type ActionsStore interface {
 		payload []byte,
 		actorID string,
 	) (runner.RunRecord, error)
+	DispatchRepositoryEvent(
+		ctx context.Context,
+		access runner.RepositoryAccess,
+		event runner.RepositoryDispatchEvent,
+		actorID string,
+	) ([]runner.RunRecord, error)
+	EnqueuePullRequest(
+		ctx context.Context,
+		access runner.RepositoryAccess,
+		event runner.PullRequestEvent,
+		actorID string,
+	) ([]runner.RunRecord, error)
 	CancelActionRun(
 		ctx context.Context,
 		access runner.RepositoryAccess,
@@ -206,14 +219,13 @@ func (api *API) dispatchActionWorkflow(writer http.ResponseWriter, request *http
 		api.actionsError(writer, request, "check workflow dispatch permission", err)
 		return
 	}
-	branches, err := api.lore.Branches(request.Context(), loreRepositoryRef(access), api.loreIdentity)
-	if err != nil {
-		writeProblem(writer, http.StatusBadGateway, "lore_unavailable", "The Lore branch could not be resolved")
+	revision, err := api.actions.LatestBranchRevision(request.Context(), access.ID, branch)
+	if errors.Is(err, runner.ErrActionNotFound) {
+		writeProblem(writer, http.StatusBadRequest, "branch_not_found", "The requested Lore branch has not been observed")
 		return
 	}
-	revision, found := latestRevision(branches, branch)
-	if !found {
-		writeProblem(writer, http.StatusBadRequest, "branch_not_found", "The requested Lore branch does not exist")
+	if err != nil {
+		api.internalError(writer, request, "resolve workflow dispatch revision", err)
 		return
 	}
 	inputs := input.Inputs
@@ -239,6 +251,97 @@ func (api *API) dispatchActionWorkflow(writer http.ResponseWriter, request *http
 	}
 	writer.Header().Set("Location", actionRunLocation(owner, repositoryName, run.RunNumber))
 	writeJSON(writer, http.StatusCreated, run)
+}
+
+func (api *API) dispatchRepositoryEvent(writer http.ResponseWriter, request *http.Request) {
+	if api.actions == nil {
+		writeProblem(writer, http.StatusServiceUnavailable, "actions_unavailable", "Actions is not configured")
+		return
+	}
+	actor, ok := api.actor(writer, request)
+	if !ok {
+		return
+	}
+	var input struct {
+		EventType     string          `json:"event_type"`
+		Ref           string          `json:"ref"`
+		Branch        string          `json:"branch"`
+		ClientPayload json.RawMessage `json:"client_payload"`
+	}
+	if !decodeJSON(writer, request, &input) {
+		return
+	}
+	ref := input.Ref
+	if strings.TrimSpace(ref) == "" {
+		ref = input.Branch
+	}
+	branch, err := actionBranchRef(ref)
+	if err != nil {
+		writeProblem(writer, http.StatusBadRequest, "invalid_ref", err.Error())
+		return
+	}
+	owner := request.PathValue("owner")
+	repositoryName := request.PathValue("repository")
+	access, err := api.actions.RepositoryForActions(request.Context(), owner, repositoryName, actor.ID)
+	if err != nil {
+		api.actionsError(writer, request, "check repository dispatch permission", err)
+		return
+	}
+	revision, err := api.actions.LatestBranchRevision(request.Context(), access.ID, branch)
+	if errors.Is(err, runner.ErrActionNotFound) {
+		writeProblem(writer, http.StatusBadRequest, "branch_not_found", "The requested Lore branch has not been observed")
+		return
+	}
+	if err != nil {
+		api.internalError(writer, request, "resolve repository dispatch revision", err)
+		return
+	}
+	runs, err := api.actions.DispatchRepositoryEvent(request.Context(), access, runner.RepositoryDispatchEvent{
+		EventType: input.EventType, Branch: branch, Revision: revision, ClientPayload: input.ClientPayload,
+	}, actor.ID)
+	if err != nil {
+		api.actionsError(writer, request, "dispatch repository event", err)
+		return
+	}
+	if len(runs) == 0 {
+		writeJSON(writer, http.StatusAccepted, map[string]any{"runs": runs})
+		return
+	}
+	writer.Header().Set("Location", actionRunLocation(owner, repositoryName, runs[0].RunNumber))
+	writeJSON(writer, http.StatusCreated, map[string]any{"runs": runs})
+}
+
+func (api *API) dispatchPullRequestEvent(writer http.ResponseWriter, request *http.Request) {
+	if api.actions == nil {
+		writeProblem(writer, http.StatusServiceUnavailable, "actions_unavailable", "Actions is not configured")
+		return
+	}
+	actor, ok := api.actor(writer, request)
+	if !ok {
+		return
+	}
+	var input runner.PullRequestEvent
+	if !decodeJSON(writer, request, &input) {
+		return
+	}
+	owner := request.PathValue("owner")
+	repositoryName := request.PathValue("repository")
+	access, err := api.actions.RepositoryForActions(request.Context(), owner, repositoryName, actor.ID)
+	if err != nil {
+		api.actionsError(writer, request, "check pull request Actions permission", err)
+		return
+	}
+	runs, err := api.actions.EnqueuePullRequest(request.Context(), access, input, actor.ID)
+	if err != nil {
+		api.actionsError(writer, request, "enqueue pull request Actions event", err)
+		return
+	}
+	if len(runs) == 0 {
+		writeJSON(writer, http.StatusAccepted, map[string]any{"runs": runs})
+		return
+	}
+	writer.Header().Set("Location", actionRunLocation(owner, repositoryName, runs[0].RunNumber))
+	writeJSON(writer, http.StatusCreated, map[string]any{"runs": runs})
 }
 
 func (api *API) cancelActionRun(writer http.ResponseWriter, request *http.Request) {

@@ -18,7 +18,7 @@ import (
 	"time"
 )
 
-const jobProxyImage = "alpine:3.20"
+const jobProxyImage = "haproxy:3.2.4-alpine"
 
 type engineNetwork struct {
 	client      *engineHTTPClient
@@ -75,13 +75,24 @@ func (worker *Worker) createJobNetwork(ctx context.Context, jobID string) (*engi
 	var created struct {
 		ID string `json:"Id"`
 	}
-	if err := client.post(ctx, "/networks/create", map[string]any{
-		"Name":       networkName,
-		"Driver":     "bridge",
-		"Internal":   true,
-		"Attachable": true,
-	}, &created); err != nil {
-		return nil, fmt.Errorf("create internal job network: %w", err)
+	createNetwork := func() error {
+		return client.post(ctx, "/networks/create", map[string]any{
+			"Name":       networkName,
+			"Driver":     "bridge",
+			"Internal":   true,
+			"Attachable": true,
+		}, &created)
+	}
+	if err := createNetwork(); err != nil {
+		if !isEngineConflict(err) {
+			return nil, fmt.Errorf("create internal job network: %w", err)
+		}
+		if cleanupErr := removeExistingJobNetwork(ctx, client, networkName); cleanupErr != nil {
+			return nil, fmt.Errorf("replace stale internal job network: %w", cleanupErr)
+		}
+		if retryErr := createNetwork(); retryErr != nil {
+			return nil, fmt.Errorf("create internal job network after stale cleanup: %w", retryErr)
+		}
 	}
 	network := &engineNetwork{
 		client:      client,
@@ -105,7 +116,16 @@ func (worker *Worker) createJobNetwork(ctx context.Context, jobID string) (*engi
 		_ = network.Close(context.WithoutCancel(ctx))
 		return nil, errors.New("engine forward proxy URL must use an IP address and port")
 	}
-	proxyCommand := "while true; do nc -lk -p 3128 -e nc " + net.JoinHostPort(proxyHost, proxyPort) + "; done"
+	proxyCommand := "cat > /tmp/haproxy.cfg <<'EOF'\n" +
+		"global\n  maxconn 1024\n" +
+		"defaults\n  mode tcp\n  timeout connect 5s\n  timeout client 1h\n  timeout server 1h\n" +
+		"frontend proxy\n  bind 0.0.0.0:3128\n  default_backend squid\n" +
+		"backend squid\n  server squid " + net.JoinHostPort(proxyHost, proxyPort) + "\nEOF\n" +
+		"exec haproxy -db -f /tmp/haproxy.cfg"
+	if err := client.pullImage(ctx, jobProxyImage); err != nil {
+		_ = network.Close(context.WithoutCancel(ctx))
+		return nil, fmt.Errorf("pull internal proxy gateway image: %w", err)
+	}
 	var container struct {
 		ID string `json:"Id"`
 	}
@@ -118,6 +138,7 @@ func (worker *Worker) createJobNetwork(ctx context.Context, jobID string) (*engi
 			"ReadonlyRootfs": true,
 			"CapDrop":        []string{"ALL"},
 			"SecurityOpt":    []string{"no-new-privileges:true"},
+			"Tmpfs":          map[string]string{"/tmp": "rw,noexec,nosuid,nodev"},
 		},
 	}, &container); err != nil {
 		_ = network.Close(context.WithoutCancel(ctx))
@@ -136,7 +157,7 @@ func (worker *Worker) createJobNetwork(ctx context.Context, jobID string) (*engi
 		"Container": network.proxyID,
 	}, nil); err != nil {
 		_ = network.Close(context.WithoutCancel(ctx))
-		return nil, fmt.Errorf("connect internal proxy gateway to disposable bridge: %w", err)
+		return nil, fmt.Errorf("connect internal proxy gateway to disposable engine bridge: %w", err)
 	}
 	var inspected struct {
 		NetworkSettings struct {
@@ -156,6 +177,43 @@ func (worker *Worker) createJobNetwork(ctx context.Context, jobID string) (*engi
 	}
 	network.proxyURL = "http://" + proxyEndpoint.IPAddress + ":3128"
 	return network, nil
+}
+
+func removeExistingJobNetwork(ctx context.Context, client *engineHTTPClient, name string) error {
+	var existing struct {
+		ID string `json:"Id"`
+	}
+	if err := client.get(ctx, "/networks/"+url.PathEscape(name), &existing); err != nil {
+		if isEngineNotFound(err) {
+			return nil
+		}
+		return err
+	}
+	if existing.ID == "" {
+		return errors.New("Docker returned no existing job network ID")
+	}
+	return (&engineNetwork{client: client, networkID: existing.ID, networkName: name}).Close(ctx)
+}
+
+func (client *engineHTTPClient) pullImage(ctx context.Context, image string) error {
+	requestURL := client.baseURL + "/images/create?fromImage=" + url.QueryEscape(image)
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, nil)
+	if err != nil {
+		return err
+	}
+	response, err := client.client.Do(request)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		message, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
+		return engineHTTPError{status: response.StatusCode, message: string(message)}
+	}
+	if _, err := io.Copy(io.Discard, response.Body); err != nil {
+		return fmt.Errorf("read Docker image pull response: %w", err)
+	}
+	return nil
 }
 
 type engineHTTPClient struct {
@@ -265,6 +323,11 @@ func (err engineHTTPError) Error() string {
 func isEngineNotFound(err error) bool {
 	var engineErr engineHTTPError
 	return errors.As(err, &engineErr) && engineErr.status == http.StatusNotFound
+}
+
+func isEngineConflict(err error) bool {
+	var engineErr engineHTTPError
+	return errors.As(err, &engineErr) && engineErr.status == http.StatusConflict
 }
 
 func cleanupJobNetwork(network *engineNetwork) {

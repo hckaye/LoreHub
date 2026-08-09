@@ -117,7 +117,7 @@ services:
       LOREHUB_ENV: ${LOREHUB_ENV:-development}
       LOREHUB_DEV_ALLOW_LORE_IDENTITY_FALLBACK: ${LOREHUB_DEV_ALLOW_LORE_IDENTITY_FALLBACK:-false}
       LOREHUB_DEV_LORE_IDENTITY: ${LOREHUB_DEV_LORE_IDENTITY:-}
-      LOREHUB_LORE_CREDENTIAL_DIR: ${LOREHUB_LORE_CREDENTIAL_DIR:-}
+      LOREHUB_RUNNER_SUBJECT: ${LOREHUB_RUNNER_SUBJECT:-lorehub-runner}
       LOREHUB_RUNNER_PROXY_URL: http://172.28.244.10:3128
       LOREHUB_RUNNER_ENGINE_PROXY_URL: http://172.28.241.10:3128
       HTTP_PROXY: http://172.28.244.10:3128
@@ -244,7 +244,7 @@ services:
 
   runner-canary:
     profiles: ["runner-smoke"]
-    image: python:3.13-alpine
+    image: python:3.13.7-alpine3.21
     command: ["python", "-m", "http.server", "8080", "--bind", "0.0.0.0"]
     ports:
       - "${RUNNER_CANARY_HOST_PORT:-41337}:8080"

@@ -4,136 +4,143 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"os"
-	"path/filepath"
 	"strings"
+	"time"
 )
 
 const ReadLoreScope = "read"
 
-type CredentialSubject struct {
+type CredentialPrincipal struct {
+	Kind    string
+	Subject string
+}
+
+type CredentialRequest struct {
+	Principal    CredentialPrincipal
 	RepositoryID string
 	LoreURL      string
+	Scope        string
 }
 
-type CredentialProvider interface {
-	Read(ctx context.Context, subject CredentialSubject, scope string) (string, error)
+type LoreCredential struct {
+	RepositoryID string
+	Scope        string
+	Token        string
+	AuthURL      string
+	Identity     string
+	ExpiresAt    time.Time
 }
 
-type developmentCredentialProvider struct {
+type CredentialIssuer interface {
+	Issue(ctx context.Context, request CredentialRequest) (LoreCredential, error)
+}
+
+type developmentCredentialIssuer struct {
 	identity string
 }
 
-func NewDevelopmentCredentialProvider(identity string) CredentialProvider {
-	return developmentCredentialProvider{identity: identity}
+// NewDevelopmentCredentialIssuer is intentionally an in-memory local/test adapter.
+func NewDevelopmentCredentialIssuer(identity string) CredentialIssuer {
+	return developmentCredentialIssuer{identity: identity}
 }
 
-func (provider developmentCredentialProvider) Read(
+func (issuer developmentCredentialIssuer) Issue(
 	ctx context.Context,
-	subject CredentialSubject,
-	scope string,
-) (string, error) {
-	if err := validateCredentialRequest(ctx, subject, scope); err != nil {
-		return "", err
+	request CredentialRequest,
+) (LoreCredential, error) {
+	if err := validateCredentialRequest(ctx, request); err != nil {
+		return LoreCredential{}, err
 	}
-	if strings.TrimSpace(provider.identity) == "" {
-		return "", errors.New("development Lore identity is empty")
+	if strings.TrimSpace(issuer.identity) == "" {
+		return LoreCredential{}, errors.New("development Lore identity is empty")
 	}
-	return provider.identity, nil
+	return LoreCredential{
+		RepositoryID: request.RepositoryID,
+		Scope:        request.Scope,
+		Identity:     issuer.identity,
+		ExpiresAt:    time.Now().UTC().Add(5 * time.Minute),
+	}, nil
 }
 
-type fileCredentialProvider struct {
-	root string
+type failClosedCredentialIssuer struct{}
+
+func NewFailClosedCredentialIssuer() CredentialIssuer {
+	return failClosedCredentialIssuer{}
 }
 
-func NewFileCredentialProvider(root string) (CredentialProvider, error) {
-	if strings.TrimSpace(root) == "" {
-		return nil, errors.New("Lore credential directory is required")
-	}
-	absolute, err := filepath.Abs(root)
-	if err != nil {
-		return nil, fmt.Errorf("resolve Lore credential directory: %w", err)
-	}
-	info, err := os.Stat(absolute)
-	if err != nil {
-		return nil, fmt.Errorf("inspect Lore credential directory: %w", err)
-	}
-	if !info.IsDir() {
-		return nil, errors.New("Lore credential directory is not a directory")
-	}
-	return fileCredentialProvider{root: absolute}, nil
+func (failClosedCredentialIssuer) Issue(context.Context, CredentialRequest) (LoreCredential, error) {
+	return LoreCredential{}, errors.New("repository-scoped Lore credential issuer is not configured")
 }
 
-func (provider fileCredentialProvider) Read(
+func issueLoreCredential(
 	ctx context.Context,
-	subject CredentialSubject,
-	scope string,
-) (string, error) {
-	if err := validateCredentialRequest(ctx, subject, scope); err != nil {
-		return "", err
+	issuer CredentialIssuer,
+	principal CredentialPrincipal,
+	repositoryID string,
+	loreURL string,
+) (LoreCredential, error) {
+	if issuer == nil {
+		return LoreCredential{}, errors.New("repository-scoped Lore credential issuer is not configured")
 	}
-	if strings.ContainsAny(subject.RepositoryID, `/\\`) || subject.RepositoryID == "." || subject.RepositoryID == ".." {
-		return "", errors.New("repository credential partition is invalid")
+	request := CredentialRequest{
+		Principal:    principal,
+		RepositoryID: repositoryID,
+		LoreURL:      loreURL,
+		Scope:        ReadLoreScope,
 	}
-	path := filepath.Join(provider.root, subject.RepositoryID, scope)
-	if err := rejectCredentialSymlinks(provider.root, path); err != nil {
-		return "", err
+	if err := validateCredentialRequest(ctx, request); err != nil {
+		return LoreCredential{}, err
 	}
-	file, err := os.Open(path)
+	credential, err := issuer.Issue(ctx, request)
 	if err != nil {
-		return "", fmt.Errorf("read repository Lore credential: %w", err)
+		return LoreCredential{}, fmt.Errorf("issue repository Lore credential: %w", err)
 	}
-	defer func() { _ = file.Close() }()
-	contents, err := io.ReadAll(io.LimitReader(file, 4097))
-	if err != nil {
-		return "", fmt.Errorf("read repository Lore credential: %w", err)
+	if credential.RepositoryID != request.RepositoryID || credential.Scope != request.Scope {
+		return LoreCredential{}, errors.New("Lore credential does not match the requested resource or scope")
 	}
-	if len(contents) > 4096 {
-		return "", errors.New("repository Lore credential exceeds 4 KiB")
+	now := time.Now().UTC()
+	if credential.ExpiresAt.IsZero() || !credential.ExpiresAt.After(now) {
+		return LoreCredential{}, errors.New("Lore credential is expired or has no expiry")
 	}
-	identity := strings.TrimSpace(string(contents))
-	if identity == "" {
-		return "", errors.New("repository Lore credential is empty")
+	if credential.ExpiresAt.After(now.Add(15 * time.Minute)) {
+		return LoreCredential{}, errors.New("Lore credential lifetime exceeds the short-lived limit")
 	}
-	return identity, nil
+	if strings.TrimSpace(credential.Token) == "" && strings.TrimSpace(credential.AuthURL) == "" &&
+		strings.TrimSpace(credential.Identity) == "" {
+		return LoreCredential{}, errors.New("Lore credential contains no usable authentication material")
+	}
+	return credential, nil
 }
 
-func validateCredentialRequest(ctx context.Context, subject CredentialSubject, scope string) error {
+func issueLoreIdentity(
+	ctx context.Context,
+	issuer CredentialIssuer,
+	principal CredentialPrincipal,
+	repositoryID string,
+	loreURL string,
+) (string, error) {
+	credential, err := issueLoreCredential(ctx, issuer, principal, repositoryID, loreURL)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(credential.Identity) == "" {
+		return "", errors.New("the configured Lore client requires an identity credential")
+	}
+	return credential.Identity, nil
+}
+
+func validateCredentialRequest(ctx context.Context, request CredentialRequest) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if subject.RepositoryID == "" || subject.LoreURL == "" {
+	if request.Principal.Kind == "" || request.Principal.Subject == "" {
+		return errors.New("credential principal kind and subject are required")
+	}
+	if request.RepositoryID == "" || request.LoreURL == "" {
 		return errors.New("repository partition and Lore URL are required for a credential request")
 	}
-	if scope != ReadLoreScope {
-		return fmt.Errorf("Lore credential scope %q is not supported", scope)
-	}
-	return nil
-}
-
-func rejectCredentialSymlinks(root string, target string) error {
-	rootInfo, err := os.Lstat(root)
-	if err != nil {
-		return fmt.Errorf("inspect Lore credential directory: %w", err)
-	}
-	if rootInfo.Mode()&os.ModeSymlink != 0 || !rootInfo.IsDir() {
-		return errors.New("Lore credential directory is not a real directory")
-	}
-	relative, err := filepath.Rel(root, target)
-	if err != nil || relative == "." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-		return errors.New("Lore credential path escapes its partition")
-	}
-	current := root
-	for _, part := range strings.Split(relative, string(filepath.Separator)) {
-		current = filepath.Join(current, part)
-		info, statErr := os.Lstat(current)
-		if statErr != nil {
-			return fmt.Errorf("inspect Lore credential path: %w", statErr)
-		}
-		if info.Mode()&os.ModeSymlink != 0 {
-			return errors.New("Lore credential path contains a symlink")
-		}
+	if request.Scope != ReadLoreScope {
+		return fmt.Errorf("Lore credential scope %q is not supported", request.Scope)
 	}
 	return nil
 }

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestAdaptWorkflowsUsesLoreWorkspaceCheckout(t *testing.T) {
@@ -85,25 +86,59 @@ jobs:
 	if !ignored.MatchesPush("main") || ignored.MatchesPush("release/paused") {
 		t.Fatalf("branches-ignore did not match as expected: %#v", ignored.Push)
 	}
+	ordered := WorkflowDefinition{
+		Enabled: true,
+		State:   "active",
+		Push:    &PushTrigger{Branches: []string{"release/**", "!release/paused", "release/reopened"}},
+	}
+	if !ordered.MatchesPush("release/v1") || ordered.MatchesPush("release/paused") ||
+		!ordered.MatchesPush("release/reopened") {
+		t.Fatalf("ordered branch negation did not match as expected: %#v", ordered.Push)
+	}
 }
 
-func TestDiscoverWorkflowsRecordsUnsupportedEvent(t *testing.T) {
+func TestDiscoverWorkflowsAcceptsAllSupportedEvents(t *testing.T) {
 	workspace := t.TempDir()
 	workflowDirectory := filepath.Join(workspace, ".github", "workflows")
 	if err := os.MkdirAll(workflowDirectory, 0o750); err != nil {
 		t.Fatal(err)
 	}
-	contents := "name: Unsupported\non: pull_request\njobs:\n  test:\n    runs-on: ubuntu-latest\n"
-	if err := os.WriteFile(filepath.Join(workflowDirectory, "unsupported.yaml"), []byte(contents), 0o600); err != nil {
+	contents := `name: Supported events
+on:
+  push:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize]
+  schedule:
+    - cron: "*/15 * * * *"
+  repository_dispatch:
+    types: [refresh]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+`
+	if err := os.WriteFile(filepath.Join(workflowDirectory, "supported.yaml"), []byte(contents), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	workflows, err := DiscoverWorkflows(workspace)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(workflows) != 1 || workflows[0].State != "error" || workflows[0].Enabled ||
-		workflows[0].ErrorCode != "unsupported_trigger" {
-		t.Fatalf("unsupported event was not recorded: %#v", workflows)
+	if len(workflows) != 1 || !workflows[0].Enabled || workflows[0].State != "active" ||
+		workflows[0].PullRequest == nil || len(workflows[0].Schedules) != 1 ||
+		workflows[0].RepositoryDispatch == nil {
+		t.Fatalf("supported events were not recorded: %#v", workflows)
+	}
+	if !workflows[0].MatchesPullRequest("main", "opened") ||
+		workflows[0].MatchesPullRequest("feature", "opened") ||
+		!workflows[0].MatchesRepositoryDispatch("refresh") ||
+		workflows[0].MatchesRepositoryDispatch("other") {
+		t.Fatalf("supported event filters did not match: %#v", workflows[0])
+	}
+	if occurrence, ok := LastScheduleOccurrence("*/15 * * * *",
+		time.Date(2026, time.August, 9, 12, 31, 0, 0, time.UTC)); !ok || occurrence.Minute() != 30 {
+		t.Fatalf("schedule time was not calculated in UTC: %s, %t", occurrence, ok)
 	}
 }
 
@@ -144,7 +179,7 @@ func TestDiscoverWorkflowsRejectsContainerAndServiceOptions(t *testing.T) {
 		{
 			name: "container options",
 			definition: `    container:
-      image: node:22
+      image: node:24.18.0-bookworm-slim
       options: --privileged
 `,
 		},
@@ -159,7 +194,7 @@ func TestDiscoverWorkflowsRejectsContainerAndServiceOptions(t *testing.T) {
 		{
 			name: "container volumes",
 			definition: `    container:
-      image: node:22
+      image: node:24.18.0-bookworm-slim
       volumes: [/var/run/docker.sock:/var/run/docker.sock]
 `,
 		},
@@ -210,7 +245,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     container:
-      image: node:22
+      image: node:24.18.0-bookworm-slim
       options: ""
     services:
       database:

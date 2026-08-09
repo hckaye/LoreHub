@@ -57,7 +57,10 @@ const ja = {
   home: {
     eyebrow: "Loreのために設計",
     title: "すべてのLoreリポジトリの共同開発ホーム。",
-    intro: "リポジトリデータを複製せず、コードレビュー、Issue、アクセス方針、自動化をLoreのそばで管理します。",
+    intro: [
+      "リポジトリデータを複製せず、コードレビュー、Issue、",
+      "アクセス方針、自動化をLoreのそばで管理します。",
+    ].join(""),
     architecture: "アーキテクチャを読む",
     repositories: "公開リポジトリ",
     repositoriesDescription: "このLoreHubが誰でも閲覧できるようにしているリポジトリです。",
@@ -68,20 +71,42 @@ const ja = {
     searchEmptyTitle: "一致するリポジトリはありません",
     searchEmptyBody: "所有者名、リポジトリ名、説明を変えて試してください。",
     apiUnavailableTitle: "LoreHub APIを利用できません",
-    apiUnavailableBody: "リポジトリサービスに接続できません。サービスが復旧してから再読み込みしてください。",
+    /* prettier-ignore */
+    apiUnavailableBody: [
+      "リポジトリサービスに接続できません。サービスが復旧してから",
+      "再読み込みしてください。",
+    ].join(""),
     dashboardTitle: "ダッシュボード",
     dashboardGreeting: "おかえりなさい、{name}さん",
-    dashboardDescription: "このアカウントで利用できるLoreHubのリポジトリと活動を確認します。",
+    /* prettier-ignore */
+    dashboardDescription: [
+      "このアカウントで利用できるLoreHubのリポジトリと活動を",
+      "確認します。",
+    ].join(""),
     availablePublicRepositories: "利用可能な公開リポジトリ",
-    availablePublicRepositoriesDescription: "現在の公開検索APIから利用できる公開リポジトリです。",
+    /* prettier-ignore */
+    availablePublicRepositoriesDescription: [
+      "現在の公開検索APIから利用できる公開リポジトリです。",
+    ].join(""),
     availablePublicRepositoriesEmptyTitle: "表示できる公開リポジトリはありません",
-    availablePublicRepositoriesEmptyBody: "このLoreHubに登録された公開リポジトリがここに表示されます。",
+    /* prettier-ignore */
+    availablePublicRepositoriesEmptyBody: [
+      "このLoreHubに登録された公開リポジトリがここに表示されます。",
+    ].join(""),
     activityTitle: "活動",
     activityEmptyTitle: "活動記録はありません",
-    activityEmptyBody: "このアカウントの活動フィードはAPIで提供されていないため、推測した情報は表示していません。",
+    /* prettier-ignore */
+    activityEmptyBody: [
+      "このアカウントの活動フィードはAPIで提供されていないため、",
+      "推測した情報は表示していません。",
+    ].join(""),
     discoverTitle: "公開リポジトリを探す",
     discoverDescription: "このLoreHubが公開している実際のリポジトリ情報を閲覧します。",
-    publicDashboardNote: "非公開リポジトリや組織専用リポジトリは、APIが提供する場合だけ表示されます。",
+    /* prettier-ignore */
+    publicDashboardNote: [
+      "非公開リポジトリや組織専用リポジトリは、APIが提供する場合だけ",
+      "表示されます。",
+    ].join(""),
   },
   repository: {
     codeTitle: "コード",
@@ -99,8 +124,10 @@ const ja = {
     branchesDescription: "Loreから直接取得した現在のブランチ情報です。",
     noBranches: "Loreからブランチが返されませんでした。",
     noFileTree: "このAPIレスポンスにファイルツリーはありません",
-    fileTreeDescription:
-      "LoreHubではLoreを正本として扱います。リポジトリ情報からファイル一覧を作って表示することはありません。",
+    fileTreeDescription: [
+      "LoreHubではLoreを正本として扱います。リポジトリ情報からファイル一覧を",
+      "作って表示することはありません。",
+    ].join(""),
     issuesTitle: "オープンなIssue",
     issuesDescription: "このLoreHubで管理している作業です。",
     noIssues: "この表示条件のIssueはありません。",
@@ -118,7 +145,10 @@ const ja = {
     sourceTarget: "ソースから対象へ",
     lastUpdated: "最終更新",
     unavailable: "リポジトリ情報を一時的に取得できません。",
-    readOnlyNote: "このページはLoreHubが現在提供している情報だけを表示します。Loreやリポジトリ方針は変更しません。",
+    readOnlyNote: [
+      "このページはLoreHubが現在提供している情報だけを表示します。Loreや",
+      "リポジトリ方針は変更しません。",
+    ].join(""),
     navigationLabel: "リポジトリのナビゲーション",
   },
   issuesPage: {
@@ -132,7 +162,11 @@ const ja = {
   },
   pullRequestsPage: {
     title: "プルリクエスト",
-    description: "現在のリビジョンを確認しながら、Loreブランチ間の変更をレビューします。",
+    /* prettier-ignore */
+    description: [
+      "現在のリビジョンを確認しながら、Loreブランチ間の変更を",
+      "レビューします。",
+    ].join(""),
     filterLabel: "プルリクエストの状態",
     newPullRequest: "プルリクエストを作成",
     emptyTitle: "この表示条件のプルリクエストはありません",
@@ -141,12 +175,23 @@ const ja = {
   },
   actionsPage: {
     title: "Actions",
-    description: "Loreのブランチ更新に対して実行されたワークフロー互換の処理を確認します。",
-    runDetailDescription: "選択したワークフローの実行、ジョブの出力、保存されたアーティファクトを確認します。",
+    /* prettier-ignore */
+    description: [
+      "Loreのブランチ更新に対して実行されたワークフロー互換の処理を",
+      "確認します。",
+    ].join(""),
+    runDetailDescription: [
+      "選択したワークフローの実行、ジョブの出力、保存された",
+      "アーティファクトを確認します。",
+    ].join(""),
     noRunsTitle: "ワークフローの実行結果はまだありません",
     noRunsBody: "Loreのブランチ監視がワークフローを登録すると、ここに表示されます。",
     workflowsTitle: "ワークフロー",
-    workflowsDescription: "観測したLoreのリビジョンから見つかったワークフロー" + "ファイルです。",
+    /* prettier-ignore */
+    workflowsDescription: [
+      "観測したLoreのリビジョンから見つかったワークフロー",
+      "ファイルです。",
+    ].join(""),
     noWorkflows: "ワークフローファイルはまだ見つかっていません。",
     states: {
       active: "有効",
@@ -161,9 +206,17 @@ const ja = {
     dispatchButton: "ワークフローを実行",
     dispatchInvalid: "ワークフローを選択し、ブランチまたはrefを入力してください。",
     actionFailed: "Actionsのリクエストに失敗しました",
-    loginForMutation: "ワークフローを変更するには、書き込み権限のあるセッションでログインしてください。",
+    /* prettier-ignore */
+    loginForMutation: [
+      "ワークフローを変更するには、書き込み権限のあるセッションで",
+      "ログインしてください。",
+    ].join(""),
     runsTitle: "ワークフローの実行",
-    runsDescription: "実行元のワークフローファイルと正確なLoreリビジョンを" + "確認できます。",
+    /* prettier-ignore */
+    runsDescription: [
+      "実行元のワークフローファイルと正確なLoreリビジョンを",
+      "確認できます。",
+    ].join(""),
     cancelRun: "キャンセル",
     rerunRun: "再実行",
     backToActions: "Actionsに戻る",
@@ -174,7 +227,10 @@ const ja = {
     viewLog: "ログを見る",
     downloadArtifact: "ダウンロード",
     noArtifacts: "この実行で保存されたアーティファクトはありません。",
-    workflowNote: "Actionsはリポジトリのワークフローファイルと、このインストールで設定されたact互換runnerを使います。",
+    workflowNote: [
+      "Actionsはリポジトリのワークフローファイルと、このインストールで",
+      "設定されたact互換runnerを使います。",
+    ].join(""),
     runNumber: "実行 #{number}",
     statuses: {
       queued: "待機中",
@@ -200,7 +256,11 @@ const ja = {
     title: "セキュリティ",
     description: "このLoreリポジトリで利用できるセキュリティ情報を確認します。",
     emptyTitle: "セキュリティの検出結果はありません",
-    emptyBody: "このインストールでは、このリポジトリのアラートやスキャン結果を提供していません。",
+    /* prettier-ignore */
+    emptyBody: [
+      "このインストールでは、このリポジトリのアラートやスキャン結果を",
+      "提供していません。",
+    ].join(""),
     accessTitle: "リポジトリへのアクセス",
     accessBody: "現在のリポジトリ情報から確認できるアクセス属性は公開範囲だけです。",
   },
@@ -229,8 +289,10 @@ const ja = {
     loreUrl: "Lore URL",
     defaultBranch: "既定ブランチ",
     readOnlyTitle: "読み取り専用の設定",
-    readOnlyBody:
-      "現在のAPIはリポジトリ編集やメンバー管理を提供していないため、成功したように見える操作は表示していません。",
+    readOnlyBody: [
+      "現在のAPIはリポジトリ編集やメンバー管理を提供していないため、",
+      "成功したように見える操作は表示していません。",
+    ].join(""),
   },
   profile: {
     title: "プロフィール",
@@ -241,14 +303,22 @@ const ja = {
     email: "メールアドレス",
     locale: "言語",
     sessionTitle: "セッション",
-    sessionBody: "OAuthトークンはサーバーに留まり、ブラウザには画面に必要なセッション状態だけが渡されます。",
+    /* prettier-ignore */
+    sessionBody: [
+      "OAuthトークンはサーバーに留まり、ブラウザには画面に必要な",
+      "セッション状態だけが渡されます。",
+    ].join(""),
     active: "有効なセッション",
   },
   accountSettings: {
     title: "アカウント設定",
     description: "このLoreHubが利用できるアカウント情報を確認します。",
     identityTitle: "本人情報",
-    identityBody: "プロフィールの変更はIDプロバイダーが管理するため、ここでは仮の成功表示を行いません。",
+    /* prettier-ignore */
+    identityBody: [
+      "プロフィールの変更はIDプロバイダーが管理するため、ここでは",
+      "仮の成功表示を行いません。",
+    ].join(""),
     localeTitle: "表示言語",
     localeBody: "ヘッダーの言語切り替えからこのブラウザの表示言語を変更できます。",
   },
@@ -289,17 +359,26 @@ const ja = {
   },
   auth: {
     providerErrorTitle: "ログインを完了できませんでした",
-    providerErrorBody:
-      "IDプロバイダーからエラーが返りました。もう一度ログインするか、LoreHub管理者へ連絡してください。",
+    providerErrorBody: [
+      "IDプロバイダーからエラーが返りました。もう一度ログインするか、",
+      "LoreHub管理者へ連絡してください。",
+    ].join(""),
     sessionExpiredTitle: "セッションの有効期限が切れました",
     sessionExpiredBody: "保護された操作を続けるには、もう一度ログインしてください。",
     sessionUnavailableTitle: "認証を一時的に利用できません",
-    sessionUnavailableBody: "セッションサービスに接続できません。可能な場合は公開リポジトリを引き続き閲覧できます。",
+    sessionUnavailableBody: [
+      "セッションサービスに接続できません。可能な場合は公開リポジトリを",
+      "引き続き閲覧できます。",
+    ].join(""),
     requiredTitle: "ログインが必要です",
     requiredBody: "この操作にはLoreHubへのログインが必要です。",
     loginToContinue: "ログインして続ける",
     logoutFailed: "ログアウトを完了できませんでした。もう一度試してください。",
-    csrfMissing: "セッションからCSRFトークンを取得できませんでした。再読み込みして試してください。",
+    /* prettier-ignore */
+    csrfMissing: [
+      "セッションからCSRFトークンを取得できませんでした。再読み込みして",
+      "試してください。",
+    ].join(""),
     signupHint: "アカウント登録は設定済みのIDプロバイダーで行います。",
   },
   errors: {

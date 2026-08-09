@@ -72,7 +72,7 @@ func TestActionsLifecyclePostgres(t *testing.T) {
 		workflowDefinition(".github/workflows/manual.yml", "Manual", nil, true),
 		{
 			Path: ".github/workflows/broken.yml", Name: "Broken", Enabled: false, State: "error",
-			ErrorCode: "unsupported_trigger", ErrorMessage: "pull_request is not supported",
+			ErrorCode: "unsupported_trigger", ErrorMessage: "workflow_run is not supported",
 			TriggerConfig: json.RawMessage(`{}`),
 		},
 	}
@@ -303,6 +303,12 @@ func TestActionsLifecyclePostgres(t *testing.T) {
 		t.Fatalf("public job log was not readable anonymously: %v", err)
 	}
 	_ = publicLog.File.Close()
+	publicArtifact, err := store.OpenActionArtifact(ctx, fixture.owner, fixture.repositorySlug,
+		detail.Artifacts[0].ID, "")
+	if err != nil {
+		t.Fatalf("public artifact was not readable anonymously: %v", err)
+	}
+	_ = publicArtifact.File.Close()
 	if _, err := pool.Exec(ctx,
 		"UPDATE repositories SET visibility = 'private' WHERE id = $1", fixture.repositoryID); err != nil {
 		t.Fatal(err)
@@ -370,7 +376,7 @@ func TestFeatureBranchCannotChangeActionsCatalogPostgres(t *testing.T) {
 	featureAdded := workflowDefinition(".github/workflows/feature.yml", "Feature", []string{"feature"}, false)
 	featureInvalid := WorkflowDefinition{
 		Path: ".github/workflows/invalid.yml", Name: "Invalid", Enabled: false, State: "error",
-		ErrorCode: "unsupported_trigger", ErrorMessage: "pull_request is not supported",
+		ErrorCode: "unsupported_trigger", ErrorMessage: "workflow_run is not supported",
 		TriggerConfig: json.RawMessage(`{}`),
 	}
 	featureCanonical := workflowDefinition(".github/workflows/checks.yml", "Feature Checks", []string{"feature"}, true)
@@ -424,6 +430,20 @@ func TestFeatureBranchCannotChangeActionsCatalogPostgres(t *testing.T) {
 	if revisionRunCount != 2 {
 		t.Fatalf("feature runs did not retain exact workflow revisions: %d", revisionRunCount)
 	}
+	var featureCanonicalID, featureRevisionID *string
+	if err := pool.QueryRow(ctx, `
+		SELECT workflow_id::text, workflow_revision_id::text
+		FROM ci_runs
+		WHERE repository_id = $1 AND branch = 'feature'
+		ORDER BY run_number
+		LIMIT 1
+	`, fixture.repositoryID).Scan(&featureCanonicalID, &featureRevisionID); err != nil {
+		t.Fatal(err)
+	}
+	if featureCanonicalID != nil || featureRevisionID == nil {
+		t.Fatalf("feature run linked to the canonical catalog: workflow=%v revision=%v",
+			featureCanonicalID, featureRevisionID)
+	}
 	access, err := store.RepositoryForActions(ctx, fixture.owner, fixture.repositorySlug, fixture.userID)
 	if err != nil {
 		t.Fatal(err)
@@ -432,9 +452,24 @@ func TestFeatureBranchCannotChangeActionsCatalogPostgres(t *testing.T) {
 		fixture.userID); err != ErrActionNotFound {
 		t.Fatalf("feature-only workflow was dispatchable from catalog: %v", err)
 	}
+	var featureInvalidState string
+	if err := pool.QueryRow(ctx, `
+		SELECT state FROM ci_workflow_revisions
+		WHERE repository_id = $1 AND revision = 'feature-1' AND path = $2
+	`, fixture.repositoryID, featureInvalid.Path).Scan(&featureInvalidState); err != nil {
+		t.Fatal(err)
+	}
+	if featureInvalidState != "error" {
+		t.Fatalf("invalid feature workflow was not retained as an error: %q", featureInvalidState)
+	}
+	defaultInvalid := WorkflowDefinition{
+		Path: ".github/workflows/default-invalid.yml", Name: "Default invalid", Enabled: false, State: "error",
+		ErrorCode: "unsupported_trigger", ErrorMessage: "workflow_run is not supported",
+		TriggerConfig: json.RawMessage(`{}`),
+	}
 	if _, err := store.ObserveBranch(ctx, repository, ObservedBranch{
 		ID: "main", Name: "main", LatestRevision: "default-2",
-	}, canonical); err != nil {
+	}, canonical, defaultInvalid); err != nil {
 		t.Fatal(err)
 	}
 	var disabled bool
@@ -446,6 +481,110 @@ func TestFeatureBranchCannotChangeActionsCatalogPostgres(t *testing.T) {
 	}
 	if !disabled {
 		t.Fatal("default branch removal did not disable canonical workflow")
+	}
+	var defaultInvalidState string
+	if err := pool.QueryRow(ctx, `
+		SELECT state FROM ci_workflows
+		WHERE repository_id = $1 AND path = $2
+	`, fixture.repositoryID, defaultInvalid.Path).Scan(&defaultInvalidState); err != nil {
+		t.Fatal(err)
+	}
+	if defaultInvalidState != "error" {
+		t.Fatalf("invalid default workflow was not retained as an error: %q", defaultInvalidState)
+	}
+}
+
+func TestActionsSupportedEventsAndScheduleDeduplicationPostgres(t *testing.T) {
+	databaseURL := os.Getenv("LOREHUB_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("LOREHUB_TEST_DATABASE_URL is not configured")
+	}
+	ctx := context.Background()
+	pool, err := database.Open(ctx, databaseURL, 10*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if err := database.Migrate(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	fixture := newActionsFixture(t, pool)
+	defer fixture.cleanup(t)
+	store := NewStore(pool)
+	repository := Repository{
+		ID: fixture.repositoryID, Owner: fixture.owner, Slug: fixture.repositorySlug,
+		LoreURL: "lore://fixture/repository", DefaultBranch: "main",
+	}
+	scheduled := workflowWithTriggerConfig(
+		".github/workflows/scheduled.yml", "Scheduled", map[string]any{
+			"schedule": []ScheduleTrigger{{Cron: "*/15 * * * *"}},
+		},
+	)
+	dispatch := workflowWithTriggerConfig(
+		".github/workflows/dispatch.yml", "Dispatch", map[string]any{
+			"repository_dispatch": &RepositoryDispatchTrigger{Types: []string{"refresh"}},
+		},
+	)
+	pullRequest := workflowWithTriggerConfig(
+		".github/workflows/pull-request.yml", "Pull request", map[string]any{
+			"pull_request": &PullRequestTrigger{Branches: []string{"main"}, Types: []string{"opened"}},
+		},
+	)
+	if queued, err := store.ObserveBranch(ctx, repository, ObservedBranch{
+		ID: "main", Name: "main", LatestRevision: "revision-main",
+	}, scheduled, dispatch, pullRequest); err != nil {
+		t.Fatal(err)
+	} else if queued {
+		t.Fatal("initial event catalog observation invented a push")
+	}
+	now := time.Date(2026, time.August, 9, 12, 31, 0, 0, time.UTC)
+	runs, err := store.EnqueueScheduledRuns(ctx, repository, "revision-main", now)
+	if err != nil || len(runs) != 1 || runs[0].EventName != "schedule" {
+		t.Fatalf("schedule was not enqueued: %#v, %v", runs, err)
+	}
+	if duplicate, err := store.EnqueueScheduledRuns(ctx, repository, "revision-main", now); err != nil {
+		t.Fatal(err)
+	} else if len(duplicate) != 0 {
+		t.Fatalf("schedule occurrence was duplicated: %#v", duplicate)
+	}
+	access, err := store.RepositoryForActions(ctx, fixture.owner, fixture.repositorySlug, fixture.userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runs, err = store.DispatchRepositoryEvent(ctx, access, RepositoryDispatchEvent{
+		EventType: "refresh", Branch: "main", Revision: "revision-dispatch",
+		ClientPayload: json.RawMessage(`{"source":"test"}`),
+	}, fixture.userID)
+	if err != nil || len(runs) != 1 || runs[0].EventName != "repository_dispatch" {
+		t.Fatalf("repository_dispatch was not enqueued: %#v, %v", runs, err)
+	}
+	var dispatchType, dispatchSource string
+	if err := pool.QueryRow(ctx, `
+		SELECT event_payload->>'event_type', event_payload->'client_payload'->>'source'
+		FROM ci_runs WHERE repository_id = $1 AND event_name = 'repository_dispatch'
+	`, fixture.repositoryID).Scan(&dispatchType, &dispatchSource); err != nil {
+		t.Fatal(err)
+	}
+	if dispatchType != "refresh" || dispatchSource != "test" {
+		t.Fatalf("repository dispatch event fields were not retained: %q %q", dispatchType, dispatchSource)
+	}
+	runs, err = store.EnqueuePullRequest(ctx, access, PullRequestEvent{
+		Action: "opened", Number: 7, SourceBranch: "feature", TargetBranch: "main",
+		SourceRevision: "revision-source", TargetRevision: "revision-target",
+	}, fixture.userID)
+	if err != nil || len(runs) != 1 || runs[0].EventName != "pull_request" ||
+		runs[0].Revision != "revision-source" || runs[0].Branch != "main" {
+		t.Fatalf("pull_request was not enqueued with exact revisions: %#v, %v", runs, err)
+	}
+	var sourceRevision, targetRevision string
+	if err := pool.QueryRow(ctx, `
+		SELECT event_payload->'pull_request'->'head'->>'sha', event_payload->'pull_request'->'base'->>'sha'
+		FROM ci_runs WHERE repository_id = $1 AND event_name = 'pull_request'
+	`, fixture.repositoryID).Scan(&sourceRevision, &targetRevision); err != nil {
+		t.Fatal(err)
+	}
+	if sourceRevision != "revision-source" || targetRevision != "revision-target" {
+		t.Fatalf("pull request source and target revisions were not retained: %q %q", sourceRevision, targetRevision)
 	}
 }
 
@@ -469,33 +608,42 @@ func TestActionsPermissionMatrixPostgres(t *testing.T) {
 	readUser := uuid.NewString()
 	writeUser := uuid.NewString()
 	teamUser := uuid.NewString()
+	maintainUser := uuid.NewString()
 	orgMember := uuid.NewString()
 	suspendedUser := uuid.NewString()
+	inactiveUser := uuid.NewString()
 	inactiveRepositoryUser := uuid.NewString()
 	inactiveTeamUser := uuid.NewString()
 	inactiveOrgUser := uuid.NewString()
+	creatorOnlyUser := uuid.NewString()
 	for _, userID := range []string{
-		readUser, writeUser, teamUser, orgMember, suspendedUser,
-		inactiveRepositoryUser, inactiveTeamUser, inactiveOrgUser,
+		readUser, writeUser, teamUser, maintainUser, orgMember, suspendedUser, inactiveUser,
+		inactiveRepositoryUser, inactiveTeamUser, inactiveOrgUser, creatorOnlyUser,
 	} {
+		status := "active"
+		if userID == suspendedUser {
+			status = "suspended"
+		} else if userID == inactiveUser {
+			status = "inactive"
+		}
 		_, err := pool.Exec(ctx, `
 			INSERT INTO users (id, username, display_name, status)
 			VALUES ($1, $2, 'Actions Matrix', $3)
-		`, userID, "matrix-"+strings.ToLower(uuid.NewString()[:8]),
-			map[bool]string{true: "suspended", false: "active"}[userID == suspendedUser])
+		`, userID, "matrix-"+strings.ToLower(uuid.NewString()[:8]), status)
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
 	defer func() {
 		_, _ = pool.Exec(ctx, `DELETE FROM users WHERE id = ANY($1::uuid[])`,
-			[]string{readUser, writeUser, teamUser, orgMember, suspendedUser,
-				inactiveRepositoryUser, inactiveTeamUser, inactiveOrgUser})
+			[]string{readUser, writeUser, teamUser, orgMember, suspendedUser, inactiveUser,
+				inactiveRepositoryUser, inactiveTeamUser, inactiveOrgUser, maintainUser, creatorOnlyUser})
 	}()
 	if _, err := pool.Exec(ctx, `
 		INSERT INTO repository_memberships (repository_id, user_id, role) VALUES
-		($1, $2, 'read'), ($1, $3, 'write'), ($1, $4, 'admin'), ($1, $5, 'read')
-	`, fixture.repositoryID, readUser, writeUser, suspendedUser, inactiveRepositoryUser); err != nil {
+		($1, $2, 'read'), ($1, $3, 'write'), ($1, $4, 'admin'), ($1, $5, 'read'),
+		($1, $6, 'maintain')
+	`, fixture.repositoryID, readUser, writeUser, suspendedUser, inactiveRepositoryUser, maintainUser); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(ctx, `
@@ -505,8 +653,10 @@ func TestActionsPermissionMatrixPostgres(t *testing.T) {
 	}
 	if _, err := pool.Exec(ctx, `
 		INSERT INTO organization_memberships (organization_id, user_id, role)
-		VALUES ($1, $2, 'maintainer'), ($1, $3, 'member'), ($1, $4, 'member'), ($1, $5, 'member')
-	`, fixture.organizationID, orgMember, teamUser, inactiveTeamUser, inactiveOrgUser); err != nil {
+		VALUES ($1, $2, 'maintainer'), ($1, $3, 'member'), ($1, $4, 'member'), ($1, $5, 'member'),
+		       ($1, $6, 'member'), ($1, $7, 'member'), ($1, $8, 'member')
+	`, fixture.organizationID, orgMember, teamUser, inactiveTeamUser, inactiveOrgUser,
+		readUser, writeUser, maintainUser); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(ctx, `
@@ -516,8 +666,9 @@ func TestActionsPermissionMatrixPostgres(t *testing.T) {
 	}
 	teamID := uuid.NewString()
 	if _, err := pool.Exec(ctx, `
-		INSERT INTO teams (id, organization_id, slug, display_name) VALUES ($1, $2, 'actions-team', 'Actions Team')
-	`, teamID, fixture.organizationID); err != nil {
+		INSERT INTO teams (id, organization_id, slug, display_name, created_by)
+		VALUES ($1, $2, 'actions-team', 'Actions Team', $3)
+	`, teamID, fixture.organizationID, fixture.userID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(ctx, `
@@ -532,8 +683,9 @@ func TestActionsPermissionMatrixPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(ctx, `
-		INSERT INTO team_repositories (team_id, repository_id, role) VALUES ($1, $2, 'write')
-	`, teamID, fixture.repositoryID); err != nil {
+		INSERT INTO team_repository_roles (team_id, repository_id, role, created_by)
+		VALUES ($1, $2, 'maintain', $3)
+	`, teamID, fixture.repositoryID, fixture.userID); err != nil {
 		t.Fatal(err)
 	}
 	privateCases := []struct {
@@ -547,9 +699,11 @@ func TestActionsPermissionMatrixPostgres(t *testing.T) {
 		{name: "outsider private", actorID: uuid.NewString(), notFound: true},
 		{name: "direct read", actorID: readUser, read: true},
 		{name: "direct write", actorID: writeUser, read: true, write: true},
+		{name: "direct maintain", actorID: maintainUser, read: true, write: true},
 		{name: "team write", actorID: teamUser, read: true, write: true},
 		{name: "active org member private", actorID: orgMember, notFound: true},
 		{name: "suspended direct member", actorID: suspendedUser, notFound: true},
+		{name: "inactive user", actorID: inactiveUser, notFound: true},
 		{name: "inactive repository membership", actorID: inactiveRepositoryUser, notFound: true},
 		{name: "inactive team membership", actorID: inactiveTeamUser, notFound: true},
 		{name: "inactive organization membership", actorID: inactiveOrgUser, notFound: true},
@@ -566,6 +720,31 @@ func TestActionsPermissionMatrixPostgres(t *testing.T) {
 		if accessErr != nil || access.CanRead != testCase.read || access.CanWrite != testCase.write {
 			t.Fatalf("%s: access=%#v error=%v", testCase.name, access, accessErr)
 		}
+	}
+	if _, err := pool.Exec(ctx, `
+		UPDATE organizations SET created_by = $2 WHERE id = $1
+	`, fixture.organizationID, creatorOnlyUser); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `
+		UPDATE repositories SET created_by = $2 WHERE id = $1
+	`, fixture.repositoryID, creatorOnlyUser); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RepositoryForActions(ctx, fixture.owner, fixture.repositorySlug, creatorOnlyUser); !errors.Is(
+		err, ErrActionNotFound,
+	) {
+		t.Fatalf("organization/repository creator received permanent Actions access: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `
+		UPDATE organizations SET created_by = $2 WHERE id = $1
+	`, fixture.organizationID, fixture.userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `
+		UPDATE repositories SET created_by = $2 WHERE id = $1
+	`, fixture.repositoryID, fixture.userID); err != nil {
+		t.Fatal(err)
 	}
 	internalSlug := "internal-" + strings.ToLower(uuid.NewString()[:8])
 	internalID := uuid.NewString()
@@ -601,6 +780,14 @@ func TestActionsPermissionMatrixPostgres(t *testing.T) {
 	access, err = store.RepositoryForActions(ctx, fixture.owner, publicSlug, "")
 	if err != nil || !access.CanRead || access.CanWrite {
 		t.Fatalf("anonymous public access was wrong: %#v, %v", access, err)
+	}
+	_, err = store.RepositoryForActions(ctx, fixture.owner, publicSlug, suspendedUser)
+	if !errors.Is(err, ErrActionNotFound) {
+		t.Fatalf("suspended user fell back to anonymous public access: %v", err)
+	}
+	_, err = store.RepositoryForActions(ctx, fixture.owner, publicSlug, inactiveUser)
+	if !errors.Is(err, ErrActionNotFound) {
+		t.Fatalf("inactive user fell back to anonymous public access: %v", err)
 	}
 }
 
@@ -711,6 +898,23 @@ func workflowDefinition(path string, name string, branches []string, dispatch bo
 		Path: path, Name: name, Enabled: true, State: "active", Push: triggerFromBranches(branches),
 		WorkflowDispatch: dispatch, TriggerConfig: encoded,
 	}
+}
+
+func workflowWithTriggerConfig(path string, name string, config map[string]any) WorkflowDefinition {
+	encoded, _ := json.Marshal(config)
+	definition := WorkflowDefinition{
+		Path: path, Name: name, Enabled: true, State: "active", TriggerConfig: encoded,
+	}
+	if value, ok := config["pull_request"].(*PullRequestTrigger); ok {
+		definition.PullRequest = value
+	}
+	if value, ok := config["repository_dispatch"].(*RepositoryDispatchTrigger); ok {
+		definition.RepositoryDispatch = value
+	}
+	if value, ok := config["schedule"].([]ScheduleTrigger); ok {
+		definition.Schedules = value
+	}
+	return definition
 }
 
 func triggerFromBranches(branches []string) *PushTrigger {

@@ -139,81 +139,76 @@ func (store *Store) RepositoryForActions(
 ) (RepositoryAccess, error) {
 	if actorID != "" {
 		if _, err := uuid.Parse(actorID); err != nil {
-			actorID = ""
+			return RepositoryAccess{}, ErrActionNotFound
 		}
 	}
 	var repository RepositoryAccess
 	err := store.pool.QueryRow(ctx, `
 		SELECT r.id, r.organization_id, o.slug, r.slug, r.lore_url, r.default_branch, r.visibility,
-		       r.visibility = 'public'
-		       OR EXISTS (
-		           SELECT 1
-		           FROM users u
-		           JOIN repository_memberships rm ON rm.user_id = u.id
-		           WHERE u.id = NULLIF($3, '')::uuid AND u.status = 'active'
-		             AND rm.repository_id = r.id AND rm.active
-		       )
-		       OR EXISTS (
-		           SELECT 1
-		           FROM users u
-		           JOIN organization_memberships om ON om.user_id = u.id
-		           WHERE u.id = NULLIF($3, '')::uuid AND u.status = 'active'
-		             AND om.organization_id = r.organization_id AND om.active
-		             AND r.visibility = 'internal'
-		       )
-		       OR EXISTS (
-		           SELECT 1
-		           FROM users u
-		           JOIN teams t ON t.organization_id = r.organization_id AND t.active
-		           JOIN team_memberships tm ON tm.team_id = t.id AND tm.user_id = u.id AND tm.active
-		           JOIN team_repositories tr ON tr.team_id = t.id AND tr.repository_id = r.id AND tr.active
-		           JOIN organization_memberships om
-		             ON om.organization_id = r.organization_id AND om.user_id = u.id AND om.active
-		           WHERE u.id = NULLIF($3, '')::uuid AND u.status = 'active'
-		       )
-		       OR EXISTS (
+		       ($3 = '' AND r.visibility = 'public')
+		       OR ($3 <> '' AND EXISTS (
 		           SELECT 1
 		           FROM users u
 		           WHERE u.id = NULLIF($3, '')::uuid AND u.status = 'active'
-		             AND (r.created_by = u.id OR o.created_by = u.id)
-		       )
-		       OR EXISTS (
+		       ) AND (
+		           r.visibility = 'public'
+		           OR EXISTS (
+		               SELECT 1
+		               FROM organization_memberships om
+		               WHERE om.organization_id = r.organization_id
+		                 AND om.user_id = NULLIF($3, '')::uuid AND om.active
+		                 AND r.visibility = 'internal'
+		           )
+		           OR EXISTS (
+		               SELECT 1
+		               FROM organization_memberships om
+		               WHERE om.organization_id = r.organization_id
+		                 AND om.user_id = NULLIF($3, '')::uuid AND om.active
+		                 AND r.visibility = 'private'
+		                 AND (
+		                     om.role = 'owner'
+		                     OR EXISTS (
+		                         SELECT 1
+		                         FROM repository_memberships rm
+		                         WHERE rm.repository_id = r.id AND rm.user_id = om.user_id AND rm.active
+		                     )
+		                     OR EXISTS (
+		                         SELECT 1
+	                         FROM teams t
+	                         JOIN team_memberships tm ON tm.team_id = t.id
+	                         JOIN team_repository_roles tr ON tr.team_id = t.id
+		                         WHERE t.organization_id = r.organization_id AND t.active
+		                           AND tm.user_id = om.user_id AND tm.active
+		                           AND tr.repository_id = r.id AND tr.active
+		                     )
+		                 )
+		           )
+		       )),
+		       $3 <> '' AND EXISTS (
 		           SELECT 1
 		           FROM users u
-		           JOIN organization_memberships om ON om.user_id = u.id
+		           JOIN organization_memberships om ON om.organization_id = r.organization_id
 		           WHERE u.id = NULLIF($3, '')::uuid AND u.status = 'active'
-		             AND om.organization_id = r.organization_id AND om.active AND om.role = 'owner'
-		       ),
-		       EXISTS (
-		           SELECT 1
-		           FROM users u
-		           WHERE u.id = NULLIF($3, '')::uuid AND u.status = 'active'
-		             AND (r.created_by = u.id OR o.created_by = u.id)
-		       )
-		       OR EXISTS (
-		           SELECT 1
-		           FROM users u
-		           JOIN repository_memberships rm ON rm.user_id = u.id
-		           WHERE u.id = NULLIF($3, '')::uuid AND u.status = 'active'
-		             AND rm.repository_id = r.id AND rm.active AND rm.role IN ('admin', 'write')
-		       )
-		       OR EXISTS (
-		           SELECT 1
-		           FROM users u
-		           JOIN organization_memberships om ON om.user_id = u.id
-		           WHERE u.id = NULLIF($3, '')::uuid AND u.status = 'active'
-		             AND om.organization_id = r.organization_id AND om.active AND om.role = 'owner'
-		       )
-	       OR EXISTS (
-	           SELECT 1
-	           FROM users u
-	           JOIN teams t ON t.organization_id = r.organization_id AND t.active
-	           JOIN team_memberships tm ON tm.team_id = t.id AND tm.user_id = u.id AND tm.active
-	           JOIN team_repositories tr ON tr.team_id = t.id AND tr.repository_id = r.id AND tr.active
-	           JOIN organization_memberships om
-	             ON om.organization_id = r.organization_id AND om.user_id = u.id AND om.active
-	           WHERE u.id = NULLIF($3, '')::uuid AND u.status = 'active'
-	             AND tr.role IN ('admin', 'write')
+		             AND om.user_id = u.id AND om.active
+		             AND (
+		                 om.role = 'owner'
+		                 OR EXISTS (
+		                     SELECT 1
+		                     FROM repository_memberships rm
+		                     WHERE rm.repository_id = r.id AND rm.user_id = u.id AND rm.active
+		                       AND rm.role IN ('admin', 'maintain', 'write')
+		                 )
+		                 OR EXISTS (
+		                     SELECT 1
+	                     FROM teams t
+	                     JOIN team_memberships tm ON tm.team_id = t.id
+	                     JOIN team_repository_roles tr ON tr.team_id = t.id
+		                     WHERE t.organization_id = r.organization_id AND t.active
+		                       AND tm.user_id = u.id AND tm.active
+		                       AND tr.repository_id = r.id AND tr.active
+		                       AND tr.role IN ('admin', 'maintain', 'write')
+		                 )
+		             )
 		       )
 		FROM repositories r
 		JOIN organizations o ON o.id = r.organization_id
@@ -690,6 +685,18 @@ func (store *Store) workflowByID(ctx context.Context, workflowID string) (Workfl
 
 func (store *Store) actionRunByID(ctx context.Context, runID string) (RunRecord, error) {
 	return scanActionRun(store.pool.QueryRow(ctx, actionRunQuery+` WHERE run.id = $1`, runID))
+}
+
+func (store *Store) actionRunsByIDs(ctx context.Context, runIDs []uuid.UUID) ([]RunRecord, error) {
+	runs := make([]RunRecord, 0, len(runIDs))
+	for _, runID := range runIDs {
+		run, err := store.actionRunByID(ctx, runID.String())
+		if err != nil {
+			return nil, fmt.Errorf("load Actions run %s: %w", runID, err)
+		}
+		runs = append(runs, run)
+	}
+	return runs, nil
 }
 
 func (store *Store) jobsForRun(ctx context.Context, runID string) ([]JobRecord, error) {

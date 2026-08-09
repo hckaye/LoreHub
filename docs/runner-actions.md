@@ -27,9 +27,12 @@ Networks are deliberately separate:
 - `runner-uplink` is the proxy's only uplink network.
 
 API and Web do not join `runner-control`. The engine does not join `runner-data`, and the runner has no uplink network.
-The engine pulls images through the proxy. Each job gets a disposable internal network. A small proxy gateway sidecar
-is attached to that internal network and to the engine's disposable bridge; the job sees only the sidecar's HTTP proxy
-port. The job itself has no default route. Job HTTP and HTTPS therefore pass through Squid.
+The engine pulls images through the proxy. Each job gets a disposable internal network. A small HAProxy gateway sidecar
+is attached to that internal network and the engine's disposable bridge; it listens only on the sidecar's HTTP proxy
+port and forwards to the outer Squid IP. The sidecar is a fixed HAProxy transit container, not a raw TCP forwarder;
+the job itself is never attached to the bridge and has no direct outside route. Internal service names are not injected.
+Job HTTP and HTTPS therefore pass through Squid.
+The disposable gateway uses the fixed `haproxy:3.2.4-alpine` image and does not provide a general raw TCP forwarder.
 
 Squid uses the canonical `ubuntu/squid:7.2-26.04_edge` tag. It permits safe HTTP/HTTPS ports and CONNECT to 443 only.
 Its destination ACL rejects loopback, RFC1918, link-local, CGNAT, documentation and test ranges, multicast/reserved
@@ -45,10 +48,11 @@ to verify that stronger layer.
 
 ## Lore credentials
 
-The runner and poller request the `read` scope from a `CredentialProvider` with both the repository partition and Lore
-URL. Production requires `LOREHUB_LORE_CREDENTIAL_DIR`; the file provider reads only
-`<repository-id>/read`, rejects symlinks and path escapes, and fails closed when the partition is absent. A development
-identity fallback is rejected outside development/local and requires both explicit opt-in and a non-empty identity.
+The runner and poller call a `CredentialIssuer` with a service subject, the exact repository partition, the Lore URL,
+and the `read` scope. The issuer returns a short-lived exact-resource `Token`, `AuthURL`, or `Identity`; the current
+Lore client consumes `Identity` while the contract preserves the other credential forms for the control plane.
+Production has no file or shared-identity fallback: the process fails closed until an issuer is injected. The only
+static identity adapter is an explicit development/local test fallback and is rejected in production.
 
 ## Workflow catalog and branches
 
@@ -63,12 +67,13 @@ workflow exists in the default-branch catalog.
 
 ## Resource and output limits
 
-The runner has a bounded job timeout and a renewable lease. It polls cancellation while `act` runs, sends a graceful
-termination signal, and force-stops after the grace period. A lost lease prevents completion publication. Workspaces,
-partial artifact trees, disposable job networks, proxy gateways, and `act --rm` containers are cleaned up.
+The runner has a hard 24-hour job timeout bound and a renewable lease. It polls cancellation while `act` runs, sends a
+graceful termination signal, and force-stops after the grace period. A lost lease prevents completion publication.
+Workspaces, partial artifact trees, disposable job networks, proxy gateways, and `act --rm` containers are cleaned up.
 
 Logs are capped by `LOREHUB_RUNNER_LOG_MAX_BYTES` (10 MiB by default). Artifacts are limited to 100 files, 100 MiB per
-file, and 500 MiB per job by default. Persistence rejects symlinks, special files, and paths outside the staging tree.
+file, and 500 MiB per job by default, with hard upper bounds. Persistence rejects symlinks, special files, and paths
+outside the staging tree.
 The complete staged tree is renamed into place only after all files pass validation. A persistence failure cannot claim
 artifact success.
 
@@ -77,8 +82,11 @@ artifact success.
 Public repositories expose workflow/run metadata and bounded job logs anonymously. Internal repositories require an
 active user with active organization membership. Private repositories require an active user with an active direct
 repository membership, an active organization team membership plus repository team permission, or an owner exception.
-Artifact downloads always require repository read permission. Dispatch, cancellation, and rerun require repository write
-permission. Browser session mutations require the finalized cookie CSRF check; bearer authentication remains compatible.
+Public repository artifacts are public and may be downloaded anonymously, like public logs. Internal and private logs
+and artifacts require active read permission. Dispatch, cancellation, and rerun require repository write permission. A
+rerun receives a new run number and stores `runAttempt` plus `rerunOf` so each execution remains independently
+addressable.
+Browser session mutations require the finalized cookie CSRF check; bearer authentication remains compatible.
 Unauthorized private/internal repository access returns 404 so repository existence is not disclosed.
 
 ## Compose smoke test

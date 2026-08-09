@@ -170,13 +170,15 @@ func runRunner(
 	logger *slog.Logger,
 ) error {
 	store := runner.NewStoreWithFiles(pool, settings.RunnerLogDir, settings.RunnerArtifactDir)
-	credentialProvider, err := configuredLoreCredentialProvider(settings)
+	credentialIssuer, err := configuredLoreCredentialIssuer(settings)
 	if err != nil {
 		return err
 	}
+	credentialPrincipal := runner.CredentialPrincipal{Kind: "service", Subject: settings.RunnerSubject}
 	worker, err := runner.NewWorker(store, runner.WorkerConfig{
 		LoreBinary:            settings.LoreBinary,
-		CredentialProvider:    credentialProvider,
+		CredentialIssuer:      credentialIssuer,
+		CredentialPrincipal:   credentialPrincipal,
 		RevisionClient:        lore,
 		ActBinary:             settings.ActBinary,
 		WorkDir:               settings.RunnerWorkDir,
@@ -195,7 +197,14 @@ func runRunner(
 	if err != nil {
 		return err
 	}
-	poller := runner.NewPoller(store, lore, credentialProvider, settings.BranchPollPeriod, logger)
+	poller := runner.NewPoller(
+		store,
+		lore,
+		credentialIssuer,
+		credentialPrincipal,
+		settings.BranchPollPeriod,
+		logger,
+	)
 	errorsChannel := make(chan error, 2)
 	go func() { errorsChannel <- poller.Run(ctx) }()
 	go func() { errorsChannel <- worker.Run(ctx) }()
@@ -206,14 +215,11 @@ func runRunner(
 	return err
 }
 
-func configuredLoreCredentialProvider(settings config.Config) (runner.CredentialProvider, error) {
-	if settings.LoreCredentialDir != "" {
-		return runner.NewFileCredentialProvider(settings.LoreCredentialDir)
-	}
+func configuredLoreCredentialIssuer(settings config.Config) (runner.CredentialIssuer, error) {
 	if settings.Environment == "development" || settings.Environment == "local" {
 		if settings.DevLoreIdentityFallback {
-			return runner.NewDevelopmentCredentialProvider(settings.DevLoreIdentity), nil
+			return runner.NewDevelopmentCredentialIssuer(settings.DevLoreIdentity), nil
 		}
 	}
-	return nil, fmt.Errorf("repository-scoped Lore credential provider is required for %s", settings.Environment)
+	return nil, fmt.Errorf("an injected repository-scoped Lore credential issuer is required for %s", settings.Environment)
 }

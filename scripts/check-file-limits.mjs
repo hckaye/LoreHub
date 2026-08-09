@@ -16,6 +16,8 @@ const checkedExtensions = new Set([
   ".sh",
   ".sql",
   ".toml",
+  ".proto",
+  ".rs",
   ".ts",
   ".tsx",
   ".yaml",

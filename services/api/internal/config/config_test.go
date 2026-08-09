@@ -70,7 +70,6 @@ func TestLoadInteractiveAuthenticationUsesSecureProductionCookie(t *testing.T) {
 	t.Setenv("LOREHUB_AUTH_SECRET", strings.Repeat("a", 32))
 	t.Setenv("LOREHUB_SESSION_TTL", "24h")
 	t.Setenv("LOREHUB_LOGIN_TRANSACTION_TTL", "10m")
-	t.Setenv("LOREHUB_LORE_CREDENTIAL_DIR", t.TempDir())
 
 	settings, err := Load()
 	if err != nil {
@@ -116,11 +115,22 @@ func TestLoadRequiresExplicitDevelopmentLoreIdentity(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsUnboundedRunnerTimeout(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("LOREHUB_RUNNER_JOB_TIMEOUT", "25h")
+	t.Setenv("LOREHUB_RUNNER_LEASE_DURATION", "2h")
+
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "job timeout") {
+		t.Fatalf("expected an upper bound for runner jobs, got %v", err)
+	}
+}
+
 func setRequiredEnvironment(t *testing.T) {
 	t.Helper()
 	t.Setenv("DATABASE_URL", "postgres://localhost/lorehub")
 	t.Setenv("LOREHUB_ENV", "development")
-	t.Setenv("LOREHUB_LORE_CREDENTIAL_DIR", "")
+	t.Setenv("LOREHUB_RUNNER_SUBJECT", "")
 	t.Setenv("LOREHUB_DEV_ALLOW_LORE_IDENTITY_FALLBACK", "")
 	t.Setenv("LOREHUB_DEV_LORE_IDENTITY", "")
 	t.Setenv("LOREHUB_OIDC_ISSUER", "")

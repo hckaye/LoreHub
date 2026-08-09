@@ -2,74 +2,133 @@ package runner
 
 import (
 	"context"
-	"os"
-	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
 
-func TestFileCredentialProviderPartitionsByRepositoryAndScope(t *testing.T) {
-	root := t.TempDir()
-	repositoryID := "repository-a"
-	credentialPath := filepath.Join(root, repositoryID, ReadLoreScope)
-	if err := os.MkdirAll(filepath.Dir(credentialPath), 0o750); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(credentialPath, []byte("identity-a\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	provider, err := NewFileCredentialProvider(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	identity, err := provider.Read(context.Background(), CredentialSubject{
-		RepositoryID: repositoryID,
-		LoreURL:      "lore://repository-a",
-	}, ReadLoreScope)
-	if err != nil || identity != "identity-a" {
-		t.Fatalf("unexpected repository credential: %q, %v", identity, err)
-	}
-	if _, err := provider.Read(context.Background(), CredentialSubject{
-		RepositoryID: "repository-b",
-		LoreURL:      "lore://repository-b",
-	}, ReadLoreScope); err == nil {
-		t.Fatal("credential provider crossed repository partitions")
-	}
-	if _, err := provider.Read(context.Background(), CredentialSubject{
-		RepositoryID: repositoryID,
-		LoreURL:      "lore://repository-a",
-	}, "write"); err == nil {
-		t.Fatal("credential provider accepted an unsupported scope")
-	}
+type recordingCredentialIssuer struct {
+	request    CredentialRequest
+	credential LoreCredential
 }
 
-func TestFileCredentialProviderRequiresAnExistingDirectory(t *testing.T) {
-	if _, err := NewFileCredentialProvider(filepath.Join(t.TempDir(), "missing")); err == nil {
-		t.Fatal("missing Lore credential directory was accepted")
-	}
+func (issuer *recordingCredentialIssuer) Issue(
+	_ context.Context,
+	request CredentialRequest,
+) (LoreCredential, error) {
+	issuer.request = request
+	return issuer.credential, nil
 }
 
-func TestFileCredentialProviderRejectsSymlinkedCredential(t *testing.T) {
-	root := t.TempDir()
-	partition := filepath.Join(root, "repository-a")
-	if err := os.MkdirAll(partition, 0o750); err != nil {
-		t.Fatal(err)
-	}
-	outside := filepath.Join(t.TempDir(), "identity")
-	if err := os.WriteFile(outside, []byte("outside"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(outside, filepath.Join(partition, ReadLoreScope)); err != nil {
-		t.Fatal(err)
-	}
-	provider, err := NewFileCredentialProvider(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := provider.Read(context.Background(), CredentialSubject{
+func TestCredentialIssuerContractCarriesExactResourceAndScope(t *testing.T) {
+	issuer := &recordingCredentialIssuer{credential: LoreCredential{
 		RepositoryID: "repository-a",
-		LoreURL:      "lore://repository-a",
-	}, ReadLoreScope); err == nil {
-		t.Fatal("symlinked credential was accepted")
+		Scope:        ReadLoreScope,
+		Identity:     "short-lived-identity",
+		ExpiresAt:    time.Now().UTC().Add(time.Minute),
+	}}
+	principal := CredentialPrincipal{Kind: "service", Subject: "runner-a"}
+	identity, err := issueLoreIdentity(
+		context.Background(), issuer, principal, "repository-a", "lore://repository-a",
+	)
+	if err != nil || identity != "short-lived-identity" {
+		t.Fatalf("unexpected issued identity: %q, %v", identity, err)
+	}
+	if issuer.request.Principal != principal || issuer.request.RepositoryID != "repository-a" ||
+		issuer.request.LoreURL != "lore://repository-a" || issuer.request.Scope != ReadLoreScope {
+		t.Fatalf("issuer request did not preserve the exact contract: %#v", issuer.request)
+	}
+}
+
+func TestCredentialIssuerRejectsWrongPartitionScopeOrExpiry(t *testing.T) {
+	tests := []struct {
+		name       string
+		credential LoreCredential
+	}{
+		{
+			name: "wrong repository",
+			credential: LoreCredential{
+				RepositoryID: "repository-b", Scope: ReadLoreScope, Identity: "identity",
+				ExpiresAt: time.Now().Add(time.Minute),
+			},
+		},
+		{
+			name: "wrong scope",
+			credential: LoreCredential{
+				RepositoryID: "repository-a", Scope: "write", Identity: "identity",
+				ExpiresAt: time.Now().Add(time.Minute),
+			},
+		},
+		{
+			name: "expired",
+			credential: LoreCredential{
+				RepositoryID: "repository-a", Scope: ReadLoreScope, Identity: "identity",
+				ExpiresAt: time.Now().Add(-time.Minute),
+			},
+		},
+		{
+			name: "too long",
+			credential: LoreCredential{
+				RepositoryID: "repository-a", Scope: ReadLoreScope, Identity: "identity",
+				ExpiresAt: time.Now().Add(16 * time.Minute),
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			issuer := &recordingCredentialIssuer{credential: test.credential}
+			_, err := issueLoreCredential(
+				context.Background(), issuer,
+				CredentialPrincipal{Kind: "service", Subject: "runner-a"},
+				"repository-a", "lore://repository-a",
+			)
+			if err == nil {
+				t.Fatal("invalid credential was accepted")
+			}
+		})
+	}
+}
+
+func TestCredentialIssuerRequiresUsableCurrentLoreMaterial(t *testing.T) {
+	issuer := &recordingCredentialIssuer{credential: LoreCredential{
+		RepositoryID: "repository-a",
+		Scope:        ReadLoreScope,
+		Token:        "token",
+		ExpiresAt:    time.Now().UTC().Add(time.Minute),
+	}}
+	_, err := issueLoreIdentity(
+		context.Background(), issuer,
+		CredentialPrincipal{Kind: "service", Subject: "runner-a"},
+		"repository-a", "lore://repository-a",
+	)
+	if err == nil || !strings.Contains(err.Error(), "requires an identity") {
+		t.Fatalf("token-only credential was not rejected by the current Lore adapter: %v", err)
+	}
+}
+
+func TestFailClosedCredentialIssuerCannotIssue(t *testing.T) {
+	_, err := issueLoreCredential(
+		context.Background(), NewFailClosedCredentialIssuer(),
+		CredentialPrincipal{Kind: "service", Subject: "runner-a"},
+		"repository-a", "lore://repository-a",
+	)
+	if err == nil || !strings.Contains(err.Error(), "not configured") {
+		t.Fatalf("fail-closed issuer returned %v", err)
+	}
+}
+
+func TestDevelopmentCredentialIssuerIsExplicitAndShortLived(t *testing.T) {
+	before := time.Now().UTC()
+	credential, err := NewDevelopmentCredentialIssuer("development-only").Issue(
+		context.Background(), CredentialRequest{
+			Principal:    CredentialPrincipal{Kind: "service", Subject: "test"},
+			RepositoryID: "repository-a",
+			LoreURL:      "lore://repository-a",
+			Scope:        ReadLoreScope,
+		},
+	)
+	if err != nil || credential.Identity != "development-only" || !credential.ExpiresAt.After(before) {
+		t.Fatalf("unexpected development credential: %#v, %v", credential, err)
 	}
 }
 

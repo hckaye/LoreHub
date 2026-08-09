@@ -146,9 +146,9 @@ transactionは最大15分）。
 `GET /auth/login?prompt=create`を使います。互換性のため`kc_action=register`も受け付けますが、値は厳密に検証し、
 認証プロバイダーへは`prompt=create`だけを渡します。その他の`prompt`や`kc_action`は400を返します。
 
-Lore側の読み取りはrepository partitionと`read` scopeを受けるcredential providerを通します。本番では
-`LOREHUB_LORE_CREDENTIAL_DIR`が必須で、`<repository-id>/read`だけを読み取ります。開発用identity fallbackは
-development/local以外では拒否し、明示的なopt-inとidentityの両方がある場合だけ許可します。
+Lore側の読み取りはservice subject、repository partition、`read` scopeをcredential issuerへ渡し、短命の
+repository限定credentialを受け取ります。本番ではissuerが未注入ならfail closedし、ファイルcredentialや共有
+identityにはfallbackしません。開発用identity fallbackはdevelopment/localだけで明示的に許可します。
 
 Keycloakを使う場合、ローカルのissuerは
 `http://keycloak.localhost:8280/realms/lorehub`、audienceは`lorehub-api`です。本番では公開HTTPSのissuerを設定します。

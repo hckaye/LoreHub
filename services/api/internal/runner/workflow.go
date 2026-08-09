@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -18,16 +19,33 @@ type PushTrigger struct {
 	BranchesIgnore []string `json:"branches_ignore,omitempty"`
 }
 
+type PullRequestTrigger struct {
+	Branches       []string `json:"branches,omitempty"`
+	BranchesIgnore []string `json:"branches_ignore,omitempty"`
+	Types          []string `json:"types,omitempty"`
+}
+
+type ScheduleTrigger struct {
+	Cron string `json:"cron"`
+}
+
+type RepositoryDispatchTrigger struct {
+	Types []string `json:"types,omitempty"`
+}
+
 type WorkflowDefinition struct {
-	Path             string
-	Name             string
-	Enabled          bool
-	State            string
-	ErrorCode        string
-	ErrorMessage     string
-	Push             *PushTrigger
-	WorkflowDispatch bool
-	TriggerConfig    json.RawMessage
+	Path               string
+	Name               string
+	Enabled            bool
+	State              string
+	ErrorCode          string
+	ErrorMessage       string
+	Push               *PushTrigger
+	PullRequest        *PullRequestTrigger
+	Schedules          []ScheduleTrigger
+	RepositoryDispatch *RepositoryDispatchTrigger
+	WorkflowDispatch   bool
+	TriggerConfig      json.RawMessage
 }
 
 func DiscoverWorkflows(workspace string) ([]WorkflowDefinition, error) {
@@ -70,6 +88,72 @@ func (definition WorkflowDefinition) MatchesPush(branch string) bool {
 		return false
 	}
 	return !matchesBranchList(definition.Push.BranchesIgnore, branch, false)
+}
+
+func (definition WorkflowDefinition) MatchesPullRequest(branch string, action string) bool {
+	trigger := definition.PullRequest
+	if !definition.Enabled || definition.State != "active" || trigger == nil {
+		return false
+	}
+	if !matchesBranchList(trigger.Branches, branch, true) ||
+		matchesBranchList(trigger.BranchesIgnore, branch, false) {
+		return false
+	}
+	return matchesEventType(trigger.Types, action)
+}
+
+func (definition WorkflowDefinition) MatchesRepositoryDispatch(eventType string) bool {
+	trigger := definition.RepositoryDispatch
+	if !definition.Enabled || definition.State != "active" || trigger == nil {
+		return false
+	}
+	return matchesEventType(trigger.Types, eventType)
+}
+
+func (definition WorkflowDefinition) ScheduleOccurrences(now time.Time) []ScheduleOccurrence {
+	if !definition.Enabled || definition.State != "active" {
+		return nil
+	}
+	occurences := make([]ScheduleOccurrence, 0, len(definition.Schedules))
+	for _, schedule := range definition.Schedules {
+		occurrence, ok := LastScheduleOccurrence(schedule.Cron, now)
+		if ok {
+			occurences = append(occurences, ScheduleOccurrence{Key: schedule.Cron, At: occurrence})
+		}
+	}
+	return occurences
+}
+
+type ScheduleOccurrence struct {
+	Key string
+	At  time.Time
+}
+
+func workflowFromTriggerConfig(
+	path string,
+	name string,
+	enabled bool,
+	state string,
+	triggerConfig json.RawMessage,
+) (WorkflowDefinition, error) {
+	var config struct {
+		Push               *PushTrigger               `json:"push"`
+		WorkflowDispatch   json.RawMessage            `json:"workflow_dispatch"`
+		PullRequest        *PullRequestTrigger        `json:"pull_request"`
+		Schedules          []ScheduleTrigger          `json:"schedule"`
+		RepositoryDispatch *RepositoryDispatchTrigger `json:"repository_dispatch"`
+	}
+	if len(triggerConfig) > 0 && string(triggerConfig) != "null" {
+		if err := json.Unmarshal(triggerConfig, &config); err != nil {
+			return WorkflowDefinition{}, fmt.Errorf("decode workflow trigger configuration: %w", err)
+		}
+	}
+	return WorkflowDefinition{
+		Path: path, Name: name, Enabled: enabled, State: state, Push: config.Push,
+		WorkflowDispatch: len(config.WorkflowDispatch) > 0,
+		PullRequest:      config.PullRequest, Schedules: config.Schedules,
+		RepositoryDispatch: config.RepositoryDispatch, TriggerConfig: triggerConfig,
+	}, nil
 }
 
 func AdaptWorkflow(workspace string, workflowPath string) (int, error) {
@@ -182,17 +266,22 @@ func parseWorkflowFile(filePath string, workflowPath string) (WorkflowDefinition
 	if on == nil {
 		return workflow, errors.New("workflow must define an on trigger")
 	}
-	push, dispatch, err := parseTriggers(on)
+	push, dispatch, pullRequest, schedules, repositoryDispatch, err := parseTriggers(on)
 	if err != nil {
 		return workflow, err
 	}
 	workflow.Push = push
 	workflow.WorkflowDispatch = dispatch
-	workflow.TriggerConfig, err = encodeTriggerConfig(push, dispatch)
+	workflow.PullRequest = pullRequest
+	workflow.Schedules = schedules
+	workflow.RepositoryDispatch = repositoryDispatch
+	workflow.TriggerConfig, err = encodeTriggerConfig(
+		push, dispatch, pullRequest, schedules, repositoryDispatch,
+	)
 	if err != nil {
 		return workflow, err
 	}
-	if push == nil && !dispatch {
+	if push == nil && !dispatch && pullRequest == nil && len(schedules) == 0 && repositoryDispatch == nil {
 		return workflow, errors.New("workflow has no supported trigger")
 	}
 	return workflow, nil
@@ -317,9 +406,19 @@ func validateEmptyRuntimeOptions(node *yaml.Node, kind string, name string) erro
 	return nil
 }
 
-func parseTriggers(node *yaml.Node) (*PushTrigger, bool, error) {
+func parseTriggers(node *yaml.Node) (
+	*PushTrigger,
+	bool,
+	*PullRequestTrigger,
+	[]ScheduleTrigger,
+	*RepositoryDispatchTrigger,
+	error,
+) {
 	push := (*PushTrigger)(nil)
 	dispatch := false
+	pullRequest := (*PullRequestTrigger)(nil)
+	schedules := make([]ScheduleTrigger, 0)
+	repositoryDispatch := (*RepositoryDispatchTrigger)(nil)
 	visit := func(name string, value *yaml.Node) error {
 		switch name {
 		case "push":
@@ -339,6 +438,30 @@ func parseTriggers(node *yaml.Node) (*PushTrigger, bool, error) {
 				return err
 			}
 			dispatch = true
+		case "pull_request":
+			if pullRequest != nil {
+				return errors.New("workflow declares pull_request more than once")
+			}
+			parsed, err := parsePullRequestTrigger(value)
+			if err != nil {
+				return err
+			}
+			pullRequest = parsed
+		case "schedule":
+			parsed, err := parseScheduleTriggers(value)
+			if err != nil {
+				return err
+			}
+			schedules = append(schedules, parsed...)
+		case "repository_dispatch":
+			if repositoryDispatch != nil {
+				return errors.New("workflow declares repository_dispatch more than once")
+			}
+			parsed, err := parseRepositoryDispatchTrigger(value)
+			if err != nil {
+				return err
+			}
+			repositoryDispatch = parsed
 		default:
 			return fmt.Errorf("unsupported workflow event %q", name)
 		}
@@ -349,41 +472,130 @@ func parseTriggers(node *yaml.Node) (*PushTrigger, bool, error) {
 	case yaml.ScalarNode:
 		name, err := scalarString(node, "workflow event")
 		if err != nil {
-			return nil, false, err
+			return nil, false, nil, nil, nil, err
 		}
 		if err := visit(name, nil); err != nil {
-			return nil, false, err
+			return nil, false, nil, nil, nil, err
 		}
 	case yaml.SequenceNode:
 		if len(node.Content) == 0 {
-			return nil, false, errors.New("workflow event list must not be empty")
+			return nil, false, nil, nil, nil, errors.New("workflow event list must not be empty")
 		}
 		for _, item := range node.Content {
 			name, err := scalarString(item, "workflow event")
 			if err != nil {
-				return nil, false, err
+				return nil, false, nil, nil, nil, err
 			}
 			if err := visit(name, nil); err != nil {
-				return nil, false, err
+				return nil, false, nil, nil, nil, err
 			}
 		}
 	case yaml.MappingNode:
 		if len(node.Content) == 0 {
-			return nil, false, errors.New("workflow event map must not be empty")
+			return nil, false, nil, nil, nil, errors.New("workflow event map must not be empty")
 		}
 		for index := 0; index+1 < len(node.Content); index += 2 {
 			name, err := scalarString(node.Content[index], "workflow event")
 			if err != nil {
-				return nil, false, err
+				return nil, false, nil, nil, nil, err
 			}
 			if err := visit(name, node.Content[index+1]); err != nil {
-				return nil, false, err
+				return nil, false, nil, nil, nil, err
 			}
 		}
 	default:
-		return nil, false, errors.New("workflow on must be a scalar, list, or map")
+		return nil, false, nil, nil, nil, errors.New("workflow on must be a scalar, list, or map")
 	}
-	return push, dispatch, nil
+	return push, dispatch, pullRequest, schedules, repositoryDispatch, nil
+}
+
+func parsePullRequestTrigger(node *yaml.Node) (*PullRequestTrigger, error) {
+	trigger := &PullRequestTrigger{}
+	if node == nil || isNullNode(node) {
+		return trigger, nil
+	}
+	if node.Kind != yaml.MappingNode {
+		return nil, errors.New("pull_request trigger must be a map")
+	}
+	for index := 0; index+1 < len(node.Content); index += 2 {
+		key := node.Content[index].Value
+		switch key {
+		case "branches", "branches-ignore", "types":
+			values, err := parseStringList(node.Content[index+1], key)
+			if err != nil {
+				return nil, err
+			}
+			switch key {
+			case "branches":
+				trigger.Branches = values
+			case "branches-ignore":
+				trigger.BranchesIgnore = values
+			case "types":
+				trigger.Types = values
+			}
+		default:
+			return nil, fmt.Errorf("unsupported pull_request filter %q", key)
+		}
+	}
+	if len(trigger.Branches) > 0 && len(trigger.BranchesIgnore) > 0 {
+		return nil, errors.New("pull_request trigger cannot use both branches and branches-ignore")
+	}
+	return trigger, nil
+}
+
+func parseScheduleTriggers(node *yaml.Node) ([]ScheduleTrigger, error) {
+	if node == nil || node.Kind != yaml.SequenceNode || len(node.Content) == 0 {
+		return nil, errors.New("schedule trigger must be a non-empty list")
+	}
+	triggers := make([]ScheduleTrigger, 0, len(node.Content))
+	seen := make(map[string]struct{}, len(node.Content))
+	for _, item := range node.Content {
+		if item.Kind != yaml.MappingNode {
+			return nil, errors.New("schedule entries must be maps")
+		}
+		cronNode := mappingValue(item, "cron")
+		cron, err := scalarString(cronNode, "schedule cron")
+		if err != nil {
+			return nil, err
+		}
+		cron = strings.Join(strings.Fields(cron), " ")
+		if _, err := parseCron(cron); err != nil {
+			return nil, err
+		}
+		for index := 0; index+1 < len(item.Content); index += 2 {
+			if item.Content[index].Value != "cron" {
+				return nil, fmt.Errorf("unsupported schedule field %q", item.Content[index].Value)
+			}
+		}
+		if _, ok := seen[cron]; ok {
+			return nil, fmt.Errorf("schedule cron %q is declared more than once", cron)
+		}
+		seen[cron] = struct{}{}
+		triggers = append(triggers, ScheduleTrigger{Cron: cron})
+	}
+	return triggers, nil
+}
+
+func parseRepositoryDispatchTrigger(node *yaml.Node) (*RepositoryDispatchTrigger, error) {
+	trigger := &RepositoryDispatchTrigger{}
+	if node == nil || isNullNode(node) {
+		return trigger, nil
+	}
+	if node.Kind != yaml.MappingNode {
+		return nil, errors.New("repository_dispatch trigger must be a map")
+	}
+	for index := 0; index+1 < len(node.Content); index += 2 {
+		key := node.Content[index].Value
+		if key != "types" {
+			return nil, fmt.Errorf("unsupported repository_dispatch field %q", key)
+		}
+		values, err := parseStringList(node.Content[index+1], key)
+		if err != nil {
+			return nil, err
+		}
+		trigger.Types = values
+	}
+	return trigger, nil
 }
 
 func parsePushTrigger(node *yaml.Node) (*PushTrigger, error) {
@@ -416,6 +628,27 @@ func parsePushTrigger(node *yaml.Node) (*PushTrigger, error) {
 }
 
 func parsePatternList(node *yaml.Node, field string) ([]string, error) {
+	values, err := parseStringList(node, field)
+	if err != nil {
+		return nil, fmt.Errorf("push filter %q must be a non-empty string list: %w", field, err)
+	}
+	hasPositive := false
+	for _, value := range values {
+		if !strings.HasPrefix(value, "!") {
+			hasPositive = true
+			break
+		}
+	}
+	if !hasPositive {
+		return nil, fmt.Errorf("push filter %q must contain a non-negative pattern", field)
+	}
+	return values, nil
+}
+
+func parseStringList(node *yaml.Node, field string) ([]string, error) {
+	if node == nil {
+		return nil, fmt.Errorf("%s must be a non-empty string list", field)
+	}
 	if node.Kind == yaml.ScalarNode && !isNullNode(node) {
 		value, err := scalarString(node, field)
 		if err != nil {
@@ -424,7 +657,7 @@ func parsePatternList(node *yaml.Node, field string) ([]string, error) {
 		return []string{value}, nil
 	}
 	if node.Kind != yaml.SequenceNode || len(node.Content) == 0 {
-		return nil, fmt.Errorf("push filter %q must be a non-empty string list", field)
+		return nil, fmt.Errorf("%s must be a non-empty string list", field)
 	}
 	values := make([]string, 0, len(node.Content))
 	for _, item := range node.Content {
@@ -471,10 +704,25 @@ func validateWorkflowDispatch(node *yaml.Node) error {
 	return nil
 }
 
-func encodeTriggerConfig(push *PushTrigger, dispatch bool) (json.RawMessage, error) {
-	config := make(map[string]any, 2)
+func encodeTriggerConfig(
+	push *PushTrigger,
+	dispatch bool,
+	pullRequest *PullRequestTrigger,
+	schedules []ScheduleTrigger,
+	repositoryDispatch *RepositoryDispatchTrigger,
+) (json.RawMessage, error) {
+	config := make(map[string]any, 5)
 	if push != nil {
 		config["push"] = push
+	}
+	if pullRequest != nil {
+		config["pull_request"] = pullRequest
+	}
+	if len(schedules) > 0 {
+		config["schedule"] = schedules
+	}
+	if repositoryDispatch != nil {
+		config["repository_dispatch"] = repositoryDispatch
 	}
 	if dispatch {
 		config["workflow_dispatch"] = map[string]any{}
@@ -504,7 +752,7 @@ func mappingValue(node *yaml.Node, key string) *yaml.Node {
 }
 
 func scalarString(node *yaml.Node, field string) (string, error) {
-	if node.Kind != yaml.ScalarNode || isNullNode(node) || strings.TrimSpace(node.Value) == "" {
+	if node == nil || node.Kind != yaml.ScalarNode || isNullNode(node) || strings.TrimSpace(node.Value) == "" {
 		return "", fmt.Errorf("%s must be a non-empty string", field)
 	}
 	return node.Value, nil
@@ -559,9 +807,10 @@ func matchesBranchList(patterns []string, branch string, includeDefault bool) bo
 		pattern = strings.TrimPrefix(pattern, "!")
 		if globMatch(pattern, branch) {
 			if negated {
-				return false
+				matched = false
+			} else {
+				matched = true
 			}
-			matched = true
 		}
 	}
 	return matched

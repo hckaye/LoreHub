@@ -2,6 +2,7 @@ package runner
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"os"
@@ -9,6 +10,63 @@ import (
 	"strings"
 	"testing"
 )
+
+func TestActArgumentsPreserveSupportedEventAndExactWorkflow(t *testing.T) {
+	for _, event := range []string{"push", "workflow_dispatch", "pull_request", "schedule", "repository_dispatch"} {
+		t.Run(event, func(t *testing.T) {
+			job := Job{
+				EventName:    event,
+				Owner:        "owner",
+				Repository:   "repository",
+				Revision:     "lore-revision",
+				Branch:       "main",
+				EventPayload: json.RawMessage(`{"ref":"refs/heads/main"}`),
+			}
+			args := actArguments(
+				job,
+				"/work/repository",
+				"/work/repository/.github/workflows/ci.yml",
+				"/work/event.json",
+				"/work/artifacts",
+				"lorehub-job-test",
+				"http://172.28.244.2:3128",
+			)
+			if args[0] != event {
+				t.Fatalf("act event argument was %q, want %q", args[0], event)
+			}
+			assertArgumentValue(t, args, "--workflows", "/work/repository/.github/workflows/ci.yml")
+			assertArgumentValue(t, args, "--eventpath", "/work/event.json")
+			assertArgumentValue(t, args, "--network", "lorehub-job-test")
+			assertArgumentValue(t, args, "--env", "SHA_REF=lore-revision")
+			assertArgumentValue(t, args, "--env", "GITHUB_SHA=lore-revision")
+			assertArgumentValue(t, args, "--env", "GITHUB_REF=refs/heads/main")
+			assertArgumentValue(t, args, "--env", "GITHUB_REPOSITORY=owner/repository")
+			if countArgument(args, "--network") != 1 || countArgument(args, "--workflows") != 1 {
+				t.Fatalf("act received duplicate network/workflow selectors: %#v", args)
+			}
+		})
+	}
+}
+
+func assertArgumentValue(t *testing.T, arguments []string, flag string, want string) {
+	t.Helper()
+	for index := 0; index+1 < len(arguments); index++ {
+		if arguments[index] == flag && arguments[index+1] == want {
+			return
+		}
+	}
+	t.Fatalf("act arguments did not contain %s %s: %#v", flag, want, arguments)
+}
+
+func countArgument(arguments []string, want string) int {
+	count := 0
+	for _, argument := range arguments {
+		if argument == want {
+			count++
+		}
+	}
+	return count
+}
 
 func TestBoundedLogWriter(t *testing.T) {
 	var output bytes.Buffer

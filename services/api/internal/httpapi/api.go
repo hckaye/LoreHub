@@ -132,6 +132,9 @@ func New(
 	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/actions/runs/{runNumber}", api.actionRunDetail)
 	mux.HandleFunc("POST /api/v1/repositories/{owner}/{repository}/actions/workflows/{workflow}/dispatches",
 		api.dispatchActionWorkflow)
+	mux.HandleFunc("POST /api/v1/repositories/{owner}/{repository}/actions/dispatches", api.dispatchRepositoryEvent)
+	mux.HandleFunc("POST /api/v1/repositories/{owner}/{repository}/actions/events/pull_request",
+		api.dispatchPullRequestEvent)
 	mux.HandleFunc("POST /api/v1/repositories/{owner}/{repository}/actions/runs/{runNumber}/cancel",
 		api.cancelActionRun)
 	mux.HandleFunc("POST /api/v1/repositories/{owner}/{repository}/actions/runs/{runNumber}/rerun",

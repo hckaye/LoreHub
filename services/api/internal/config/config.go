@@ -17,6 +17,7 @@ const (
 	AuthModeInteractive = "interactive"
 	maxSessionLifetime  = 30 * 24 * time.Hour
 	maxTransactionLife  = 15 * time.Minute
+	maxRunnerJobTimeout = 24 * time.Hour
 )
 
 type Config struct {
@@ -41,9 +42,9 @@ type Config struct {
 	SessionTTL              time.Duration
 	LoginTransactionTTL     time.Duration
 	LoreCacheDir            string
-	LoreCredentialDir       string
 	DevLoreIdentity         string
 	DevLoreIdentityFallback bool
+	RunnerSubject           string
 	LoreBinary              string
 	ActBinary               string
 	RunnerPollPeriod        time.Duration
@@ -128,9 +129,9 @@ func Load() (Config, error) {
 		SessionTTL:              sessionTTL,
 		LoginTransactionTTL:     transactionTTL,
 		LoreCacheDir:            envOrDefault("LOREHUB_LORE_CACHE_DIR", ".cache/lorehub/repositories"),
-		LoreCredentialDir:       os.Getenv("LOREHUB_LORE_CREDENTIAL_DIR"),
 		DevLoreIdentity:         os.Getenv("LOREHUB_DEV_LORE_IDENTITY"),
 		DevLoreIdentityFallback: devLoreIdentityFallback,
+		RunnerSubject:           envOrDefault("LOREHUB_RUNNER_SUBJECT", "lorehub-runner"),
 		LoreBinary:              envOrDefault("LOREHUB_LORE_BINARY", "lore"),
 		ActBinary:               envOrDefault("LOREHUB_ACT_BINARY", "act"),
 		RunnerPollPeriod:        durationOrDefault("LOREHUB_RUNNER_POLL_PERIOD", 2*time.Second),
@@ -202,8 +203,8 @@ func validate(config Config) error {
 	if config.DevLoreIdentityFallback && strings.TrimSpace(config.DevLoreIdentity) == "" {
 		return errors.New("LOREHUB_DEV_LORE_IDENTITY is required when the development fallback is enabled")
 	}
-	if config.Environment == "production" && strings.TrimSpace(config.LoreCredentialDir) == "" {
-		return errors.New("LOREHUB_LORE_CREDENTIAL_DIR is required in production")
+	if strings.TrimSpace(config.RunnerSubject) == "" {
+		return errors.New("LOREHUB_RUNNER_SUBJECT is required")
 	}
 	if config.AuthMode != AuthModeDisabled && config.AuthMode != AuthModeBearer &&
 		config.AuthMode != AuthModeInteractive {
@@ -261,8 +262,9 @@ func validate(config Config) error {
 
 func validateRunner(config Config) error {
 	if config.RunnerPollPeriod <= 0 || config.BranchPollPeriod <= 0 || config.RunnerJobTimeout <= 0 ||
+		config.RunnerJobTimeout > maxRunnerJobTimeout ||
 		config.RunnerLeaseDuration <= 0 {
-		return errors.New("runner polling, lease, and job timeout durations must be greater than zero")
+		return errors.New("runner polling, lease, and job timeout durations are outside their bounds")
 	}
 	if config.RunnerLeaseDuration >= config.RunnerJobTimeout {
 		return errors.New("LOREHUB_RUNNER_LEASE_DURATION must be shorter than LOREHUB_RUNNER_JOB_TIMEOUT")

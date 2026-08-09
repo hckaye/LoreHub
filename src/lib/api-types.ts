@@ -117,6 +117,9 @@ export type CIWorkflow = {
   lastSeenRevision: string;
   triggerConfig: {
     push?: { branches?: string[]; branches_ignore?: string[] };
+    pull_request?: { branches?: string[]; branches_ignore?: string[]; types?: string[] };
+    schedule?: { cron: string }[];
+    repository_dispatch?: { types?: string[] };
     workflow_dispatch?: Record<string, unknown>;
   };
   updatedAt: string;
