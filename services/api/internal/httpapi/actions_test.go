@@ -56,7 +56,7 @@ func (store *fakeActionsStore) ActionRunDetail(
 }
 
 func (store *fakeActionsStore) DispatchWorkflow(
-	context.Context, runner.RepositoryAccess, string, string, string, []byte, string,
+	context.Context, runner.RepositoryAccess, string, string, string, map[string]string, string,
 ) (runner.RunRecord, error) {
 	return store.dispatch, nil
 }

@@ -132,6 +132,20 @@ func (client *SDKClient) Branches(
 	return branches, nil
 }
 
+func (client *SDKClient) BranchesWithCredential(
+	ctx context.Context,
+	repository RepositoryRef,
+	credential Credential,
+) ([]Branch, error) {
+	if strings.TrimSpace(credential.Token) != "" || strings.TrimSpace(credential.AuthURL) != "" {
+		return nil, errors.New("Lore SDK token/AuthURL branch access requires the control-plane client adapter")
+	}
+	if strings.TrimSpace(credential.Identity) == "" {
+		return nil, errors.New("Lore execution credential contains no supported SDK authentication material")
+	}
+	return client.Branches(ctx, repository, credential.Identity)
+}
+
 func (client *SDKClient) CloneRevision(
 	ctx context.Context,
 	repository RepositoryRef,
@@ -166,6 +180,22 @@ func (client *SDKClient) CloneRevision(
 		return fmt.Errorf("clone Lore revision %s: %w", revision, err)
 	}
 	return nil
+}
+
+func (client *SDKClient) CloneRevisionWithCredential(
+	ctx context.Context,
+	repository RepositoryRef,
+	credential Credential,
+	revision string,
+	destination string,
+) error {
+	if strings.TrimSpace(credential.Token) != "" || strings.TrimSpace(credential.AuthURL) != "" {
+		return errors.New("Lore SDK token/AuthURL execution credentials require the control-plane client adapter")
+	}
+	if strings.TrimSpace(credential.Identity) == "" {
+		return errors.New("Lore execution credential contains no supported SDK authentication material")
+	}
+	return client.CloneRevision(ctx, repository, credential.Identity, revision, destination)
 }
 
 func (client *SDKClient) ensureBareClone(repositoryURL string, cachePath string, identity string) error {

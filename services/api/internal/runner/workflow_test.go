@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -142,6 +143,61 @@ jobs:
 	}
 }
 
+func TestWorkflowDispatchInputsArePreservedAndValidated(t *testing.T) {
+	workspace := t.TempDir()
+	workflowDirectory := filepath.Join(workspace, ".github", "workflows")
+	if err := os.MkdirAll(workflowDirectory, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	contents := `name: Manual
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Release channel
+        required: true
+        type: choice
+        options: [stable, beta]
+      dry_run:
+        description: Preview only
+        type: boolean
+        default: false
+jobs:
+  release:
+    runs-on: ubuntu-latest
+`
+	if err := os.WriteFile(filepath.Join(workflowDirectory, "manual.yml"), []byte(contents), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	workflows, err := DiscoverWorkflows(workspace)
+	if err != nil || len(workflows) != 1 {
+		t.Fatalf("workflow input discovery failed: %#v, %v", workflows, err)
+	}
+	definition := workflows[0]
+	target, ok := definition.DispatchInputs["target"]
+	if !ok || target.Description != "Release channel" || !target.Required || target.Type != "choice" ||
+		len(target.Options) != 2 {
+		t.Fatalf("workflow dispatch definition was not preserved: %#v", definition.DispatchInputs)
+	}
+	dryRun, ok := definition.DispatchInputs["dry_run"]
+	if !ok || dryRun.Default == nil || *dryRun.Default != "false" {
+		t.Fatalf("boolean default was not preserved: %#v", definition.DispatchInputs)
+	}
+	if !json.Valid(definition.TriggerConfig) {
+		t.Fatalf("trigger configuration is not valid JSON: %s", definition.TriggerConfig)
+	}
+	resolved, err := ResolveWorkflowDispatchInputs(definition, map[string]string{"target": "beta"})
+	if err != nil || resolved["target"] != "beta" || resolved["dry_run"] != "false" {
+		t.Fatalf("workflow dispatch inputs were not resolved: %#v, %v", resolved, err)
+	}
+	if _, err := ResolveWorkflowDispatchInputs(definition, map[string]string{"target": "nightly"}); err == nil {
+		t.Fatal("workflow dispatch accepted an option outside the configured choices")
+	}
+	if _, err := ResolveWorkflowDispatchInputs(definition, nil); err == nil {
+		t.Fatal("workflow dispatch omitted a required input")
+	}
+}
+
 func TestDiscoverWorkflowsRejectsUnsupportedPushFilterCombination(t *testing.T) {
 	workspace := t.TempDir()
 	workflowDirectory := filepath.Join(workspace, ".github", "workflows")
@@ -179,7 +235,7 @@ func TestDiscoverWorkflowsRejectsContainerAndServiceOptions(t *testing.T) {
 		{
 			name: "container options",
 			definition: `    container:
-      image: node:24.18.0-bookworm-slim
+      image: alpine:3.24.1
       options: --privileged
 `,
 		},
@@ -194,7 +250,7 @@ func TestDiscoverWorkflowsRejectsContainerAndServiceOptions(t *testing.T) {
 		{
 			name: "container volumes",
 			definition: `    container:
-      image: node:24.18.0-bookworm-slim
+      image: alpine:3.24.1
       volumes: [/var/run/docker.sock:/var/run/docker.sock]
 `,
 		},
@@ -245,7 +301,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     container:
-      image: node:24.18.0-bookworm-slim
+      image: alpine:3.24.1
       options: ""
     services:
       database:

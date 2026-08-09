@@ -174,11 +174,20 @@ func runRunner(
 	if err != nil {
 		return err
 	}
+	executionResolver := configuredExecutionContextResolver(settings)
 	credentialPrincipal := runner.CredentialPrincipal{Kind: "service", Subject: settings.RunnerSubject}
 	worker, err := runner.NewWorker(store, runner.WorkerConfig{
-		LoreBinary:            settings.LoreBinary,
-		CredentialIssuer:      credentialIssuer,
-		CredentialPrincipal:   credentialPrincipal,
+		Environment:         settings.Environment,
+		LoreBinary:          settings.LoreBinary,
+		CredentialIssuer:    credentialIssuer,
+		CredentialPrincipal: credentialPrincipal,
+		ExecutionResolver:   executionResolver,
+		GitHubContext: runner.GitHubContext{
+			ServerURL: settings.PublicOrigin, APIURL: settings.PublicAPIURL,
+			GraphQLURL: settings.PublicGraphQLURL,
+		},
+		ActionSourceURL:       settings.ActionSourceURL,
+		PlatformImages:        settings.RunnerPlatformImages,
 		RevisionClient:        lore,
 		ActBinary:             settings.ActBinary,
 		WorkDir:               settings.RunnerWorkDir,
@@ -204,6 +213,7 @@ func runRunner(
 		credentialPrincipal,
 		settings.BranchPollPeriod,
 		logger,
+		settings.RunnerPlatformImages,
 	)
 	errorsChannel := make(chan error, 2)
 	go func() { errorsChannel <- poller.Run(ctx) }()
@@ -213,6 +223,21 @@ func runRunner(
 		return nil
 	}
 	return err
+}
+
+func configuredExecutionContextResolver(settings config.Config) runner.ExecutionContextResolver {
+	if settings.DevActionsContextFallback &&
+		(settings.Environment == "development" || settings.Environment == "local") {
+		return runner.NewDevelopmentExecutionContextResolver(runner.ExecutionContext{
+			OrganizationVariables: settings.DevActionsContext.OrganizationVariables,
+			RepositoryVariables:   settings.DevActionsContext.RepositoryVariables,
+			EnvironmentVariables:  settings.DevActionsContext.EnvironmentVariables,
+			OrganizationSecrets:   settings.DevActionsContext.OrganizationSecrets,
+			RepositorySecrets:     settings.DevActionsContext.RepositorySecrets,
+			EnvironmentSecrets:    settings.DevActionsContext.EnvironmentSecrets,
+		})
+	}
+	return runner.NewFailClosedExecutionContextResolver()
 }
 
 func configuredLoreCredentialIssuer(settings config.Config) (runner.CredentialIssuer, error) {

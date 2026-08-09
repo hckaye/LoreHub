@@ -106,6 +106,14 @@ export type CIRun = {
   completedAt: string | null;
 };
 
+export type CIWorkflowDispatchInput = {
+  description?: string;
+  required?: boolean;
+  default?: string;
+  type: "string" | "boolean" | "choice" | "number" | "environment";
+  options?: string[];
+};
+
 export type CIWorkflow = {
   id: string;
   path: string;
@@ -120,7 +128,7 @@ export type CIWorkflow = {
     pull_request?: { branches?: string[]; branches_ignore?: string[]; types?: string[] };
     schedule?: { cron: string }[];
     repository_dispatch?: { types?: string[] };
-    workflow_dispatch?: Record<string, unknown>;
+    workflow_dispatch?: { inputs?: Record<string, CIWorkflowDispatchInput> };
   };
   updatedAt: string;
 };

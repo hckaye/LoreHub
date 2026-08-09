@@ -2,9 +2,14 @@ package runner
 
 import (
 	"context"
+	"errors"
+	"io"
+	"os"
 	"strings"
 	"testing"
 	"time"
+
+	loreclient "github.com/lorehub/lorehub/services/api/internal/lore"
 )
 
 type recordingCredentialIssuer struct {
@@ -28,11 +33,11 @@ func TestCredentialIssuerContractCarriesExactResourceAndScope(t *testing.T) {
 		ExpiresAt:    time.Now().UTC().Add(time.Minute),
 	}}
 	principal := CredentialPrincipal{Kind: "service", Subject: "runner-a"}
-	identity, err := issueLoreIdentity(
+	credential, err := issueLoreCredential(
 		context.Background(), issuer, principal, "repository-a", "lore://repository-a",
 	)
-	if err != nil || identity != "short-lived-identity" {
-		t.Fatalf("unexpected issued identity: %q, %v", identity, err)
+	if err != nil || credential.Identity != "short-lived-identity" {
+		t.Fatalf("unexpected issued credential: %#v, %v", credential, err)
 	}
 	if issuer.request.Principal != principal || issuer.request.RepositoryID != "repository-a" ||
 		issuer.request.LoreURL != "lore://repository-a" || issuer.request.Scope != ReadLoreScope {
@@ -89,20 +94,72 @@ func TestCredentialIssuerRejectsWrongPartitionScopeOrExpiry(t *testing.T) {
 	}
 }
 
-func TestCredentialIssuerRequiresUsableCurrentLoreMaterial(t *testing.T) {
+func TestCredentialIssuerAcceptsControlPlaneTokenAndAuthURLForms(t *testing.T) {
 	issuer := &recordingCredentialIssuer{credential: LoreCredential{
 		RepositoryID: "repository-a",
 		Scope:        ReadLoreScope,
 		Token:        "token",
+		AuthURL:      "ucs-auth://auth.example",
 		ExpiresAt:    time.Now().UTC().Add(time.Minute),
 	}}
-	_, err := issueLoreIdentity(
+	credential, err := issueLoreCredential(
 		context.Background(), issuer,
 		CredentialPrincipal{Kind: "service", Subject: "runner-a"},
 		"repository-a", "lore://repository-a",
 	)
-	if err == nil || !strings.Contains(err.Error(), "requires an identity") {
-		t.Fatalf("token-only credential was not rejected by the current Lore adapter: %v", err)
+	if err != nil || credential.Token != "token" || credential.AuthURL == "" {
+		t.Fatalf("control-plane credential forms were not preserved: %#v, %v", credential, err)
+	}
+}
+
+type recordingCredentialRevisionClient struct {
+	credential loreclient.Credential
+	revision   string
+}
+
+func (client *recordingCredentialRevisionClient) CloneRevision(
+	context.Context,
+	loreclient.RepositoryRef,
+	string,
+	string,
+	string,
+) error {
+	return errors.New("legacy Lore credential path was used")
+}
+
+func (client *recordingCredentialRevisionClient) CloneRevisionWithCredential(
+	_ context.Context,
+	_ loreclient.RepositoryRef,
+	credential loreclient.Credential,
+	revision string,
+	destination string,
+) error {
+	client.credential = credential
+	client.revision = revision
+	return os.MkdirAll(destination, 0o750)
+}
+
+func TestWorkerPassesTokenAndAuthURLToCredentialAwareLoreClient(t *testing.T) {
+	issuer := &recordingCredentialIssuer{credential: LoreCredential{
+		RepositoryID: "repository-a", Scope: ReadLoreScope, Token: "short-token",
+		AuthURL: "https://auth.example/token", ExpiresAt: time.Now().UTC().Add(time.Minute),
+	}}
+	lore := &recordingCredentialRevisionClient{}
+	worker := &Worker{config: WorkerConfig{
+		CredentialIssuer:    issuer,
+		CredentialPrincipal: CredentialPrincipal{Kind: "service", Subject: "runner"},
+		RevisionClient:      lore,
+	}}
+	destination := t.TempDir() + "/workspace"
+	err := worker.cloneRevision(context.Background(), Job{
+		RepositoryID: "repository-a", LoreURL: "lore://repository-a", Revision: "revision-a",
+	}, destination, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lore.credential.Token != "short-token" || lore.credential.AuthURL != "https://auth.example/token" ||
+		lore.revision != "revision-a" {
+		t.Fatalf("credential-aware Lore contract was not preserved: %#v revision=%q", lore.credential, lore.revision)
 	}
 }
 

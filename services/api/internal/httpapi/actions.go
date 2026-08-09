@@ -50,7 +50,7 @@ type ActionsStore interface {
 		workflowRef string,
 		branch string,
 		revision string,
-		payload []byte,
+		inputs map[string]string,
 		actorID string,
 	) (runner.RunRecord, error)
 	DispatchRepositoryEvent(
@@ -228,23 +228,11 @@ func (api *API) dispatchActionWorkflow(writer http.ResponseWriter, request *http
 		api.internalError(writer, request, "resolve workflow dispatch revision", err)
 		return
 	}
-	inputs := input.Inputs
-	if inputs == nil {
-		inputs = map[string]string{}
-	}
-	payload, err := json.Marshal(map[string]any{
-		"ref":        "refs/heads/" + branch,
-		"after":      revision,
-		"repository": map[string]string{"name": access.Slug, "full_name": access.Owner + "/" + access.Slug},
-		"workflow":   request.PathValue("workflow"),
-		"inputs":     inputs,
-	})
-	if err != nil {
-		api.internalError(writer, request, "encode workflow dispatch event", err)
-		return
+	if input.Inputs == nil {
+		input.Inputs = map[string]string{}
 	}
 	run, err := api.actions.DispatchWorkflow(request.Context(), access, request.PathValue("workflow"), branch,
-		revision, payload, actor.ID)
+		revision, input.Inputs, actor.ID)
 	if err != nil {
 		api.actionsError(writer, request, "dispatch Actions workflow", err)
 		return

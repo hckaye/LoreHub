@@ -104,6 +104,47 @@ func TestLoadRejectsDevelopmentLoreIdentityOutsideDevelopment(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsDevelopmentActionsContextOutsideDevelopment(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("LOREHUB_ENV", "production")
+	t.Setenv("LOREHUB_DEV_ALLOW_ACTIONS_CONTEXT_FALLBACK", "true")
+	t.Setenv("LOREHUB_PUBLIC_ORIGIN", "https://actions.example")
+
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "development-only Actions context fallback") {
+		t.Fatalf("expected development-only Actions context to fail closed, got %v", err)
+	}
+}
+
+func TestLoadParsesRunnerMappingAndPublicActionsURLs(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("LOREHUB_PUBLIC_ORIGIN", "http://localhost:3000")
+	t.Setenv("LOREHUB_PUBLIC_API_URL", "http://localhost:3000/api/v1")
+	t.Setenv("LOREHUB_PUBLIC_GRAPHQL_URL", "http://localhost:3000/api/graphql")
+	t.Setenv("LOREHUB_RUNNER_PLATFORM_IMAGES", `{"self-hosted":"ghcr.io/example/runner:1.2.3"}`)
+
+	settings, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.PublicAPIURL != "http://localhost:3000/api/v1" ||
+		settings.PublicGraphQLURL != "http://localhost:3000/api/graphql" ||
+		settings.RunnerPlatformImages["self-hosted"] != "ghcr.io/example/runner:1.2.3" {
+		t.Fatalf("public Actions configuration was not preserved: %#v", settings)
+	}
+}
+
+func TestLoadRejectsHTTPActionsOriginInProduction(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("LOREHUB_ENV", "production")
+	t.Setenv("LOREHUB_PUBLIC_ORIGIN", "http://localhost:3000")
+
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "LOREHUB_PUBLIC_ORIGIN must use HTTPS") {
+		t.Fatalf("expected production Actions origin to require HTTPS, got %v", err)
+	}
+}
+
 func TestLoadRequiresExplicitDevelopmentLoreIdentity(t *testing.T) {
 	setRequiredEnvironment(t)
 	t.Setenv("LOREHUB_DEV_ALLOW_LORE_IDENTITY_FALLBACK", "true")
@@ -139,6 +180,11 @@ func setRequiredEnvironment(t *testing.T) {
 	t.Setenv("LOREHUB_OIDC_CLIENT_SECRET", "")
 	t.Setenv("LOREHUB_OIDC_REDIRECT_URL", "")
 	t.Setenv("LOREHUB_PUBLIC_ORIGIN", "")
+	t.Setenv("LOREHUB_PUBLIC_API_URL", "")
+	t.Setenv("LOREHUB_PUBLIC_GRAPHQL_URL", "")
+	t.Setenv("LOREHUB_RUNNER_PLATFORM_IMAGES", "")
+	t.Setenv("LOREHUB_DEV_ALLOW_ACTIONS_CONTEXT_FALLBACK", "")
+	t.Setenv("LOREHUB_DEV_ACTIONS_CONTEXT_JSON", "")
 	t.Setenv("LOREHUB_AUTH_SECRET", "")
 	t.Setenv("LOREHUB_SESSION_TTL", "")
 	t.Setenv("LOREHUB_LOGIN_TRANSACTION_TTL", "")

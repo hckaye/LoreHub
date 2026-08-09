@@ -30,6 +30,13 @@ func TestActArgumentsPreserveSupportedEventAndExactWorkflow(t *testing.T) {
 				"/work/artifacts",
 				"lorehub-job-test",
 				"http://172.28.244.2:3128",
+				actInvocation{
+					PlatformImages: DefaultRunnerPlatformImages(),
+					GitHub: GitHubContext{
+						ServerURL: "http://lorehub.test", APIURL: "http://lorehub.test/api/v1",
+						GraphQLURL: "http://lorehub.test/api/graphql",
+					},
+				},
 			)
 			if args[0] != event {
 				t.Fatalf("act event argument was %q, want %q", args[0], event)
@@ -41,10 +48,42 @@ func TestActArgumentsPreserveSupportedEventAndExactWorkflow(t *testing.T) {
 			assertArgumentValue(t, args, "--env", "GITHUB_SHA=lore-revision")
 			assertArgumentValue(t, args, "--env", "GITHUB_REF=refs/heads/main")
 			assertArgumentValue(t, args, "--env", "GITHUB_REPOSITORY=owner/repository")
+			assertArgumentValue(t, args, "--env", "GITHUB_SERVER_URL=http://lorehub.test")
+			assertArgumentValue(t, args, "--env", "GITHUB_API_URL=http://lorehub.test/api/v1")
+			assertArgumentValue(t, args, "--env", "GITHUB_GRAPHQL_URL=http://lorehub.test/api/graphql")
+			assertArgumentValue(t, args, "--platform", "ubuntu-latest="+DefaultUbuntuLatestImage)
 			if countArgument(args, "--network") != 1 || countArgument(args, "--workflows") != 1 {
 				t.Fatalf("act received duplicate network/workflow selectors: %#v", args)
 			}
 		})
+	}
+}
+
+func TestActArgumentsPassVariablesAndSecretFilePathOnly(t *testing.T) {
+	job := Job{EventName: "workflow_dispatch", Revision: "revision", Branch: "main"}
+	args := actArguments(
+		job,
+		"/work/repository",
+		"/work/repository/.github/workflows/ci.yml",
+		"/work/event.json",
+		"/work/artifacts",
+		"lorehub-job-test",
+		"http://172.28.244.2:3128",
+		actInvocation{
+			PlatformImages: DefaultRunnerPlatformImages(),
+			GitHub: GitHubContext{
+				ServerURL: "http://lorehub.test", APIURL: "http://lorehub.test/api/v1",
+				GraphQLURL: "http://lorehub.test/api/graphql",
+			},
+			Variables:  map[string]string{"DEPLOY_TARGET": "staging"},
+			SecretFile: "/tmp/actions-secrets-123",
+		},
+	)
+	assertArgumentValue(t, args, "--var", "DEPLOY_TARGET=staging")
+	assertArgumentValue(t, args, "--env", "DEPLOY_TARGET=staging")
+	assertArgumentValue(t, args, "--secret-file", "/tmp/actions-secrets-123")
+	if strings.Contains(strings.Join(args, "\x00"), "super-secret") {
+		t.Fatal("secret value appeared in act arguments")
 	}
 }
 

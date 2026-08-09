@@ -21,6 +21,7 @@ type Poller struct {
 	principal CredentialPrincipal
 	period    time.Duration
 	logger    *slog.Logger
+	platforms map[string]string
 }
 
 func NewPoller(
@@ -30,12 +31,20 @@ func NewPoller(
 	principal CredentialPrincipal,
 	period time.Duration,
 	logger *slog.Logger,
+	platformImages ...map[string]string,
 ) *Poller {
 	if issuer == nil {
 		issuer = NewFailClosedCredentialIssuer()
 	}
+	platforms := DefaultRunnerPlatformImages()
+	if len(platformImages) > 0 && platformImages[0] != nil {
+		for label, image := range platformImages[0] {
+			platforms[label] = image
+		}
+	}
 	return &Poller{
 		store: store, lore: lore, issuer: issuer, principal: principal, period: period, logger: logger,
+		platforms: platforms,
 	}
 }
 
@@ -63,7 +72,7 @@ func (poller *Poller) poll(ctx context.Context) error {
 		return err
 	}
 	for _, repository := range repositories {
-		identity, err := issueLoreIdentity(ctx, poller.issuer, poller.principal, repository.ID, repository.LoreURL)
+		credential, err := issueLoreCredential(ctx, poller.issuer, poller.principal, repository.ID, repository.LoreURL)
 		if err != nil {
 			poller.logger.Error(
 				"could not read repository Lore credential",
@@ -72,10 +81,15 @@ func (poller *Poller) poll(ctx context.Context) error {
 			)
 			continue
 		}
-		branches, err := poller.lore.Branches(ctx, loreclient.RepositoryRef{
-			CacheKey: repository.ID,
-			URL:      repository.LoreURL,
-		}, identity)
+		repositoryRef := loreclient.RepositoryRef{CacheKey: repository.ID, URL: repository.LoreURL}
+		var branches []loreclient.Branch
+		if client, ok := poller.lore.(loreclient.CredentialBranchClient); ok {
+			branches, err = client.BranchesWithCredential(ctx, repositoryRef, loreCredential(credential))
+		} else if credential.Identity != "" {
+			branches, err = poller.lore.Branches(ctx, repositoryRef, credential.Identity)
+		} else {
+			err = fmt.Errorf("the configured Lore client does not accept token or AuthURL credentials")
+		}
 		if err != nil {
 			poller.logger.Error(
 				"could not read Lore branches",
@@ -97,12 +111,20 @@ func (poller *Poller) poll(ctx context.Context) error {
 			if err != nil {
 				return fmt.Errorf("create workflow inspection workspace: %w", err)
 			}
-			cloneErr := revisionClient.CloneRevision(ctx, loreclient.RepositoryRef{
-				CacheKey: repository.ID,
-				URL:      repository.LoreURL,
-			}, identity, branch.LatestRevision, workspace)
+			var cloneErr error
+			if client, ok := poller.lore.(loreclient.CredentialRevisionClient); ok {
+				cloneErr = client.CloneRevisionWithCredential(
+					ctx, repositoryRef, loreCredential(credential), branch.LatestRevision, workspace,
+				)
+			} else if credential.Identity != "" {
+				cloneErr = revisionClient.CloneRevision(
+					ctx, repositoryRef, credential.Identity, branch.LatestRevision, workspace,
+				)
+			} else {
+				cloneErr = fmt.Errorf("the configured Lore client does not accept token or AuthURL credentials")
+			}
 			if cloneErr == nil {
-				workflows, cloneErr = DiscoverWorkflows(workspace)
+				workflows, cloneErr = DiscoverWorkflows(workspace, poller.platforms)
 			}
 			removeErr := os.RemoveAll(workspace)
 			if cloneErr != nil {

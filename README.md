@@ -147,8 +147,16 @@ transactionは最大15分）。
 認証プロバイダーへは`prompt=create`だけを渡します。その他の`prompt`や`kc_action`は400を返します。
 
 Lore側の読み取りはservice subject、repository partition、`read` scopeをcredential issuerへ渡し、短命の
-repository限定credentialを受け取ります。本番ではissuerが未注入ならfail closedし、ファイルcredentialや共有
-identityにはfallbackしません。開発用identity fallbackはdevelopment/localだけで明示的に許可します。
+repository限定credentialを受け取ります。契約はToken、AuthURL、Identityを受け取れますが、組み込みLore SDKの
+adapterはToken/AuthURLを未接続としてfail closedします。本番ではissuerやcredential-aware Lore clientが未注入なら
+起動後のrunner処理をfail closedし、ファイルcredentialや共有identityにはfallbackしません。開発用identity fallbackは
+development/localだけで明示的に許可します。
+
+Actions実行時は、service subject、organization/repository partition、job environmentをexecution-context resolverへ
+渡します。organization、repository、environmentの変数とsecretをenvironment優先で解決し、変数はactの`--var`と
+`--env`、secretは一時0600ファイルで渡します。secretと`::add-mask::`出力は保存前にマスクし、resolverのエラーは
+実行を開始せず、secretファイルも全終了経路で削除します。本番resolverはcontrol planeから注入し、固定値の開発用
+adapterは明示的なdevelopment/local設定でだけ利用できます。
 
 Keycloakを使う場合、ローカルのissuerは
 `http://keycloak.localhost:8280/realms/lorehub`、audienceは`lorehub-api`です。本番では公開HTTPSのissuerを設定します。
@@ -183,6 +191,19 @@ runnerは対象revisionの`.github/workflows/*.yml`と`.yaml`だけを検出し�
 remote jobへコピーするworkspace adapterとして動作します。`push`イベントの`before`と`after`にはLore revisionが入ります。
 job／serviceのnon-empty `options`、host mount・device・特権・host namespace・daemon credentialにつながる定義は、
 成功扱いにせずworkflowをdisabled/errorとして記録します。
+
+`workflow_dispatch.inputs`のdescription、required、default、type、optionsはActions APIと画面にそのまま公開し、
+dispatch時にserverで型、必須値、choiceの選択肢を検証します。解決済みの入力はevent payloadの`inputs`に保存し、
+`github.event.inputs`と`inputs.*`から参照できます。runnerのGitHub contextはLoreHubの設定済み公開origin、API URL、
+GraphQL URLを使い、GitHub.comへ置き換えません。`actions/checkout@v4`は行を変更せずに使えますが、`ref`、
+`repository`、`path`、`filter`、`sparse-checkout`、`ssh-key`、`lfs: true`、submoduleはLore adapterの対象外です。
+
+既定の`ubuntu-latest`は標準的なbash、Git、curl、Node toolcacheに近い構成を持つ、固定tagの
+`ghcr.io/catthehacker/ubuntu:act-24.04`です。`runs-on`の未登録labelはerrorとして停止し、workflowからimageを
+差し替えることはできません。
+
+`actions/checkout`以外のremote actionは、運用者が設定した`LOREHUB_ACTION_SOURCE_URL`からrunner proxy経由で取得し、
+一時的なactのlocal repositoryとして実行後に削除します。workflowから取得元を変更することはできません。
 
 Linuxコンテナで実行できるworkflowを対象にしています。GitHubのAPIそのもの、Git固有コマンド、Windows／macOS
 runner、GitHubが管理するrunner imageとの完全一致は提供しません。互換範囲外の機能を黙って成功扱いにはしません。

@@ -112,23 +112,6 @@ func issueLoreCredential(
 	return credential, nil
 }
 
-func issueLoreIdentity(
-	ctx context.Context,
-	issuer CredentialIssuer,
-	principal CredentialPrincipal,
-	repositoryID string,
-	loreURL string,
-) (string, error) {
-	credential, err := issueLoreCredential(ctx, issuer, principal, repositoryID, loreURL)
-	if err != nil {
-		return "", err
-	}
-	if strings.TrimSpace(credential.Identity) == "" {
-		return "", errors.New("the configured Lore client requires an identity credential")
-	}
-	return credential.Identity, nil
-}
-
 func validateCredentialRequest(ctx context.Context, request CredentialRequest) error {
 	if err := ctx.Err(); err != nil {
 		return err

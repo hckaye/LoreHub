@@ -33,6 +33,18 @@ type RepositoryDispatchTrigger struct {
 	Types []string `json:"types,omitempty"`
 }
 
+type WorkflowDispatchInput struct {
+	Description string   `json:"description,omitempty"`
+	Required    bool     `json:"required,omitempty"`
+	Default     *string  `json:"default,omitempty"`
+	Type        string   `json:"type"`
+	Options     []string `json:"options,omitempty"`
+}
+
+type WorkflowDispatchConfig struct {
+	Inputs map[string]WorkflowDispatchInput `json:"inputs,omitempty"`
+}
+
 type WorkflowDefinition struct {
 	Path               string
 	Name               string
@@ -45,10 +57,19 @@ type WorkflowDefinition struct {
 	Schedules          []ScheduleTrigger
 	RepositoryDispatch *RepositoryDispatchTrigger
 	WorkflowDispatch   bool
+	DispatchInputs     map[string]WorkflowDispatchInput
 	TriggerConfig      json.RawMessage
 }
 
-func DiscoverWorkflows(workspace string) ([]WorkflowDefinition, error) {
+func DiscoverWorkflows(workspace string, platformImages ...map[string]string) ([]WorkflowDefinition, error) {
+	images := DefaultRunnerPlatformImages()
+	if len(platformImages) > 0 && platformImages[0] != nil {
+		var err error
+		images, err = mergedRunnerPlatformImages(platformImages[0])
+		if err != nil {
+			return nil, err
+		}
+	}
 	directory, err := findWorkflowDirectory(workspace)
 	if errors.Is(err, fs.ErrNotExist) {
 		return []WorkflowDefinition{}, nil
@@ -67,7 +88,7 @@ func DiscoverWorkflows(workspace string) ([]WorkflowDefinition, error) {
 			continue
 		}
 		path := filepath.ToSlash(filepath.Join(".github", "workflows", entry.Name()))
-		workflow, err := parseWorkflowFile(filepath.Join(directory, entry.Name()), path)
+		workflow, err := parseWorkflowFile(filepath.Join(directory, entry.Name()), path, images)
 		if err != nil {
 			workflow.Enabled = false
 			workflow.State = "error"
@@ -138,7 +159,7 @@ func workflowFromTriggerConfig(
 ) (WorkflowDefinition, error) {
 	var config struct {
 		Push               *PushTrigger               `json:"push"`
-		WorkflowDispatch   json.RawMessage            `json:"workflow_dispatch"`
+		WorkflowDispatch   *WorkflowDispatchConfig    `json:"workflow_dispatch"`
 		PullRequest        *PullRequestTrigger        `json:"pull_request"`
 		Schedules          []ScheduleTrigger          `json:"schedule"`
 		RepositoryDispatch *RepositoryDispatchTrigger `json:"repository_dispatch"`
@@ -150,8 +171,14 @@ func workflowFromTriggerConfig(
 	}
 	return WorkflowDefinition{
 		Path: path, Name: name, Enabled: enabled, State: state, Push: config.Push,
-		WorkflowDispatch: len(config.WorkflowDispatch) > 0,
-		PullRequest:      config.PullRequest, Schedules: config.Schedules,
+		WorkflowDispatch: config.WorkflowDispatch != nil,
+		DispatchInputs: func() map[string]WorkflowDispatchInput {
+			if config.WorkflowDispatch == nil {
+				return nil
+			}
+			return config.WorkflowDispatch.Inputs
+		}(),
+		PullRequest: config.PullRequest, Schedules: config.Schedules,
 		RepositoryDispatch: config.RepositoryDispatch, TriggerConfig: triggerConfig,
 	}, nil
 }
@@ -216,7 +243,11 @@ func findWorkflowDirectory(workspace string) (string, error) {
 	return workflowDirectory, nil
 }
 
-func parseWorkflowFile(filePath string, workflowPath string) (WorkflowDefinition, error) {
+func parseWorkflowFile(
+	filePath string,
+	workflowPath string,
+	platformImages map[string]string,
+) (WorkflowDefinition, error) {
 	workflow := WorkflowDefinition{
 		Path:    workflowPath,
 		Name:    strings.TrimSuffix(filepath.Base(workflowPath), filepath.Ext(workflowPath)),
@@ -262,21 +293,25 @@ func parseWorkflowFile(filePath string, workflowPath string) (WorkflowDefinition
 	if err := validateJobRuntimeDefinitions(jobs); err != nil {
 		return workflow, err
 	}
+	if err := validateWorkflowRunnerLabels(filePath, platformImages); err != nil {
+		return workflow, err
+	}
 	on := mappingValue(root, "on")
 	if on == nil {
 		return workflow, errors.New("workflow must define an on trigger")
 	}
-	push, dispatch, pullRequest, schedules, repositoryDispatch, err := parseTriggers(on)
+	push, dispatch, dispatchInputs, pullRequest, schedules, repositoryDispatch, err := parseTriggers(on)
 	if err != nil {
 		return workflow, err
 	}
 	workflow.Push = push
 	workflow.WorkflowDispatch = dispatch
+	workflow.DispatchInputs = dispatchInputs
 	workflow.PullRequest = pullRequest
 	workflow.Schedules = schedules
 	workflow.RepositoryDispatch = repositoryDispatch
 	workflow.TriggerConfig, err = encodeTriggerConfig(
-		push, dispatch, pullRequest, schedules, repositoryDispatch,
+		push, dispatch, dispatchInputs, pullRequest, schedules, repositoryDispatch,
 	)
 	if err != nil {
 		return workflow, err
@@ -406,334 +441,6 @@ func validateEmptyRuntimeOptions(node *yaml.Node, kind string, name string) erro
 	return nil
 }
 
-func parseTriggers(node *yaml.Node) (
-	*PushTrigger,
-	bool,
-	*PullRequestTrigger,
-	[]ScheduleTrigger,
-	*RepositoryDispatchTrigger,
-	error,
-) {
-	push := (*PushTrigger)(nil)
-	dispatch := false
-	pullRequest := (*PullRequestTrigger)(nil)
-	schedules := make([]ScheduleTrigger, 0)
-	repositoryDispatch := (*RepositoryDispatchTrigger)(nil)
-	visit := func(name string, value *yaml.Node) error {
-		switch name {
-		case "push":
-			if push != nil {
-				return errors.New("workflow declares push more than once")
-			}
-			parsed, err := parsePushTrigger(value)
-			if err != nil {
-				return err
-			}
-			push = parsed
-		case "workflow_dispatch":
-			if dispatch {
-				return errors.New("workflow declares workflow_dispatch more than once")
-			}
-			if err := validateWorkflowDispatch(value); err != nil {
-				return err
-			}
-			dispatch = true
-		case "pull_request":
-			if pullRequest != nil {
-				return errors.New("workflow declares pull_request more than once")
-			}
-			parsed, err := parsePullRequestTrigger(value)
-			if err != nil {
-				return err
-			}
-			pullRequest = parsed
-		case "schedule":
-			parsed, err := parseScheduleTriggers(value)
-			if err != nil {
-				return err
-			}
-			schedules = append(schedules, parsed...)
-		case "repository_dispatch":
-			if repositoryDispatch != nil {
-				return errors.New("workflow declares repository_dispatch more than once")
-			}
-			parsed, err := parseRepositoryDispatchTrigger(value)
-			if err != nil {
-				return err
-			}
-			repositoryDispatch = parsed
-		default:
-			return fmt.Errorf("unsupported workflow event %q", name)
-		}
-		return nil
-	}
-
-	switch node.Kind {
-	case yaml.ScalarNode:
-		name, err := scalarString(node, "workflow event")
-		if err != nil {
-			return nil, false, nil, nil, nil, err
-		}
-		if err := visit(name, nil); err != nil {
-			return nil, false, nil, nil, nil, err
-		}
-	case yaml.SequenceNode:
-		if len(node.Content) == 0 {
-			return nil, false, nil, nil, nil, errors.New("workflow event list must not be empty")
-		}
-		for _, item := range node.Content {
-			name, err := scalarString(item, "workflow event")
-			if err != nil {
-				return nil, false, nil, nil, nil, err
-			}
-			if err := visit(name, nil); err != nil {
-				return nil, false, nil, nil, nil, err
-			}
-		}
-	case yaml.MappingNode:
-		if len(node.Content) == 0 {
-			return nil, false, nil, nil, nil, errors.New("workflow event map must not be empty")
-		}
-		for index := 0; index+1 < len(node.Content); index += 2 {
-			name, err := scalarString(node.Content[index], "workflow event")
-			if err != nil {
-				return nil, false, nil, nil, nil, err
-			}
-			if err := visit(name, node.Content[index+1]); err != nil {
-				return nil, false, nil, nil, nil, err
-			}
-		}
-	default:
-		return nil, false, nil, nil, nil, errors.New("workflow on must be a scalar, list, or map")
-	}
-	return push, dispatch, pullRequest, schedules, repositoryDispatch, nil
-}
-
-func parsePullRequestTrigger(node *yaml.Node) (*PullRequestTrigger, error) {
-	trigger := &PullRequestTrigger{}
-	if node == nil || isNullNode(node) {
-		return trigger, nil
-	}
-	if node.Kind != yaml.MappingNode {
-		return nil, errors.New("pull_request trigger must be a map")
-	}
-	for index := 0; index+1 < len(node.Content); index += 2 {
-		key := node.Content[index].Value
-		switch key {
-		case "branches", "branches-ignore", "types":
-			values, err := parseStringList(node.Content[index+1], key)
-			if err != nil {
-				return nil, err
-			}
-			switch key {
-			case "branches":
-				trigger.Branches = values
-			case "branches-ignore":
-				trigger.BranchesIgnore = values
-			case "types":
-				trigger.Types = values
-			}
-		default:
-			return nil, fmt.Errorf("unsupported pull_request filter %q", key)
-		}
-	}
-	if len(trigger.Branches) > 0 && len(trigger.BranchesIgnore) > 0 {
-		return nil, errors.New("pull_request trigger cannot use both branches and branches-ignore")
-	}
-	return trigger, nil
-}
-
-func parseScheduleTriggers(node *yaml.Node) ([]ScheduleTrigger, error) {
-	if node == nil || node.Kind != yaml.SequenceNode || len(node.Content) == 0 {
-		return nil, errors.New("schedule trigger must be a non-empty list")
-	}
-	triggers := make([]ScheduleTrigger, 0, len(node.Content))
-	seen := make(map[string]struct{}, len(node.Content))
-	for _, item := range node.Content {
-		if item.Kind != yaml.MappingNode {
-			return nil, errors.New("schedule entries must be maps")
-		}
-		cronNode := mappingValue(item, "cron")
-		cron, err := scalarString(cronNode, "schedule cron")
-		if err != nil {
-			return nil, err
-		}
-		cron = strings.Join(strings.Fields(cron), " ")
-		if _, err := parseCron(cron); err != nil {
-			return nil, err
-		}
-		for index := 0; index+1 < len(item.Content); index += 2 {
-			if item.Content[index].Value != "cron" {
-				return nil, fmt.Errorf("unsupported schedule field %q", item.Content[index].Value)
-			}
-		}
-		if _, ok := seen[cron]; ok {
-			return nil, fmt.Errorf("schedule cron %q is declared more than once", cron)
-		}
-		seen[cron] = struct{}{}
-		triggers = append(triggers, ScheduleTrigger{Cron: cron})
-	}
-	return triggers, nil
-}
-
-func parseRepositoryDispatchTrigger(node *yaml.Node) (*RepositoryDispatchTrigger, error) {
-	trigger := &RepositoryDispatchTrigger{}
-	if node == nil || isNullNode(node) {
-		return trigger, nil
-	}
-	if node.Kind != yaml.MappingNode {
-		return nil, errors.New("repository_dispatch trigger must be a map")
-	}
-	for index := 0; index+1 < len(node.Content); index += 2 {
-		key := node.Content[index].Value
-		if key != "types" {
-			return nil, fmt.Errorf("unsupported repository_dispatch field %q", key)
-		}
-		values, err := parseStringList(node.Content[index+1], key)
-		if err != nil {
-			return nil, err
-		}
-		trigger.Types = values
-	}
-	return trigger, nil
-}
-
-func parsePushTrigger(node *yaml.Node) (*PushTrigger, error) {
-	trigger := &PushTrigger{}
-	if node == nil || isNullNode(node) {
-		return trigger, nil
-	}
-	if node.Kind != yaml.MappingNode {
-		return nil, errors.New("push trigger must be a map")
-	}
-	for index := 0; index+1 < len(node.Content); index += 2 {
-		key := node.Content[index].Value
-		values, err := parsePatternList(node.Content[index+1], key)
-		if err != nil {
-			return nil, err
-		}
-		switch key {
-		case "branches":
-			trigger.Branches = values
-		case "branches-ignore":
-			trigger.BranchesIgnore = values
-		default:
-			return nil, fmt.Errorf("unsupported push filter %q; only branch filters are supported", key)
-		}
-	}
-	if len(trigger.Branches) > 0 && len(trigger.BranchesIgnore) > 0 {
-		return nil, errors.New("push trigger cannot use both branches and branches-ignore")
-	}
-	return trigger, nil
-}
-
-func parsePatternList(node *yaml.Node, field string) ([]string, error) {
-	values, err := parseStringList(node, field)
-	if err != nil {
-		return nil, fmt.Errorf("push filter %q must be a non-empty string list: %w", field, err)
-	}
-	hasPositive := false
-	for _, value := range values {
-		if !strings.HasPrefix(value, "!") {
-			hasPositive = true
-			break
-		}
-	}
-	if !hasPositive {
-		return nil, fmt.Errorf("push filter %q must contain a non-negative pattern", field)
-	}
-	return values, nil
-}
-
-func parseStringList(node *yaml.Node, field string) ([]string, error) {
-	if node == nil {
-		return nil, fmt.Errorf("%s must be a non-empty string list", field)
-	}
-	if node.Kind == yaml.ScalarNode && !isNullNode(node) {
-		value, err := scalarString(node, field)
-		if err != nil {
-			return nil, err
-		}
-		return []string{value}, nil
-	}
-	if node.Kind != yaml.SequenceNode || len(node.Content) == 0 {
-		return nil, fmt.Errorf("%s must be a non-empty string list", field)
-	}
-	values := make([]string, 0, len(node.Content))
-	for _, item := range node.Content {
-		value, err := scalarString(item, field)
-		if err != nil {
-			return nil, err
-		}
-		values = append(values, value)
-	}
-	return values, nil
-}
-
-func validateWorkflowDispatch(node *yaml.Node) error {
-	if node == nil || isNullNode(node) {
-		return nil
-	}
-	if node.Kind != yaml.MappingNode {
-		return errors.New("workflow_dispatch trigger must be a map")
-	}
-	for index := 0; index+1 < len(node.Content); index += 2 {
-		key := node.Content[index].Value
-		if key != "inputs" {
-			return fmt.Errorf("unsupported workflow_dispatch field %q", key)
-		}
-		inputs := node.Content[index+1]
-		if inputs.Kind != yaml.MappingNode {
-			return errors.New("workflow_dispatch inputs must be a map")
-		}
-		for inputIndex := 0; inputIndex+1 < len(inputs.Content); inputIndex += 2 {
-			input := inputs.Content[inputIndex+1]
-			if input.Kind != yaml.MappingNode {
-				return errors.New("workflow_dispatch input definitions must be maps")
-			}
-			for fieldIndex := 0; fieldIndex+1 < len(input.Content); fieldIndex += 2 {
-				field := input.Content[fieldIndex].Value
-				switch field {
-				case "description", "required", "default", "type", "options":
-				default:
-					return fmt.Errorf("unsupported workflow_dispatch input field %q", field)
-				}
-			}
-		}
-	}
-	return nil
-}
-
-func encodeTriggerConfig(
-	push *PushTrigger,
-	dispatch bool,
-	pullRequest *PullRequestTrigger,
-	schedules []ScheduleTrigger,
-	repositoryDispatch *RepositoryDispatchTrigger,
-) (json.RawMessage, error) {
-	config := make(map[string]any, 5)
-	if push != nil {
-		config["push"] = push
-	}
-	if pullRequest != nil {
-		config["pull_request"] = pullRequest
-	}
-	if len(schedules) > 0 {
-		config["schedule"] = schedules
-	}
-	if repositoryDispatch != nil {
-		config["repository_dispatch"] = repositoryDispatch
-	}
-	if dispatch {
-		config["workflow_dispatch"] = map[string]any{}
-	}
-	encoded, err := json.Marshal(config)
-	if err != nil {
-		return nil, fmt.Errorf("encode workflow triggers: %w", err)
-	}
-	return encoded, nil
-}
-
 func documentRoot(document *yaml.Node) (*yaml.Node, error) {
 	if document.Kind != yaml.DocumentNode || len(document.Content) != 1 ||
 		document.Content[0].Kind != yaml.MappingNode {
@@ -777,7 +484,8 @@ func validateWorkflowPath(workflowPath string) error {
 }
 
 func workflowErrorCode(err error) string {
-	if strings.Contains(err.Error(), "unsupported container") || strings.Contains(err.Error(), "unsupported service") {
+	if strings.Contains(err.Error(), "unsupported container") || strings.Contains(err.Error(), "unsupported service") ||
+		strings.Contains(err.Error(), "runner label") || strings.Contains(err.Error(), "runs-on") {
 		return "unsupported_runtime_definition"
 	}
 	if strings.Contains(err.Error(), "unsupported workflow event") ||
@@ -836,85 +544,4 @@ func globMatch(pattern string, value string) bool {
 	}
 	expression.WriteString("$")
 	return regexp.MustCompile(expression.String()).MatchString(value)
-}
-
-func validateCheckoutWorkflow(path string) (int, error) {
-	contents, err := os.ReadFile(path)
-	if err != nil {
-		return 0, fmt.Errorf("read workflow %q: %w", path, err)
-	}
-	var document yaml.Node
-	if err := yaml.Unmarshal(contents, &document); err != nil {
-		return 0, fmt.Errorf("parse workflow %q: %w", path, err)
-	}
-	// act handles actions/checkout by copying the prepared --directory workspace into the job.
-	// Keep the reference intact: a local action would be resolved inside the remote job first.
-	adapted, err := validateCheckoutUses(&document)
-	if err != nil {
-		return 0, fmt.Errorf("validate Lore checkout adapter in %q: %w", path, err)
-	}
-	return adapted, nil
-}
-
-func validateCheckoutUses(node *yaml.Node) (int, error) {
-	adapted := 0
-	if node.Kind == yaml.MappingNode {
-		for index := 0; index+1 < len(node.Content); index += 2 {
-			key := node.Content[index]
-			value := node.Content[index+1]
-			if key.Value == "uses" && value.Kind == yaml.ScalarNode &&
-				strings.HasPrefix(value.Value, "actions/checkout@") {
-				adapted++
-				if err := validateCheckoutInputs(mappingValue(node, "with")); err != nil {
-					return 0, err
-				}
-			}
-		}
-	}
-	for _, child := range node.Content {
-		count, err := validateCheckoutUses(child)
-		if err != nil {
-			return 0, err
-		}
-		adapted += count
-	}
-	return adapted, nil
-}
-
-func validateCheckoutInputs(node *yaml.Node) error {
-	if node == nil || isNullNode(node) {
-		return nil
-	}
-	if node.Kind != yaml.MappingNode {
-		return errors.New("actions/checkout with must be a map")
-	}
-	for index := 0; index+1 < len(node.Content); index += 2 {
-		key := node.Content[index].Value
-		value := node.Content[index+1]
-		switch key {
-		case "clean", "fetch-depth", "persist-credentials":
-		case "filter", "path", "ref", "repository", "sparse-checkout", "ssh-key":
-			if value.Kind != yaml.ScalarNode || !isNullNode(value) && strings.TrimSpace(value.Value) != "" {
-				return fmt.Errorf("actions/checkout input %q is not supported by the Lore adapter", key)
-			}
-		case "lfs":
-			if value.Kind != yaml.ScalarNode {
-				return errors.New("actions/checkout input lfs must be a scalar")
-			}
-			if strings.EqualFold(strings.TrimSpace(value.Value), "true") {
-				return errors.New("actions/checkout input lfs=true is not supported by the Lore adapter")
-			}
-		case "submodules":
-			if value.Kind != yaml.ScalarNode {
-				return errors.New("actions/checkout input submodules must be a scalar")
-			}
-			if !isNullNode(value) && strings.TrimSpace(value.Value) != "" &&
-				!strings.EqualFold(strings.TrimSpace(value.Value), "false") {
-				return errors.New("actions/checkout submodules are not supported by the Lore adapter")
-			}
-		default:
-			return fmt.Errorf("actions/checkout input %q is not supported by the Lore adapter", key)
-		}
-	}
-	return nil
 }

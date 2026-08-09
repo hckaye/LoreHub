@@ -1,11 +1,13 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -21,45 +23,60 @@ const (
 )
 
 type Config struct {
-	Environment             string
-	HTTPAddress             string
-	DatabaseURL             string
-	DatabaseTimeout         time.Duration
-	ShutdownTimeout         time.Duration
-	AuthMode                string
-	OIDCIssuer              string
-	OIDCAudience            string
-	OIDCClientID            string
-	OIDCClientSecret        string
-	OIDCRedirectURL         string
-	PublicOrigin            string
-	AuthSecret              string
-	SessionCookieName       string
-	LoginBindingCookieName  string
-	SessionCookiePath       string
-	SessionCookieDomain     string
-	SessionCookieSecure     bool
-	SessionTTL              time.Duration
-	LoginTransactionTTL     time.Duration
-	LoreCacheDir            string
-	DevLoreIdentity         string
-	DevLoreIdentityFallback bool
-	RunnerSubject           string
-	LoreBinary              string
-	ActBinary               string
-	RunnerPollPeriod        time.Duration
-	BranchPollPeriod        time.Duration
-	RunnerJobTimeout        time.Duration
-	RunnerLeaseDuration     time.Duration
-	RunnerLogMaxBytes       int64
-	RunnerArtifactMaxCount  int
-	RunnerArtifactMaxFile   int64
-	RunnerArtifactMaxTotal  int64
-	RunnerLogDir            string
-	RunnerArtifactDir       string
-	RunnerWorkDir           string
-	RunnerProxyURL          string
-	RunnerEngineProxyURL    string
+	Environment               string
+	HTTPAddress               string
+	DatabaseURL               string
+	DatabaseTimeout           time.Duration
+	ShutdownTimeout           time.Duration
+	AuthMode                  string
+	OIDCIssuer                string
+	OIDCAudience              string
+	OIDCClientID              string
+	OIDCClientSecret          string
+	OIDCRedirectURL           string
+	PublicOrigin              string
+	PublicAPIURL              string
+	PublicGraphQLURL          string
+	ActionSourceURL           string
+	AuthSecret                string
+	SessionCookieName         string
+	LoginBindingCookieName    string
+	SessionCookiePath         string
+	SessionCookieDomain       string
+	SessionCookieSecure       bool
+	SessionTTL                time.Duration
+	LoginTransactionTTL       time.Duration
+	LoreCacheDir              string
+	DevLoreIdentity           string
+	DevLoreIdentityFallback   bool
+	RunnerSubject             string
+	LoreBinary                string
+	ActBinary                 string
+	RunnerPollPeriod          time.Duration
+	BranchPollPeriod          time.Duration
+	RunnerJobTimeout          time.Duration
+	RunnerLeaseDuration       time.Duration
+	RunnerLogMaxBytes         int64
+	RunnerArtifactMaxCount    int
+	RunnerArtifactMaxFile     int64
+	RunnerArtifactMaxTotal    int64
+	RunnerLogDir              string
+	RunnerArtifactDir         string
+	RunnerWorkDir             string
+	RunnerProxyURL            string
+	RunnerEngineProxyURL      string
+	RunnerPlatformImages      map[string]string
+	DevActionsContext         DevActionsContext
+	DevActionsContextFallback bool
+}
+
+type DevActionsContext struct {
+	OrganizationVariables map[string]string `json:"organization_variables"`
+	RepositoryVariables   map[string]string `json:"repository_variables"`
+	EnvironmentVariables  map[string]string `json:"environment_variables"`
+	OrganizationSecrets   map[string]string `json:"organization_secrets"`
+	RepositorySecrets     map[string]string `json:"repository_secrets"`
+	EnvironmentSecrets    map[string]string `json:"environment_secrets"`
 }
 
 func Load() (Config, error) {
@@ -107,46 +124,76 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	devActionsContextFallback, err := boolSetting("LOREHUB_DEV_ALLOW_ACTIONS_CONTEXT_FALLBACK", false)
+	if err != nil {
+		return Config{}, err
+	}
+	platformImages, err := parseJSONMapSetting("LOREHUB_RUNNER_PLATFORM_IMAGES")
+	if err != nil {
+		return Config{}, err
+	}
+	devActionsContext, err := parseDevActionsContext(os.Getenv("LOREHUB_DEV_ACTIONS_CONTEXT_JSON"))
+	if err != nil {
+		return Config{}, err
+	}
+	publicOrigin := strings.TrimRight(os.Getenv("LOREHUB_PUBLIC_ORIGIN"), "/")
+	if publicOrigin == "" && (environment == "development" || environment == "local") {
+		publicOrigin = "http://localhost:3000"
+	}
+	publicAPIURL := strings.TrimRight(os.Getenv("LOREHUB_PUBLIC_API_URL"), "/")
+	if publicAPIURL == "" && publicOrigin != "" {
+		publicAPIURL = publicOrigin + "/api/v1"
+	}
+	publicGraphQLURL := strings.TrimRight(os.Getenv("LOREHUB_PUBLIC_GRAPHQL_URL"), "/")
+	if publicGraphQLURL == "" && publicOrigin != "" {
+		publicGraphQLURL = publicOrigin + "/api/graphql"
+	}
 	config := Config{
-		Environment:             environment,
-		HTTPAddress:             envOrDefault("LOREHUB_HTTP_ADDRESS", ":8080"),
-		DatabaseURL:             os.Getenv("DATABASE_URL"),
-		DatabaseTimeout:         durationOrDefault("LOREHUB_DATABASE_TIMEOUT", 10*time.Second),
-		ShutdownTimeout:         durationOrDefault("LOREHUB_SHUTDOWN_TIMEOUT", 15*time.Second),
-		AuthMode:                authMode,
-		OIDCIssuer:              oidcIssuer,
-		OIDCAudience:            oidcAudience,
-		OIDCClientID:            oidcClientID,
-		OIDCClientSecret:        os.Getenv("LOREHUB_OIDC_CLIENT_SECRET"),
-		OIDCRedirectURL:         os.Getenv("LOREHUB_OIDC_REDIRECT_URL"),
-		PublicOrigin:            strings.TrimRight(os.Getenv("LOREHUB_PUBLIC_ORIGIN"), "/"),
-		AuthSecret:              os.Getenv("LOREHUB_AUTH_SECRET"),
-		SessionCookieName:       envOrDefault("LOREHUB_SESSION_COOKIE_NAME", "lorehub_session"),
-		LoginBindingCookieName:  envOrDefault("LOREHUB_LOGIN_BINDING_COOKIE_NAME", "lorehub_login_binding"),
-		SessionCookiePath:       envOrDefault("LOREHUB_SESSION_COOKIE_PATH", "/"),
-		SessionCookieDomain:     os.Getenv("LOREHUB_SESSION_COOKIE_DOMAIN"),
-		SessionCookieSecure:     cookieSecure,
-		SessionTTL:              sessionTTL,
-		LoginTransactionTTL:     transactionTTL,
-		LoreCacheDir:            envOrDefault("LOREHUB_LORE_CACHE_DIR", ".cache/lorehub/repositories"),
-		DevLoreIdentity:         os.Getenv("LOREHUB_DEV_LORE_IDENTITY"),
-		DevLoreIdentityFallback: devLoreIdentityFallback,
-		RunnerSubject:           envOrDefault("LOREHUB_RUNNER_SUBJECT", "lorehub-runner"),
-		LoreBinary:              envOrDefault("LOREHUB_LORE_BINARY", "lore"),
-		ActBinary:               envOrDefault("LOREHUB_ACT_BINARY", "act"),
-		RunnerPollPeriod:        durationOrDefault("LOREHUB_RUNNER_POLL_PERIOD", 2*time.Second),
-		BranchPollPeriod:        durationOrDefault("LOREHUB_BRANCH_POLL_PERIOD", 15*time.Second),
-		RunnerJobTimeout:        durationOrDefault("LOREHUB_RUNNER_JOB_TIMEOUT", 60*time.Minute),
-		RunnerLeaseDuration:     durationOrDefault("LOREHUB_RUNNER_LEASE_DURATION", 2*time.Minute),
-		RunnerLogMaxBytes:       logMaxBytes,
-		RunnerArtifactMaxCount:  artifactMaxCount,
-		RunnerArtifactMaxFile:   artifactMaxFile,
-		RunnerArtifactMaxTotal:  artifactMaxTotal,
-		RunnerLogDir:            envOrDefault("LOREHUB_RUNNER_LOG_DIR", ".cache/lorehub/runner-logs"),
-		RunnerArtifactDir:       envOrDefault("LOREHUB_RUNNER_ARTIFACT_DIR", ".cache/lorehub/runner-artifacts"),
-		RunnerWorkDir:           envOrDefault("LOREHUB_RUNNER_WORK_DIR", ".cache/lorehub/runner-work"),
-		RunnerProxyURL:          envOrDefault("LOREHUB_RUNNER_PROXY_URL", "http://172.28.241.10:3128"),
-		RunnerEngineProxyURL:    envOrDefault("LOREHUB_RUNNER_ENGINE_PROXY_URL", "http://172.28.241.10:3128"),
+		Environment:               environment,
+		HTTPAddress:               envOrDefault("LOREHUB_HTTP_ADDRESS", ":8080"),
+		DatabaseURL:               os.Getenv("DATABASE_URL"),
+		DatabaseTimeout:           durationOrDefault("LOREHUB_DATABASE_TIMEOUT", 10*time.Second),
+		ShutdownTimeout:           durationOrDefault("LOREHUB_SHUTDOWN_TIMEOUT", 15*time.Second),
+		AuthMode:                  authMode,
+		OIDCIssuer:                oidcIssuer,
+		OIDCAudience:              oidcAudience,
+		OIDCClientID:              oidcClientID,
+		OIDCClientSecret:          os.Getenv("LOREHUB_OIDC_CLIENT_SECRET"),
+		OIDCRedirectURL:           os.Getenv("LOREHUB_OIDC_REDIRECT_URL"),
+		PublicOrigin:              publicOrigin,
+		PublicAPIURL:              publicAPIURL,
+		PublicGraphQLURL:          publicGraphQLURL,
+		ActionSourceURL:           envOrDefault("LOREHUB_ACTION_SOURCE_URL", "https://github.com"),
+		AuthSecret:                os.Getenv("LOREHUB_AUTH_SECRET"),
+		SessionCookieName:         envOrDefault("LOREHUB_SESSION_COOKIE_NAME", "lorehub_session"),
+		LoginBindingCookieName:    envOrDefault("LOREHUB_LOGIN_BINDING_COOKIE_NAME", "lorehub_login_binding"),
+		SessionCookiePath:         envOrDefault("LOREHUB_SESSION_COOKIE_PATH", "/"),
+		SessionCookieDomain:       os.Getenv("LOREHUB_SESSION_COOKIE_DOMAIN"),
+		SessionCookieSecure:       cookieSecure,
+		SessionTTL:                sessionTTL,
+		LoginTransactionTTL:       transactionTTL,
+		LoreCacheDir:              envOrDefault("LOREHUB_LORE_CACHE_DIR", ".cache/lorehub/repositories"),
+		DevLoreIdentity:           os.Getenv("LOREHUB_DEV_LORE_IDENTITY"),
+		DevLoreIdentityFallback:   devLoreIdentityFallback,
+		RunnerSubject:             envOrDefault("LOREHUB_RUNNER_SUBJECT", "lorehub-runner"),
+		LoreBinary:                envOrDefault("LOREHUB_LORE_BINARY", "lore"),
+		ActBinary:                 envOrDefault("LOREHUB_ACT_BINARY", "act"),
+		RunnerPollPeriod:          durationOrDefault("LOREHUB_RUNNER_POLL_PERIOD", 2*time.Second),
+		BranchPollPeriod:          durationOrDefault("LOREHUB_BRANCH_POLL_PERIOD", 15*time.Second),
+		RunnerJobTimeout:          durationOrDefault("LOREHUB_RUNNER_JOB_TIMEOUT", 60*time.Minute),
+		RunnerLeaseDuration:       durationOrDefault("LOREHUB_RUNNER_LEASE_DURATION", 2*time.Minute),
+		RunnerLogMaxBytes:         logMaxBytes,
+		RunnerArtifactMaxCount:    artifactMaxCount,
+		RunnerArtifactMaxFile:     artifactMaxFile,
+		RunnerArtifactMaxTotal:    artifactMaxTotal,
+		RunnerLogDir:              envOrDefault("LOREHUB_RUNNER_LOG_DIR", ".cache/lorehub/runner-logs"),
+		RunnerArtifactDir:         envOrDefault("LOREHUB_RUNNER_ARTIFACT_DIR", ".cache/lorehub/runner-artifacts"),
+		RunnerWorkDir:             envOrDefault("LOREHUB_RUNNER_WORK_DIR", ".cache/lorehub/runner-work"),
+		RunnerProxyURL:            envOrDefault("LOREHUB_RUNNER_PROXY_URL", "http://172.28.241.10:3128"),
+		RunnerEngineProxyURL:      envOrDefault("LOREHUB_RUNNER_ENGINE_PROXY_URL", "http://172.28.241.10:3128"),
+		RunnerPlatformImages:      platformImages,
+		DevActionsContext:         devActionsContext,
+		DevActionsContextFallback: devActionsContextFallback,
 	}
 
 	if err := validate(config); err != nil {
@@ -200,8 +247,38 @@ func validate(config Config) error {
 		(strings.TrimSpace(config.DevLoreIdentity) != "" || config.DevLoreIdentityFallback) {
 		return errors.New("development-only Lore identity fallback is disabled outside development and local")
 	}
+	if config.Environment != "development" && config.Environment != "local" && config.DevActionsContextFallback {
+		return errors.New("development-only Actions context fallback is disabled outside development and local")
+	}
 	if config.DevLoreIdentityFallback && strings.TrimSpace(config.DevLoreIdentity) == "" {
 		return errors.New("LOREHUB_DEV_LORE_IDENTITY is required when the development fallback is enabled")
+	}
+	if err := validateURL("LOREHUB_PUBLIC_ORIGIN", config.PublicOrigin, config.Environment, true); err != nil {
+		return err
+	}
+	for name, value := range map[string]string{
+		"LOREHUB_PUBLIC_API_URL":     config.PublicAPIURL,
+		"LOREHUB_PUBLIC_GRAPHQL_URL": config.PublicGraphQLURL,
+	} {
+		if err := validateURL(name, value, config.Environment, false); err != nil {
+			return err
+		}
+	}
+	if err := validateURL("LOREHUB_ACTION_SOURCE_URL", config.ActionSourceURL, config.Environment, true); err != nil {
+		return err
+	}
+	parsedPublicOrigin, _ := url.Parse(config.PublicOrigin)
+	for name, value := range map[string]string{
+		"LOREHUB_PUBLIC_API_URL":     config.PublicAPIURL,
+		"LOREHUB_PUBLIC_GRAPHQL_URL": config.PublicGraphQLURL,
+	} {
+		candidate, _ := url.Parse(value)
+		if !sameOrigin(parsedPublicOrigin, candidate) {
+			return fmt.Errorf("%s must use the LOREHUB_PUBLIC_ORIGIN origin", name)
+		}
+	}
+	if err := validatePlatformImages(config.RunnerPlatformImages); err != nil {
+		return err
 	}
 	if strings.TrimSpace(config.RunnerSubject) == "" {
 		return errors.New("LOREHUB_RUNNER_SUBJECT is required")
@@ -247,9 +324,6 @@ func validate(config Config) error {
 		return errors.New("LOREHUB_AUTH_SECRET must contain at least 32 characters")
 	}
 	if err := validateURL("LOREHUB_OIDC_REDIRECT_URL", config.OIDCRedirectURL, config.Environment, false); err != nil {
-		return err
-	}
-	if err := validateURL("LOREHUB_PUBLIC_ORIGIN", config.PublicOrigin, config.Environment, true); err != nil {
 		return err
 	}
 	redirectURL, _ := url.Parse(config.OIDCRedirectURL)
@@ -316,6 +390,43 @@ func validateURL(name string, value string, environment string, originOnly bool)
 
 func sameOrigin(left *url.URL, right *url.URL) bool {
 	return strings.EqualFold(left.Scheme, right.Scheme) && strings.EqualFold(left.Host, right.Host)
+}
+
+func validatePlatformImages(images map[string]string) error {
+	labelPattern := regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`)
+	for label, image := range images {
+		if !labelPattern.MatchString(label) {
+			return fmt.Errorf("LOREHUB_RUNNER_PLATFORM_IMAGES label %q is invalid", label)
+		}
+		if image == "" || strings.TrimSpace(image) != image || strings.ContainsAny(image, "\r\n\t ;'\"$`()") ||
+			strings.Contains(image, "@") || !strings.Contains(image, ":") {
+			return fmt.Errorf("LOREHUB_RUNNER_PLATFORM_IMAGES image for %q is invalid", label)
+		}
+	}
+	return nil
+}
+
+func parseJSONMapSetting(name string) (map[string]string, error) {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return nil, nil
+	}
+	var values map[string]string
+	if err := json.Unmarshal([]byte(raw), &values); err != nil {
+		return nil, fmt.Errorf("%s must be a JSON object of strings: %w", name, err)
+	}
+	return values, nil
+}
+
+func parseDevActionsContext(raw string) (DevActionsContext, error) {
+	if strings.TrimSpace(raw) == "" {
+		return DevActionsContext{}, nil
+	}
+	var value DevActionsContext
+	if err := json.Unmarshal([]byte(raw), &value); err != nil {
+		return DevActionsContext{}, fmt.Errorf("LOREHUB_DEV_ACTIONS_CONTEXT_JSON must be valid JSON: %w", err)
+	}
+	return value, nil
 }
 
 func envOrDefault(key string, fallback string) string {

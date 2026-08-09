@@ -49,10 +49,38 @@ to verify that stronger layer.
 ## Lore credentials
 
 The runner and poller call a `CredentialIssuer` with a service subject, the exact repository partition, the Lore URL,
-and the `read` scope. The issuer returns a short-lived exact-resource `Token`, `AuthURL`, or `Identity`; the current
-Lore client consumes `Identity` while the contract preserves the other credential forms for the control plane.
-Production has no file or shared-identity fallback: the process fails closed until an issuer is injected. The only
-static identity adapter is an explicit development/local test fallback and is rejected in production.
+and the `read` scope. The issuer returns a short-lived exact-resource `Token`, `AuthURL`, or `Identity`.
+The `CredentialRevisionClient` and `CredentialBranchClient` interfaces are the integration boundary for the control
+plane issuer. The bundled Lore SDK adapter accepts only its local identity form and deliberately fails closed for
+token/AuthURL credentials; this revision does not claim that identity-only adapter is production authentication.
+Production has no file or shared-identity fallback: the process fails closed until the issuer and credential-aware Lore
+client are injected. The only static identity adapter is an explicit development/local test fallback and is rejected
+in production.
+
+The runner also resolves an `actions:execute` context using the service subject, repository and organization partitions,
+and the literal job environment. Repository, organization, and environment variables/secrets are merged with
+environment precedence. Variables are passed as act `--var` and `--env` entries; secrets are passed through a temporary
+0600 `--secret-file`, masked in logs, and removed on every exit. A resolver error fails the job before act starts.
+
+`LOREHUB_RUNNER_PLATFORM_IMAGES` may add validated operator-owned runner-label mappings. The deployed default is
+`ubuntu-latest=ghcr.io/catthehacker/ubuntu:act-24.04`; unmapped literal labels fail closed. Workflow files cannot
+provide or override these act platform mappings.
+
+Remote action references other than `actions/checkout` are downloaded from the operator-configured
+`LOREHUB_ACTION_SOURCE_URL` through the runner proxy, extracted into a temporary local repository mapping, and removed
+with the workspace. The workflow cannot change this source. The public GitHub context remains the configured LoreHub
+URL.
+
+`workflow_dispatch.inputs` keeps its description, required flag, default, type, and choice options. The API and UI
+expose that definition, and the server validates submitted values before storing the exact resolved strings in the event
+payload.
+The runtime preserves `github.event.inputs` and the `inputs.*` context for act. The configured LoreHub public origin,
+API URL, and GraphQL URL populate the GitHub context and `GITHUB_*` environment values; GitHub.com is never substituted.
+
+The official `actions/checkout@v4` line remains unchanged. Lore supplies the already-cloned workspace without Git. The
+adapter does not support `ref`, `repository`, `path`, `filter`, `sparse-checkout`, `ssh-key`, `lfs: true`, or
+submodules;
+those inputs disable the workflow with an explicit error.
 
 ## Workflow catalog and branches
 
@@ -87,7 +115,9 @@ and artifacts require active read permission. Dispatch, cancellation, and rerun 
 rerun receives a new run number and stores `runAttempt` plus `rerunOf` so each execution remains independently
 addressable.
 Browser session mutations require the finalized cookie CSRF check; bearer authentication remains compatible.
-Unauthorized private/internal repository access returns 404 so repository existence is not disclosed.
+Unauthorized private/internal repository access returns 404 so repository existence is not disclosed. A public
+repository's bounded artifacts are also intentionally public and may be downloaded anonymously; internal and private
+artifacts require active read permission.
 
 ## Compose smoke test
 

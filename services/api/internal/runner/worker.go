@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -21,9 +22,14 @@ import (
 )
 
 type WorkerConfig struct {
+	Environment           string
 	LoreBinary            string
 	CredentialIssuer      CredentialIssuer
 	CredentialPrincipal   CredentialPrincipal
+	ExecutionResolver     ExecutionContextResolver
+	GitHubContext         GitHubContext
+	ActionSourceURL       string
+	PlatformImages        map[string]string
 	RevisionClient        loreclient.RevisionClient
 	ActBinary             string
 	WorkDir               string
@@ -62,6 +68,26 @@ func NewWorker(store *Store, config WorkerConfig, logger *slog.Logger) (*Worker,
 	if config.CredentialIssuer == nil {
 		return nil, errors.New("repository-scoped Lore credential issuer is required")
 	}
+	if config.ExecutionResolver == nil {
+		return nil, errors.New("Actions execution context resolver is required")
+	}
+	if config.Environment == "" {
+		config.Environment = "production"
+	}
+	if strings.TrimSpace(config.ActionSourceURL) == "" {
+		config.ActionSourceURL = defaultActionSourceURL
+	}
+	if err := validateGitHubContext(config.GitHubContext, config.Environment); err != nil {
+		return nil, err
+	}
+	if err := validateActionSourceURL(config.ActionSourceURL, config.Environment); err != nil {
+		return nil, err
+	}
+	platformImages, err := mergedRunnerPlatformImages(config.PlatformImages)
+	if err != nil {
+		return nil, err
+	}
+	config.PlatformImages = platformImages
 	if strings.TrimSpace(config.ProxyURL) == "" {
 		return nil, errors.New("runner forward proxy URL is required")
 	}
@@ -241,10 +267,10 @@ func (worker *Worker) runJob(ctx context.Context, job Job, logKey string) (strin
 	if err := worker.store.SetJobLogObjectKey(ctx, job, worker.workerID, logKey); err != nil {
 		return "", nil, fmt.Errorf("publish CI log path: %w", err)
 	}
-	logWriter := &boundedLogWriter{writer: logFile, remaining: worker.config.LogMaxBytes}
+	boundedWriter := &boundedLogWriter{writer: logFile, remaining: worker.config.LogMaxBytes}
 
 	repositoryPath := filepath.Join(workspace, "repository")
-	if err := worker.cloneRevision(ctx, job, repositoryPath, logWriter); err != nil {
+	if err := worker.cloneRevision(ctx, job, repositoryPath, boundedWriter); err != nil {
 		return logKey, nil, err
 	}
 	if err := removeLoreMetadata(repositoryPath); err != nil {
@@ -266,6 +292,34 @@ func (worker *Worker) runJob(ctx context.Context, job Job, logKey string) (strin
 	if err := validateWorkflowFile(workflowPath); err != nil {
 		return logKey, nil, err
 	}
+	if err := validateWorkflowRunnerLabels(workflowPath, worker.config.PlatformImages); err != nil {
+		return logKey, nil, err
+	}
+	workflowEnvironment, err := workflowEnvironmentName(workflowPath)
+	if err != nil {
+		return logKey, nil, err
+	}
+	actionDirectory := filepath.Join(workspace, "remote-actions")
+	actionRepositories, err := prepareRemoteActions(ctx, workflowPath, actionDirectory, worker.config.ActionSourceURL)
+	if err != nil {
+		return logKey, nil, err
+	}
+	execution, err := resolveExecutionContext(ctx, worker.config.ExecutionResolver, ExecutionContextRequest{
+		Principal:      worker.config.CredentialPrincipal,
+		RepositoryID:   job.RepositoryID,
+		OrganizationID: job.OrganizationID,
+		Environment:    workflowEnvironment,
+		RequestedScope: "actions:execute",
+	})
+	if err != nil {
+		return logKey, nil, err
+	}
+	secretFile, err := writeSecretFile(workspace, execution.Secrets)
+	if err != nil {
+		return logKey, nil, err
+	}
+	defer cleanupSecretFile(secretFile)
+	logWriter := newMaskingLogWriter(boundedWriter, execution.Secrets)
 	jobNetwork, err := worker.createJobNetwork(ctx, job.ID)
 	if err != nil {
 		return logKey, nil, err
@@ -279,12 +333,22 @@ func (worker *Worker) runJob(ctx context.Context, job Job, logKey string) (strin
 		artifactPath,
 		jobNetwork.networkName,
 		jobNetwork.proxyURL,
+		actInvocation{
+			ActionRepositories: actionRepositories,
+			PlatformImages:     worker.config.PlatformImages,
+			GitHub:             worker.config.GitHubContext,
+			Variables:          execution.Variables,
+			SecretFile:         secretFile,
+		},
 	)
 	act := exec.CommandContext(ctx, worker.config.ActBinary, arguments...)
 	act.Stdout = logWriter
 	act.Stderr = logWriter
 	act.Env = append(safeEnvironment(), "LOREHUB_LORE_REVISION="+job.Revision)
 	runErr := runAct(ctx, act)
+	if flushErr := logWriter.Flush(); flushErr != nil && runErr == nil {
+		runErr = fmt.Errorf("flush masked Actions log: %w", flushErr)
+	}
 	_ = logFile.Sync()
 	artifacts, artifactErr := worker.persistArtifacts(job, artifactPath)
 	if artifactErr != nil {
@@ -304,6 +368,7 @@ func actArguments(
 	artifactPath string,
 	networkName string,
 	proxyURL string,
+	config actInvocation,
 ) []string {
 	arguments := []string{
 		job.EventName,
@@ -316,15 +381,34 @@ func actArguments(
 		"--container-architecture", "linux/amd64",
 		"--network", networkName,
 		"--no-cache-server",
-		"--platform", "ubuntu-latest=node:24.18.0-bookworm-slim",
 		"--rm",
 		"--env", "LOREHUB_LORE_REVISION=" + job.Revision,
 		"--env", "SHA_REF=" + job.Revision,
 		"--env", "GITHUB_SHA=" + job.Revision,
 		"--env", "GITHUB_REF=" + githubRef(job),
 		"--env", "GITHUB_REPOSITORY=" + job.Owner + "/" + job.Repository,
+		"--env", "GITHUB_SERVER_URL=" + config.GitHub.ServerURL,
+		"--env", "GITHUB_API_URL=" + config.GitHub.APIURL,
+		"--env", "GITHUB_GRAPHQL_URL=" + config.GitHub.GraphQLURL,
+	}
+	labels := make([]string, 0, len(config.PlatformImages))
+	for label := range config.PlatformImages {
+		labels = append(labels, label)
+	}
+	sort.Strings(labels)
+	for _, label := range labels {
+		arguments = append(arguments, "--platform", label+"="+config.PlatformImages[label])
+	}
+	for _, repository := range config.ActionRepositories {
+		arguments = append(arguments, "--local-repository", repository)
 	}
 	arguments = append(arguments, "--container-options", containerOptions)
+	if config.SecretFile != "" {
+		arguments = append(arguments, "--secret-file", config.SecretFile)
+	}
+	for _, variable := range sortedVariables(config.Variables) {
+		arguments = append(arguments, "--var", variable, "--env", variable)
+	}
 	for _, variable := range []string{
 		"HTTP_PROXY=" + proxyURL,
 		"HTTPS_PROXY=" + proxyURL,
@@ -336,6 +420,27 @@ func actArguments(
 		arguments = append(arguments, "--env", variable)
 	}
 	return arguments
+}
+
+type actInvocation struct {
+	ActionRepositories []string
+	PlatformImages     map[string]string
+	GitHub             GitHubContext
+	Variables          map[string]string
+	SecretFile         string
+}
+
+func sortedVariables(variables map[string]string) []string {
+	keys := make([]string, 0, len(variables))
+	for name := range variables {
+		keys = append(keys, name)
+	}
+	sort.Strings(keys)
+	values := make([]string, 0, len(keys))
+	for _, name := range keys {
+		values = append(values, name+"="+variables[name])
+	}
+	return values
 }
 
 func runAct(ctx context.Context, act *exec.Cmd) error {
@@ -369,7 +474,7 @@ func runAct(ctx context.Context, act *exec.Cmd) error {
 }
 
 func (worker *Worker) cloneRevision(ctx context.Context, job Job, destination string, output io.Writer) error {
-	identity, err := issueLoreIdentity(
+	credential, err := issueLoreCredential(
 		ctx,
 		worker.config.CredentialIssuer,
 		worker.config.CredentialPrincipal,
@@ -380,10 +485,16 @@ func (worker *Worker) cloneRevision(ctx context.Context, job Job, destination st
 		return fmt.Errorf("read repository Lore credential: %w", err)
 	}
 	if worker.config.RevisionClient != nil {
-		err := worker.config.RevisionClient.CloneRevision(ctx, loreclient.RepositoryRef{
-			CacheKey: job.RepositoryID,
-			URL:      job.LoreURL,
-		}, identity, job.Revision, destination)
+		repository := loreclient.RepositoryRef{CacheKey: job.RepositoryID, URL: job.LoreURL}
+		if client, ok := worker.config.RevisionClient.(loreclient.CredentialRevisionClient); ok {
+			err = client.CloneRevisionWithCredential(ctx, repository, loreCredential(credential), job.Revision, destination)
+		} else if credential.Identity != "" {
+			err = worker.config.RevisionClient.CloneRevision(
+				ctx, repository, credential.Identity, job.Revision, destination,
+			)
+		} else {
+			err = errors.New("the configured Lore client does not accept token or AuthURL credentials")
+		}
 		if err != nil {
 			return fmt.Errorf("clone Lore revision: %w", err)
 		}
@@ -405,6 +516,12 @@ func (worker *Worker) cloneRevision(ctx context.Context, job Job, destination st
 		return fmt.Errorf("clone Lore revision: %w", err)
 	}
 	return nil
+}
+
+func loreCredential(credential LoreCredential) loreclient.Credential {
+	return loreclient.Credential{
+		Token: credential.Token, AuthURL: credential.AuthURL, Identity: credential.Identity,
+	}
 }
 
 func githubRef(job Job) string {
