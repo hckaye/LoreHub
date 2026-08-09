@@ -527,8 +527,12 @@ func (worker *Worker) cloneRevision(ctx context.Context, job Job, destination st
 	if worker.config.RevisionClient != nil {
 		repository := loreclient.RepositoryRef{CacheKey: job.RepositoryID, URL: job.LoreURL}
 		if client, ok := worker.config.RevisionClient.(loreclient.CredentialRevisionClient); ok {
+			partition := loreclient.RepositoryRef{URL: job.LoreURL}.CanonicalPartition()
+			if partition == "" {
+				partition = job.RepositoryID
+			}
 			err = client.CloneRevisionWithCredential(ctx, repository,
-				loreCredential(credential, worker.config.CredentialPrincipal, job.RepositoryID,
+				loreCredential(credential, worker.config.CredentialPrincipal, partition,
 					issuerIsDevelopmentOnly(worker.config.CredentialIssuer)), job.Revision, destination)
 		} else if credential.Identity != "" &&
 			(worker.config.Environment == "development" || worker.config.Environment == "local") &&
