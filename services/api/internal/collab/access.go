@@ -59,7 +59,10 @@ func lookupRepository(
 		return lookupPublicRepository(ctx, pool, owner, slug)
 	}
 	row := pool.QueryRow(ctx, `
-		SELECT r.id, r.organization_id, o.slug, r.slug, r.visibility, r.updated_at
+		SELECT r.id, r.organization_id, o.slug, r.slug, r.display_name, r.description,
+		       r.visibility, r.lore_repository_id, r.lore_url, r.default_branch,
+		       (SELECT COUNT(*) FROM issues i WHERE i.repository_id = r.id),
+		       (SELECT COUNT(*) FROM merge_requests mr WHERE mr.repository_id = r.id), r.updated_at
 		FROM repositories r
 		JOIN organizations o ON o.id = r.organization_id
 		WHERE o.slug = $1 AND r.slug = $2 AND r.archived_at IS NULL
@@ -92,7 +95,10 @@ func lookupPublicRepository(
 	slug string,
 ) (Repository, error) {
 	row := pool.QueryRow(ctx, `
-		SELECT r.id, r.organization_id, o.slug, r.slug, r.visibility, r.updated_at
+		SELECT r.id, r.organization_id, o.slug, r.slug, r.display_name, r.description,
+		       r.visibility, r.lore_repository_id, r.lore_url, r.default_branch,
+		       (SELECT COUNT(*) FROM issues i WHERE i.repository_id = r.id),
+		       (SELECT COUNT(*) FROM merge_requests mr WHERE mr.repository_id = r.id), r.updated_at
 		FROM repositories r
 		JOIN organizations o ON o.id = r.organization_id
 		WHERE o.slug = $1 AND r.slug = $2 AND r.archived_at IS NULL
@@ -198,7 +204,14 @@ func scanRepositoryRow(row pgx.Row) (Repository, error) {
 		&repo.OrganizationID,
 		&repo.Owner,
 		&repo.Slug,
+		&repo.DisplayName,
+		&repo.Description,
 		&repo.Visibility,
+		&repo.LoreRepositoryID,
+		&repo.LoreURL,
+		&repo.DefaultBranch,
+		&repo.IssueCount,
+		&repo.MergeRequestCount,
 		&repo.UpdatedAt,
 	)
 	return repo, err

@@ -2,7 +2,23 @@ import "server-only";
 
 import { cookies } from "next/headers";
 
-import type { APIResult, Branch, CIRun, Issue, MergeRequest, Repository } from "./api-types";
+import type {
+  APIResult,
+  Branch,
+  CIRun,
+  FileHistoryEntry,
+  Issue,
+  LoreDiff,
+  LoreFile,
+  LoreRevision,
+  LoreTree,
+  MergeOperation,
+  MergeReadiness,
+  MergeRequest,
+  Repository,
+  ReviewSummary,
+  RevisionHistoryEntry,
+} from "./api-types";
 
 const apiOrigin = process.env.LOREHUB_API_URL ?? "http://127.0.0.1:8080";
 
@@ -74,6 +90,76 @@ export async function getMergeRequests(
   return result.ok ? { ok: true, data: result.data.mergeRequests } : result;
 }
 
+export function getMergeRequest(owner: string, repository: string, number: number): Promise<APIResult<MergeRequest>> {
+  return request(repositoryPath(owner, repository, `/merge-requests/${number}`));
+}
+
+export function getReviews(owner: string, repository: string, number: number): Promise<APIResult<ReviewSummary>> {
+  return request(repositoryPath(owner, repository, `/merge-requests/${number}/reviews`));
+}
+
+export function getMergeReadiness(
+  owner: string,
+  repository: string,
+  number: number,
+): Promise<APIResult<MergeReadiness>> {
+  return request(repositoryPath(owner, repository, `/merge-requests/${number}/merge-readiness`));
+}
+
+export function getMergeOperation(
+  owner: string,
+  repository: string,
+  number: number,
+): Promise<APIResult<MergeOperation>> {
+  return request(repositoryPath(owner, repository, `/merge-requests/${number}/merge-operation`));
+}
+
+export function getLoreTree(
+  owner: string,
+  repository: string,
+  query: { branch?: string; revision?: string; path?: string },
+): Promise<APIResult<LoreTree>> {
+  return request(repositoryPath(owner, repository, `/tree?${queryString(query)}`));
+}
+
+export function getLoreFile(
+  owner: string,
+  repository: string,
+  query: { branch?: string; revision?: string; path: string },
+): Promise<APIResult<LoreFile>> {
+  return request(repositoryPath(owner, repository, `/file?${queryString(query)}`));
+}
+
+export function getRevisionHistory(
+  owner: string,
+  repository: string,
+  query: { branch?: string; revision?: string },
+): Promise<APIResult<{ revision: string; entries: RevisionHistoryEntry[]; hasMore: boolean }>> {
+  return request(repositoryPath(owner, repository, `/revisions?${queryString(query)}`));
+}
+
+export function getFileHistory(
+  owner: string,
+  repository: string,
+  query: { branch?: string; revision?: string; path: string },
+): Promise<APIResult<{ revision: string; path: string; entries: FileHistoryEntry[]; hasMore: boolean }>> {
+  return request(repositoryPath(owner, repository, `/file/history?${queryString(query)}`));
+}
+
+export function getRevision(owner: string, repository: string, revision: string): Promise<APIResult<LoreRevision>> {
+  return request(repositoryPath(owner, repository, `/revisions/${encodeURIComponent(revision)}`));
+}
+
+export function getLoreDiff(
+  owner: string,
+  repository: string,
+  source: string,
+  target: string,
+): Promise<APIResult<LoreDiff>> {
+  const query = new URLSearchParams({ source, target });
+  return request(repositoryPath(owner, repository, `/diff?${query.toString()}`));
+}
+
 function repositoryPath(owner: string, repository: string, suffix: string): string {
   return `/api/v1/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}${suffix}`;
 }
@@ -92,16 +178,16 @@ async function request<T>(path: string): Promise<APIResult<T>> {
       signal,
     });
     if (response.status === 404) {
-      return { ok: false, reason: "not-found" };
+      return { ok: false, reason: "not-found", code: await readProblemCode(response) };
     }
     if (response.status === 401) {
-      return { ok: false, reason: "unauthorized" };
+      return { ok: false, reason: "unauthorized", code: await readProblemCode(response) };
     }
     if (response.status === 403) {
-      return { ok: false, reason: "forbidden" };
+      return { ok: false, reason: "forbidden", code: await readProblemCode(response) };
     }
     if (response.status >= 400 && response.status < 500) {
-      return { ok: false, reason: "invalid" };
+      return { ok: false, reason: "invalid", code: await readProblemCode(response) };
     }
     if (!response.ok) {
       return { ok: false, reason: "unavailable" };
@@ -109,6 +195,25 @@ async function request<T>(path: string): Promise<APIResult<T>> {
     return { ok: true, data: (await response.json()) as T };
   } catch {
     return { ok: false, reason: "unavailable" };
+  }
+}
+
+function queryString(query: Record<string, string | undefined>): string {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value) {
+      params.set(key, value);
+    }
+  }
+  return params.toString();
+}
+
+async function readProblemCode(response: Response): Promise<string | undefined> {
+  try {
+    const payload = (await response.json()) as { error?: { code?: unknown } };
+    return typeof payload.error?.code === "string" ? payload.error.code : undefined;
+  } catch {
+    return undefined;
   }
 }
 

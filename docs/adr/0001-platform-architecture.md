@@ -34,7 +34,9 @@ SDK固有の型は`internal/lore`から外へ出さない。画面やIssue機能
 一覧取得などの読み取りはbare cloneを共有キャッシュへ作り、必要なリビジョンツリーだけを取得する。CIは指定された
 リビジョンを一時ディレクトリへcloneし、その内容を実行対象にする。PostgreSQLへファイル本文は保存しない。
 
-Loreの認証は利用者ごとの権限を持つトークンを使う。共通の管理者トークンで利用者の操作を代行しない。
+LoreHubのブラウザ認証とLoreの書き込みidentityは分離する。利用者の権限とCSRFをAPIで確認した後、マージの書き込みは
+設定されたLoreHubサービスidentityで行い、監査記録には承認した利用者を保存する。サービスidentityはLore側で必要な
+最小権限だけを持たせ、secret managerから実行時に注入する。共通identityを利用者の認証確認なしに使ってはならない。
 LoreHubのログインはOIDC authorization codeとPKCEを使い、APIはアクセストークンの発行者と対象を検証する。ブラウザは
 OIDC tokenを保持せず、Go APIが期限付きサーバー側セッションをCookieで管理する。既存のBearer APIクライアントも維持する。
 

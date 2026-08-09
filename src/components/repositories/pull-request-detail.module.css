@@ -1,0 +1,160 @@
+.layout {
+  display: grid;
+  gap: 1rem;
+}
+
+.heading {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.heading h1,
+.heading p {
+  margin: 0;
+}
+
+.heading p,
+.meta {
+  color: var(--fg-muted);
+}
+
+.tabs {
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: 0.25rem;
+  overflow-x: auto;
+}
+
+.tabs button {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  font: inherit;
+  padding: 0.7rem 0.85rem;
+  white-space: nowrap;
+}
+
+.tabs button[aria-selected="true"] {
+  border-bottom-color: var(--accent-emphasis);
+  color: var(--fg-default);
+  font-weight: 650;
+}
+
+.panel {
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+  display: grid;
+  gap: 1rem;
+  padding: clamp(1rem, 2.5vw, 1.5rem);
+}
+
+.summary {
+  display: grid;
+  gap: 0.65rem;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+}
+
+.summary div {
+  background: var(--canvas-subtle);
+  border-radius: 0.45rem;
+  padding: 0.7rem;
+}
+
+.summary dt {
+  color: var(--fg-muted);
+  font-size: 0.8rem;
+}
+
+.summary dd {
+  margin: 0.3rem 0 0;
+}
+
+.blockers {
+  background: var(--attention-bg);
+  border: 1px solid var(--attention-border);
+  border-radius: 0.55rem;
+  padding: 0.8rem 1rem;
+}
+
+.blockers ul,
+.conflicts ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.3rem;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.actions button {
+  background: var(--accent-emphasis);
+  border: 1px solid var(--accent-emphasis);
+  border-radius: 0.45rem;
+  color: var(--fg-on-emphasis);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 650;
+  padding: 0.5rem 0.8rem;
+}
+
+.actions button[data-tone="secondary"] {
+  background: var(--surface);
+  color: var(--fg-default);
+}
+
+.actions button[data-tone="danger"] {
+  background: var(--danger-bg);
+  border-color: var(--danger-border);
+  color: var(--danger-fg);
+}
+
+.actions button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.reviewList,
+.conflicts {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.review {
+  border-bottom: 1px solid var(--border-muted);
+  padding-bottom: 0.7rem;
+}
+
+.review:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.review p {
+  margin: 0.25rem 0 0;
+  white-space: pre-wrap;
+}
+
+.conflicts label {
+  align-items: start;
+  display: flex;
+  gap: 0.55rem;
+}
+
+.conflicts code {
+  overflow-wrap: anywhere;
+}
+
+.diff {
+  margin: 0;
+  max-height: 30rem;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.announcement {
+  min-height: 1.4rem;
+}

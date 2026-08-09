@@ -13,8 +13,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lorehub/lorehub/services/api/internal/auth"
+	codeapi "github.com/lorehub/lorehub/services/api/internal/code"
 	"github.com/lorehub/lorehub/services/api/internal/collab"
 	loreclient "github.com/lorehub/lorehub/services/api/internal/lore"
+	mergeapi "github.com/lorehub/lorehub/services/api/internal/merge"
 	"github.com/lorehub/lorehub/services/api/internal/platform"
 )
 
@@ -129,6 +131,15 @@ func New(
 	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/actions/runs", api.listCIRuns)
 	if api.collabStore != nil {
 		collab.Register(mux, api.collabStore, api, logger)
+		if codeClient, ok := api.lore.(loreclient.CodeClient); ok {
+			codeapi.Register(mux, api.collabStore, api.lore, codeClient, api, api.loreIdentity, logger)
+		}
+		if workflow, ok := api.collabStore.(collab.MergeWorkflowStore); ok {
+			if mergeClient, mergeOK := api.lore.(loreclient.MergeClient); mergeOK {
+				mergeapi.Register(mux, api.collabStore, workflow, api.lore, mergeClient, api,
+					api.loreIdentity, logger)
+			}
+		}
 	}
 	return api.recoverPanic(api.securityHeaders(api.requestLog(mux)))
 }
@@ -203,6 +214,20 @@ func (api *API) exploreRepositories(writer http.ResponseWriter, request *http.Re
 }
 
 func (api *API) publicRepository(writer http.ResponseWriter, request *http.Request) {
+	if api.collabStore != nil {
+		actor, ok := api.ResolveOptionalActor(writer, request)
+		if !ok {
+			return
+		}
+		repository, err := api.collabStore.LookupRepository(request.Context(), actor,
+			request.PathValue("owner"), request.PathValue("repository"))
+		if err != nil {
+			api.platformError(writer, request, "get repository", err)
+			return
+		}
+		writeJSON(writer, http.StatusOK, repository)
+		return
+	}
 	repository, err := api.store.PublicRepository(
 		request.Context(),
 		request.PathValue("owner"),
@@ -216,18 +241,38 @@ func (api *API) publicRepository(writer http.ResponseWriter, request *http.Reque
 }
 
 func (api *API) repositoryBranches(writer http.ResponseWriter, request *http.Request) {
-	repository, err := api.store.PublicRepository(
-		request.Context(),
-		request.PathValue("owner"),
-		request.PathValue("repository"),
-	)
-	if err != nil {
-		api.platformError(writer, request, "get repository branches", err)
-		return
+	var repositoryLoreURL, repositoryID, repositoryLoreID string
+	if api.collabStore != nil {
+		actor, ok := api.ResolveOptionalActor(writer, request)
+		if !ok {
+			return
+		}
+		repository, err := api.collabStore.LookupRepository(request.Context(), actor,
+			request.PathValue("owner"), request.PathValue("repository"))
+		if err != nil {
+			api.platformError(writer, request, "get repository branches", err)
+			return
+		}
+		repositoryLoreURL = repository.LoreURL
+		repositoryLoreID = repository.LoreRepositoryID
+		repositoryID = repository.ID
+	} else {
+		repository, err := api.store.PublicRepository(
+			request.Context(),
+			request.PathValue("owner"),
+			request.PathValue("repository"),
+		)
+		if err != nil {
+			api.platformError(writer, request, "get repository branches", err)
+			return
+		}
+		repositoryLoreURL = repository.LoreURL
+		repositoryID = repository.ID
 	}
 	branches, err := api.lore.Branches(request.Context(), loreclient.RepositoryRef{
-		CacheKey: repository.ID,
-		URL:      repository.LoreURL,
+		CacheKey:         repositoryID,
+		URL:              repositoryLoreURL,
+		LoreRepositoryID: repositoryLoreID,
 	}, api.loreIdentity)
 	if err != nil {
 		api.internalError(writer, request, "list Lore branches", err)
@@ -323,6 +368,27 @@ func (api *API) registerRepository(writer http.ResponseWriter, request *http.Req
 }
 
 func (api *API) listIssues(writer http.ResponseWriter, request *http.Request) {
+	if api.collabStore != nil {
+		if reader, ok := api.collabStore.(collab.RepositoryReadStore); ok {
+			actor, actorOK := api.ResolveOptionalActor(writer, request)
+			if !actorOK {
+				return
+			}
+			repository, err := api.collabStore.LookupRepository(request.Context(), actor,
+				request.PathValue("owner"), request.PathValue("repository"))
+			if err != nil {
+				api.platformError(writer, request, "list issues", err)
+				return
+			}
+			issues, err := reader.ListIssuesForRepository(request.Context(), repository.ID, request.URL.Query().Get("state"))
+			if err != nil {
+				api.internalError(writer, request, "list issues", err)
+				return
+			}
+			writeJSON(writer, http.StatusOK, map[string]any{"issues": issues})
+			return
+		}
+	}
 	issues, err := api.store.ListPublicIssues(
 		request.Context(),
 		request.PathValue("owner"),
@@ -368,6 +434,28 @@ func (api *API) createIssue(writer http.ResponseWriter, request *http.Request) {
 }
 
 func (api *API) listMergeRequests(writer http.ResponseWriter, request *http.Request) {
+	if api.collabStore != nil {
+		if reader, ok := api.collabStore.(collab.RepositoryReadStore); ok {
+			actor, actorOK := api.ResolveOptionalActor(writer, request)
+			if !actorOK {
+				return
+			}
+			repository, err := api.collabStore.LookupRepository(request.Context(), actor,
+				request.PathValue("owner"), request.PathValue("repository"))
+			if err != nil {
+				api.platformError(writer, request, "list merge requests", err)
+				return
+			}
+			mergeRequests, err := reader.ListMergeRequestsForRepository(request.Context(), repository.ID,
+				request.URL.Query().Get("state"))
+			if err != nil {
+				api.internalError(writer, request, "list merge requests", err)
+				return
+			}
+			writeJSON(writer, http.StatusOK, map[string]any{"mergeRequests": mergeRequests})
+			return
+		}
+	}
 	mergeRequests, err := api.store.ListPublicMergeRequests(
 		request.Context(),
 		request.PathValue("owner"),
@@ -447,6 +535,27 @@ func (api *API) createMergeRequest(writer http.ResponseWriter, request *http.Req
 }
 
 func (api *API) listCIRuns(writer http.ResponseWriter, request *http.Request) {
+	if api.collabStore != nil {
+		if reader, ok := api.collabStore.(collab.RepositoryReadStore); ok {
+			actor, actorOK := api.ResolveOptionalActor(writer, request)
+			if !actorOK {
+				return
+			}
+			repository, err := api.collabStore.LookupRepository(request.Context(), actor,
+				request.PathValue("owner"), request.PathValue("repository"))
+			if err != nil {
+				api.platformError(writer, request, "list CI runs", err)
+				return
+			}
+			runs, err := reader.ListCIRunsForRepository(request.Context(), repository.ID)
+			if err != nil {
+				api.internalError(writer, request, "list CI runs", err)
+				return
+			}
+			writeJSON(writer, http.StatusOK, map[string]any{"runs": runs})
+			return
+		}
+	}
 	runs, err := api.store.ListPublicCIRuns(
 		request.Context(),
 		request.PathValue("owner"),

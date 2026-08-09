@@ -522,6 +522,82 @@ func TestIntegrationBranchRules(t *testing.T) {
 	}
 }
 
+func TestIntegrationMergeOperationLeaseFinalizationAndIdempotency(t *testing.T) {
+	pool, s := integrationEnv(t)
+	ctx := context.Background()
+	fix := setupFixture(t, pool, "public", "write")
+	number := seedMergeRequest(t, ctx, pool, fix, fix.alice.ID, "source-rev")
+
+	operation, err := s.AcquireMergeOperation(ctx, fix.alice.ID, fix.repoID, number,
+		"source-rev", "main-rev", fix.alice.ID, time.Minute)
+	if err != nil {
+		t.Fatalf("acquire merge operation: %v", err)
+	}
+	if operation.State != "created" || operation.LeaseOwner != fix.alice.ID {
+		t.Fatalf("initial operation = %+v", operation)
+	}
+	if _, err := s.AcquireMergeOperation(ctx, fix.bob.ID, fix.repoID, number,
+		"source-rev", "main-rev", fix.bob.ID, time.Minute); !errors.Is(err, ErrMergeBusy) {
+		t.Fatalf("second owner error = %v, want ErrMergeBusy", err)
+	}
+
+	operation.State = "ready_to_push"
+	operation.StagedRevision = "staged-rev"
+	operation = mustUpdateMergeOperation(t, ctx, s, operation)
+	operation.State = "pushed"
+	operation.PushedRevision = "remote-rev"
+	operation = mustUpdateMergeOperation(t, ctx, s, operation)
+
+	auditBefore := countAuditAction(t, ctx, pool, "merge_request.merge")
+	outboxBefore := countTopic(t, ctx, pool, "merge_request.merged")
+	merged, err := s.FinalizeMerged(ctx, fix.alice, fix.repoID, number, operation.ID, "remote-rev")
+	if err != nil {
+		t.Fatalf("finalize merge request: %v", err)
+	}
+	if merged.State != "merged" || merged.MergedRevision == nil || *merged.MergedRevision != "remote-rev" ||
+		merged.MergedBy == nil || *merged.MergedBy != fix.alice.Username {
+		t.Fatalf("merged request = %+v", merged)
+	}
+	if got := countAuditAction(t, ctx, pool, "merge_request.merge"); got != auditBefore+1 {
+		t.Fatalf("merge audit count = %d, want %d", got, auditBefore+1)
+	}
+	if got := countTopic(t, ctx, pool, "merge_request.merged"); got != outboxBefore+1 {
+		t.Fatalf("merge outbox count = %d, want %d", got, outboxBefore+1)
+	}
+
+	reconciled, err := s.FinalizeMerged(ctx, fix.alice, fix.repoID, number, operation.ID, "remote-rev")
+	if err != nil {
+		t.Fatalf("repeat finalization: %v", err)
+	}
+	if reconciled.ID != merged.ID || reconciled.State != "merged" {
+		t.Fatalf("repeat finalization = %+v", reconciled)
+	}
+	if got := countAuditAction(t, ctx, pool, "merge_request.merge"); got != auditBefore+1 {
+		t.Fatalf("repeat merge audit count = %d, want %d", got, auditBefore+1)
+	}
+	if got := countTopic(t, ctx, pool, "merge_request.merged"); got != outboxBefore+1 {
+		t.Fatalf("repeat merge outbox count = %d, want %d", got, outboxBefore+1)
+	}
+
+	finalOperation, err := s.AcquireMergeOperation(ctx, fix.bob.ID, fix.repoID, number,
+		"source-rev", "main-rev", fix.bob.ID, time.Minute)
+	if err != nil {
+		t.Fatalf("acquire completed operation: %v", err)
+	}
+	if finalOperation.State != "merged" || finalOperation.PushedRevision != "remote-rev" {
+		t.Fatalf("completed operation = %+v", finalOperation)
+	}
+}
+
+func mustUpdateMergeOperation(t *testing.T, ctx context.Context, s *store, operation MergeOperation) MergeOperation {
+	t.Helper()
+	updated, err := s.UpdateMergeOperation(ctx, operation)
+	if err != nil {
+		t.Fatalf("update merge operation: %v", err)
+	}
+	return updated
+}
+
 func seedIssue(t *testing.T, ctx context.Context, pool *pgxpool.Pool, fix integrationFixture,
 	authorID, state string,
 ) int64 {
