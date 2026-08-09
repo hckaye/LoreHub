@@ -65,17 +65,61 @@ func run(logger *slog.Logger) error {
 		return runRunner(rootContext, pool, lore, settings, logger)
 	}
 
-	authenticator, err := auth.NewOIDC(rootContext, settings.OIDCIssuer, settings.OIDCAudience)
-	if err != nil {
-		return err
+	var authenticator auth.Authenticator
+	var loginProvider auth.LoginProvider
+	var secretCodec *auth.SecretCodec
+	store := platform.NewStore(pool)
+	switch settings.AuthMode {
+	case config.AuthModeInteractive:
+		provider, err := auth.NewOIDCProvider(rootContext, auth.OIDCConfig{
+			Issuer:       settings.OIDCIssuer,
+			ClientID:     settings.OIDCClientID,
+			ClientSecret: settings.OIDCClientSecret,
+			RedirectURL:  settings.OIDCRedirectURL,
+		})
+		if err != nil {
+			return err
+		}
+		secretCodec, err = auth.NewSecretCodec(settings.AuthSecret)
+		if err != nil {
+			return err
+		}
+		authenticator = provider
+		loginProvider = provider
+	case config.AuthModeBearer:
+		authenticator, err = auth.NewOIDC(rootContext, settings.OIDCIssuer, settings.OIDCAudience)
+		if err != nil {
+			return err
+		}
+	case config.AuthModeDisabled:
+		authenticator = auth.DisabledAuthenticator{}
+	default:
+		return fmt.Errorf("unsupported authentication mode %q", settings.AuthMode)
 	}
 	handler := httpapi.New(
-		platform.NewStore(pool),
+		store,
 		lore,
 		authenticator,
 		pool,
 		settings.LoreIdentity,
 		logger,
+		httpapi.WithAuthentication(httpapi.AuthOptions{
+			LoginProvider:  loginProvider,
+			LoginStore:     store,
+			SessionStore:   store,
+			CleanupStore:   store,
+			Secrets:        secretCodec,
+			PublicOrigin:   settings.PublicOrigin,
+			SessionTTL:     settings.SessionTTL,
+			TransactionTTL: settings.LoginTransactionTTL,
+			SessionCookie: httpapi.SessionCookieOptions{
+				Name:             settings.SessionCookieName,
+				LoginBindingName: settings.LoginBindingCookieName,
+				Path:             settings.SessionCookiePath,
+				Domain:           settings.SessionCookieDomain,
+				Secure:           settings.SessionCookieSecure,
+			},
+		}),
 	)
 	server := &http.Server{
 		Addr:              settings.HTTPAddress,

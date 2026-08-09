@@ -45,11 +45,40 @@ func (store *Store) EnsureUser(ctx context.Context, principal auth.Principal) (U
 		&user.Locale,
 	)
 	if err == nil {
-		_, _ = store.pool.Exec(ctx, `
+		displayName := strings.TrimSpace(principal.Name)
+		if displayName == "" {
+			displayName = user.DisplayName
+		}
+		displayName = limitText(displayName, 160)
+		email := user.Email
+		if strings.TrimSpace(principal.Email) != "" {
+			email = limitText(strings.ToLower(strings.TrimSpace(principal.Email)), 320)
+		}
+		locale := user.Locale
+		if strings.TrimSpace(principal.PreferredLocale) != "" {
+			locale = normalizedLocale(principal.PreferredLocale)
+		}
+		if err := store.pool.QueryRow(ctx, `
+			UPDATE users
+			SET display_name = $2, email = NULLIF($3, ''), locale = $4, updated_at = now()
+			WHERE id = $1 AND status = 'active'
+			RETURNING id, username, display_name, COALESCE(email, ''), locale
+		`, user.ID, displayName, email, locale).Scan(
+			&user.ID,
+			&user.Username,
+			&user.DisplayName,
+			&user.Email,
+			&user.Locale,
+		); err != nil {
+			return User{}, fmt.Errorf("update user profile: %w", err)
+		}
+		if _, err := store.pool.Exec(ctx, `
 			UPDATE user_identities
 			SET last_seen_at = now()
 			WHERE issuer = $1 AND subject = $2
-		`, principal.Issuer, principal.Subject)
+		`, principal.Issuer, principal.Subject); err != nil {
+			return User{}, fmt.Errorf("update user identity: %w", err)
+		}
 		return user, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
@@ -71,10 +100,11 @@ func (store *Store) createUser(ctx context.Context, principal auth.Principal) (U
 	if displayName == "" {
 		displayName = username
 	}
+	displayName = limitText(displayName, 160)
 	locale := normalizedLocale(principal.PreferredLocale)
 	var email any
 	if strings.TrimSpace(principal.Email) != "" {
-		email = strings.ToLower(strings.TrimSpace(principal.Email))
+		email = limitText(strings.ToLower(strings.TrimSpace(principal.Email)), 320)
 	}
 	_, err = transaction.Exec(ctx, `
 		INSERT INTO users (id, username, display_name, email, locale)
@@ -715,6 +745,14 @@ func normalizedLocale(locale string) string {
 		return "ja"
 	}
 	return "en"
+}
+
+func limitText(value string, limit int) string {
+	characters := []rune(value)
+	if len(characters) <= limit {
+		return value
+	}
+	return string(characters[:limit])
 }
 
 func translateConstraintError(operation string, err error) error {
