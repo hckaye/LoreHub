@@ -154,9 +154,6 @@ func loadPublicKey(path string) (any, error) {
 	if publicKey, err := x509.ParsePKCS1PublicKey(block.Bytes); err == nil {
 		return publicKey, nil
 	}
-	if privateKey, err := x509.ParsePKCS1PrivateKey(block.Bytes); err == nil {
-		return privateKey.Public(), nil
-	}
 	return nil, errors.New("parse previous public key")
 }
 
@@ -183,7 +180,7 @@ type VerifiedToken struct {
 type TokenService struct {
 	keys        SigningKeyProvider
 	issuer      string
-	audience    string
+	audiences   []string
 	environment string
 	idp         string
 	lifetime    time.Duration
@@ -200,7 +197,8 @@ func NewTokenService(
 	if keys == nil {
 		return nil, errors.New("Lore signing key provider is required")
 	}
-	if issuer == "" || audience == "" {
+	audiences := splitAudience(audience)
+	if issuer == "" || len(audiences) == 0 {
 		return nil, errors.New("Lore JWT issuer and audience are required")
 	}
 	if lifetime < 5*time.Minute || lifetime > 10*time.Minute {
@@ -209,39 +207,84 @@ func NewTokenService(
 	if idp == "" {
 		idp = "keycloak"
 	}
-	return &TokenService{keys: keys, issuer: issuer, audience: audience,
+	return &TokenService{keys: keys, issuer: issuer, audiences: audiences,
 		environment: environment, idp: idp, lifetime: lifetime}, nil
+}
+
+func splitAudience(value string) []string {
+	parts := strings.Split(value, ",")
+	result := make([]string, 0, len(parts))
+	seen := make(map[string]bool, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" && !seen[part] {
+			seen[part] = true
+			result = append(result, part)
+		}
+	}
+	return result
 }
 
 func (service *TokenService) MintResourceToken(
 	user authz.UserInfo,
 	resources []LoreResourcePermission,
 ) (string, time.Time, error) {
-	if len(resources) == 0 {
-		return "", time.Time{}, errors.New("a Lore token must contain an exact resource scope")
+	return service.mintToken(tokenPrincipal{user: user}, resources, true)
+}
+
+func (service *TokenService) MintServiceResourceToken(
+	principal authz.UserInfo,
+	resources []LoreResourcePermission,
+) (string, time.Time, error) {
+	return service.mintToken(tokenPrincipal{user: principal, serviceAccount: true}, resources, true)
+}
+
+func (service *TokenService) MintAuthenticationToken(
+	user authz.UserInfo,
+) (string, time.Time, error) {
+	return service.mintToken(tokenPrincipal{user: user}, nil, false)
+}
+
+type tokenPrincipal struct {
+	user           authz.UserInfo
+	serviceAccount bool
+}
+
+func (service *TokenService) mintToken(
+	principal tokenPrincipal,
+	resources []LoreResourcePermission,
+	resourceToken bool,
+) (string, time.Time, error) {
+	if !resourceToken && len(resources) != 0 {
+		return "", time.Time{}, errors.New("an authentication token cannot contain resources")
 	}
-	if err := validateResources(resources); err != nil {
+	if len(resources) == 0 {
+		if resourceToken {
+			return "", time.Time{}, errors.New("a Lore token must contain an exact resource scope")
+		}
+	} else if err := validateResources(resources); err != nil {
 		return "", time.Time{}, err
 	}
 	now := time.Now().UTC()
 	expiresAt := now.Add(service.lifetime)
 	claims := LoreClaims{
 		Claims: jwt.Claims{
-			Subject:  user.ID,
+			Subject:  principal.user.ID,
 			Issuer:   service.issuer,
 			IssuedAt: jwt.NewNumericDate(now),
 			Expiry:   jwt.NewNumericDate(expiresAt),
-			Audience: jwt.Audience{service.audience},
+			Audience: jwt.Audience(service.audiences),
 		},
 		Environment:       service.environment,
-		Name:              user.DisplayName,
-		PreferredUsername: user.Username,
+		Name:              principal.user.DisplayName,
+		PreferredUsername: principal.user.Username,
 		Resources:         resources,
-		IsServiceAccount:  false,
+		IsServiceAccount:  principal.serviceAccount,
 		IDP:               service.idp,
 	}
-	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: service.keys.Current().Key},
-		(&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", service.keys.Current().KeyID))
+	current := service.keys.Current()
+	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: current.Key},
+		(&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", current.KeyID))
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("create Lore JWT signer: %w", err)
 	}
@@ -252,7 +295,21 @@ func (service *TokenService) MintResourceToken(
 	return token, expiresAt, nil
 }
 
+func (service *TokenService) VerifyAuthenticationToken(raw string) (VerifiedToken, error) {
+	return service.verify(raw, false)
+}
+
+func (service *TokenService) VerifyResourceToken(raw string) (VerifiedToken, error) {
+	return service.verify(raw, true)
+}
+
+// Verify remains the resource verifier used by Lore's ReBAC calls. Base
+// authentication tokens must be passed to VerifyAuthenticationToken.
 func (service *TokenService) Verify(raw string) (VerifiedToken, error) {
+	return service.VerifyResourceToken(raw)
+}
+
+func (service *TokenService) verify(raw string, resourceToken bool) (VerifiedToken, error) {
 	if strings.TrimSpace(raw) == "" {
 		return VerifiedToken{}, errors.New("empty Lore token")
 	}
@@ -280,25 +337,41 @@ func (service *TokenService) Verify(raw string) (VerifiedToken, error) {
 	}
 	if err := claims.Validate(jwt.Expected{
 		Issuer:      service.issuer,
-		AnyAudience: jwt.Audience{service.audience},
+		AnyAudience: jwt.Audience(service.audiences),
 		Time:        time.Now().UTC(),
 	}); err != nil || claims.Expiry == nil || !claims.Expiry.Time().After(time.Now().UTC()) {
 		return VerifiedToken{}, errors.New("invalid Lore token claims")
 	}
-	if claims.Issuer != service.issuer || len(claims.Audience) != 1 ||
-		claims.Audience[0] != service.audience {
+	if claims.Issuer != service.issuer || !sameAudience(claims.Audience, service.audiences) {
 		return VerifiedToken{}, errors.New("invalid Lore token issuer or audience")
 	}
-	if claims.Subject == "" || claims.IsServiceAccount || claims.IDP == "" {
+	if claims.Subject == "" || claims.IDP == "" {
 		return VerifiedToken{}, errors.New("invalid Lore token identity")
 	}
-	if len(claims.Resources) == 0 {
+	if resourceToken && len(claims.Resources) == 0 {
 		return VerifiedToken{}, errors.New("Lore token has no resource scope")
 	}
-	if err := validateResources(claims.Resources); err != nil {
-		return VerifiedToken{}, err
+	if !resourceToken && (len(claims.Resources) != 0 || claims.IsServiceAccount) {
+		return VerifiedToken{}, errors.New("Lore authentication token has an invalid scope")
+	}
+	if len(claims.Resources) > 0 {
+		if err := validateResources(claims.Resources); err != nil {
+			return VerifiedToken{}, err
+		}
 	}
 	return VerifiedToken{Claims: claims}, nil
+}
+
+func sameAudience(actual jwt.Audience, expected []string) bool {
+	if len(actual) != len(expected) {
+		return false
+	}
+	for index, value := range expected {
+		if actual[index] != value {
+			return false
+		}
+	}
+	return true
 }
 
 func validateResources(resources []LoreResourcePermission) error {

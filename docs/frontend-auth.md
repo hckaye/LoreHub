@@ -54,6 +54,7 @@ registration, the link still returns the provider error visibly instead of prete
 
 ## Local proxy configuration
 
-Set `LOREHUB_API_URL` to the API origin reachable by the Next.js server, for example `http://api:8080` in Compose or
+Set `LOREHUB_API_URL` to the API origin reachable by the Next.js server, for example
+`http://api.lorehub.localhost:8080` in Compose or
 `http://127.0.0.1:8080` for host development. This variable is intentionally not `NEXT_PUBLIC_*`; it is used by server
 fetches and Next rewrites only.

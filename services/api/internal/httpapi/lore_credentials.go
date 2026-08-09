@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/lorehub/lorehub/services/api/internal/authz"
@@ -13,6 +14,16 @@ import (
 )
 
 var errScopedLoreCredentialUnavailable = errors.New("a scoped Lore credential is unavailable")
+
+func publicLoreRepositoryURL(value string) (string, error) {
+	parsed, err := url.Parse(strings.TrimSpace(value))
+	if err != nil || parsed.Host == "" || parsed.User != nil || parsed.Path != "" ||
+		parsed.RawQuery != "" || parsed.Fragment != "" ||
+		(parsed.Scheme != "lore" && parsed.Scheme != "lores") {
+		return "", errors.New("invalid Lore repository URL")
+	}
+	return (&url.URL{Scheme: "lores", Host: parsed.Host}).String(), nil
+}
 
 func (api *API) repositoryForRead(
 	writer http.ResponseWriter,
@@ -61,9 +72,6 @@ func (api *API) scopedLoreCredential(
 			Identity: actor.ID,
 		}, nil
 	}
-	if api.allowLegacyLoreIdentity && strings.TrimSpace(api.loreIdentity) != "" {
-		return loreclient.Credential{Identity: api.loreIdentity}, nil
-	}
 	return loreclient.Credential{}, errScopedLoreCredentialUnavailable
 }
 
@@ -93,6 +101,32 @@ func (api *API) listLoreBranches(
 		credential.Identity)
 	if err != nil {
 		return nil, err
+	}
+	if err := api.observeBranchStates(ctx, repository, branches); err != nil {
+		return nil, err
+	}
+	return branches, nil
+}
+
+func (api *API) listPublicLoreBranches(
+	ctx context.Context,
+	repository platform.Repository,
+) ([]loreclient.Branch, error) {
+	if api.loreAuth == nil || api.loreCredentialClient == nil {
+		return nil, errScopedLoreCredentialUnavailable
+	}
+	token, err := api.loreAuth.IssueServiceResourceToken(ctx, "lorehub-anonymous-reader",
+		"urc-"+repository.LoreRepositoryID, []string{authz.PermissionRead})
+	if err != nil {
+		return nil, errScopedLoreCredentialUnavailable
+	}
+	branches, err := api.loreCredentialClient.BranchesWithCredential(ctx, loreclient.RepositoryRef{
+		CacheKey: repository.ID, URL: repository.LoreURL,
+	}, loreclient.Credential{
+		Token: token, AuthURL: api.loreAuth.AuthURL(), Identity: "lorehub-anonymous-reader",
+	})
+	if err != nil {
+		return nil, errors.New("Lore branch lookup failed")
 	}
 	if err := api.observeBranchStates(ctx, repository, branches); err != nil {
 		return nil, err
@@ -130,9 +164,6 @@ func (api *API) repositoryInfoForRegistration(
 		return api.lore.RepositoryInfo(ctx, repositoryURL, api.loreIdentity)
 	}
 	if api.loreCredentialClient == nil {
-		if api.allowLegacyLoreIdentity && strings.TrimSpace(api.loreIdentity) != "" {
-			return api.lore.RepositoryInfo(ctx, repositoryURL, api.loreIdentity)
-		}
 		return loreclient.Repository{}, errScopedLoreCredentialUnavailable
 	}
 	rawToken := strings.TrimSpace(request.Header.Get("X-Lore-User-Token"))
@@ -140,7 +171,7 @@ func (api *API) repositoryInfoForRegistration(
 		return loreclient.Repository{}, errors.New("a short-lived Lore user token is required")
 	}
 	claims, err := api.loreAuth.VerifyUserToken(rawToken)
-	if err != nil || claims.Subject != actor.ID {
+	if err != nil || claims.Subject != actor.ID || claims.IsServiceAccount || len(claims.Resources) != 1 {
 		return loreclient.Repository{}, errors.New("the Lore token does not belong to the current user")
 	}
 	info, err := api.loreCredentialClient.RepositoryInfoWithCredential(ctx, repositoryURL, loreclient.Credential{
@@ -150,8 +181,13 @@ func (api *API) repositoryInfoForRegistration(
 		return loreclient.Repository{}, errors.New("Lore repository verification failed")
 	}
 	resourceID := "urc-" + info.ID
+	claims, err = api.loreAuth.AuthorizeUserToken(ctx, rawToken, resourceID, authz.PermissionAdmin)
+	if err != nil || claims.Subject != actor.ID {
+		return loreclient.Repository{}, errors.New("the Lore token lacks current repository administration scope")
+	}
 	permissions, found := loreResourcePermissions(claims, resourceID)
-	if !found || !authz.RequirePermission(authz.OperationRepositoryCreate, permissions) {
+	if !found || permissions[authz.PermissionObliterate] ||
+		!authz.RequirePermission(authz.OperationRepositoryCreate, permissions) {
 		return loreclient.Repository{}, errors.New("the Lore token lacks repository administration scope")
 	}
 	return info, nil

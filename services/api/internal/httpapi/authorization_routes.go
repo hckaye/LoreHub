@@ -1,11 +1,13 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"html"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/lorehub/lorehub/services/api/internal/authz"
 	"github.com/lorehub/lorehub/services/api/internal/platform"
@@ -35,9 +37,12 @@ func registerAuthorizationRoutes(mux *http.ServeMux, api *API) {
 	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/policy", api.getRepositoryPolicy)
 	mux.HandleFunc("PUT /api/v1/repositories/{owner}/{repository}/policy", api.setRepositoryPolicy)
 	mux.HandleFunc("PUT /api/v1/repositories/{owner}/{repository}/obliterate/{username}", api.setObliterateGrant)
+	mux.HandleFunc(
+		"PUT /api/v1/repositories/{owner}/{repository}/service-principals/{principal}",
+		api.setServicePrincipalGrant,
+	)
 	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/links", api.listRepositoryLinks)
 	mux.HandleFunc("POST /api/v1/repositories/{owner}/{repository}/links", api.declareRepositoryLink)
-	mux.HandleFunc("POST /api/v1/repositories/{owner}/{repository}/merge-authorizations", api.issueMergeAuthorization)
 }
 
 func (api *API) listOrganizationMembers(writer http.ResponseWriter, request *http.Request) {
@@ -353,6 +358,30 @@ func (api *API) setObliterateGrant(writer http.ResponseWriter, request *http.Req
 	writeJSON(writer, http.StatusOK, map[string]bool{"active": input.Active})
 }
 
+func (api *API) setServicePrincipalGrant(writer http.ResponseWriter, request *http.Request) {
+	actor, ok := api.actor(writer, request)
+	if !ok {
+		return
+	}
+	var input struct {
+		Permissions []string `json:"permissions"`
+		Active      bool     `json:"active"`
+	}
+	if !decodeJSON(writer, request, &input) || len(input.Permissions) == 0 {
+		writeProblem(writer, http.StatusBadRequest, "invalid_input", "Service principal permissions are required")
+		return
+	}
+	if err := api.authorization.SetServicePrincipalGrant(request.Context(), actor,
+		request.PathValue("principal"), request.PathValue("owner"), request.PathValue("repository"),
+		input.Permissions, input.Active); err != nil {
+		api.platformError(writer, request, "set service principal grant", err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, map[string]any{
+		"principal": request.PathValue("principal"), "permissions": input.Permissions, "active": input.Active,
+	})
+}
+
 func (api *API) listRepositoryLinks(writer http.ResponseWriter, request *http.Request) {
 	actor, ok := api.actor(writer, request)
 	if !ok {
@@ -392,40 +421,45 @@ func (api *API) declareRepositoryLink(writer http.ResponseWriter, request *http.
 	writeJSON(writer, http.StatusCreated, map[string]any{"link": link, "support": "declared_only"})
 }
 
-func (api *API) issueMergeAuthorization(writer http.ResponseWriter, request *http.Request) {
-	actor, ok := api.actor(writer, request)
-	if !ok {
-		return
-	}
-	var input platform.MergeAuthorizationInput
-	if !decodeJSON(writer, request, &input) {
-		return
-	}
-	if input.RepositoryID == "" {
-		writeProblem(writer, http.StatusBadRequest, "invalid_input", "The canonical Lore repository ID is required")
-		return
-	}
-	authorization, err := api.authorization.IssueMergeAuthorization(request.Context(), actor, input)
-	if err != nil {
-		api.platformError(writer, request, "issue merge authorization", err)
-		return
-	}
-	writeJSON(writer, http.StatusCreated, authorization)
+type policyRequest struct {
+	UserID           string `json:"userId"`
+	ResourceID       string `json:"resourceId"`
+	Operation        string `json:"operation"`
+	BranchID         string `json:"branchId"`
+	ProposedRevision string `json:"proposedRevision"`
+	ClientIP         string `json:"clientIp"`
 }
 
-type policyRequest struct {
-	UserID                 string `json:"userId"`
-	ResourceID             string `json:"resourceId"`
-	Operation              string `json:"operation"`
-	BranchID               string `json:"branchId"`
-	BranchName             string `json:"branchName"`
-	CurrentRevision        string `json:"currentRevision"`
-	ProposedRevision       string `json:"proposedRevision"`
-	OperationAuthorization string `json:"operationAuthorization"`
+type mergeAuthorizationStore interface {
+	PrepareMergeAuthorization(ctx context.Context, userID string, input platform.MergeAuthorizationInput) error
+}
+
+type mergeAuthorizationRequest struct {
+	UserID                  string        `json:"userId"`
+	RepositoryID            string        `json:"repositoryId"`
+	TargetBranchID          string        `json:"targetBranchId"`
+	TargetBranchName        string        `json:"targetBranchName"`
+	ExpectedCurrentRevision string        `json:"expectedCurrentRevision"`
+	ProposedRevision        string        `json:"proposedRevision"`
+	SourceRevision          string        `json:"sourceRevision"`
+	Lifetime                time.Duration `json:"lifetime"`
+}
+
+type loreObservationStore interface {
+	ObserveLoreBranchRevision(ctx context.Context, loreRepositoryID, branchID, revision string) error
+	DeleteLoreBranchState(ctx context.Context, loreRepositoryID, branchID string) error
+}
+
+type loreObservationRequest struct {
+	UserID     string  `json:"userId"`
+	ResourceID string  `json:"resourceId"`
+	Operation  string  `json:"operation"`
+	BranchID   string  `json:"branchId"`
+	Revision   *string `json:"revision"`
 }
 
 func (api *API) InternalPolicyHandler() http.Handler {
-	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+	policy := http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.Method != http.MethodPost {
 			writeProblem(writer, http.StatusMethodNotAllowed, "method_not_allowed", "Only POST is supported")
 			return
@@ -440,8 +474,7 @@ func (api *API) InternalPolicyHandler() http.Handler {
 		}
 		decision, err := api.authorization.CheckPolicy(request.Context(), authz.PolicyCheck{
 			UserID: input.UserID, ResourceID: input.ResourceID, Operation: input.Operation,
-			BranchID: input.BranchID, BranchName: input.BranchName, CurrentRevision: input.CurrentRevision,
-			ProposedRevision: input.ProposedRevision, OperationAuthorization: input.OperationAuthorization,
+			BranchID: input.BranchID, ProposedRevision: input.ProposedRevision,
 		})
 		if err != nil {
 			writeProblem(writer, http.StatusForbidden, "policy_denied", "The Lore operation is not authorized")
@@ -453,10 +486,90 @@ func (api *API) InternalPolicyHandler() http.Handler {
 		}
 		writeJSON(writer, http.StatusOK, map[string]bool{"allowed": true})
 	})
+	mux := http.NewServeMux()
+	mux.Handle("/internal/lore/policy", policy)
+	mux.HandleFunc("/internal/lore/observation", api.internalLoreObservation)
+	mux.HandleFunc("/internal/lore/merge-authorization", api.internalLoreMergeAuthorization)
+	return mux
 }
 
 func NewInternalPolicyHandler(store AuthorizationStore) http.Handler {
 	return (&API{authorization: store}).InternalPolicyHandler()
+}
+
+func (api *API) internalLoreObservation(writer http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodPost {
+		writeProblem(writer, http.StatusMethodNotAllowed, "method_not_allowed", "Only POST is supported")
+		return
+	}
+	observer, ok := api.authorization.(loreObservationStore)
+	if !ok {
+		writeProblem(writer, http.StatusServiceUnavailable, "observation_unavailable", "Lore observation is unavailable")
+		return
+	}
+	var input loreObservationRequest
+	if !decodeJSON(writer, request, &input) {
+		return
+	}
+	if !authz.ValidResourceID(input.ResourceID) || input.UserID == "" || input.BranchID == "" {
+		writeProblem(writer, http.StatusBadRequest, "invalid_input", "The Lore observation is incomplete")
+		return
+	}
+	loreRepositoryID := strings.TrimPrefix(input.ResourceID, "urc-")
+	switch input.Operation {
+	case authz.OperationBranchPush:
+		if input.Revision == nil || strings.TrimSpace(*input.Revision) == "" {
+			writeProblem(writer, http.StatusBadRequest, "invalid_input", "A successful push must include its revision")
+			return
+		}
+		if err := observer.ObserveLoreBranchRevision(
+			request.Context(), loreRepositoryID, input.BranchID, strings.TrimSpace(*input.Revision),
+		); err != nil {
+			writeProblem(writer, http.StatusConflict, "observation_rejected", "The Lore branch state was not observed")
+			return
+		}
+	case authz.OperationBranchDelete:
+		if err := observer.DeleteLoreBranchState(request.Context(), loreRepositoryID, input.BranchID); err != nil {
+			writeProblem(writer, http.StatusConflict, "observation_rejected", "The Lore branch state was not observed")
+			return
+		}
+	default:
+		writeProblem(writer, http.StatusBadRequest, "invalid_input", "The Lore observation operation is invalid")
+		return
+	}
+	writer.WriteHeader(http.StatusNoContent)
+}
+
+func (api *API) internalLoreMergeAuthorization(writer http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodPost {
+		writeProblem(writer, http.StatusMethodNotAllowed, "method_not_allowed", "Only POST is supported")
+		return
+	}
+	preparer, ok := api.authorization.(mergeAuthorizationStore)
+	if !ok {
+		writeProblem(writer, http.StatusServiceUnavailable, "merge_unavailable", "Merge authorization is unavailable")
+		return
+	}
+	var input mergeAuthorizationRequest
+	if !decodeJSON(writer, request, &input) {
+		return
+	}
+	if input.UserID == "" || len(input.RepositoryID) != 32 || input.TargetBranchID == "" ||
+		input.TargetBranchName == "" || input.ExpectedCurrentRevision == "" ||
+		input.ProposedRevision == "" || input.SourceRevision == "" {
+		writeProblem(writer, http.StatusBadRequest, "invalid_input", "The exact merge tuple is incomplete")
+		return
+	}
+	err := preparer.PrepareMergeAuthorization(request.Context(), input.UserID, platform.MergeAuthorizationInput{
+		RepositoryID: input.RepositoryID, BranchID: input.TargetBranchID, BranchName: input.TargetBranchName,
+		ExpectedBase: input.ExpectedCurrentRevision, ExpectedHead: input.ProposedRevision,
+		SourceRevision: input.SourceRevision, Lifetime: input.Lifetime,
+	})
+	if err != nil {
+		api.platformError(writer, request, "prepare merge authorization", err)
+		return
+	}
+	writer.WriteHeader(http.StatusNoContent)
 }
 
 func (api *API) loreAuthConfirm(writer http.ResponseWriter, request *http.Request) {
@@ -500,6 +613,10 @@ func (api *API) loreAuthConfirm(writer http.ResponseWriter, request *http.Reques
 	}
 	if !found {
 		writeProblem(writer, http.StatusUnauthorized, "authentication_required", "Authentication is required")
+		return
+	}
+	if _, err := api.store.ActiveUser(request.Context(), session.UserID); err != nil {
+		writeProblem(writer, http.StatusForbidden, "forbidden", "This operation is not permitted")
 		return
 	}
 	csrf := request.Header.Get("X-CSRF-Token")

@@ -25,8 +25,6 @@ export function RegisterRepositoryForm({ dictionary, locale, session }: Register
   const [displayName, setDisplayName] = useState("");
   const [description, setDescription] = useState("");
   const [visibility, setVisibility] = useState<Repository["visibility"]>("public");
-  const [loreUrl, setLoreUrl] = useState("");
-  const [loreUserToken, setLoreUserToken] = useState("");
   const [created, setCreated] = useState<Repository | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [requiresLogin, setRequiresLogin] = useState(false);
@@ -34,13 +32,8 @@ export function RegisterRepositoryForm({ dictionary, locale, session }: Register
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!organization.trim() || !slug.trim() || !loreUrl.trim()) {
+    if (!organization.trim() || !slug.trim()) {
       setFailure(dictionary.forms.organizationRequired);
-      setRequiresLogin(false);
-      return;
-    }
-    if (!loreUserToken.trim()) {
-      setFailure(dictionary.forms.loreUserTokenRequired);
       setRequiresLogin(false);
       return;
     }
@@ -59,14 +52,11 @@ export function RegisterRepositoryForm({ dictionary, locale, session }: Register
         displayName: displayName.trim(),
         description,
         visibility,
-        loreUrl: loreUrl.trim(),
       },
       session.csrfToken,
-      { "X-Lore-User-Token": loreUserToken.trim() },
     );
     if (result.ok) {
       setCreated(result.data);
-      setLoreUserToken("");
       setPending(false);
       return;
     }
@@ -90,6 +80,7 @@ export function RegisterRepositoryForm({ dictionary, locale, session }: Register
         </Link>
       )}
       <form className={styles.form} onSubmit={handleSubmit}>
+        <p>{dictionary.forms.managedRepositoryDescription}</p>
         {failure && <FlashNotice body={failure} title={dictionary.forms.submitFailed} tone="error" />}
         <div className={styles.field}>
           <label htmlFor="repository-organization">{dictionary.forms.organizationSlug}</label>
@@ -127,28 +118,6 @@ export function RegisterRepositoryForm({ dictionary, locale, session }: Register
             <option value="internal">{dictionary.common.internal}</option>
             <option value="private">{dictionary.common.private}</option>
           </select>
-        </div>
-        <div className={styles.field}>
-          <label htmlFor="repository-lore-url">{dictionary.forms.loreUrl}</label>
-          <input
-            id="repository-lore-url"
-            onChange={(event) => setLoreUrl(event.target.value)}
-            placeholder={dictionary.forms.loreUrlPlaceholder}
-            required
-            value={loreUrl}
-          />
-        </div>
-        <div className={styles.field}>
-          <label htmlFor="repository-lore-user-token">{dictionary.forms.loreUserToken}</label>
-          <p>{dictionary.forms.loreUserTokenDescription}</p>
-          <input
-            autoComplete="off"
-            id="repository-lore-user-token"
-            onChange={(event) => setLoreUserToken(event.target.value)}
-            required
-            type="password"
-            value={loreUserToken}
-          />
         </div>
         <div className={styles.actions}>
           <button className={styles.submit} disabled={pending} type="submit">

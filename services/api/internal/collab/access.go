@@ -24,7 +24,7 @@ const (
 // Access describes the actor's relationship to a repository. Permission is the
 // effective level (max of repository role and organization-derived role).
 // OrgOwner and OrgMaintainer are reported separately because branch-rule
-// management explicitly grants organization maintainers in addition to admins.
+// management is limited to repository administrators and organization owners.
 type Access struct {
 	Permission       Permission
 	RepositoryRole   string
@@ -39,9 +39,9 @@ func (a Access) AtLeast(level Permission) bool {
 }
 
 // CanManageBranchRules reports whether the actor may create or modify branch
-// protection rules: repository admin, organization maintainer or owner.
+// protection rules: repository admin or organization owner.
 func (a Access) CanManageBranchRules() bool {
-	return a.Permission >= PermAdmin || a.OrgMaintainer || a.OrgOwner
+	return a.Permission >= PermAdmin || a.OrgOwner
 }
 
 // lookupRepository returns the repository if it is visible to the actor.
@@ -61,22 +61,32 @@ func lookupRepository(
 	row := pool.QueryRow(ctx, `
 		SELECT r.id, r.organization_id, o.slug, r.slug, r.visibility, r.updated_at
 		FROM repositories r
-		JOIN organizations o ON o.id = r.organization_id
+		JOIN organizations o ON o.id = r.organization_id AND o.active
 		JOIN users actor_user ON actor_user.id = $3 AND actor_user.status = 'active'
+		JOIN organization_memberships actor_membership
+		  ON actor_membership.organization_id = r.organization_id
+		 AND actor_membership.user_id = $3 AND actor_membership.active
 		WHERE o.slug = $1 AND r.slug = $2 AND r.archived_at IS NULL
+		  AND r.lifecycle_state = 'active'
 		  AND (
 		      r.visibility = 'public'
+		      OR (
+		          r.visibility = 'internal'
+		          AND EXISTS (
+		              SELECT 1 FROM organization_memberships iom
+		              WHERE iom.organization_id = o.id AND iom.user_id = $3 AND iom.active
+		          )
+		      )
+		      OR EXISTS (
+		          SELECT 1 FROM organization_memberships iom
+		          WHERE iom.organization_id = o.id AND iom.user_id = $3
+		            AND iom.active AND iom.role = 'owner'
+		      )
 		      OR EXISTS (
 		          SELECT 1 FROM repository_memberships rm
 		          JOIN organization_memberships om
 		            ON om.organization_id = o.id AND om.user_id = $3 AND om.active
 		          WHERE rm.repository_id = r.id AND rm.user_id = $3 AND rm.active
-		      )
-		      OR EXISTS (
-		          SELECT 1 FROM organization_memberships om
-		          JOIN users u ON u.id = om.user_id AND u.status = 'active'
-		          WHERE om.organization_id = o.id AND om.user_id = $3 AND om.active
-		            AND om.role IN ('owner', 'maintainer')
 		      )
 		      OR EXISTS (
 		          SELECT 1
@@ -85,7 +95,7 @@ func lookupRepository(
 		          JOIN team_memberships tm ON tm.team_id = t.id AND tm.user_id = $3 AND tm.active
 		          JOIN organization_memberships om
 		            ON om.organization_id = o.id AND om.user_id = $3 AND om.active
-		          WHERE tr.repository_id = r.id
+		          WHERE tr.repository_id = r.id AND tr.active AND t.active
 		      )
 		  )
 	`, owner, slug, actor.ID)
@@ -108,8 +118,9 @@ func lookupPublicRepository(
 	row := pool.QueryRow(ctx, `
 		SELECT r.id, r.organization_id, o.slug, r.slug, r.visibility, r.updated_at
 		FROM repositories r
-		JOIN organizations o ON o.id = r.organization_id
+		JOIN organizations o ON o.id = r.organization_id AND o.active
 		WHERE o.slug = $1 AND r.slug = $2 AND r.archived_at IS NULL
+		  AND r.lifecycle_state = 'active'
 		  AND r.visibility = 'public'
 	`, owner, slug)
 	repo, err := scanRepositoryRow(row)
@@ -133,16 +144,20 @@ func repositoryPermission(
 ) (Access, error) {
 	var repoRole, orgRole *string
 	err := pool.QueryRow(ctx, `
-		SELECT rm.role, om.role
+		SELECT rm.role, om.role, r.visibility
 		FROM repositories r
-		JOIN organizations o ON o.id = r.organization_id
+		JOIN organizations o ON o.id = r.organization_id AND o.active
 		JOIN users actor_user ON actor_user.id = $3 AND actor_user.status = 'active'
 		LEFT JOIN repository_memberships rm
 		    ON rm.repository_id = r.id AND rm.user_id = $3 AND rm.active
-		LEFT JOIN organization_memberships om
+		JOIN organization_memberships om
 		    ON om.organization_id = o.id AND om.user_id = $3 AND om.active
-		WHERE r.id = $1 AND o.id = $2
-	`, repo.ID, repo.OrganizationID, actor.ID).Scan(&repoRole, &orgRole)
+		WHERE r.id = $1 AND o.id = $2 AND r.archived_at IS NULL
+		  AND r.lifecycle_state = 'active'
+	`, repo.ID, repo.OrganizationID, actor.ID).Scan(&repoRole, &orgRole, &repo.Visibility)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Access{}, platform.ErrForbidden
+	}
 	if err != nil {
 		return Access{}, fmt.Errorf("compute repository permission: %w", err)
 	}
@@ -167,7 +182,7 @@ func repositoryPermission(
 		JOIN team_memberships tm ON tm.team_id = t.id AND tm.user_id = $3 AND tm.active
 		JOIN organization_memberships om
 		  ON om.organization_id = $2 AND om.user_id = $3 AND om.active
-		WHERE tr.repository_id = $1
+		WHERE tr.repository_id = $1 AND tr.active AND t.active
 		ORDER BY CASE tr.role
 			WHEN 'admin' THEN 5
 			WHEN 'maintain' THEN 4
@@ -182,6 +197,9 @@ func repositoryPermission(
 		access.RepositoryRole = *teamRole
 	}
 	access.Permission = combineRoles(repoRole, orgRole)
+	if repo.Visibility == "internal" && orgRole != nil && access.Permission < PermRead {
+		access.Permission = PermRead
+	}
 	if team := rolePermission(teamRole); team > access.Permission {
 		access.Permission = team
 	}
@@ -224,8 +242,6 @@ func orgRolePermission(role *string) Permission {
 	switch *role {
 	case "owner":
 		return PermAdmin
-	case "maintainer":
-		return PermWrite
 	default:
 		return PermNone
 	}

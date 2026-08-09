@@ -305,14 +305,17 @@ const en = {
     displayName: "Display name",
     description: "Description",
     loreUrl: "Lore URL",
-    loreUrlPlaceholder: "lore://server/repository",
+    loreUrlPlaceholder: "lores://lore.example:41337",
     loreUserToken: "Short-lived Lore user token",
     loreUserTokenDescription:
       "Use a token from Lore auth login. It is sent only in this request and is not saved by LoreHub.",
     createOrganization: "Create organization",
-    createRepository: "Register repository",
+    createRepository: "Create Lore repository",
     organizationCreated: "Organization created.",
-    repositoryCreated: "Repository registered.",
+    repositoryCreated: "Lore repository created.",
+    managedRepositoryDescription:
+      "LoreHub provisions a new Lore partition with a fresh ID. " +
+      "Existing Lore repositories use the separate import API and an exact admin token.",
     titleRequired: "Enter a title.",
     titleTooLong: "The title must be 512 characters or fewer.",
     bodyTooLong: "The description is too long.",

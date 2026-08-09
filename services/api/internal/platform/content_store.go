@@ -31,6 +31,54 @@ func (store *Store) ObserveBranchState(
 	return nil
 }
 
+func (store *Store) ObserveLoreBranchRevision(
+	ctx context.Context,
+	loreRepositoryID string,
+	branchID string,
+	revision string,
+) error {
+	if loreRepositoryID == "" || branchID == "" || revision == "" {
+		return errors.New("the Lore branch revision observation is incomplete")
+	}
+	command, err := store.pool.Exec(ctx, `
+		UPDATE repository_branch_states states
+		SET latest_revision = $3, observed_at = now()
+		FROM repositories repositories
+		WHERE repositories.id = states.repository_id
+		  AND repositories.lore_repository_id = $1
+		  AND repositories.lifecycle_state = 'active'
+		  AND states.branch_id = $2
+	`, loreRepositoryID, branchID, revision)
+	if err != nil {
+		return fmt.Errorf("record Lore branch revision: %w", err)
+	}
+	if command.RowsAffected() != 1 {
+		return errors.New("the Lore branch is not observed in the control plane")
+	}
+	return nil
+}
+
+func (store *Store) DeleteLoreBranchState(
+	ctx context.Context,
+	loreRepositoryID string,
+	branchID string,
+) error {
+	if loreRepositoryID == "" || branchID == "" {
+		return errors.New("the Lore branch deletion observation is incomplete")
+	}
+	_, err := store.pool.Exec(ctx, `
+		DELETE FROM repository_branch_states states
+		USING repositories repositories
+		WHERE repositories.id = states.repository_id
+		  AND repositories.lore_repository_id = $1
+		  AND states.branch_id = $2
+	`, loreRepositoryID, branchID)
+	if err != nil {
+		return fmt.Errorf("remove Lore branch state: %w", err)
+	}
+	return nil
+}
+
 func (store *Store) ListIssuesForRead(
 	ctx context.Context,
 	actor *User,

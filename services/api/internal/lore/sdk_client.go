@@ -39,10 +39,8 @@ func (client *SDKClient) RepositoryInfo(
 	if err := ctx.Err(); err != nil {
 		return Repository{}, err
 	}
-	parsedURL, err := url.Parse(repositoryURL)
-	if err != nil || parsedURL.Host == "" || parsedURL.User != nil || parsedURL.RawQuery != "" ||
-		parsedURL.Fragment != "" || (parsedURL.Scheme != "lore" && parsedURL.Scheme != "lores") {
-		return Repository{}, errors.New("repository URL must use the lore or lores scheme")
+	if err := validateRepositoryURL(repositoryURL); err != nil {
+		return Repository{}, err
 	}
 	globals, cleanupGlobals := types.NewLoreGlobalArgs(types.LoreGlobalArgs{
 		Identity: identity,
@@ -79,6 +77,15 @@ func (client *SDKClient) RepositoryInfo(
 	return Repository{}, errors.New("Lore repository response contained no repository data")
 }
 
+func validateRepositoryURL(repositoryURL string) error {
+	parsedURL, err := url.Parse(repositoryURL)
+	if err != nil || parsedURL.Host == "" || parsedURL.User != nil || parsedURL.RawQuery != "" ||
+		parsedURL.Fragment != "" || (parsedURL.Scheme != "lore" && parsedURL.Scheme != "lores") {
+		return errors.New("repository URL must use the lore or lores scheme")
+	}
+	return nil
+}
+
 func (client *SDKClient) RepositoryInfoWithCredential(
 	ctx context.Context,
 	repositoryURL string,
@@ -90,6 +97,42 @@ func (client *SDKClient) RepositoryInfoWithCredential(
 		return Repository{}, err
 	}
 	return client.RepositoryInfo(ctx, repositoryURL, credential.Identity)
+}
+
+func (client *SDKClient) CreateRepositoryWithCredential(
+	ctx context.Context,
+	repositoryURL string,
+	repositoryID string,
+	name string,
+	description string,
+	credential Credential,
+) error {
+	if err := validateRepositoryURL(repositoryURL); err != nil {
+		return err
+	}
+	if repositoryID == "" || name == "" {
+		return errors.New("Lore repository ID and name are required")
+	}
+	client.credentialLock.Lock()
+	defer client.credentialLock.Unlock()
+	if err := client.authenticate(ctx, repositoryURL, credential); err != nil {
+		return err
+	}
+	globals, cleanupGlobals := types.NewLoreGlobalArgs(types.LoreGlobalArgs{
+		Identity: credential.Identity,
+		Remote:   true,
+	})
+	defer cleanupGlobals()
+	args, cleanupArgs := types.NewLoreRepositoryCreateArgs(types.LoreRepositoryCreateArgs{
+		RepositoryUrl: repositoryURL,
+		Description:   description,
+		Id:            repositoryID,
+	})
+	defer cleanupArgs()
+	if _, err := loresdk.RepositoryCreate(&globals, &args).Wait(); err != nil {
+		return errors.New("Lore repository creation was rejected")
+	}
+	return nil
 }
 
 func (client *SDKClient) Branches(

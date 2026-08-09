@@ -32,6 +32,8 @@ type Repository struct {
 	DefaultBranch     string    `json:"defaultBranch"`
 	IssueCount        int64     `json:"issueCount"`
 	MergeRequestCount int64     `json:"mergeRequestCount"`
+	LifecycleState    string    `json:"lifecycleState,omitempty"`
+	ProvisioningError string    `json:"provisioningError,omitempty"`
 	UpdatedAt         time.Time `json:"updatedAt"`
 }
 
@@ -92,6 +94,14 @@ type RegisterRepositoryInput struct {
 	LoreRepositoryID string
 	LoreURL          string
 	DefaultBranch    string
+}
+
+type ProvisionRepositoryInput struct {
+	Slug          string
+	DisplayName   string
+	Description   string
+	Visibility    string
+	DefaultBranch string
 }
 
 type Team struct {
@@ -192,12 +202,13 @@ type RepositoryPolicy struct {
 }
 
 type MergeAuthorizationInput struct {
-	RepositoryID string
-	BranchID     string
-	BranchName   string
-	ExpectedBase string
-	ExpectedHead string
-	Lifetime     time.Duration
+	RepositoryID   string
+	BranchID       string
+	BranchName     string
+	ExpectedBase   string
+	ExpectedHead   string
+	SourceRevision string
+	Lifetime       time.Duration
 }
 
 type CreateIssueInput struct {

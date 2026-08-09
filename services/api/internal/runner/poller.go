@@ -18,28 +18,36 @@ type BranchClient interface {
 }
 
 type CredentialIssuer interface {
-	IssueResourceToken(ctx context.Context, userID string, resourceID string, requested []string) (string, error)
+	IssueServiceResourceToken(
+		ctx context.Context,
+		principalName string,
+		resourceID string,
+		requested []string,
+	) (string, error)
 	AuthURL() string
 }
 
 type Poller struct {
-	store  *Store
-	lore   BranchClient
-	issuer CredentialIssuer
-	userID string
-	period time.Duration
-	logger *slog.Logger
+	store                 *Store
+	lore                  BranchClient
+	issuer                CredentialIssuer
+	observerPrincipalName string
+	period                time.Duration
+	logger                *slog.Logger
 }
 
 func NewPoller(
 	store *Store,
 	lore BranchClient,
 	issuer CredentialIssuer,
-	userID string,
+	observerPrincipalName string,
 	period time.Duration,
 	logger *slog.Logger,
 ) *Poller {
-	return &Poller{store: store, lore: lore, issuer: issuer, userID: userID, period: period, logger: logger}
+	return &Poller{
+		store: store, lore: lore, issuer: issuer, observerPrincipalName: observerPrincipalName,
+		period: period, logger: logger,
+	}
 }
 
 func (poller *Poller) Run(ctx context.Context) error {
@@ -66,10 +74,10 @@ func (poller *Poller) poll(ctx context.Context) error {
 		return err
 	}
 	for _, repository := range repositories {
-		if poller.issuer == nil || poller.userID == "" {
-			return fmt.Errorf("runner requires a dedicated service user")
+		if poller.issuer == nil || poller.observerPrincipalName == "" {
+			return fmt.Errorf("branch observer requires a dedicated service principal")
 		}
-		token, err := poller.issuer.IssueResourceToken(ctx, poller.userID,
+		token, err := poller.issuer.IssueServiceResourceToken(ctx, poller.observerPrincipalName,
 			"urc-"+repository.LoreRepositoryID, []string{"read"})
 		if err != nil {
 			poller.logger.Error("could not mint scoped Lore polling credential",
@@ -79,7 +87,9 @@ func (poller *Poller) poll(ctx context.Context) error {
 		branches, err := poller.lore.BranchesWithCredential(ctx, loreclient.RepositoryRef{
 			CacheKey: repository.ID,
 			URL:      repository.LoreURL,
-		}, loreclient.Credential{Token: token, AuthURL: poller.issuer.AuthURL(), Identity: poller.userID})
+		}, loreclient.Credential{
+			Token: token, AuthURL: poller.issuer.AuthURL(), Identity: poller.observerPrincipalName,
+		})
 		if err != nil {
 			poller.logger.Error(
 				"could not read Lore branches",
@@ -88,10 +98,12 @@ func (poller *Poller) poll(ctx context.Context) error {
 			)
 			continue
 		}
+		observedBranchIDs := make([]string, 0, len(branches))
 		for _, branch := range branches {
 			if branch.Archived || branch.LatestRevision == "" {
 				continue
 			}
+			observedBranchIDs = append(observedBranchIDs, branch.ID)
 			queued, err := poller.store.ObserveBranch(ctx, repository, ObservedBranch{
 				ID:             branch.ID,
 				Name:           branch.Name,
@@ -108,6 +120,9 @@ func (poller *Poller) poll(ctx context.Context) error {
 					"revision", branch.LatestRevision,
 				)
 			}
+		}
+		if err := poller.store.ReconcileBranchStates(ctx, repository.ID, observedBranchIDs); err != nil {
+			return fmt.Errorf("reconcile %s/%s branch state: %w", repository.Owner, repository.Slug, err)
 		}
 	}
 	return nil

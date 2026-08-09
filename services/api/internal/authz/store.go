@@ -26,14 +26,11 @@ type UserInfo struct {
 }
 
 type PolicyCheck struct {
-	UserID                 string
-	ResourceID             string
-	Operation              string
-	BranchID               string
-	BranchName             string
-	CurrentRevision        string
-	ProposedRevision       string
-	OperationAuthorization string
+	UserID           string
+	ResourceID       string
+	Operation        string
+	BranchID         string
+	ProposedRevision string
 }
 
 type PolicyDecision struct {

@@ -36,15 +36,12 @@ func (service *RebacService) CreateResource(
 	if len(request.GetResourceName()) > 256 {
 		return nil, status.Error(codes.InvalidArgument, "resource name is too long")
 	}
-	claims, err := service.auth.authenticate(ctx)
+	claims, err := service.auth.authenticateResource(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if !service.auth.tokenAllowsResource(claims, request.GetResourceId(), authz.PermissionAdmin) {
+	if !service.auth.hasCurrentPermission(ctx, claims, request.GetResourceId(), authz.PermissionAdmin) {
 		return nil, status.Error(codes.PermissionDenied, "resource administration is outside the token scope")
-	}
-	if _, err := service.auth.policy.EffectivePermissions(ctx, claims.Subject, request.GetResourceId()); err != nil {
-		return nil, status.Error(codes.NotFound, "resource is not registered in LoreHub")
 	}
 	return &CreateResourceResponse{}, nil
 }
@@ -56,15 +53,12 @@ func (service *RebacService) DeleteResource(
 	if request == nil || !authz.ValidResourceID(request.GetResourceId()) {
 		return nil, status.Error(codes.InvalidArgument, "resource ID is invalid")
 	}
-	claims, err := service.auth.authenticate(ctx)
+	claims, err := service.auth.authenticateResource(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if !service.auth.tokenAllowsResource(claims, request.GetResourceId(), authz.PermissionAdmin) {
+	if !service.auth.hasCurrentPermission(ctx, claims, request.GetResourceId(), authz.PermissionAdmin) {
 		return nil, status.Error(codes.PermissionDenied, "resource administration is outside the token scope")
-	}
-	if _, err := service.auth.policy.EffectivePermissions(ctx, claims.Subject, request.GetResourceId()); err != nil {
-		return nil, status.Error(codes.NotFound, "resource is not registered in LoreHub")
 	}
 	return &DeleteResourceResponse{}, nil
 }

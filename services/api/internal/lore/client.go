@@ -38,6 +38,17 @@ type CredentialClient interface {
 	) error
 }
 
+type ManagedRepositoryClient interface {
+	CreateRepositoryWithCredential(
+		ctx context.Context,
+		repositoryURL string,
+		repositoryID string,
+		name string,
+		description string,
+		credential Credential,
+	) error
+}
+
 type Branch struct {
 	ID             string    `json:"id"`
 	Name           string    `json:"name"`

@@ -20,57 +20,61 @@ const (
 )
 
 type Config struct {
-	Environment             string
-	HTTPAddress             string
-	DatabaseURL             string
-	DatabaseTimeout         time.Duration
-	ShutdownTimeout         time.Duration
-	AuthMode                string
-	OIDCIssuer              string
-	OIDCAudience            string
-	OIDCClientID            string
-	OIDCClientSecret        string
-	OIDCRedirectURL         string
-	PublicOrigin            string
-	AuthSecret              string
-	SessionCookieName       string
-	LoginBindingCookieName  string
-	SessionCookiePath       string
-	SessionCookieDomain     string
-	SessionCookieSecure     bool
-	SessionTTL              time.Duration
-	LoginTransactionTTL     time.Duration
-	LoreCacheDir            string
-	LoreIdentity            string
-	AllowLegacyLoreIdentity bool
-	LoreAuthIssuer          string
-	LoreAuthAudience        string
-	LoreAuthEnvironment     string
-	LoreAuthIDP             string
-	LoreAuthTokenTTL        time.Duration
-	LoreAuthSessionTTL      time.Duration
-	LoreAuthLoginURL        string
-	LoreAuthURL             string
-	LoreAuthAddress         string
-	LoreAuthTLSCert         string
-	LoreAuthTLSKey          string
-	AuthSigningKeyPath      string
-	AuthSigningKeyPEM       string
-	AuthSigningKeyKID       string
-	AuthPreviousKeys        string
-	PolicyAddress           string
-	PolicyTLSCert           string
-	PolicyTLSKey            string
-	PolicyTLSClientCA       string
-	LoreBinary              string
-	ActBinary               string
-	RunnerPollPeriod        time.Duration
-	BranchPollPeriod        time.Duration
-	RunnerJobTimeout        time.Duration
-	RunnerLogDir            string
-	RunnerArtifactDir       string
-	RunnerWorkDir           string
-	RunnerUserID            string
+	Environment              string
+	HTTPAddress              string
+	DatabaseURL              string
+	DatabaseTimeout          time.Duration
+	ShutdownTimeout          time.Duration
+	AuthMode                 string
+	OIDCIssuer               string
+	OIDCAudience             string
+	OIDCClientID             string
+	OIDCClientSecret         string
+	OIDCRedirectURL          string
+	PublicOrigin             string
+	AuthSecret               string
+	SessionCookieName        string
+	LoginBindingCookieName   string
+	SessionCookiePath        string
+	SessionCookieDomain      string
+	SessionCookieSecure      bool
+	SessionTTL               time.Duration
+	LoginTransactionTTL      time.Duration
+	LoreCacheDir             string
+	LoreIdentity             string
+	AllowLegacyLoreIdentity  bool
+	LoreAuthIssuer           string
+	LoreAuthAudience         string
+	LoreRootDomain           string
+	LoreAuthJWKSURL          string
+	LoreAuthEnvironment      string
+	LoreAuthIDP              string
+	LoreAuthTokenTTL         time.Duration
+	LoreAuthSessionTTL       time.Duration
+	LoreAuthLoginURL         string
+	LoreAuthURL              string
+	LorePublicURL            string
+	LoreAuthAddress          string
+	LoreAuthTLSCert          string
+	LoreAuthTLSKey           string
+	AuthSigningKeyPath       string
+	AuthSigningKeyPEM        string
+	AuthSigningKeyKID        string
+	AuthPreviousKeys         string
+	PolicyAddress            string
+	PolicyTLSCert            string
+	PolicyTLSKey             string
+	PolicyTLSClientCA        string
+	LoreBinary               string
+	ActBinary                string
+	RunnerPollPeriod         time.Duration
+	BranchPollPeriod         time.Duration
+	RunnerJobTimeout         time.Duration
+	RunnerLogDir             string
+	RunnerArtifactDir        string
+	RunnerWorkDir            string
+	RunnerServicePrincipal   string
+	ObserverServicePrincipal string
 }
 
 func Load() (Config, error) {
@@ -78,6 +82,9 @@ func Load() (Config, error) {
 	loreAuthIssuer := os.Getenv("LOREHUB_LORE_AUTH_ISSUER")
 	loreAuthLoginURL := os.Getenv("LOREHUB_LORE_AUTH_LOGIN_URL")
 	loreAuthURL := os.Getenv("LOREHUB_LORE_AUTH_URL")
+	loreRootDomain := os.Getenv("LOREHUB_LORE_ROOT_DOMAIN")
+	loreAuthJWKSURL := os.Getenv("LOREHUB_LORE_AUTH_JWKS_URL")
+	lorePublicURL := os.Getenv("LOREHUB_LORE_PUBLIC_URL")
 	signingKeyPath := os.Getenv("LOREHUB_AUTH_SIGNING_KEY_PATH")
 	loreAuthTLSCert := os.Getenv("LOREHUB_LORE_AUTH_TLS_CERT")
 	loreAuthTLSKey := os.Getenv("LOREHUB_LORE_AUTH_TLS_KEY")
@@ -90,9 +97,14 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	if environment != "production" {
-		loreAuthIssuer = defaultIfEmpty(loreAuthIssuer, "http://api:8080")
-		loreAuthLoginURL = defaultIfEmpty(loreAuthLoginURL, "http://localhost:8080/auth/lore/confirm")
-		loreAuthURL = defaultIfEmpty(loreAuthURL, "ucs-auth://api:8443")
+		loreRootDomain = defaultIfEmpty(loreRootDomain, "lorehub.localhost")
+		loreAuthIssuer = defaultIfEmpty(loreAuthIssuer, "auth.lorehub.localhost")
+		loreAuthLoginURL = defaultIfEmpty(loreAuthLoginURL,
+			"http://lorehub.localhost:8080/auth/lore/confirm")
+		loreAuthURL = defaultIfEmpty(loreAuthURL, "ucs-auth://auth.lorehub.localhost:8443")
+		loreAuthJWKSURL = defaultIfEmpty(loreAuthJWKSURL,
+			"http://api.lorehub.localhost:8080/.well-known/jwks.json")
+		lorePublicURL = defaultIfEmpty(lorePublicURL, "lores://lore.lorehub.localhost:41337")
 		signingKeyPath = defaultIfEmpty(signingKeyPath, "/var/lib/lorehub/keys/lore-auth.pem")
 		loreAuthTLSCert = defaultIfEmpty(loreAuthTLSCert, "/var/lib/lorehub/tls/server.crt")
 		loreAuthTLSKey = defaultIfEmpty(loreAuthTLSKey, "/var/lib/lorehub/tls/server.key")
@@ -149,13 +161,16 @@ func Load() (Config, error) {
 		LoreIdentity:            os.Getenv("LOREHUB_LORE_IDENTITY"),
 		AllowLegacyLoreIdentity: allowLegacyLoreIdentity,
 		LoreAuthIssuer:          loreAuthIssuer,
-		LoreAuthAudience:        envOrDefault("LOREHUB_LORE_AUTH_AUDIENCE", "lore"),
+		LoreAuthAudience:        envOrDefault("LOREHUB_LORE_AUTH_AUDIENCE", loreRootDomain),
+		LoreRootDomain:          loreRootDomain,
+		LoreAuthJWKSURL:         loreAuthJWKSURL,
 		LoreAuthEnvironment:     envOrDefault("LOREHUB_LORE_AUTH_ENVIRONMENT", environment),
 		LoreAuthIDP:             envOrDefault("LOREHUB_LORE_AUTH_IDP", "keycloak"),
 		LoreAuthTokenTTL:        durationOrDefault("LOREHUB_LORE_AUTH_TOKEN_TTL", 5*time.Minute),
 		LoreAuthSessionTTL:      durationOrDefault("LOREHUB_LORE_AUTH_SESSION_TTL", 5*time.Minute),
 		LoreAuthLoginURL:        loreAuthLoginURL,
 		LoreAuthURL:             loreAuthURL,
+		LorePublicURL:           lorePublicURL,
 		LoreAuthAddress:         envOrDefault("LOREHUB_LORE_AUTH_ADDRESS", ":8443"),
 		LoreAuthTLSCert:         loreAuthTLSCert,
 		LoreAuthTLSKey:          loreAuthTLSKey,
@@ -175,7 +190,10 @@ func Load() (Config, error) {
 		RunnerLogDir:            envOrDefault("LOREHUB_RUNNER_LOG_DIR", ".cache/lorehub/runner-logs"),
 		RunnerArtifactDir:       envOrDefault("LOREHUB_RUNNER_ARTIFACT_DIR", ".cache/lorehub/runner-artifacts"),
 		RunnerWorkDir:           envOrDefault("LOREHUB_RUNNER_WORK_DIR", ".cache/lorehub/runner-work"),
-		RunnerUserID:            strings.TrimSpace(os.Getenv("LOREHUB_RUNNER_USER_ID")),
+		RunnerServicePrincipal: strings.TrimSpace(envOrDefault(
+			"LOREHUB_RUNNER_SERVICE_PRINCIPAL", "lorehub-ci-runner")),
+		ObserverServicePrincipal: strings.TrimSpace(envOrDefault(
+			"LOREHUB_OBSERVER_SERVICE_PRINCIPAL", "lorehub-observer")),
 	}
 
 	if err := validate(config); err != nil {
@@ -261,20 +279,51 @@ func validate(config Config) error {
 		config.AuthMode != AuthModeDisabled || strings.TrimSpace(config.LoreIdentity) == "") {
 		return errors.New("legacy Lore identity requires LOREHUB_ENV=local-insecure and disabled API auth")
 	}
-	if config.LoreAuthIssuer == "" || config.LoreAuthAudience == "" || config.AuthSigningKeyKID == "" {
-		return errors.New("Lore auth issuer, audience, and signing key kid are required")
+	if config.LoreAuthIssuer == "" || config.LoreAuthAudience == "" || config.LoreRootDomain == "" ||
+		config.LoreAuthJWKSURL == "" || config.AuthSigningKeyKID == "" {
+		return errors.New("Lore auth issuer, audience, root domain, JWKS URL, and signing key kid are required")
 	}
-	if err := validateURL("LOREHUB_LORE_AUTH_ISSUER", config.LoreAuthIssuer, config.Environment, true); err != nil {
+	if err := validateRootDomain(config.LoreRootDomain, config.Environment); err != nil {
 		return err
+	}
+	if !validManagedDomain(config.LoreAuthIssuer, config.LoreRootDomain) {
+		return errors.New("LOREHUB_LORE_AUTH_ISSUER must use the managed Lore root domain")
 	}
 	if err := validateURL("LOREHUB_LORE_AUTH_LOGIN_URL", config.LoreAuthLoginURL, config.Environment, false); err != nil {
 		return err
+	}
+	loginURL, _ := url.Parse(config.LoreAuthLoginURL)
+	if !hostWithinRoot(loginURL.Hostname(), config.LoreRootDomain) {
+		return errors.New("LOREHUB_LORE_AUTH_LOGIN_URL must use the managed Lore root domain")
+	}
+	if err := validateURL("LOREHUB_LORE_AUTH_JWKS_URL", config.LoreAuthJWKSURL, config.Environment, false); err != nil {
+		return err
+	}
+	jwksURL, _ := url.Parse(config.LoreAuthJWKSURL)
+	if !hostWithinRoot(jwksURL.Hostname(), config.LoreRootDomain) {
+		return errors.New("LOREHUB_LORE_AUTH_JWKS_URL must use the managed Lore root domain")
+	}
+	for _, audience := range strings.Split(config.LoreAuthAudience, ",") {
+		audience = strings.TrimSpace(audience)
+		if audience == "" || !hostWithinRoot(audience, config.LoreRootDomain) ||
+			audience == "lore" || audience == "api" {
+			return errors.New("LOREHUB_LORE_AUTH_AUDIENCE must contain managed root domains")
+		}
 	}
 	authURL, authURLErr := url.Parse(config.LoreAuthURL)
 	if authURLErr != nil || authURL.Scheme != "ucs-auth" || authURL.Host == "" ||
 		authURL.User != nil || authURL.RawQuery != "" || authURL.Fragment != "" ||
 		strings.ContainsAny(config.LoreAuthURL, "\r\n") {
 		return errors.New("LOREHUB_LORE_AUTH_URL must be a fixed ucs-auth:// endpoint")
+	}
+	if !hostWithinRoot(authURL.Hostname(), config.LoreRootDomain) {
+		return errors.New("LOREHUB_LORE_AUTH_URL must use the managed Lore root domain")
+	}
+	publicURL, publicURLErr := url.Parse(config.LorePublicURL)
+	if publicURLErr != nil || publicURL.Scheme != "lores" || publicURL.Host == "" ||
+		publicURL.User != nil || publicURL.Path != "" || publicURL.RawQuery != "" || publicURL.Fragment != "" ||
+		!hostWithinRoot(publicURL.Hostname(), config.LoreRootDomain) {
+		return errors.New("LOREHUB_LORE_PUBLIC_URL must be a fixed managed lores:// endpoint")
 	}
 	if config.LoreAuthTokenTTL < 5*time.Minute || config.LoreAuthTokenTTL > 10*time.Minute {
 		return errors.New("LOREHUB_LORE_AUTH_TOKEN_TTL must be between 5m and 10m")
@@ -376,10 +425,35 @@ func validateURL(name string, value string, environment string, originOnly bool)
 	if originOnly && (parsed.Path != "" && parsed.Path != "/" || parsed.RawQuery != "") {
 		return fmt.Errorf("%s must contain only an origin", name)
 	}
-	if environment == "production" && parsed.Scheme != "https" {
-		return fmt.Errorf("%s must use HTTPS in production", name)
+	if environment != "development" && environment != "local-insecure" && parsed.Scheme != "https" {
+		return fmt.Errorf("%s must use HTTPS outside the isolated local profiles", name)
 	}
 	return nil
+}
+
+func validateRootDomain(value string, environment string) error {
+	value = strings.TrimSpace(strings.ToLower(value))
+	if value == "" || strings.ContainsAny(value, "/:?#@ \t\r\n") || !strings.Contains(value, ".") {
+		return errors.New("LOREHUB_LORE_ROOT_DOMAIN must be a DNS root domain")
+	}
+	if environment == "production" && strings.HasSuffix(value, ".localhost") {
+		return errors.New("LOREHUB_LORE_ROOT_DOMAIN cannot use localhost in production")
+	}
+	return nil
+}
+
+func hostWithinRoot(host string, root string) bool {
+	host = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
+	root = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(root)), ".")
+	return host == root || strings.HasSuffix(host, "."+root)
+}
+
+func validManagedDomain(value string, root string) bool {
+	value = strings.TrimSpace(strings.ToLower(value))
+	if value == "" || strings.ContainsAny(value, "/:?#@ \t\r\n") || !strings.Contains(value, ".") {
+		return false
+	}
+	return hostWithinRoot(value, root)
 }
 
 func sameOrigin(left *url.URL, right *url.URL) bool {

@@ -23,11 +23,16 @@ openssl req -x509 -newkey rsa:3072 -nodes \
   -addext "basicConstraints=critical,CA:TRUE,pathlen:1" \
   -addext "keyUsage=critical,keyCertSign,cRLSign"
 
-cat >/tmp/server.ext <<'EOF'
+server_san="DNS:lorehub.localhost"
+server_san="${server_san},DNS:auth.lorehub.localhost"
+server_san="${server_san},DNS:api.lorehub.localhost"
+server_san="${server_san},DNS:lore.lorehub.localhost"
+server_san="${server_san},DNS:localhost,IP:127.0.0.1"
+cat >/tmp/server.ext <<EOF
 basicConstraints=CA:FALSE
 keyUsage=critical,digitalSignature,keyEncipherment
 extendedKeyUsage=serverAuth
-subjectAltName=DNS:api,DNS:lore,DNS:localhost,IP:127.0.0.1
+subjectAltName=${server_san}
 EOF
 openssl req -newkey rsa:2048 -nodes -keyout /tls/server.key \
   -out /tmp/server.csr -subj "/CN=lorehub-api"

@@ -26,13 +26,19 @@ func (store *Store) UserInfoForResource(
 		  ON om.user_id = u.id AND om.organization_id = $1 AND om.active
 		WHERE u.status = 'active'
 		  AND (
+			  EXISTS (
+				  SELECT 1 FROM repositories internal_repository
+				  WHERE internal_repository.id = $2
+				    AND internal_repository.visibility = 'internal'
+			  )
+			  OR
 			  EXISTS (SELECT 1 FROM repository_memberships rm
 			          WHERE rm.repository_id = $2 AND rm.user_id = u.id AND rm.active)
 			  OR EXISTS (SELECT 1 FROM team_memberships tm
 			             JOIN team_repository_roles tr ON tr.team_id = tm.team_id
-			             JOIN teams t ON t.id = tm.team_id AND t.organization_id = $1
-			             WHERE tm.user_id = u.id AND tm.active AND tr.repository_id = $2)
-			  OR om.role IN ('owner', 'maintainer')
+		             JOIN teams t ON t.id = tm.team_id AND t.organization_id = $1 AND t.active
+		             WHERE tm.user_id = u.id AND tm.active AND tr.active AND tr.repository_id = $2)
+			  OR om.role = 'owner'
 		  )
 		  AND ($3::uuid[] IS NULL OR u.id = ANY($3::uuid[]))
 		ORDER BY u.display_name, u.id
@@ -87,13 +93,19 @@ func (store *Store) UserInfoByDisplayName(
 		  ON om.user_id = u.id AND om.organization_id = $1 AND om.active
 		WHERE u.status = 'active' AND u.display_name = $2
 		  AND (
+			  EXISTS (
+				  SELECT 1 FROM repositories internal_repository
+				  WHERE internal_repository.id = $3
+				    AND internal_repository.visibility = 'internal'
+			  )
+			  OR
 			  EXISTS (SELECT 1 FROM repository_memberships rm
 			          WHERE rm.repository_id = $3 AND rm.user_id = u.id AND rm.active)
 			  OR EXISTS (SELECT 1 FROM team_memberships tm
 			             JOIN team_repository_roles tr ON tr.team_id = tm.team_id
-			             JOIN teams t ON t.id = tm.team_id AND t.organization_id = $1
-			             WHERE tm.user_id = u.id AND tm.active AND tr.repository_id = $3)
-			  OR om.role IN ('owner', 'maintainer')
+		             JOIN teams t ON t.id = tm.team_id AND t.organization_id = $1 AND t.active
+		             WHERE tm.user_id = u.id AND tm.active AND tr.active AND tr.repository_id = $3)
+			  OR om.role = 'owner'
 		  )
 		LIMIT 1
 	`, repository.OrganizationID, displayName, repository.ID).Scan(

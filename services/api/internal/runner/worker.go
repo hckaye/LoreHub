@@ -17,16 +17,16 @@ import (
 )
 
 type WorkerConfig struct {
-	LoreBinary  string
-	ActBinary   string
-	WorkDir     string
-	LogDir      string
-	ArtifactDir string
-	PollPeriod  time.Duration
-	JobTimeout  time.Duration
-	Lore        lore.CredentialClient
-	Issuer      CredentialIssuer
-	UserID      string
+	LoreBinary       string
+	ActBinary        string
+	WorkDir          string
+	LogDir           string
+	ArtifactDir      string
+	PollPeriod       time.Duration
+	JobTimeout       time.Duration
+	Lore             lore.CredentialClient
+	Issuer           CredentialIssuer
+	ServicePrincipal string
 }
 
 type Worker struct {
@@ -124,16 +124,16 @@ func (worker *Worker) runJob(ctx context.Context, job Job) (string, []Artifact, 
 	defer func() { _ = logFile.Close() }()
 
 	repositoryPath := filepath.Join(workspace, "repository")
-	if worker.config.Lore == nil || worker.config.Issuer == nil || worker.config.UserID == "" {
+	if worker.config.Lore == nil || worker.config.Issuer == nil || worker.config.ServicePrincipal == "" {
 		return logKey, nil, errors.New("CI runner requires scoped Lore credentials")
 	}
-	token, err := worker.config.Issuer.IssueResourceToken(ctx, worker.config.UserID,
+	token, err := worker.config.Issuer.IssueServiceResourceToken(ctx, worker.config.ServicePrincipal,
 		"urc-"+job.LoreRepositoryID, []string{"read"})
 	if err != nil {
 		return logKey, nil, errors.New("could not mint CI Lore credential")
 	}
 	if err := worker.config.Lore.CloneWithCredential(ctx, job.LoreURL, job.Revision, repositoryPath, lore.Credential{
-		Token: token, AuthURL: worker.config.Issuer.AuthURL(), Identity: worker.config.UserID,
+		Token: token, AuthURL: worker.config.Issuer.AuthURL(), Identity: worker.config.ServicePrincipal,
 	}); err != nil {
 		return logKey, nil, errors.New("clone Lore revision was rejected")
 	}

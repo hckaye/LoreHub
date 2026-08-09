@@ -22,6 +22,10 @@ func (store fakeStore) EnsureUser(context.Context, auth.Principal) (platform.Use
 	return store.user, nil
 }
 
+func (store fakeStore) ActiveUser(context.Context, string) (platform.User, error) {
+	return store.user, nil
+}
+
 func (store fakeStore) CreateOrganization(
 	context.Context,
 	platform.User,

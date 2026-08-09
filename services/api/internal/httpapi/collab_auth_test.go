@@ -273,8 +273,8 @@ func TestCollaborationPrivateReadAnonymousAndBearerCompatible(t *testing.T) {
 	request.AddCookie(expiredCookie)
 	response = httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
-	if response.Code != http.StatusNotFound {
-		t.Fatalf("expired cookie authorized private read: status=%d body=%s", response.Code, response.Body.String())
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("expired cookie was not rejected: status=%d body=%s", response.Code, response.Body.String())
 	}
 
 	request = httptest.NewRequest(http.MethodPatch, target, strings.NewReader(`{"title":"new"}`))

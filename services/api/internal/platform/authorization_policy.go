@@ -239,31 +239,6 @@ func (store *Store) ListRepositoryLinks(
 	return links, rows.Err()
 }
 
-func (store *Store) recordAudit(
-	ctx context.Context,
-	actorID string,
-	organizationID string,
-	repositoryID string,
-	action string,
-	targetType string,
-	targetID string,
-	details map[string]any,
-) error {
-	transaction, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
-	if err != nil {
-		return fmt.Errorf("begin audit transaction: %w", err)
-	}
-	defer func() { _ = transaction.Rollback(context.WithoutCancel(ctx)) }()
-	if err := insertAuditDetails(ctx, transaction, actorID, organizationID, repositoryID, action,
-		targetType, targetID, details); err != nil {
-		return err
-	}
-	if err := transaction.Commit(ctx); err != nil {
-		return fmt.Errorf("commit audit transaction: %w", err)
-	}
-	return nil
-}
-
 func insertAuditDetails(
 	ctx context.Context,
 	transaction pgx.Tx,
@@ -287,7 +262,10 @@ func insertAuditDetails(
 	if err != nil {
 		return fmt.Errorf("record detailed audit event: %w", err)
 	}
-	return nil
+	return insertOutbox(ctx, transaction, "control."+action, uuid.NewString(), map[string]any{
+		"actorId": actorID, "organizationId": organizationID, "repositoryId": repositoryID,
+		"action": action, "targetType": targetType, "targetId": targetID, "details": details,
+	})
 }
 
 func (store *Store) repositoryAdminAccess(
@@ -304,9 +282,10 @@ func (store *Store) repositoryAdminAccess(
 		JOIN organization_memberships om
 		  ON om.organization_id = o.id AND om.user_id = $3 AND om.active
 		JOIN users u ON u.id = om.user_id AND u.status = 'active'
-		WHERE o.slug = $1 AND r.slug = $2 AND r.archived_at IS NULL
+		WHERE o.slug = $1 AND r.slug = $2 AND o.active
+		  AND r.archived_at IS NULL AND r.lifecycle_state = 'active'
 		  AND (
-			  om.role IN ('owner', 'maintainer')
+			  om.role = 'owner'
 			  OR EXISTS (
 				  SELECT 1 FROM repository_memberships rm
 				  JOIN organization_memberships rom
@@ -314,13 +293,15 @@ func (store *Store) repositoryAdminAccess(
 				  WHERE rm.repository_id = r.id AND rm.user_id = $3
 				    AND rm.active AND rm.role = 'admin'
 			  )
-			  OR EXISTS (
+				OR EXISTS (
 				  SELECT 1
 				  FROM team_repository_roles tr
 				  JOIN teams t ON t.id = tr.team_id AND t.organization_id = o.id
 				  JOIN team_memberships tm ON tm.team_id = t.id AND tm.user_id = $3 AND tm.active
-				  WHERE tr.repository_id = r.id AND tr.role = 'admin'
-			  )
+				  JOIN organization_memberships tom
+				    ON tom.organization_id = o.id AND tom.user_id = $3 AND tom.active
+				  WHERE tr.repository_id = r.id AND tr.active AND t.active AND tr.role = 'admin'
+				)
 		  )
 	`, owner, repositorySlug, actorID).Scan(&repositoryID, &organizationID)
 	if errors.Is(err, pgx.ErrNoRows) {

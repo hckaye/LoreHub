@@ -77,9 +77,25 @@ func (service *Service) AuthURL() string {
 }
 
 func (service *Service) VerifyUserToken(raw string) (LoreClaims, error) {
-	verified, err := service.tokens.Verify(raw)
+	verified, err := service.tokens.VerifyResourceToken(raw)
 	if err != nil {
 		return LoreClaims{}, errors.New("invalid Lore user token")
+	}
+	return verified.Claims, nil
+}
+
+func (service *Service) AuthorizeUserToken(
+	ctx context.Context,
+	raw string,
+	resourceID string,
+	permission string,
+) (LoreClaims, error) {
+	verified, err := service.tokens.VerifyResourceToken(raw)
+	if err != nil || verified.Claims.IsServiceAccount || !authz.ValidResourceID(resourceID) {
+		return LoreClaims{}, errors.New("invalid Lore user token")
+	}
+	if !service.hasCurrentPermission(ctx, verified.Claims, resourceID, permission) {
+		return LoreClaims{}, errors.New("Lore user token is not currently authorized")
 	}
 	return verified.Claims, nil
 }
@@ -109,6 +125,45 @@ func (service *Service) IssueResourceToken(
 		return "", err
 	}
 	token, _, err := service.tokens.MintResourceToken(user, []LoreResourcePermission{{
+		ResourceID: resourceID,
+		Permission: authz.PermissionList(narrowed),
+	}})
+	return token, err
+}
+
+type servicePrincipalPolicy interface {
+	ServicePrincipalResource(
+		ctx context.Context,
+		name string,
+		resourceID string,
+	) (authz.UserInfo, []string, error)
+}
+
+func (service *Service) IssueServiceResourceToken(
+	ctx context.Context,
+	principalName string,
+	resourceID string,
+	requested []string,
+) (string, error) {
+	if !authz.ValidResourceID(resourceID) {
+		return "", authz.ErrInvalidResource
+	}
+	policy, ok := service.policy.(servicePrincipalPolicy)
+	if !ok {
+		return "", errors.New("service principal policy is unavailable")
+	}
+	principal, granted, err := policy.ServicePrincipalResource(ctx, principalName, resourceID)
+	if err != nil {
+		return "", err
+	}
+	narrowed, err := authz.IntersectPermissions(permissionMap(granted), requested)
+	if err != nil || len(narrowed) == 0 {
+		if err != nil {
+			return "", err
+		}
+		return "", authz.ErrScopeWidened
+	}
+	token, _, err := service.tokens.MintServiceResourceToken(principal, []LoreResourcePermission{{
 		ResourceID: resourceID,
 		Permission: authz.PermissionList(narrowed),
 	}})
@@ -175,17 +230,13 @@ func (service *Service) GetAuthSession(
 	if err != nil {
 		return nil, status.Error(codes.PermissionDenied, "authenticated user is unavailable")
 	}
-	resources, err := service.currentUserResources(ctx, poll.UserID)
-	if err != nil || len(resources) == 0 {
-		return nil, status.Error(codes.PermissionDenied, "the user has no authorized Lore resources")
-	}
-	rawToken, expiresAt, err := service.tokens.MintResourceToken(user, resources)
+	rawToken, expiresAt, err := service.tokens.MintAuthenticationToken(user)
 	if err != nil {
 		return nil, status.Error(codes.Internal, "could not issue user token")
 	}
 	return &GetAuthSessionResponse{UserToken: &UserToken{
 		UserToken: rawToken,
-		ExpiresAt: expiresAt.Unix(),
+		ExpiresAt: expiresAt.UnixMilli(),
 		UserId:    user.ID,
 		UserName:  user.DisplayName,
 	}}, nil
@@ -205,9 +256,12 @@ func (service *Service) VerifyUser(
 	if request == nil {
 		return nil, status.Error(codes.InvalidArgument, "verify user request is required")
 	}
-	claims, err := service.authenticate(ctx)
+	claims, err := service.authenticateResource(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if !service.hasCurrentReadPermission(ctx, claims) {
+		return nil, status.Error(codes.PermissionDenied, "current Lore authorization is required")
 	}
 	userID, err := service.targetUserID(request.GetTargetUser(), claims)
 	if err != nil {
@@ -241,7 +295,7 @@ func (service *Service) ExchangeUserTokenForMultiresourceToken(
 	if request == nil {
 		return nil, status.Error(codes.InvalidArgument, "resource exchange request is required")
 	}
-	claims, err := service.authenticate(ctx)
+	claims, err := service.authenticateBase(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -262,17 +316,6 @@ func (service *Service) ExchangeUserTokenForMultiresourceToken(
 			return nil, status.Error(codes.PermissionDenied, "requested Lore resource is not authorized")
 		}
 		permissions := current.Permissions
-		if len(claims.Resources) > 0 {
-			available, found := resourcePermissions(claims.Resources, resourceID)
-			if !found {
-				return nil, status.Error(codes.PermissionDenied, "requested Lore resource is outside the token scope")
-			}
-			narrowed, err := authz.IntersectPermissions(permissionMap(current.Permissions), available)
-			if err != nil {
-				return nil, status.Error(codes.PermissionDenied, "requested Lore scope is broader than the token scope")
-			}
-			permissions = authz.PermissionList(narrowed)
-		}
 		if len(permissions) == 0 {
 			return nil, status.Error(codes.PermissionDenied, "requested Lore resource is not authorized")
 		}
@@ -288,7 +331,7 @@ func (service *Service) ExchangeUserTokenForMultiresourceToken(
 	}
 	return &ExchangeUserTokenForMultiresourceTokenResponse{Token: &UserToken{
 		UserToken: rawToken,
-		ExpiresAt: expiresAt.Unix(),
+		ExpiresAt: expiresAt.UnixMilli(),
 		UserId:    user.ID,
 		UserName:  user.DisplayName,
 	}}, nil
@@ -298,7 +341,7 @@ func (service *Service) CheckUserPermission(
 	ctx context.Context,
 	request *CheckUserPermissionRequest,
 ) (*CheckUserPermissionResponse, error) {
-	claims, err := service.authenticate(ctx)
+	claims, err := service.authenticateResource(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -314,8 +357,8 @@ func (service *Service) CheckUserPermission(
 		if !authz.ValidResourceID(resourceID) {
 			return nil, status.Error(codes.InvalidArgument, "resource IDs must be exact urc-{repository_id} values")
 		}
-		if !service.tokenAllowsResource(claims, resourceID, authz.PermissionRead) {
-			return nil, status.Error(codes.PermissionDenied, "resource access is outside the token scope")
+		if !service.hasCurrentPermission(ctx, claims, resourceID, authz.PermissionRead) {
+			return nil, status.Error(codes.PermissionDenied, "current resource access is not authorized")
 		}
 		permissions, err := service.policy.EffectivePermissions(ctx, targetID, resourceID)
 		if err != nil {
@@ -336,7 +379,7 @@ func (service *Service) LookupUserPermissions(
 	if request == nil {
 		return nil, status.Error(codes.InvalidArgument, "permission lookup request is required")
 	}
-	claims, err := service.authenticate(ctx)
+	claims, err := service.authenticateResource(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -348,8 +391,8 @@ func (service *Service) LookupUserPermissions(
 	if filter != "" && filter != "urc" && filter != "urc-*" && !authz.ValidResourceID(filter) {
 		return nil, status.Error(codes.InvalidArgument, "permission lookup filter is invalid")
 	}
-	if authz.ValidResourceID(filter) && !service.tokenAllowsResource(claims, filter, authz.PermissionRead) {
-		return nil, status.Error(codes.PermissionDenied, "resource access is outside the token scope")
+	if authz.ValidResourceID(filter) && !service.hasCurrentPermission(ctx, claims, filter, authz.PermissionRead) {
+		return nil, status.Error(codes.PermissionDenied, "current resource access is not authorized")
 	}
 	resources, next, err := service.lookupScopedPermissions(ctx, claims, filter, pageSize, request.GetPageToken())
 	if err != nil {
@@ -375,12 +418,12 @@ func (service *Service) GetUserInfo(
 	if request == nil {
 		return nil, status.Error(codes.InvalidArgument, "user info request is required")
 	}
-	claims, err := service.authenticate(ctx)
+	claims, err := service.authenticateResource(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if !authz.ValidResourceID(request.GetResourceId()) ||
-		!service.tokenAllowsResource(claims, request.GetResourceId(), authz.PermissionRead) {
+		!service.hasCurrentPermission(ctx, claims, request.GetResourceId(), authz.PermissionRead) {
 		return nil, status.Error(codes.PermissionDenied, "resource access is not authorized")
 	}
 	users, err := service.policy.UserInfoForResource(ctx, request.GetResourceId(), request.GetUserId())
@@ -401,12 +444,12 @@ func (service *Service) GetUserId(
 	if request == nil {
 		return nil, status.Error(codes.InvalidArgument, "user ID request is required")
 	}
-	claims, err := service.authenticate(ctx)
+	claims, err := service.authenticateResource(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if !authz.ValidResourceID(request.GetResourceId()) ||
-		!service.tokenAllowsResource(claims, request.GetResourceId(), authz.PermissionRead) {
+		!service.hasCurrentPermission(ctx, claims, request.GetResourceId(), authz.PermissionRead) {
 		return nil, status.Error(codes.PermissionDenied, "resource access is not authorized")
 	}
 	user, err := service.policy.UserInfoByDisplayName(ctx, request.GetResourceId(), request.GetUserDisplayName())
@@ -423,9 +466,12 @@ func (service *Service) GetProviderUserId(
 	if request == nil {
 		return nil, status.Error(codes.InvalidArgument, "provider user ID request is required")
 	}
-	claims, err := service.authenticate(ctx)
+	claims, err := service.authenticateResource(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if !service.hasCurrentReadPermission(ctx, claims) {
+		return nil, status.Error(codes.PermissionDenied, "current Lore authorization is required")
 	}
 	if request.GetUserId() != claims.Subject {
 		return nil, status.Error(codes.PermissionDenied, "provider identity lookup is limited to the current user")
@@ -437,7 +483,28 @@ func (service *Service) GetProviderUserId(
 	return &GetProviderUserIdResponse{UserId: claims.Subject, ProviderUserId: providerSubject}, nil
 }
 
-func (service *Service) authenticate(ctx context.Context) (LoreClaims, error) {
+func (service *Service) authenticateBase(ctx context.Context) (LoreClaims, error) {
+	return service.authenticateWith(ctx, service.tokens.VerifyAuthenticationToken)
+}
+
+func (service *Service) authenticateResource(ctx context.Context) (LoreClaims, error) {
+	claims, err := service.authenticateWith(ctx, service.tokens.VerifyResourceToken)
+	if err != nil {
+		return LoreClaims{}, err
+	}
+	if claims.IsServiceAccount {
+		return claims, nil
+	}
+	if _, err := service.policy.UserInfo(ctx, claims.Subject); err != nil {
+		return LoreClaims{}, status.Error(codes.PermissionDenied, "the user is no longer active")
+	}
+	return claims, nil
+}
+
+func (service *Service) authenticateWith(
+	ctx context.Context,
+	verify func(string) (VerifiedToken, error),
+) (LoreClaims, error) {
 	values := metadata.ValueFromIncomingContext(ctx, "authorization")
 	if len(values) == 0 {
 		return LoreClaims{}, status.Error(codes.Unauthenticated, "authorization is required")
@@ -446,7 +513,7 @@ func (service *Service) authenticate(ctx context.Context) (LoreClaims, error) {
 	if len(parts) != 2 || !strings.EqualFold(parts[0], "bearer") || strings.TrimSpace(parts[1]) == "" {
 		return LoreClaims{}, status.Error(codes.Unauthenticated, "authorization is required")
 	}
-	verified, err := service.tokens.Verify(strings.TrimSpace(parts[1]))
+	verified, err := verify(strings.TrimSpace(parts[1]))
 	if err != nil {
 		return LoreClaims{}, status.Error(codes.Unauthenticated, "authorization is invalid")
 	}
@@ -457,7 +524,7 @@ func (service *Service) targetUserID(target *TargetUser, caller LoreClaims) (str
 	if target == nil || target.GetUserToken() == "" {
 		return caller.Subject, nil
 	}
-	verified, err := service.tokens.Verify(target.GetUserToken())
+	verified, err := service.tokens.VerifyResourceToken(target.GetUserToken())
 	if err != nil {
 		return "", status.Error(codes.PermissionDenied, "target user token is invalid")
 	}
@@ -504,29 +571,53 @@ func (service *Service) tokenAllowsResource(
 	return available[permission]
 }
 
-func (service *Service) currentUserResources(
+func (service *Service) hasCurrentPermission(
 	ctx context.Context,
-	userID string,
-) ([]LoreResourcePermission, error) {
-	resources := make([]LoreResourcePermission, 0)
-	pageToken := ""
-	for len(resources) < 1000 {
-		permissions, next, err := service.policy.ListResourcePermissions(ctx, userID, "urc", 100, pageToken)
-		if err != nil {
-			return nil, err
-		}
-		for _, resource := range permissions {
-			resources = append(resources, LoreResourcePermission{
-				ResourceID: resource.ResourceID,
-				Permission: resource.Permissions,
-			})
-		}
-		if next == "" {
-			return resources, nil
-		}
-		pageToken = next
+	claims LoreClaims,
+	resourceID string,
+	permission string,
+) bool {
+	if !service.tokenAllowsResource(claims, resourceID, permission) {
+		return false
 	}
-	return nil, errors.New("too many Lore resources for one user token")
+	narrowed, ok := service.currentTokenPermissions(ctx, claims, resourceID)
+	if !ok {
+		return false
+	}
+	return narrowed[permission]
+}
+
+func (service *Service) hasCurrentReadPermission(ctx context.Context, claims LoreClaims) bool {
+	for _, resource := range claims.Resources {
+		if service.hasCurrentPermission(ctx, claims, resource.ResourceID, authz.PermissionRead) {
+			return true
+		}
+	}
+	return false
+}
+
+func (service *Service) currentTokenPermissions(
+	ctx context.Context,
+	claims LoreClaims,
+	resourceID string,
+) (map[string]bool, bool) {
+	current, err := service.policy.EffectivePermissions(ctx, claims.Subject, resourceID)
+	if err != nil {
+		return nil, false
+	}
+	tokenPermissions, found := resourcePermissions(claims.Resources, resourceID)
+	if !found {
+		return nil, false
+	}
+	available := authz.ExpandPermissions(permissionMap(current.Permissions))
+	narrowed := authz.ExpandPermissions(permissionMap(tokenPermissions))
+	intersection := make(map[string]bool)
+	for permission := range available {
+		if narrowed[permission] {
+			intersection[permission] = true
+		}
+	}
+	return intersection, len(intersection) > 0
 }
 
 func (service *Service) lookupScopedPermissions(
@@ -562,13 +653,8 @@ func (service *Service) lookupScopedPermissions(
 	}
 	result := make([]authz.ResourcePermissions, 0, end-offset)
 	for _, resourceID := range resourceIDs[offset:end] {
-		current, err := service.policy.EffectivePermissions(ctx, claims.Subject, resourceID)
-		if err != nil {
-			continue
-		}
-		tokenPermissions, _ := resourcePermissions(claims.Resources, resourceID)
-		narrowed, err := authz.IntersectPermissions(permissionMap(current.Permissions), tokenPermissions)
-		if err != nil || len(narrowed) == 0 {
+		narrowed, ok := service.currentTokenPermissions(ctx, claims, resourceID)
+		if !ok {
 			continue
 		}
 		result = append(result, authz.ResourcePermissions{

@@ -136,6 +136,7 @@ func run(logger *slog.Logger) error {
 		httpapi.WithCollaboration(collab.NewStore(pool)),
 		httpapi.WithAuthorization(store),
 		httpapi.WithLoreAuth(loreAuth),
+		httpapi.WithLorePublicURL(settings.LorePublicURL),
 		httpapi.WithLegacyLoreIdentityAllowed(settings.AllowLegacyLoreIdentity),
 	)
 	server := &http.Server{
@@ -238,6 +239,20 @@ func loadTLSConfig(certPath string, keyPath string, clientCAPath string, require
 	}
 	config.ClientCAs = clientCAs
 	config.ClientAuth = tls.RequireAndVerifyClientCert
+	config.VerifyConnection = func(state tls.ConnectionState) error {
+		if len(state.PeerCertificates) == 0 {
+			return errors.New("policy client certificate is required")
+		}
+		if state.PeerCertificates[0].Subject.CommonName != "lore-policy-hook" {
+			return errors.New("policy client certificate is not the Lore hook identity")
+		}
+		for _, usage := range state.PeerCertificates[0].ExtKeyUsage {
+			if usage == x509.ExtKeyUsageClientAuth {
+				return nil
+			}
+		}
+		return errors.New("policy client certificate lacks client authentication usage")
+	}
 	return config, nil
 }
 
@@ -258,7 +273,8 @@ func newLoreAuthService(store *platform.Store, settings config.Config) (*loreaut
 		return nil, err
 	}
 	return loreauth.NewService(store, store, tokenService, settings.LoreAuthLoginURL,
-		settings.LoreAuthURL, settings.LoreAuthSessionTTL, settings.Environment != "production")
+		settings.LoreAuthURL, settings.LoreAuthSessionTTL,
+		settings.Environment == "development" || settings.Environment == "local-insecure")
 }
 
 func runRunner(
@@ -271,21 +287,22 @@ func runRunner(
 ) error {
 	store := runner.NewStore(pool)
 	worker, err := runner.NewWorker(store, runner.WorkerConfig{
-		LoreBinary:  settings.LoreBinary,
-		ActBinary:   settings.ActBinary,
-		WorkDir:     settings.RunnerWorkDir,
-		LogDir:      settings.RunnerLogDir,
-		ArtifactDir: settings.RunnerArtifactDir,
-		PollPeriod:  settings.RunnerPollPeriod,
-		JobTimeout:  settings.RunnerJobTimeout,
-		Lore:        lore,
-		Issuer:      loreAuth,
-		UserID:      settings.RunnerUserID,
+		LoreBinary:       settings.LoreBinary,
+		ActBinary:        settings.ActBinary,
+		WorkDir:          settings.RunnerWorkDir,
+		LogDir:           settings.RunnerLogDir,
+		ArtifactDir:      settings.RunnerArtifactDir,
+		PollPeriod:       settings.RunnerPollPeriod,
+		JobTimeout:       settings.RunnerJobTimeout,
+		Lore:             lore,
+		Issuer:           loreAuth,
+		ServicePrincipal: settings.RunnerServicePrincipal,
 	}, logger)
 	if err != nil {
 		return err
 	}
-	poller := runner.NewPoller(store, lore, loreAuth, settings.RunnerUserID, settings.BranchPollPeriod, logger)
+	poller := runner.NewPoller(store, lore, loreAuth, settings.ObserverServicePrincipal,
+		settings.BranchPollPeriod, logger)
 	errorsChannel := make(chan error, 2)
 	go func() { errorsChannel <- poller.Run(ctx) }()
 	go func() { errorsChannel <- worker.Run(ctx) }()

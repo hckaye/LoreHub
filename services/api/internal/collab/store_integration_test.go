@@ -156,6 +156,19 @@ func TestIntegrationRepositoryPermission(t *testing.T) {
 	if carolAccess.Permission != PermNone {
 		t.Errorf("carol (org member without repository grant) permission = %v, want PermNone", carolAccess.Permission)
 	}
+	mustExec(t, ctx, pool, `
+		UPDATE organization_memberships
+		SET active = false
+		WHERE organization_id = $1 AND user_id = $2
+	`, fix.orgID, fix.bob.ID)
+	if _, err := s.RepositoryPermission(ctx, fix.bob, repo); !errors.Is(err, platform.ErrForbidden) {
+		t.Fatalf("repository role after organization membership revoke = %v, want forbidden", err)
+	}
+	mustExec(t, ctx, pool, `
+		UPDATE organization_memberships
+		SET active = true
+		WHERE organization_id = $1 AND user_id = $2
+	`, fix.orgID, fix.bob.ID)
 }
 
 func TestIntegrationIssueUpdatePermissionAndPrecondition(t *testing.T) {
@@ -164,7 +177,7 @@ func TestIntegrationIssueUpdatePermissionAndPrecondition(t *testing.T) {
 	fix := setupFixture(t, pool, "public", "triage")
 	number := seedIssue(t, ctx, pool, fix, fix.alice.ID, "open")
 
-	// Author can edit even without triage (carol has no repository role).
+	// An issue author without triage cannot edit the issue.
 	_, err := s.UpdateIssue(ctx, fix.alice, fix.repoID, number, UpdateIssueInput{
 		Title: ptrString("Edited by author"),
 	})
@@ -223,7 +236,7 @@ func TestIntegrationIssueComments(t *testing.T) {
 	if comment.Author != fix.alice.Username {
 		t.Fatalf("comment author = %q, want %q", comment.Author, fix.alice.Username)
 	}
-	// Author can edit.
+	// The issue author still needs triage permission to edit.
 	edited, err := s.UpdateIssueComment(ctx, fix.alice, fix.repoID, number, comment.ID, "edited body")
 	if err != nil {
 		t.Fatalf("edit own comment: %v", err)

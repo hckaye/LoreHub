@@ -34,7 +34,7 @@ func TestOrgRolePermission(t *testing.T) {
 		want Permission
 	}{
 		{"owner", PermAdmin},
-		{"maintainer", PermWrite},
+		{"maintainer", PermNone},
 		{"member", PermNone},
 		{"bogus", PermNone},
 	}
@@ -60,7 +60,7 @@ func TestCombineRoles(t *testing.T) {
 		{"repo admin wins over org member", "admin", "member", PermAdmin},
 		{"org owner overrides repo read", "read", "owner", PermAdmin},
 		{"repo write over org member", "write", "member", PermWrite},
-		{"org maintainer over repo read", "read", "maintainer", PermWrite},
+		{"org maintainer does not grant repository access", "read", "maintainer", PermRead},
 		{"both nil", "", "", PermNone},
 	}
 	for _, tc := range cases {
@@ -104,7 +104,7 @@ func TestCanManageBranchRules(t *testing.T) {
 		want   bool
 	}{
 		{"admin", Access{Permission: PermAdmin}, true},
-		{"org maintainer", Access{Permission: PermWrite, OrgMaintainer: true}, true},
+		{"org maintainer", Access{Permission: PermWrite, OrgMaintainer: true}, false},
 		{"org owner via perm", Access{Permission: PermAdmin, OrgOwner: true}, true},
 		{"plain write", Access{Permission: PermWrite}, false},
 		{"triage", Access{Permission: PermTriage}, false},

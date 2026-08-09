@@ -29,12 +29,12 @@ func (store *Store) ListRepositoryCollaborators(
 		UNION ALL
 		SELECT u.id, u.username, u.display_name, tr.role, tm.active, 'team:' || t.slug
 		FROM team_repository_roles tr
-		JOIN teams t ON t.id = tr.team_id AND t.organization_id = $2
+		JOIN teams t ON t.id = tr.team_id AND t.organization_id = $2 AND t.active
 		JOIN team_memberships tm ON tm.team_id = t.id AND tm.active
 		JOIN users u ON u.id = tm.user_id
 		JOIN organization_memberships om
 		  ON om.organization_id = $2 AND om.user_id = tm.user_id AND om.active
-		WHERE u.status = 'active'
+		WHERE tr.active AND u.status = 'active'
 		ORDER BY username, source
 	`, repositoryID, organizationID)
 	if err != nil {

@@ -91,11 +91,10 @@ Keycloakの構成、ソーシャルプロバイダー、SMTP、本番のTLSと�
 UCS gRPC認証を有効にしています。ローカルCAのtrust手順、本番の鍵交代、Lore hook、partition境界は
 [認可境界の運用ガイド](docs/operations/control-plane-authorization.md)を参照してください。
 
-Lore 0.8.6の`environment.endpoint.auth_url`はUCS認証とRebacが共用します。公式クライアントはUCS側では
-`ucs-auth://`を受け取れますが、同じ値を使うRebac側は`https://`以外をTLS接続として扱いません。そのため
-ComposeのLore設定だけはTLS endpointの`https://api:8443`を使います。この公式クライアントの制約を解消せずに
-`ucs-auth://`へ変更すると、認証の開始はできてもstock Loreのrepository作成が失敗します。詳細と本番での判断は
-運用ガイドの「0.8.6の環境URL互換性」を参照してください。
+Lore 0.8.6の`environment.endpoint.auth_url`はUCS認証とRebacが共用します。このComposeは公式の
+`ucs-auth://auth.lorehub.localhost:8443`広告を使い、Lore 0.8.6のclientがUCS接続をHTTPSへ変換します。hostのCLIが
+同じpublic URLを使えるよう、container内だけmanaged root domainの名前をhost gatewayへ解決します。issuer、audience、
+JWKS、Lore URLも同じmanaged root domainに揃えています。詳細は運用ガイドの「URL、audience、鍵」を参照してください。
 
 ### CI runner
 

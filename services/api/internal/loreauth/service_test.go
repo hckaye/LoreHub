@@ -238,8 +238,16 @@ func TestBrowserSessionBindsClientStateAndConsumesOnce(t *testing.T) {
 	if err != nil || ready.UserToken == nil {
 		t.Fatalf("unexpected ready poll: response=%#v error=%v", ready, err)
 	}
-	if _, err := service.tokens.Verify(ready.UserToken.UserToken); err != nil {
+	claims, err := service.tokens.VerifyAuthenticationToken(ready.UserToken.UserToken)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if len(claims.Claims.Resources) != 0 || ready.UserToken.ExpiresAt < 1_000_000_000_000 {
+		t.Fatalf("ready token is not a millisecond base token: claims=%#v token=%d",
+			claims.Claims, ready.UserToken.ExpiresAt)
+	}
+	if _, err := service.tokens.VerifyResourceToken(ready.UserToken.UserToken); err == nil {
+		t.Fatal("zero-resource authentication token must not verify as a resource token")
 	}
 	if _, err := service.GetAuthSession(context.Background(), &GetAuthSessionRequest{
 		SessionCode: start.SessionCode, ClientState: "client-state-with-enough-entropy",
@@ -292,13 +300,47 @@ func TestSessionPollingIsRateLimitedAndConcurrentCompletionIsSingleUse(t *testin
 	}
 }
 
+func TestAuthenticationTokenDoesNotEnumerateResourcesForUserWithoutRepositories(t *testing.T) {
+	policy := testPolicy()
+	policy.users["empty"] = authz.UserInfo{ID: "empty", Username: "empty", DisplayName: "空の利用者"}
+	policy.resources["empty"] = map[string][]string{}
+	sessions := &fakeSessions{sessions: make(map[string]*fakeSession)}
+	service, tokens := newTestService(t, policy, sessions)
+	start, err := service.StartAuthSession(context.Background(), &StartAuthSessionRequest{
+		ClientState: "empty-user-client-state-entropy",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.ConfirmSession(context.Background(), start.SessionCode, "empty"); err != nil {
+		t.Fatal(err)
+	}
+	response, err := service.GetAuthSession(context.Background(), &GetAuthSessionRequest{
+		SessionCode: start.SessionCode, ClientState: "empty-user-client-state-entropy",
+	})
+	if err != nil || response.UserToken == nil {
+		t.Fatalf("empty-user login failed: response=%#v error=%v", response, err)
+	}
+	if response.UserToken.ExpiresAt < 1_000_000_000_000 {
+		t.Fatalf("expected Unix milliseconds, got %d", response.UserToken.ExpiresAt)
+	}
+	verified, err := tokens.VerifyAuthenticationToken(response.UserToken.UserToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verified.Claims.Subject != "empty" || len(verified.Claims.Resources) != 0 {
+		t.Fatalf("empty-user base token claims = %#v", verified.Claims)
+	}
+	if _, err := tokens.VerifyResourceToken(response.UserToken.UserToken); err == nil {
+		t.Fatal("base authentication token must not be usable as a data-plane token")
+	}
+}
+
 func TestExchangeCannotWidenResourceScope(t *testing.T) {
 	policy := testPolicy()
 	sessions := &fakeSessions{sessions: make(map[string]*fakeSession)}
 	service, tokens := newTestService(t, policy, sessions)
-	raw, _, err := tokens.MintResourceToken(policy.users["alice"], []LoreResourcePermission{{
-		ResourceID: testResource, Permission: []string{authz.PermissionRead},
-	}})
+	raw, _, err := tokens.MintAuthenticationToken(policy.users["alice"])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -306,6 +348,14 @@ func TestExchangeCannotWidenResourceScope(t *testing.T) {
 		&ExchangeUserTokenForMultiresourceTokenRequest{ResourceId: []string{testResource}})
 	if err != nil || response.Token == nil {
 		t.Fatalf("read exchange failed: response=%#v error=%v", response, err)
+	}
+	if response.Token.ExpiresAt < 1_000_000_000_000 {
+		t.Fatalf("resource token expiry is not Unix milliseconds: %d", response.Token.ExpiresAt)
+	}
+	if _, err := service.GetUserId(bearerContext(raw), &GetUserIdRequest{
+		ResourceId: testResource, UserDisplayName: "Alice",
+	}); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("base authentication token reached data-plane user lookup: %v", err)
 	}
 	if _, err := service.ExchangeUserTokenForMultiresourceToken(bearerContext(raw),
 		&ExchangeUserTokenForMultiresourceTokenRequest{ResourceId: []string{
@@ -372,6 +422,43 @@ func TestUnicodeUserInfoAndPermissionLookup(t *testing.T) {
 	})
 	if err != nil || response.UserInfo == nil || response.UserInfo.DisplayName != "アリス 🚀" {
 		t.Fatalf("unicode user lookup failed: response=%#v error=%v", response, err)
+	}
+}
+
+func TestRevokedUserOrResourceCannotUseAnExistingResourceToken(t *testing.T) {
+	policy := testPolicy()
+	sessions := &fakeSessions{sessions: make(map[string]*fakeSession)}
+	service, tokens := newTestService(t, policy, sessions)
+	raw, _, err := tokens.MintResourceToken(policy.users["alice"], []LoreResourcePermission{{
+		ResourceID: testResource, Permission: []string{authz.PermissionRead},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy.mu.Lock()
+	delete(policy.resources["alice"], testResource)
+	policy.mu.Unlock()
+	if _, err := service.GetUserId(bearerContext(raw), &GetUserIdRequest{
+		ResourceId: testResource, UserDisplayName: "Alice",
+	}); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("revoked resource token was accepted: %v", err)
+	}
+
+	policy = testPolicy()
+	service, tokens = newTestService(t, policy, sessions)
+	raw, _, err = tokens.MintResourceToken(policy.users["alice"], []LoreResourcePermission{{
+		ResourceID: testResource, Permission: []string{authz.PermissionRead},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy.mu.Lock()
+	delete(policy.users, "alice")
+	policy.mu.Unlock()
+	if _, err := service.GetProviderUserId(
+		bearerContext(raw), &GetProviderUserIdRequest{UserId: "alice"},
+	); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("inactive user token was accepted: %v", err)
 	}
 }
 

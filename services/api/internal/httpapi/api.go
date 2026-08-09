@@ -24,6 +24,7 @@ const maxRequestBody = 1 << 20
 
 type Store interface {
 	EnsureUser(ctx context.Context, principal auth.Principal) (platform.User, error)
+	ActiveUser(ctx context.Context, userID string) (platform.User, error)
 	CreateOrganization(
 		ctx context.Context,
 		actor platform.User,
@@ -65,6 +66,29 @@ type Store interface {
 		input platform.CreateMergeRequestInput,
 	) (platform.MergeRequest, error)
 	ListPublicCIRuns(ctx context.Context, owner string, slug string) ([]platform.CIRun, error)
+}
+
+type repositoryProvisioningStore interface {
+	BeginRepositoryProvisioning(
+		ctx context.Context,
+		actor platform.User,
+		organizationSlug string,
+		input platform.ProvisionRepositoryInput,
+		publicLoreURL string,
+	) (platform.Repository, error)
+	RepositoryForProvisioning(
+		ctx context.Context,
+		actor platform.User,
+		owner string,
+		slug string,
+	) (platform.Repository, error)
+	MarkRepositoryProvisioned(ctx context.Context, actor platform.User, repositoryID string) error
+	MarkRepositoryProvisioningFailed(
+		ctx context.Context,
+		actor platform.User,
+		repositoryID string,
+		message string,
+	) error
 }
 
 type RepositoryReader interface {
@@ -159,6 +183,15 @@ type AuthorizationStore interface {
 		ctx context.Context, actor platform.User, owner string, repositorySlug string,
 		username string, active bool,
 	) error
+	SetServicePrincipalGrant(
+		ctx context.Context,
+		actor platform.User,
+		name string,
+		owner string,
+		repositorySlug string,
+		permissions []string,
+		active bool,
+	) error
 	DeclareRepositoryLink(
 		ctx context.Context, actor platform.User, sourceOwner string, sourceSlug string,
 		targetOwner string, targetSlug string,
@@ -166,9 +199,6 @@ type AuthorizationStore interface {
 	ListRepositoryLinks(
 		ctx context.Context, actor platform.User, owner string, repositorySlug string,
 	) ([]platform.RepositoryLink, error)
-	IssueMergeAuthorization(
-		ctx context.Context, actor platform.User, input platform.MergeAuthorizationInput,
-	) (platform.MergeAuthorization, error)
 	CheckPolicy(ctx context.Context, check authz.PolicyCheck) (authz.PolicyDecision, error)
 }
 
@@ -180,6 +210,7 @@ type API struct {
 	loreIdentity            string
 	allowLegacyLoreIdentity bool
 	loreCredentialClient    loreclient.CredentialClient
+	managedLoreClient       loreclient.ManagedRepositoryClient
 	logger                  *slog.Logger
 	collabStore             collab.Store
 	authorization           AuthorizationStore
@@ -190,6 +221,7 @@ type API struct {
 	cleanupStore            auth.CleanupStore
 	secrets                 *auth.SecretCodec
 	publicOrigin            string
+	lorePublicURL           string
 	cookie                  sessionCookieConfig
 	sessionTTL              time.Duration
 	transactionTTL          time.Duration
@@ -220,6 +252,9 @@ func New(
 	if credentialClient, ok := lore.(loreclient.CredentialClient); ok {
 		api.loreCredentialClient = credentialClient
 	}
+	if managedClient, ok := lore.(loreclient.ManagedRepositoryClient); ok {
+		api.managedLoreClient = managedClient
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health/live", api.live)
 	mux.HandleFunc("GET /health/ready", api.ready)
@@ -233,6 +268,8 @@ func New(
 	mux.HandleFunc("GET /api/v1/explore/repositories", api.exploreRepositories)
 	mux.HandleFunc("POST /api/v1/organizations", api.createOrganization)
 	mux.HandleFunc("POST /api/v1/organizations/{organization}/repositories", api.registerRepository)
+	mux.HandleFunc("POST /api/v1/organizations/{organization}/repositories/import", api.importRepository)
+	mux.HandleFunc("POST /api/v1/repositories/{owner}/{repository}/provision", api.retryRepositoryProvisioning)
 	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}", api.publicRepository)
 	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/branches", api.repositoryBranches)
 	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/issues", api.listIssues)
@@ -269,6 +306,12 @@ func WithLoreAuth(service *loreauth.Service) Option {
 	}
 }
 
+func WithLorePublicURL(repositoryURL string) Option {
+	return func(api *API) {
+		api.lorePublicURL = strings.TrimSpace(repositoryURL)
+	}
+}
+
 func WithLegacyLoreIdentityAllowed(allowed bool) Option {
 	return func(api *API) {
 		api.allowLegacyLoreIdentity = allowed
@@ -283,26 +326,34 @@ func (api *API) ResolveActor(writer http.ResponseWriter, request *http.Request) 
 }
 
 // ResolveOptionalActor resolves a valid browser session or bearer actor when
-// present, while allowing anonymous public reads. Invalid or expired cookies
-// are treated as anonymous and never authorize access to private resources.
+// present, while allowing anonymous public reads. An invalid cookie is an
+// authentication failure and never authorizes a request as anonymous.
 func (api *API) ResolveOptionalActor(
 	writer http.ResponseWriter,
 	request *http.Request,
 ) (*platform.User, bool) {
 	if strings.TrimSpace(request.Header.Get("Authorization")) == "" {
-		session, _, found, err := api.lookupSession(request)
+		session, sessionToken, found, err := api.lookupSession(request)
 		if err != nil {
 			api.internalError(writer, request, "look up authentication session", err)
 			return nil, false
 		}
 		if !found {
+			if sessionToken != "" {
+				writeProblem(writer, http.StatusUnauthorized, "authentication_required", "Authentication is required")
+				return nil, false
+			}
 			return nil, true
 		}
 		if stateChangingMethod(request.Method) && !api.validCSRF(request, session.CSRFDigest) {
 			writeProblem(writer, http.StatusForbidden, "csrf_failed", "A valid CSRF token is required")
 			return nil, false
 		}
-		user := userFromSession(session)
+		user, err := api.store.ActiveUser(request.Context(), session.UserID)
+		if err != nil {
+			writeProblem(writer, http.StatusForbidden, "forbidden", "This operation is not permitted")
+			return nil, false
+		}
 		return &user, true
 	}
 	user, ok := api.actor(writer, request)
@@ -327,6 +378,9 @@ func (api *API) ready(writer http.ResponseWriter, request *http.Request) {
 }
 
 func (api *API) exploreRepositories(writer http.ResponseWriter, request *http.Request) {
+	if _, ok := api.ResolveOptionalActor(writer, request); !ok {
+		return
+	}
 	limit, _ := strconv.Atoi(request.URL.Query().Get("limit"))
 	repositories, err := api.store.ExploreRepositories(request.Context(), limit)
 	if err != nil {
@@ -350,8 +404,17 @@ func (api *API) repositoryBranches(writer http.ResponseWriter, request *http.Req
 		return
 	}
 	if actor == nil {
-		writeProblem(writer, http.StatusUnauthorized, "authentication_required",
-			"Authentication is required to read Lore branch data")
+		if repository.Visibility != "public" {
+			writeProblem(writer, http.StatusUnauthorized, "authentication_required",
+				"Authentication is required to read Lore branch data")
+			return
+		}
+		branches, err := api.listPublicLoreBranches(request.Context(), repository)
+		if err != nil {
+			writeProblem(writer, http.StatusBadGateway, "lore_unavailable", "Lore branches could not be read")
+			return
+		}
+		writeJSON(writer, http.StatusOK, map[string]any{"branches": branches})
 		return
 	}
 	branches, err := api.listLoreBranches(request.Context(), *actor, repository)
@@ -406,18 +469,65 @@ func (api *API) registerRepository(writer http.ResponseWriter, request *http.Req
 	if !ok {
 		return
 	}
-	var input struct {
-		Slug        string `json:"slug"`
-		DisplayName string `json:"displayName"`
-		Description string `json:"description"`
-		Visibility  string `json:"visibility"`
-		LoreURL     string `json:"loreUrl"`
+	var input repositoryRequest
+	if !decodeJSON(writer, request, &input) {
+		return
 	}
+	if !validVisibility(input.Visibility) || len(input.Description) > 10_000 || input.LoreURL != "" {
+		writeProblem(writer, http.StatusBadRequest, "invalid_input", "Repository fields are invalid")
+		return
+	}
+	provisioner, ok := api.store.(repositoryProvisioningStore)
+	if !ok || api.loreAuth == nil || api.managedLoreClient == nil || api.lorePublicURL == "" {
+		writeProblem(writer, http.StatusServiceUnavailable, "provisioning_unavailable",
+			"Managed Lore repository provisioning is unavailable")
+		return
+	}
+	if input.DisplayName == "" {
+		input.DisplayName = input.Slug
+	}
+	repository, err := provisioner.BeginRepositoryProvisioning(
+		request.Context(),
+		actor,
+		request.PathValue("organization"),
+		platform.ProvisionRepositoryInput{
+			Slug: input.Slug, DisplayName: input.DisplayName, Description: input.Description,
+			Visibility: input.Visibility, DefaultBranch: input.DefaultBranch,
+		},
+		api.lorePublicURL,
+	)
+	if err != nil {
+		api.platformError(writer, request, "begin repository provisioning", err)
+		return
+	}
+	if err := api.provisionManagedRepository(request, actor, repository, provisioner); err != nil {
+		writeProblem(writer, http.StatusBadGateway, "lore_unavailable", "Lore repository provisioning failed")
+		return
+	}
+	repository.LifecycleState = "active"
+	writeJSON(writer, http.StatusCreated, repository)
+}
+
+type repositoryRequest struct {
+	Slug          string `json:"slug"`
+	DisplayName   string `json:"displayName"`
+	Description   string `json:"description"`
+	Visibility    string `json:"visibility"`
+	LoreURL       string `json:"loreUrl"`
+	DefaultBranch string `json:"defaultBranch"`
+}
+
+func (api *API) importRepository(writer http.ResponseWriter, request *http.Request) {
+	actor, ok := api.actor(writer, request)
+	if !ok {
+		return
+	}
+	var input repositoryRequest
 	if !decodeJSON(writer, request, &input) {
 		return
 	}
 	if !validVisibility(input.Visibility) || input.LoreURL == "" || len(input.Description) > 10_000 {
-		writeProblem(writer, http.StatusBadRequest, "invalid_input", "Repository fields are invalid")
+		writeProblem(writer, http.StatusBadRequest, "invalid_input", "Repository import fields are invalid")
 		return
 	}
 	loreRepository, err := api.repositoryInfoForRegistration(request.Context(), request, actor, input.LoreURL)
@@ -431,25 +541,102 @@ func (api *API) registerRepository(writer http.ResponseWriter, request *http.Req
 	if input.Description == "" {
 		input.Description = loreRepository.Description
 	}
-	repository, err := api.store.RegisterRepository(
-		request.Context(),
-		actor,
-		request.PathValue("organization"),
-		platform.RegisterRepositoryInput{
-			Slug:             input.Slug,
-			DisplayName:      input.DisplayName,
-			Description:      input.Description,
-			Visibility:       input.Visibility,
-			LoreRepositoryID: loreRepository.ID,
-			LoreURL:          input.LoreURL,
-			DefaultBranch:    loreRepository.DefaultBranch,
-		},
-	)
+	publicLoreURL, err := publicLoreRepositoryURL(input.LoreURL)
 	if err != nil {
-		api.platformError(writer, request, "register repository", err)
+		writeProblem(writer, http.StatusBadRequest, "invalid_input", "The Lore URL must be a fixed repository endpoint")
+		return
+	}
+	repository, err := api.store.RegisterRepository(request.Context(), actor,
+		request.PathValue("organization"), platform.RegisterRepositoryInput{
+			Slug: input.Slug, DisplayName: input.DisplayName, Description: input.Description,
+			Visibility: input.Visibility, LoreRepositoryID: loreRepository.ID, LoreURL: publicLoreURL,
+			DefaultBranch: loreRepository.DefaultBranch,
+		})
+	if err != nil {
+		api.platformError(writer, request, "import repository", err)
 		return
 	}
 	writeJSON(writer, http.StatusCreated, repository)
+}
+
+func (api *API) retryRepositoryProvisioning(writer http.ResponseWriter, request *http.Request) {
+	actor, ok := api.actor(writer, request)
+	if !ok {
+		return
+	}
+	provisioner, ok := api.store.(repositoryProvisioningStore)
+	if !ok || api.loreAuth == nil || api.managedLoreClient == nil {
+		writeProblem(writer, http.StatusServiceUnavailable, "provisioning_unavailable",
+			"Managed Lore repository provisioning is unavailable")
+		return
+	}
+	repository, err := provisioner.RepositoryForProvisioning(request.Context(), actor,
+		request.PathValue("owner"), request.PathValue("repository"))
+	if err != nil {
+		api.platformError(writer, request, "find repository provisioning record", err)
+		return
+	}
+	if err := api.provisionManagedRepository(request, actor, repository, provisioner); err != nil {
+		writeProblem(writer, http.StatusBadGateway, "lore_unavailable", "Lore repository provisioning failed")
+		return
+	}
+	repository.LifecycleState = "active"
+	repository.ProvisioningError = ""
+	writeJSON(writer, http.StatusOK, repository)
+}
+
+func (api *API) provisionManagedRepository(
+	request *http.Request,
+	actor platform.User,
+	repository platform.Repository,
+	provisioner repositoryProvisioningStore,
+) error {
+	resourceID := "urc-" + repository.LoreRepositoryID
+	actorToken, err := api.loreAuth.IssueResourceToken(request.Context(), actor.ID, resourceID,
+		[]string{authz.PermissionAdmin})
+	if err != nil {
+		return errors.New("could not issue the exact actor provisioning credential")
+	}
+	credential := loreclient.Credential{
+		Token: actorToken, AuthURL: api.loreAuth.AuthURL(), Identity: actor.ID,
+	}
+	err = api.managedLoreClient.CreateRepositoryWithCredential(request.Context(), repository.LoreURL,
+		repository.LoreRepositoryID, repository.DisplayName, repository.Description, credential)
+	if err != nil {
+		if api.loreCredentialClient != nil {
+			serviceToken, serviceErr := api.loreAuth.IssueServiceResourceToken(
+				request.Context(), "lorehub-provisioner", resourceID, []string{authz.PermissionAdmin},
+			)
+			if serviceErr != nil {
+				serviceToken = ""
+			}
+			reconcileCredential := loreclient.Credential{
+				Token: serviceToken, AuthURL: api.loreAuth.AuthURL(), Identity: "lorehub-provisioner",
+			}
+			if reconcileCredential.Token == "" {
+				if failErr := provisioner.MarkRepositoryProvisioningFailed(request.Context(), actor,
+					repository.ID, "Lore repository creation was rejected"); failErr != nil {
+					return errors.New("Lore repository provisioning failed")
+				}
+				return err
+			}
+			info, infoErr := api.loreCredentialClient.RepositoryInfoWithCredential(
+				request.Context(), repository.LoreURL, reconcileCredential,
+			)
+			if infoErr == nil && info.ID == repository.LoreRepositoryID {
+				return provisioner.MarkRepositoryProvisioned(request.Context(), actor, repository.ID)
+			}
+		}
+		if failErr := provisioner.MarkRepositoryProvisioningFailed(request.Context(), actor, repository.ID,
+			"Lore repository creation was rejected"); failErr != nil {
+			return errors.New("Lore repository provisioning failed")
+		}
+		return err
+	}
+	if err := provisioner.MarkRepositoryProvisioned(request.Context(), actor, repository.ID); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (api *API) listIssues(writer http.ResponseWriter, request *http.Request) {
@@ -651,7 +838,7 @@ func latestRevision(branches []loreclient.Branch, name string) (string, bool) {
 func (api *API) actor(writer http.ResponseWriter, request *http.Request) (platform.User, bool) {
 	authorization := strings.TrimSpace(request.Header.Get("Authorization"))
 	if authorization == "" {
-		if session, _, found, err := api.lookupSession(request); err != nil {
+		if session, sessionToken, found, err := api.lookupSession(request); err != nil {
 			api.internalError(writer, request, "look up authentication session", err)
 			return platform.User{}, false
 		} else if found {
@@ -659,7 +846,15 @@ func (api *API) actor(writer http.ResponseWriter, request *http.Request) (platfo
 				writeProblem(writer, http.StatusForbidden, "csrf_failed", "A valid CSRF token is required")
 				return platform.User{}, false
 			}
-			return userFromSession(session), true
+			user, err := api.store.ActiveUser(request.Context(), session.UserID)
+			if err != nil {
+				writeProblem(writer, http.StatusForbidden, "forbidden", "This operation is not permitted")
+				return platform.User{}, false
+			}
+			return user, true
+		} else if sessionToken != "" {
+			writeProblem(writer, http.StatusUnauthorized, "authentication_required", "Authentication is required")
+			return platform.User{}, false
 		}
 	}
 	principal, err := api.authenticator.Authenticate(request.Context(), authorization)

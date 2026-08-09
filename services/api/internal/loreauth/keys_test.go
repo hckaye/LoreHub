@@ -24,7 +24,8 @@ func newTestTokenService(t *testing.T) (*TokenService, *RSAKeyProvider) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := NewTokenService(provider, "https://auth.example", "lore", "production", "keycloak", 5*time.Minute)
+	service, err := NewTokenService(provider, "auth.lorehub.example", "lorehub.example",
+		"production", "keycloak", 5*time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,12 +51,12 @@ func TestMintResourceTokenUsesLoreClaimsAndExactScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if verified.Claims.Subject != "user-1" || verified.Claims.Issuer != "https://auth.example" ||
+	if verified.Claims.Subject != "user-1" || verified.Claims.Issuer != "auth.lorehub.example" ||
 		verified.Claims.Environment != "production" || verified.Claims.IDP != "keycloak" ||
 		verified.Claims.IsServiceAccount {
 		t.Fatalf("unexpected claims: %#v", verified.Claims)
 	}
-	if len(verified.Claims.Audience) != 1 || verified.Claims.Audience[0] != "lore" {
+	if len(verified.Claims.Audience) != 1 || verified.Claims.Audience[0] != "lorehub.example" {
 		t.Fatalf("unexpected audience: %v", verified.Claims.Audience)
 	}
 	if len(verified.Claims.Resources) != 1 || verified.Claims.Resources[0].ResourceID == "urc-*" {
@@ -84,11 +85,11 @@ func TestVerifyRejectsIssuerAudienceKidAndExpiry(t *testing.T) {
 	}
 	for name, claims := range map[string]jwt.Claims{
 		"wrong issuer":   base,
-		"wrong audience": func() jwt.Claims { value := base; value.Issuer = "https://auth.example"; return value }(),
+		"wrong audience": func() jwt.Claims { value := base; value.Issuer = "auth.lorehub.example"; return value }(),
 		"expired": func() jwt.Claims {
 			value := base
-			value.Issuer = "https://auth.example"
-			value.Audience = jwt.Audience{"lore"}
+			value.Issuer = "auth.lorehub.example"
+			value.Audience = jwt.Audience{"lorehub.example"}
 			value.Expiry = jwt.NewNumericDate(time.Now().UTC().Add(-time.Minute))
 			return value
 		}(),
@@ -99,8 +100,8 @@ func TestVerifyRejectsIssuerAudienceKidAndExpiry(t *testing.T) {
 		}
 	}
 	valid := base
-	valid.Issuer = "https://auth.example"
-	valid.Audience = jwt.Audience{"lore"}
+	valid.Issuer = "auth.lorehub.example"
+	valid.Audience = jwt.Audience{"lorehub.example"}
 	valid.Expiry = jwt.NewNumericDate(time.Now().UTC().Add(time.Minute))
 	raw := signClaims(t, provider.Current().Key, "unknown", valid)
 	if _, err := service.Verify(raw); err == nil {
@@ -130,13 +131,15 @@ func TestJWKSRetainsPreviousPublicKeyDuringRotation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := NewTokenService(provider, "https://auth.example", "lore", "production", "keycloak", 5*time.Minute)
+	service, err := NewTokenService(provider, "auth.lorehub.example", "lorehub.example",
+		"production", "keycloak", 5*time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
 	claims := jwt.Claims{
-		Subject: "user-1", Issuer: "https://auth.example", IssuedAt: jwt.NewNumericDate(time.Now().UTC()),
-		Expiry: jwt.NewNumericDate(time.Now().UTC().Add(time.Minute)), Audience: jwt.Audience{"lore"},
+		Subject: "user-1", Issuer: "auth.lorehub.example",
+		IssuedAt: jwt.NewNumericDate(time.Now().UTC()),
+		Expiry:   jwt.NewNumericDate(time.Now().UTC().Add(time.Minute)), Audience: jwt.Audience{"lorehub.example"},
 	}
 	raw := signClaims(t, previous, "old", LoreClaims{
 		Claims: claims,
