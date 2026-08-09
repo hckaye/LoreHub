@@ -1,0 +1,123 @@
+.menu {
+  position: relative;
+}
+
+.summary {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 7px 2px 3px;
+  border-radius: 6px;
+  color: var(--header-fg);
+  cursor: pointer;
+  font-size: 0.82rem;
+  list-style: none;
+}
+
+.summary::-webkit-details-marker {
+  display: none;
+}
+
+.summary:hover {
+  background: var(--header-hover);
+}
+
+.avatar {
+  display: grid;
+  width: 27px;
+  height: 27px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--header-avatar-bg);
+  color: var(--header-avatar-fg);
+  font-size: 0.73rem;
+  font-weight: 700;
+}
+
+.dropdown {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 7px);
+  right: 0;
+  display: grid;
+  min-width: 210px;
+  padding: 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  box-shadow: var(--shadow-popover);
+}
+
+.dropdown a,
+.dropdown button {
+  display: block;
+  padding: 8px 9px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg-default);
+  font-size: 0.82rem;
+  text-align: left;
+  text-decoration: none;
+}
+
+.dropdown a:hover,
+.dropdown button:hover {
+  background: var(--canvas-subtle);
+}
+
+.dropdown button {
+  width: 100%;
+  border-top: 1px solid var(--border-muted);
+  border-radius: 0;
+  cursor: pointer;
+}
+
+.dropdown button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.identity {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 9px 10px;
+  border-bottom: 1px solid var(--border-muted);
+  color: var(--fg-muted);
+}
+
+.identity div {
+  display: grid;
+  min-width: 0;
+}
+
+.identity strong,
+.identity span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.identity strong {
+  color: var(--fg-default);
+  font-size: 0.8rem;
+}
+
+.identity span {
+  font-size: 0.74rem;
+}
+
+.error {
+  margin: 7px 9px;
+  color: var(--danger-fg);
+  font-size: 0.73rem;
+  line-height: 1.45;
+}
+
+@media (max-width: 560px) {
+  .name {
+    display: none;
+  }
+}

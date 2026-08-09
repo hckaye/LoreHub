@@ -4,6 +4,7 @@ import type { Dictionary } from "@/i18n";
 import type { Branch } from "@/lib/api-types";
 
 import { EmptyState } from "../ui/empty-state";
+import { StatusBadge } from "../ui/status-badge";
 import styles from "./branch-list.module.css";
 
 type BranchListProps = {
@@ -31,7 +32,11 @@ export function BranchList({ branches, dictionary }: BranchListProps) {
             <strong>{branch.name}</strong>
             {branch.category && <span>{branch.category}</span>}
           </div>
-          <code title={branch.latestRevision}>{shortRevision(branch.latestRevision)}</code>
+          <div className={styles.revision}>
+            {branch.current && <StatusBadge tone="accent">{dictionary.repository.branchCurrent}</StatusBadge>}
+            {branch.archived && <StatusBadge>{dictionary.repository.branchArchived}</StatusBadge>}
+            <code title={branch.latestRevision}>{shortRevision(branch.latestRevision)}</code>
+          </div>
         </div>
       ))}
     </div>

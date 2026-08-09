@@ -1,0 +1,21 @@
+.wrapper {
+  display: grid;
+  gap: 14px;
+  max-width: 720px;
+}
+
+.link {
+  justify-self: start;
+  padding: 6px 12px;
+  border: 1px solid var(--accent-border);
+  border-radius: 6px;
+  background: var(--accent-emphasis);
+  color: var(--fg-on-emphasis);
+  font-size: 0.86rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.link:hover {
+  background: var(--accent-emphasis-hover);
+}

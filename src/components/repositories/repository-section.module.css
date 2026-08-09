@@ -1,0 +1,78 @@
+.page {
+  display: grid;
+  gap: 22px;
+}
+
+.panel {
+  min-width: 0;
+}
+
+.panelHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.panelHeading h2 {
+  margin: 0 0 4px;
+  font-size: 1rem;
+}
+
+.panelHeading p {
+  max-width: 760px;
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.panelActions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.primaryButton,
+.secondaryButton {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 11px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.primaryButton {
+  border: 1px solid var(--accent-border);
+  background: var(--accent-emphasis);
+  color: var(--fg-on-emphasis);
+}
+
+.primaryButton:hover {
+  background: var(--accent-emphasis-hover);
+}
+
+.secondaryButton {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg-default);
+}
+
+.secondaryButton:hover {
+  background: var(--canvas-subtle);
+}
+
+@media (max-width: 640px) {
+  .panelHeading {
+    flex-direction: column;
+  }
+
+  .panelActions {
+    width: 100%;
+  }
+}

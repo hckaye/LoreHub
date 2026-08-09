@@ -16,8 +16,8 @@ export function MergeRequestList({ mergeRequests, dictionary }: MergeRequestList
     return (
       <EmptyState
         icon={<GitPullRequest aria-hidden="true" />}
-        title={dictionary.repository.noMergeRequests}
-        body={dictionary.repository.mergeRequestsDescription}
+        title={dictionary.repository.noPullRequests}
+        body={dictionary.repository.pullRequestsDescription}
       />
     );
   }

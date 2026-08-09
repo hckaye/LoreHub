@@ -1,9 +1,23 @@
-import { Box, CircleDot, GitBranch, GitPullRequest, PlayCircle } from "lucide-react";
+"use client";
+
+import {
+  BarChart3,
+  Box,
+  CircleDot,
+  GitPullRequest,
+  LockKeyhole,
+  PlayCircle,
+  Settings,
+  ShieldCheck,
+  Workflow,
+} from "lucide-react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
 import type { Repository } from "@/lib/api-types";
+import { repositoryPath } from "@/lib/routes";
 
 import styles from "./repository-header.module.css";
 
@@ -13,45 +27,58 @@ type RepositoryHeaderProps = {
   dictionary: Dictionary;
 };
 
+const tabs = [
+  ["code", Box],
+  ["issues", CircleDot],
+  ["pulls", GitPullRequest],
+  ["actions", PlayCircle],
+  ["projects", Workflow],
+  ["security", ShieldCheck],
+  ["insights", BarChart3],
+  ["settings", Settings],
+] as const;
+
 export function RepositoryHeader({ repository, locale, dictionary }: RepositoryHeaderProps) {
-  const basePath = `/${locale}/${repository.owner}/${repository.slug}`;
+  const pathname = usePathname() ?? repositoryPath(locale, repository.owner, repository.slug);
+  const basePath = repositoryPath(locale, repository.owner, repository.slug);
   return (
     <div className={styles.wrapper}>
       <div className={styles.summary}>
-        <Box aria-hidden="true" className={styles.icon} size={24} />
-        <div>
+        <Box aria-hidden="true" className={styles.icon} size={25} />
+        <div className={styles.summaryDetails}>
           <div className={styles.path}>
             <Link href={`/${locale}`}>{repository.owner}</Link>
             <span>/</span>
             <strong>{repository.slug}</strong>
-            <span className={styles.visibility}>{dictionary.common[repository.visibility]}</span>
+            <span className={styles.visibility}>
+              {repository.visibility !== "public" && <LockKeyhole aria-hidden="true" size={12} />}
+              {dictionary.common[repository.visibility]}
+            </span>
           </div>
-          <p>{repository.description || dictionary.repository.noDescription}</p>
+          <p>{repository.description || dictionary.common.noDescription}</p>
         </div>
       </div>
-      <nav aria-label={dictionary.repository.navigationLabel} className={styles.navigation}>
-        <Link className={styles.active} href={basePath}>
-          <Box aria-hidden="true" size={16} />
-          {dictionary.repository.overview}
-        </Link>
-        <Link href={`${basePath}#issues`}>
-          <CircleDot aria-hidden="true" size={16} />
-          {dictionary.common.issues}
-          <span>{repository.issueCount}</span>
-        </Link>
-        <Link href={`${basePath}#branches`}>
-          <GitBranch aria-hidden="true" size={16} />
-          {dictionary.common.branches}
-        </Link>
-        <Link href={`${basePath}#reviews`}>
-          <GitPullRequest aria-hidden="true" size={16} />
-          {dictionary.common.reviews}
-          <span>{repository.mergeRequestCount}</span>
-        </Link>
-        <Link href={`${basePath}#actions`}>
-          <PlayCircle aria-hidden="true" size={16} />
-          {dictionary.common.actions}
-        </Link>
+      <nav aria-label={dictionary.common.repositoryNavigation} className={styles.navigation}>
+        {tabs.map(([section, Icon]) => {
+          const href = repositoryPath(locale, repository.owner, repository.slug, section);
+          const active =
+            section === "code" ? pathname === basePath || pathname === `${basePath}/` : pathname.startsWith(href);
+          const label = dictionary.common[section === "pulls" ? "pullRequests" : section];
+          const count =
+            section === "issues" ? repository.issueCount : section === "pulls" ? repository.mergeRequestCount : null;
+          return (
+            <Link
+              aria-current={active ? "page" : undefined}
+              className={active ? styles.active : ""}
+              href={href}
+              key={section}
+            >
+              <Icon aria-hidden="true" size={16} />
+              {label}
+              {count !== null && <span>{count}</span>}
+            </Link>
+          );
+        })}
       </nav>
     </div>
   );

@@ -1,10 +1,10 @@
 .card {
   min-width: 0;
   padding: 20px;
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
-  box-shadow: 0 1px 1px rgb(25 40 44 / 4%);
+  box-shadow: var(--shadow-card);
 }
 
 .card:hover {
@@ -25,14 +25,14 @@
   flex: 0 0 auto;
   place-items: center;
   border-radius: 7px;
-  background: var(--surface-selected);
-  color: var(--accent-strong);
+  background: var(--canvas-subtle);
+  color: var(--accent-fg);
 }
 
 .owner {
   overflow: hidden;
   margin: 0 0 1px;
-  color: var(--text-faint);
+  color: var(--fg-subtle);
   font-size: 0.75rem;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -47,7 +47,7 @@
 }
 
 .heading h3 a {
-  color: var(--accent-strong);
+  color: var(--accent-fg);
   text-decoration: none;
 }
 
@@ -61,16 +61,16 @@
   gap: 4px;
   margin-left: auto;
   padding: 3px 7px;
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--border);
   border-radius: 999px;
-  color: var(--text-muted);
+  color: var(--fg-muted);
   font-size: 0.7rem;
 }
 
 .description {
   min-height: 44px;
   margin: 17px 0 18px;
-  color: var(--text-muted);
+  color: var(--fg-muted);
   font-size: 0.9rem;
   line-height: 1.55;
 }
@@ -79,7 +79,7 @@
   display: flex;
   align-items: center;
   gap: 15px;
-  color: var(--text-faint);
+  color: var(--fg-subtle);
   font-size: 0.76rem;
 }
 
@@ -92,7 +92,7 @@
 .meta code {
   overflow: hidden;
   margin-left: auto;
-  color: var(--text-muted);
+  color: var(--fg-muted);
   font-family: var(--font-mono);
   font-size: 0.73rem;
   text-overflow: ellipsis;

@@ -1,0 +1,39 @@
+.tabs {
+  display: flex;
+  overflow-x: auto;
+  gap: 2px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tabs a {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border-bottom: 2px solid transparent;
+  color: var(--fg-muted);
+  font-size: 0.82rem;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.tabs a:hover {
+  color: var(--fg-default);
+}
+
+.tabs .active {
+  border-bottom-color: var(--accent-fg);
+  color: var(--fg-default);
+  font-weight: 600;
+}
+
+.tabs span {
+  min-width: 20px;
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: var(--canvas-subtle);
+  color: var(--fg-muted);
+  font-size: 0.7rem;
+  text-align: center;
+}
