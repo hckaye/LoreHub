@@ -35,7 +35,8 @@ SDK固有の型は`internal/lore`から外へ出さない。画面やIssue機能
 リビジョンを一時ディレクトリへcloneし、その内容を実行対象にする。PostgreSQLへファイル本文は保存しない。
 
 Loreの認証は利用者ごとの権限を持つトークンを使う。共通の管理者トークンで利用者の操作を代行しない。
-LoreHubのログインはOIDCを使い、APIはアクセストークンの発行者と対象を検証する。
+LoreHubのログインはOIDC authorization codeとPKCEを使い、APIはアクセストークンの発行者と対象を検証する。ブラウザは
+OIDC tokenを保持せず、Go APIが期限付きサーバー側セッションをCookieで管理する。既存のBearer APIクライアントも維持する。
 
 ### データ更新
 

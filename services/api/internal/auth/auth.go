@@ -10,8 +10,10 @@ import (
 )
 
 var (
-	ErrMissingToken  = errors.New("bearer token is required")
-	ErrNotConfigured = errors.New("OIDC authentication is not configured")
+	ErrMissingToken       = errors.New("bearer token is required")
+	ErrNotConfigured      = errors.New("OIDC authentication is not configured")
+	ErrInvalidTransaction = errors.New("authentication transaction is invalid")
+	ErrInvalidSession     = errors.New("session is invalid")
 )
 
 type Principal struct {
@@ -28,6 +30,18 @@ type Authenticator interface {
 	Authenticate(ctx context.Context, authorization string) (Principal, error)
 }
 
+type LoginProvider interface {
+	AuthorizationURL(state string, codeChallenge string, nonce string) string
+	Exchange(ctx context.Context, code string, codeVerifier string, nonce string) (Principal, error)
+}
+
+type OIDCConfig struct {
+	Issuer       string
+	ClientID     string
+	ClientSecret string
+	RedirectURL  string
+}
+
 type OIDCAuthenticator struct {
 	issuer   string
 	verifier *oidc.IDTokenVerifier
@@ -37,22 +51,23 @@ type DisabledAuthenticator struct{}
 
 type claims struct {
 	Subject           string `json:"sub"`
+	Issuer            string `json:"iss"`
 	Name              string `json:"name"`
 	Email             string `json:"email"`
 	PreferredUsername string `json:"preferred_username"`
 	Locale            string `json:"locale"`
+	Nonce             string `json:"nonce"`
 }
 
 func NewOIDC(ctx context.Context, issuer string, audience string) (Authenticator, error) {
 	if issuer == "" || audience == "" {
 		return DisabledAuthenticator{}, nil
 	}
-	provider, err := oidc.NewProvider(ctx, issuer)
+	provider, err := newOIDCProvider(ctx, OIDCConfig{Issuer: issuer, ClientID: audience})
 	if err != nil {
-		return nil, fmt.Errorf("discover OIDC provider: %w", err)
+		return nil, err
 	}
-	verifier := provider.Verifier(&oidc.Config{ClientID: audience})
-	return &OIDCAuthenticator{issuer: issuer, verifier: verifier}, nil
+	return provider, nil
 }
 
 func (authenticator *OIDCAuthenticator) Authenticate(
@@ -71,26 +86,33 @@ func (authenticator *OIDCAuthenticator) Authenticate(
 	if err := token.Claims(&tokenClaims); err != nil {
 		return Principal{}, fmt.Errorf("read OIDC claims: %w", err)
 	}
+	return principalFromClaims(authenticator.issuer, tokenClaims, rawToken)
+}
+
+func (DisabledAuthenticator) Authenticate(context.Context, string) (Principal, error) {
+	return Principal{}, ErrNotConfigured
+}
+
+func principalFromClaims(issuer string, tokenClaims claims, accessToken string) (Principal, error) {
 	if tokenClaims.Subject == "" {
 		return Principal{}, errors.New("OIDC token has no subject")
+	}
+	if tokenClaims.Issuer != "" {
+		issuer = tokenClaims.Issuer
 	}
 	username := tokenClaims.PreferredUsername
 	if username == "" {
 		username = tokenClaims.Name
 	}
 	return Principal{
-		Issuer:          authenticator.issuer,
+		Issuer:          issuer,
 		Subject:         tokenClaims.Subject,
 		Username:        username,
 		Name:            tokenClaims.Name,
 		Email:           tokenClaims.Email,
 		PreferredLocale: tokenClaims.Locale,
-		LoreAccessToken: rawToken,
+		LoreAccessToken: accessToken,
 	}, nil
-}
-
-func (DisabledAuthenticator) Authenticate(context.Context, string) (Principal, error) {
-	return Principal{}, ErrNotConfigured
 }
 
 func bearerToken(authorization string) (string, error) {

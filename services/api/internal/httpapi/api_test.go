@@ -15,10 +15,11 @@ import (
 
 type fakeStore struct {
 	repositories []platform.Repository
+	user         platform.User
 }
 
 func (store fakeStore) EnsureUser(context.Context, auth.Principal) (platform.User, error) {
-	return platform.User{}, nil
+	return store.user, nil
 }
 
 func (store fakeStore) CreateOrganization(
