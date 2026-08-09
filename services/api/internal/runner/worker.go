@@ -26,6 +26,9 @@ type WorkerConfig struct {
 	LoreBinary            string
 	CredentialIssuer      CredentialIssuer
 	CredentialPrincipal   CredentialPrincipal
+	JobTokenIssuer        JobTokenIssuer
+	JobTokenRESTScope     string
+	JobTokenGraphQLScope  string
 	ExecutionResolver     ExecutionContextResolver
 	GitHubContext         GitHubContext
 	ActionSourceURL       string
@@ -39,6 +42,7 @@ type WorkerConfig struct {
 	JobTimeout            time.Duration
 	LeaseDuration         time.Duration
 	LogMaxBytes           int64
+	LogMaxLineBytes       int64
 	ArtifactMaxCount      int
 	ArtifactMaxFileBytes  int64
 	ArtifactMaxTotalBytes int64
@@ -70,6 +74,9 @@ func NewWorker(store *Store, config WorkerConfig, logger *slog.Logger) (*Worker,
 	}
 	if config.ExecutionResolver == nil {
 		return nil, errors.New("Actions execution context resolver is required")
+	}
+	if config.JobTokenIssuer == nil {
+		return nil, errors.New("Actions job token issuer is required")
 	}
 	if config.Environment == "" {
 		config.Environment = "production"
@@ -123,6 +130,9 @@ func NewWorker(store *Store, config WorkerConfig, logger *slog.Logger) (*Worker,
 	if config.LogMaxBytes <= 0 {
 		config.LogMaxBytes = 10 << 20
 	}
+	if config.LogMaxLineBytes <= 0 {
+		config.LogMaxLineBytes = defaultMaskingLineBytes
+	}
 	if config.ArtifactMaxCount <= 0 {
 		config.ArtifactMaxCount = 100
 	}
@@ -132,7 +142,8 @@ func NewWorker(store *Store, config WorkerConfig, logger *slog.Logger) (*Worker,
 	if config.ArtifactMaxTotalBytes <= 0 {
 		config.ArtifactMaxTotalBytes = 500 << 20
 	}
-	if config.LogMaxBytes > maxLogBytes || config.ArtifactMaxCount > maxArtifactCount ||
+	if config.LogMaxBytes > maxLogBytes || config.LogMaxLineBytes > config.LogMaxBytes ||
+		config.ArtifactMaxCount > maxArtifactCount ||
 		config.ArtifactMaxFileBytes > maxArtifactFile || config.ArtifactMaxTotalBytes > maxArtifactTotal ||
 		config.ArtifactMaxFileBytes > config.ArtifactMaxTotalBytes {
 		return nil, errors.New("runner log or artifact quota exceeds its bound")
@@ -299,11 +310,6 @@ func (worker *Worker) runJob(ctx context.Context, job Job, logKey string) (strin
 	if err != nil {
 		return logKey, nil, err
 	}
-	actionDirectory := filepath.Join(workspace, "remote-actions")
-	actionRepositories, err := prepareRemoteActions(ctx, workflowPath, actionDirectory, worker.config.ActionSourceURL)
-	if err != nil {
-		return logKey, nil, err
-	}
 	execution, err := resolveExecutionContext(ctx, worker.config.ExecutionResolver, ExecutionContextRequest{
 		Principal:      worker.config.CredentialPrincipal,
 		RepositoryID:   job.RepositoryID,
@@ -314,12 +320,42 @@ func (worker *Worker) runJob(ctx context.Context, job Job, logKey string) (strin
 	if err != nil {
 		return logKey, nil, err
 	}
+	jobToken, err := issueJobToken(
+		ctx,
+		worker.config.JobTokenIssuer,
+		job,
+		worker.config.CredentialPrincipal,
+		worker.config.JobTokenRESTScope,
+		worker.config.JobTokenGraphQLScope,
+	)
+	if err != nil {
+		return logKey, nil, err
+	}
+	execution.Secrets["GITHUB_TOKEN"] = jobToken.Token
 	secretFile, err := writeSecretFile(workspace, execution.Secrets)
 	if err != nil {
 		return logKey, nil, err
 	}
 	defer cleanupSecretFile(secretFile)
-	logWriter := newMaskingLogWriter(boundedWriter, execution.Secrets)
+	actContext, cancelAct := context.WithCancel(ctx)
+	defer cancelAct()
+	logWriter := newMaskingLogWriterWithLimit(
+		boundedWriter,
+		execution.Secrets,
+		int(worker.config.LogMaxLineBytes),
+		func(error) { cancelAct() },
+	)
+	actionDirectory := filepath.Join(workspace, "remote-actions")
+	actionRepositories, err := prepareRemoteActions(
+		ctx,
+		workflowPath,
+		actionDirectory,
+		worker.config.ActionSourceURL,
+		worker.config.Environment,
+	)
+	if err != nil {
+		return logKey, nil, err
+	}
 	jobNetwork, err := worker.createJobNetwork(ctx, job.ID)
 	if err != nil {
 		return logKey, nil, err
@@ -341,12 +377,15 @@ func (worker *Worker) runJob(ctx context.Context, job Job, logKey string) (strin
 			SecretFile:         secretFile,
 		},
 	)
-	act := exec.CommandContext(ctx, worker.config.ActBinary, arguments...)
+	act := exec.CommandContext(actContext, worker.config.ActBinary, arguments...)
 	act.Stdout = logWriter
 	act.Stderr = logWriter
 	act.Env = append(safeEnvironment(), "LOREHUB_LORE_REVISION="+job.Revision)
-	runErr := runAct(ctx, act)
-	if flushErr := logWriter.Flush(); flushErr != nil && runErr == nil {
+	runErr := runAct(actContext, act)
+	flushErr := logWriter.Flush()
+	if maskErr := logWriter.Err(); maskErr != nil {
+		runErr = fmt.Errorf("persist masked Actions log: %w", maskErr)
+	} else if flushErr != nil && runErr == nil {
 		runErr = fmt.Errorf("flush masked Actions log: %w", flushErr)
 	}
 	_ = logFile.Sync()
@@ -387,6 +426,7 @@ func actArguments(
 		"--env", "GITHUB_SHA=" + job.Revision,
 		"--env", "GITHUB_REF=" + githubRef(job),
 		"--env", "GITHUB_REPOSITORY=" + job.Owner + "/" + job.Repository,
+		"--env", "GITHUB_EVENT_NAME=" + job.EventName,
 		"--env", "GITHUB_SERVER_URL=" + config.GitHub.ServerURL,
 		"--env", "GITHUB_API_URL=" + config.GitHub.APIURL,
 		"--env", "GITHUB_GRAPHQL_URL=" + config.GitHub.GraphQLURL,
@@ -407,7 +447,7 @@ func actArguments(
 		arguments = append(arguments, "--secret-file", config.SecretFile)
 	}
 	for _, variable := range sortedVariables(config.Variables) {
-		arguments = append(arguments, "--var", variable, "--env", variable)
+		arguments = append(arguments, "--var", variable)
 	}
 	for _, variable := range []string{
 		"HTTP_PROXY=" + proxyURL,
@@ -488,12 +528,14 @@ func (worker *Worker) cloneRevision(ctx context.Context, job Job, destination st
 		repository := loreclient.RepositoryRef{CacheKey: job.RepositoryID, URL: job.LoreURL}
 		if client, ok := worker.config.RevisionClient.(loreclient.CredentialRevisionClient); ok {
 			err = client.CloneRevisionWithCredential(ctx, repository, loreCredential(credential), job.Revision, destination)
-		} else if credential.Identity != "" {
+		} else if credential.Identity != "" &&
+			(worker.config.Environment == "development" || worker.config.Environment == "local") &&
+			issuerIsDevelopmentOnly(worker.config.CredentialIssuer) {
 			err = worker.config.RevisionClient.CloneRevision(
 				ctx, repository, credential.Identity, job.Revision, destination,
 			)
 		} else {
-			err = errors.New("the configured Lore client does not accept token or AuthURL credentials")
+			err = errors.New("the configured Lore client does not accept production Lore credentials")
 		}
 		if err != nil {
 			return fmt.Errorf("clone Lore revision: %w", err)

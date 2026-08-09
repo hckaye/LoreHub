@@ -29,14 +29,16 @@ func TestCredentialIssuerContractCarriesExactResourceAndScope(t *testing.T) {
 	issuer := &recordingCredentialIssuer{credential: LoreCredential{
 		RepositoryID: "repository-a",
 		Scope:        ReadLoreScope,
-		Identity:     "short-lived-identity",
+		Token:        "short-lived-token",
+		AuthURL:      "https://auth.example/token",
+		Identity:     "runner-a",
 		ExpiresAt:    time.Now().UTC().Add(time.Minute),
 	}}
 	principal := CredentialPrincipal{Kind: "service", Subject: "runner-a"}
 	credential, err := issueLoreCredential(
 		context.Background(), issuer, principal, "repository-a", "lore://repository-a",
 	)
-	if err != nil || credential.Identity != "short-lived-identity" {
+	if err != nil || credential.Identity != "runner-a" {
 		t.Fatalf("unexpected issued credential: %#v, %v", credential, err)
 	}
 	if issuer.request.Principal != principal || issuer.request.RepositoryID != "repository-a" ||
@@ -53,28 +55,32 @@ func TestCredentialIssuerRejectsWrongPartitionScopeOrExpiry(t *testing.T) {
 		{
 			name: "wrong repository",
 			credential: LoreCredential{
-				RepositoryID: "repository-b", Scope: ReadLoreScope, Identity: "identity",
+				RepositoryID: "repository-b", Scope: ReadLoreScope, Token: "token",
+				AuthURL: "https://auth.example/token", Identity: "runner-a",
 				ExpiresAt: time.Now().Add(time.Minute),
 			},
 		},
 		{
 			name: "wrong scope",
 			credential: LoreCredential{
-				RepositoryID: "repository-a", Scope: "write", Identity: "identity",
+				RepositoryID: "repository-a", Scope: "write", Token: "token",
+				AuthURL: "https://auth.example/token", Identity: "runner-a",
 				ExpiresAt: time.Now().Add(time.Minute),
 			},
 		},
 		{
 			name: "expired",
 			credential: LoreCredential{
-				RepositoryID: "repository-a", Scope: ReadLoreScope, Identity: "identity",
+				RepositoryID: "repository-a", Scope: ReadLoreScope, Token: "token",
+				AuthURL: "https://auth.example/token", Identity: "runner-a",
 				ExpiresAt: time.Now().Add(-time.Minute),
 			},
 		},
 		{
 			name: "too long",
 			credential: LoreCredential{
-				RepositoryID: "repository-a", Scope: ReadLoreScope, Identity: "identity",
+				RepositoryID: "repository-a", Scope: ReadLoreScope, Token: "token",
+				AuthURL: "https://auth.example/token", Identity: "runner-a",
 				ExpiresAt: time.Now().Add(16 * time.Minute),
 			},
 		},
@@ -100,6 +106,7 @@ func TestCredentialIssuerAcceptsControlPlaneTokenAndAuthURLForms(t *testing.T) {
 		Scope:        ReadLoreScope,
 		Token:        "token",
 		AuthURL:      "ucs-auth://auth.example",
+		Identity:     "runner-a",
 		ExpiresAt:    time.Now().UTC().Add(time.Minute),
 	}}
 	credential, err := issueLoreCredential(
@@ -109,6 +116,33 @@ func TestCredentialIssuerAcceptsControlPlaneTokenAndAuthURLForms(t *testing.T) {
 	)
 	if err != nil || credential.Token != "token" || credential.AuthURL == "" {
 		t.Fatalf("control-plane credential forms were not preserved: %#v, %v", credential, err)
+	}
+}
+
+func TestProductionCredentialRequiresExactPrincipalAndAllMaterial(t *testing.T) {
+	base := LoreCredential{
+		RepositoryID: "repository-a", Scope: ReadLoreScope, Token: "token",
+		AuthURL: "https://auth.example/token", Identity: "runner-a",
+		ExpiresAt: time.Now().UTC().Add(time.Minute),
+	}
+	for name, mutate := range map[string]func(*LoreCredential){
+		"missing token":    func(value *LoreCredential) { value.Token = "" },
+		"missing auth URL": func(value *LoreCredential) { value.AuthURL = "" },
+		"missing identity": func(value *LoreCredential) { value.Identity = "" },
+		"wrong identity":   func(value *LoreCredential) { value.Identity = "other" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			credential := base
+			mutate(&credential)
+			_, err := issueLoreCredential(
+				context.Background(), &recordingCredentialIssuer{credential: credential},
+				CredentialPrincipal{Kind: "service", Subject: "runner-a"},
+				"repository-a", "lore://repository-a",
+			)
+			if err == nil {
+				t.Fatal("incomplete or mismatched production credential was accepted")
+			}
+		})
 	}
 }
 
@@ -142,7 +176,8 @@ func (client *recordingCredentialRevisionClient) CloneRevisionWithCredential(
 func TestWorkerPassesTokenAndAuthURLToCredentialAwareLoreClient(t *testing.T) {
 	issuer := &recordingCredentialIssuer{credential: LoreCredential{
 		RepositoryID: "repository-a", Scope: ReadLoreScope, Token: "short-token",
-		AuthURL: "https://auth.example/token", ExpiresAt: time.Now().UTC().Add(time.Minute),
+		AuthURL: "https://auth.example/token", Identity: "runner",
+		ExpiresAt: time.Now().UTC().Add(time.Minute),
 	}}
 	lore := &recordingCredentialRevisionClient{}
 	worker := &Worker{config: WorkerConfig{
@@ -176,7 +211,7 @@ func TestFailClosedCredentialIssuerCannotIssue(t *testing.T) {
 
 func TestDevelopmentCredentialIssuerIsExplicitAndShortLived(t *testing.T) {
 	before := time.Now().UTC()
-	credential, err := NewDevelopmentCredentialIssuer("development-only").Issue(
+	credential, err := NewDevelopmentCredentialIssuer("test").Issue(
 		context.Background(), CredentialRequest{
 			Principal:    CredentialPrincipal{Kind: "service", Subject: "test"},
 			RepositoryID: "repository-a",
@@ -184,7 +219,7 @@ func TestDevelopmentCredentialIssuerIsExplicitAndShortLived(t *testing.T) {
 			Scope:        ReadLoreScope,
 		},
 	)
-	if err != nil || credential.Identity != "development-only" || !credential.ExpiresAt.After(before) {
+	if err != nil || credential.Identity != "test" || !credential.ExpiresAt.After(before) {
 		t.Fatalf("unexpected development credential: %#v, %v", credential, err)
 	}
 }

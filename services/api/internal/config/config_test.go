@@ -116,6 +116,28 @@ func TestLoadRejectsDevelopmentActionsContextOutsideDevelopment(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsDevelopmentActionsJobTokenOutsideDevelopment(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("LOREHUB_ENV", "production")
+	t.Setenv("LOREHUB_DEV_ALLOW_ACTIONS_JOB_TOKEN_FALLBACK", "true")
+	t.Setenv("LOREHUB_PUBLIC_ORIGIN", "https://actions.example")
+
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "development-only Actions job token fallback") {
+		t.Fatalf("expected development-only Actions job token to fail closed, got %v", err)
+	}
+}
+
+func TestLoadRequiresDevelopmentActionsJobTokenWhenEnabled(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("LOREHUB_DEV_ALLOW_ACTIONS_JOB_TOKEN_FALLBACK", "true")
+
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "LOREHUB_DEV_ACTIONS_JOB_TOKEN") {
+		t.Fatalf("expected an explicit development Actions job token, got %v", err)
+	}
+}
+
 func TestLoadParsesRunnerMappingAndPublicActionsURLs(t *testing.T) {
 	setRequiredEnvironment(t)
 	t.Setenv("LOREHUB_PUBLIC_ORIGIN", "http://localhost:3000")
@@ -185,6 +207,8 @@ func setRequiredEnvironment(t *testing.T) {
 	t.Setenv("LOREHUB_RUNNER_PLATFORM_IMAGES", "")
 	t.Setenv("LOREHUB_DEV_ALLOW_ACTIONS_CONTEXT_FALLBACK", "")
 	t.Setenv("LOREHUB_DEV_ACTIONS_CONTEXT_JSON", "")
+	t.Setenv("LOREHUB_DEV_ALLOW_ACTIONS_JOB_TOKEN_FALLBACK", "")
+	t.Setenv("LOREHUB_DEV_ACTIONS_JOB_TOKEN", "")
 	t.Setenv("LOREHUB_AUTH_SECRET", "")
 	t.Setenv("LOREHUB_SESSION_TTL", "")
 	t.Setenv("LOREHUB_LOGIN_TRANSACTION_TTL", "")

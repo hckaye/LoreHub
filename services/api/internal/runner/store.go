@@ -31,6 +31,7 @@ type Job struct {
 	ID             string
 	Attempt        int
 	RunID          string
+	ActorID        string
 	WorkflowPath   string
 	RepositoryID   string
 	OrganizationID string
@@ -462,7 +463,8 @@ func (store *Store) ClaimJob(ctx context.Context, workerID string, lease time.Du
 
 	var job Job
 	err = transaction.QueryRow(ctx, `
-		SELECT j.id, j.attempt, run.id, COALESCE(workflow.path, workflow_revision.path, ''), r.id,
+		SELECT j.id, j.attempt, run.id, COALESCE(run.actor_id::text, ''),
+		       COALESCE(workflow.path, workflow_revision.path, ''), r.id,
 		       o.id, o.slug, r.slug, r.lore_url, run.revision, run.branch, run.event_name, run.event_payload
 		FROM ci_jobs j
 		JOIN ci_runs run ON run.id = j.run_id
@@ -475,6 +477,7 @@ func (store *Store) ClaimJob(ctx context.Context, workerID string, lease time.Du
 		&job.ID,
 		&job.Attempt,
 		&job.RunID,
+		&job.ActorID,
 		&job.WorkflowPath,
 		&job.RepositoryID,
 		&job.OrganizationID,

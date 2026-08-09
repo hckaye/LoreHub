@@ -159,15 +159,13 @@ func validateExecutionContext(value ExecutionContext) error {
 }
 
 func validateExecutionValues(scope map[string]string, secret bool) error {
+	_ = secret
 	for name, item := range scope {
 		if !executionNamePattern.MatchString(name) || isReservedExecutionName(name) {
 			return fmt.Errorf("Actions execution name %q is invalid or reserved", name)
 		}
 		if len(item) > 1<<20 || strings.ContainsRune(item, '\x00') {
 			return fmt.Errorf("Actions execution value %q is invalid", name)
-		}
-		if secret && strings.ContainsAny(item, "\r\n") {
-			return fmt.Errorf("Actions secret %q must not contain a newline", name)
 		}
 	}
 	return nil
@@ -251,7 +249,7 @@ func writeSecretFile(directory string, secrets map[string]string) (string, error
 	}
 	sort.Strings(keys)
 	for _, name := range keys {
-		if _, err := fmt.Fprintf(file, "%s=%s\n", name, secrets[name]); err != nil {
+		if _, err := fmt.Fprintf(file, "%s=%s\n", name, encodeActSecretValue(secrets[name])); err != nil {
 			cleanup()
 			return "", fmt.Errorf("write Actions secret file: %w", err)
 		}
@@ -265,6 +263,30 @@ func writeSecretFile(directory string, secrets map[string]string) (string, error
 		return "", fmt.Errorf("close Actions secret file: %w", err)
 	}
 	return filepath.Clean(path), nil
+}
+
+func encodeActSecretValue(value string) string {
+	var builder strings.Builder
+	builder.Grow(len(value) + 2)
+	builder.WriteByte('"')
+	for index := 0; index < len(value); index++ {
+		switch value[index] {
+		case '\\':
+			builder.WriteString(`\\`)
+		case '"':
+			builder.WriteString(`\"`)
+		case '$':
+			builder.WriteString(`\$`)
+		case '\r':
+			builder.WriteString(`\r`)
+		case '\n':
+			builder.WriteString(`\n`)
+		default:
+			builder.WriteByte(value[index])
+		}
+	}
+	builder.WriteByte('"')
+	return builder.String()
 }
 
 func cleanupSecretFile(path string) {

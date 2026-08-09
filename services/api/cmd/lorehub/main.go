@@ -175,12 +175,17 @@ func runRunner(
 		return err
 	}
 	executionResolver := configuredExecutionContextResolver(settings)
+	jobTokenIssuer, err := configuredJobTokenIssuer(settings)
+	if err != nil {
+		return err
+	}
 	credentialPrincipal := runner.CredentialPrincipal{Kind: "service", Subject: settings.RunnerSubject}
 	worker, err := runner.NewWorker(store, runner.WorkerConfig{
 		Environment:         settings.Environment,
 		LoreBinary:          settings.LoreBinary,
 		CredentialIssuer:    credentialIssuer,
 		CredentialPrincipal: credentialPrincipal,
+		JobTokenIssuer:      jobTokenIssuer,
 		ExecutionResolver:   executionResolver,
 		GitHubContext: runner.GitHubContext{
 			ServerURL: settings.PublicOrigin, APIURL: settings.PublicAPIURL,
@@ -197,6 +202,7 @@ func runRunner(
 		JobTimeout:            settings.RunnerJobTimeout,
 		LeaseDuration:         settings.RunnerLeaseDuration,
 		LogMaxBytes:           settings.RunnerLogMaxBytes,
+		LogMaxLineBytes:       settings.RunnerLogMaxLineBytes,
 		ArtifactMaxCount:      settings.RunnerArtifactMaxCount,
 		ArtifactMaxFileBytes:  settings.RunnerArtifactMaxFile,
 		ArtifactMaxTotalBytes: settings.RunnerArtifactMaxTotal,
@@ -247,4 +253,13 @@ func configuredLoreCredentialIssuer(settings config.Config) (runner.CredentialIs
 		}
 	}
 	return nil, fmt.Errorf("an injected repository-scoped Lore credential issuer is required for %s", settings.Environment)
+}
+
+func configuredJobTokenIssuer(settings config.Config) (runner.JobTokenIssuer, error) {
+	if settings.Environment == "development" || settings.Environment == "local" {
+		if settings.DevActionsJobTokenFallback {
+			return runner.NewDevelopmentJobTokenIssuer(settings.DevActionsJobToken, settings.RunnerSubject), nil
+		}
+	}
+	return nil, fmt.Errorf("an injected Actions job token issuer is required for %s", settings.Environment)
 }

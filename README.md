@@ -147,16 +147,18 @@ transactionは最大15分）。
 認証プロバイダーへは`prompt=create`だけを渡します。その他の`prompt`や`kc_action`は400を返します。
 
 Lore側の読み取りはservice subject、repository partition、`read` scopeをcredential issuerへ渡し、短命の
-repository限定credentialを受け取ります。契約はToken、AuthURL、Identityを受け取れますが、組み込みLore SDKの
-adapterはToken/AuthURLを未接続としてfail closedします。本番ではissuerやcredential-aware Lore clientが未注入なら
-起動後のrunner処理をfail closedし、ファイルcredentialや共有identityにはfallbackしません。開発用identity fallbackは
-development/localだけで明示的に許可します。
+repository限定credentialを受け取ります。本番credentialは要求されたsubjectと一致するIdentityに加え、Token、
+AuthURL、Identity、有効期限をすべて持つ必要があります。組み込みLore SDKのadapterはToken/AuthURLの接続が未完了
+なのでfail closedします。本番ではissuerやcredential-aware Lore clientが未注入ならrunner処理をfail closedし、
+ファイルcredentialや共有identityにはfallbackしません。開発用identity fallbackはdevelopment/localだけで明示的に
+許可します。
 
 Actions実行時は、service subject、organization/repository partition、job environmentをexecution-context resolverへ
-渡します。organization、repository、environmentの変数とsecretをenvironment優先で解決し、変数はactの`--var`と
-`--env`、secretは一時0600ファイルで渡します。secretと`::add-mask::`出力は保存前にマスクし、resolverのエラーは
-実行を開始せず、secretファイルも全終了経路で削除します。本番resolverはcontrol planeから注入し、固定値の開発用
-adapterは明示的なdevelopment/local設定でだけ利用できます。
+渡します。organization、repository、environmentの変数とsecretをenvironment優先で解決し、変数はactの`--var`だけ、
+secretは一時0600ファイルで渡します。システムが発行するGITHUB_TOKENは別の短命job/run/attempt限定契約で受け取り、
+secret fileへだけ注入します。secretと`::add-mask::`出力は保存前にマスクし、resolverまたはToken issuerのエラーは
+実行を開始せず、secretファイルも全終了経路で削除します。本番resolverとToken issuerはcontrol planeから注入し、固定値の
+開発用adapterは明示的なdevelopment/local設定でだけ利用できます。
 
 Keycloakを使う場合、ローカルのissuerは
 `http://keycloak.localhost:8280/realms/lorehub`、audienceは`lorehub-api`です。本番では公開HTTPSのissuerを設定します。

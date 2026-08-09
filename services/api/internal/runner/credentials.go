@@ -39,6 +39,8 @@ type developmentCredentialIssuer struct {
 	identity string
 }
 
+func (developmentCredentialIssuer) developmentOnly() bool { return true }
+
 // NewDevelopmentCredentialIssuer is intentionally an in-memory local/test adapter.
 func NewDevelopmentCredentialIssuer(identity string) CredentialIssuer {
 	return developmentCredentialIssuer{identity: identity}
@@ -54,6 +56,9 @@ func (issuer developmentCredentialIssuer) Issue(
 	if strings.TrimSpace(issuer.identity) == "" {
 		return LoreCredential{}, errors.New("development Lore identity is empty")
 	}
+	if issuer.identity != request.Principal.Subject {
+		return LoreCredential{}, errors.New("development Lore identity does not match the requested principal")
+	}
 	return LoreCredential{
 		RepositoryID: request.RepositoryID,
 		Scope:        request.Scope,
@@ -63,6 +68,8 @@ func (issuer developmentCredentialIssuer) Issue(
 }
 
 type failClosedCredentialIssuer struct{}
+
+func (failClosedCredentialIssuer) developmentOnly() bool { return false }
 
 func NewFailClosedCredentialIssuer() CredentialIssuer {
 	return failClosedCredentialIssuer{}
@@ -105,11 +112,33 @@ func issueLoreCredential(
 	if credential.ExpiresAt.After(now.Add(15 * time.Minute)) {
 		return LoreCredential{}, errors.New("Lore credential lifetime exceeds the short-lived limit")
 	}
-	if strings.TrimSpace(credential.Token) == "" && strings.TrimSpace(credential.AuthURL) == "" &&
+	if strings.ContainsAny(credential.Token, "\x00\r\n") || strings.ContainsAny(credential.AuthURL, "\x00\r\n") ||
+		strings.ContainsAny(credential.Identity, "\x00\r\n") {
+		return LoreCredential{}, errors.New("Lore credential contains unsafe authentication material")
+	}
+	if credential.Identity != request.Principal.Subject {
+		return LoreCredential{}, errors.New("Lore credential identity does not match the requested principal")
+	}
+	if issuerIsDevelopmentOnly(issuer) {
+		if strings.TrimSpace(credential.Identity) == "" {
+			return LoreCredential{}, errors.New("development Lore credential identity is empty")
+		}
+		return credential, nil
+	}
+	if strings.TrimSpace(credential.Token) == "" || strings.TrimSpace(credential.AuthURL) == "" ||
 		strings.TrimSpace(credential.Identity) == "" {
-		return LoreCredential{}, errors.New("Lore credential contains no usable authentication material")
+		return LoreCredential{}, errors.New("production Lore credential requires Token, AuthURL, Identity, and expiry")
 	}
 	return credential, nil
+}
+
+type credentialMode interface {
+	developmentOnly() bool
+}
+
+func issuerIsDevelopmentOnly(issuer CredentialIssuer) bool {
+	mode, ok := issuer.(credentialMode)
+	return ok && mode.developmentOnly()
 }
 
 func validateCredentialRequest(ctx context.Context, request CredentialRequest) error {

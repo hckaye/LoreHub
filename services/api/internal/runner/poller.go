@@ -85,7 +85,7 @@ func (poller *Poller) poll(ctx context.Context) error {
 		var branches []loreclient.Branch
 		if client, ok := poller.lore.(loreclient.CredentialBranchClient); ok {
 			branches, err = client.BranchesWithCredential(ctx, repositoryRef, loreCredential(credential))
-		} else if credential.Identity != "" {
+		} else if credential.Identity != "" && issuerIsDevelopmentOnly(poller.issuer) {
 			branches, err = poller.lore.Branches(ctx, repositoryRef, credential.Identity)
 		} else {
 			err = fmt.Errorf("the configured Lore client does not accept token or AuthURL credentials")
@@ -116,7 +116,7 @@ func (poller *Poller) poll(ctx context.Context) error {
 				cloneErr = client.CloneRevisionWithCredential(
 					ctx, repositoryRef, loreCredential(credential), branch.LatestRevision, workspace,
 				)
-			} else if credential.Identity != "" {
+			} else if credential.Identity != "" && issuerIsDevelopmentOnly(poller.issuer) {
 				cloneErr = revisionClient.CloneRevision(
 					ctx, repositoryRef, credential.Identity, branch.LatestRevision, workspace,
 				)

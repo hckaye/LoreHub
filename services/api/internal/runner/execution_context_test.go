@@ -89,6 +89,18 @@ func TestExecutionContextRejectsReservedAndUnsafeValues(t *testing.T) {
 		t.Fatalf("reserved variable was accepted: %v", err)
 	}
 	resolver.value = ExecutionContext{
+		RepositorySecrets: map[string]string{"GITHUB_TOKEN": "user-override"},
+	}
+	_, err = resolveExecutionContext(context.Background(), resolver, ExecutionContextRequest{
+		Principal:      CredentialPrincipal{Kind: "service", Subject: "runner"},
+		RepositoryID:   "repository-a",
+		OrganizationID: "organization-a",
+		RequestedScope: "actions:execute",
+	})
+	if err == nil || !strings.Contains(err.Error(), "reserved") {
+		t.Fatalf("reserved GITHUB_TOKEN secret was accepted: %v", err)
+	}
+	resolver.value = ExecutionContext{
 		RepositorySecrets: map[string]string{"TOKEN": "line\nvalue"},
 	}
 	_, err = resolveExecutionContext(context.Background(), resolver, ExecutionContextRequest{
@@ -97,8 +109,8 @@ func TestExecutionContextRejectsReservedAndUnsafeValues(t *testing.T) {
 		OrganizationID: "organization-a",
 		RequestedScope: "actions:execute",
 	})
-	if err == nil || !strings.Contains(err.Error(), "newline") {
-		t.Fatalf("newline secret was accepted: %v", err)
+	if err != nil {
+		t.Fatalf("multiline secret was rejected: %v", err)
 	}
 }
 
@@ -119,7 +131,7 @@ func TestSecretFileIsRestrictedAndRemoved(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(contents) != "ALPHA=first\nZED=last\n" {
+	if string(contents) != "ALPHA=\"first\"\nZED=\"last\"\n" {
 		t.Fatalf("secret file contents were not deterministic: %q", contents)
 	}
 	cleanupSecretFile(path)
@@ -128,6 +140,24 @@ func TestSecretFileIsRestrictedAndRemoved(t *testing.T) {
 	}
 	if _, err := writeSecretFile(filepath.Join(directory, "missing"), map[string]string{"TOKEN": "value"}); err == nil {
 		t.Fatal("secret file creation unexpectedly succeeded in a missing directory")
+	}
+}
+
+func TestSecretFileUsesActQuotedMultilineFormat(t *testing.T) {
+	path, err := writeSecretFile(t.TempDir(), map[string]string{
+		"MULTILINE": "first\r\nsecond\n$literal\\path\"quote",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanupSecretFile(path)
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "MULTILINE=\"first\\r\\nsecond\\n\\$literal\\\\path\\\"quote\"\n"
+	if string(contents) != want {
+		t.Fatalf("multiline secret did not use act format: %q want %q", contents, want)
 	}
 }
 

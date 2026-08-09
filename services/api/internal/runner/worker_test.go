@@ -48,6 +48,7 @@ func TestActArgumentsPreserveSupportedEventAndExactWorkflow(t *testing.T) {
 			assertArgumentValue(t, args, "--env", "GITHUB_SHA=lore-revision")
 			assertArgumentValue(t, args, "--env", "GITHUB_REF=refs/heads/main")
 			assertArgumentValue(t, args, "--env", "GITHUB_REPOSITORY=owner/repository")
+			assertArgumentValue(t, args, "--env", "GITHUB_EVENT_NAME="+event)
 			assertArgumentValue(t, args, "--env", "GITHUB_SERVER_URL=http://lorehub.test")
 			assertArgumentValue(t, args, "--env", "GITHUB_API_URL=http://lorehub.test/api/v1")
 			assertArgumentValue(t, args, "--env", "GITHUB_GRAPHQL_URL=http://lorehub.test/api/graphql")
@@ -80,7 +81,9 @@ func TestActArgumentsPassVariablesAndSecretFilePathOnly(t *testing.T) {
 		},
 	)
 	assertArgumentValue(t, args, "--var", "DEPLOY_TARGET=staging")
-	assertArgumentValue(t, args, "--env", "DEPLOY_TARGET=staging")
+	if containsArgumentValue(args, "--env", "DEPLOY_TARGET=staging") {
+		t.Fatal("repository Actions variable was incorrectly passed as an environment variable")
+	}
 	assertArgumentValue(t, args, "--secret-file", "/tmp/actions-secrets-123")
 	if strings.Contains(strings.Join(args, "\x00"), "super-secret") {
 		t.Fatal("secret value appeared in act arguments")
@@ -105,6 +108,15 @@ func countArgument(arguments []string, want string) int {
 		}
 	}
 	return count
+}
+
+func containsArgumentValue(arguments []string, flag string, want string) bool {
+	for index := 0; index+1 < len(arguments); index++ {
+		if arguments[index] == flag && arguments[index+1] == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestBoundedLogWriter(t *testing.T) {
