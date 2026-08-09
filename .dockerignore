@@ -1,0 +1,7 @@
+.git
+.github
+.next
+.cache
+node_modules
+npm-debug.log
+services/api/lorehub

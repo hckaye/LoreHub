@@ -1,0 +1,63 @@
+:root {
+  --header-bg: #17292f;
+  --header-hover: #233b42;
+  --header-text: #f2f7f5;
+  --header-text-muted: #b6c9c4;
+  --surface: #ffffff;
+  --surface-muted: #f6f8f7;
+  --surface-selected: #e9f2ee;
+  --border-subtle: #dfe6e3;
+  --border-strong: #b9c8c3;
+  --text-strong: #1b282c;
+  --text-muted: #5c6d71;
+  --text-faint: #7e8c8f;
+  --accent: #2f7861;
+  --accent-strong: #23644f;
+  --success: #2b8a55;
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  background: var(--surface);
+  scroll-behavior: smooth;
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  background: var(--surface);
+  color: var(--text-strong);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+a,
+button {
+  outline-offset: 3px;
+}
+
+::selection {
+  background: #c6e1d6;
+}
+
+.site-shell {
+  display: flex;
+  min-height: 100vh;
+  flex-direction: column;
+}
+
+.site-main {
+  flex: 1;
+}

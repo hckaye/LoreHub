@@ -1,0 +1,53 @@
+name: LoreHub CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18.4-alpine
+        env:
+          POSTGRES_DB: lorehub
+          POSTGRES_PASSWORD: lorehub-ci
+          POSTGRES_USER: lorehub
+        options: >-
+          --health-cmd "pg_isready -U lorehub -d lorehub"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+        ports:
+          - 5432:5432
+    env:
+      DATABASE_URL: postgresql://lorehub:lorehub-ci@127.0.0.1:5432/lorehub
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: services/api/go.mod
+          cache-dependency-path: services/api/go.sum
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm run limits
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npm run api:format:check
+      - run: npm run api:lint
+      - run: npm run api:test
+      - run: npm run api:build
+      - run: npm run security
+      - run: npm run db:migrate

@@ -1,0 +1,16 @@
+.switcher {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  border-radius: 6px;
+  color: var(--header-text-muted);
+  font-size: 0.86rem;
+  text-decoration: none;
+}
+
+.switcher:hover {
+  background: var(--header-hover);
+  color: var(--header-text);
+}

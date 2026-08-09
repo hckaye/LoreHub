@@ -1,0 +1,43 @@
+.list {
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.row {
+  display: flex;
+  min-height: 68px;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.row:last-child {
+  border-bottom: 0;
+}
+
+.stateIcon {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--success);
+}
+
+.row h3 {
+  margin: 0 0 4px;
+  color: var(--text-strong);
+  font-size: 0.9rem;
+}
+
+.row p {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: 0.76rem;
+}
+
+.comments {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: 0.75rem;
+}

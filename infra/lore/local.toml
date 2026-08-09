@@ -1,0 +1,14 @@
+[server.quic.certificate]
+cert_file = "/data/certificates/cert.pem"
+pkey_file = "/data/certificates/key.pem"
+
+[immutable_store.local]
+path = "/data/store"
+flush_delay_seconds = 10
+
+[mutable_store.local]
+path = "/data/store"
+flush_delay_seconds = 10
+
+[topology]
+provider = "none"

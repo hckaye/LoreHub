@@ -1,0 +1,47 @@
+{
+  "name": "lorehub",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=24.18.0"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "node .next/standalone/server.js",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint . --max-warnings=0",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "api:format:check": "cd services/api && files=$(gofmt -l .) && test -z \"$files\"",
+    "api:lint": "cd services/api && go vet ./...",
+    "api:test": "cd services/api && go test ./...",
+    "api:build": "cd services/api && go build -o /dev/null ./cmd/lorehub",
+    "api:security": "cd services/api && go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...",
+    "db:migrate": "cd services/api && go run ./cmd/lorehub migrate",
+    "security": "npm audit --audit-level=high && npm run api:security",
+    "limits": "node scripts/check-file-limits.mjs",
+    "check": "sh scripts/check.sh"
+  },
+  "dependencies": {
+    "jose": "^6.2.8",
+    "lucide-react": "^1.30.0",
+    "next": "^16.3.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^16.3.0",
+    "prettier": "^3.9.6",
+    "prettier-plugin-organize-imports": "^4.3.0",
+    "tsx": "^4.23.11",
+    "typescript": "^6.0.3"
+  },
+  "type": "module"
+}

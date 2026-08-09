@@ -1,0 +1,93 @@
+name: lorehub
+
+services:
+  postgres:
+    image: postgres:18.4-alpine
+    environment:
+      POSTGRES_DB: lorehub
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lorehub-development}
+      POSTGRES_USER: lorehub
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lorehub -d lorehub"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql
+
+  lore:
+    platform: linux/amd64
+    build:
+      context: ..
+      dockerfile: infra/lore/Dockerfile
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:41339/health_check"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    ports:
+      - "41337:41337/tcp"
+      - "41337:41337/udp"
+      - "41339:41339"
+    volumes:
+      - lore-data:/data
+
+  api:
+    platform: linux/amd64
+    build:
+      context: ..
+      dockerfile: infra/api/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://lorehub:${POSTGRES_PASSWORD:-lorehub-development}@postgres:5432/lorehub
+      LOREHUB_ENV: development
+      LOREHUB_HTTP_ADDRESS: :8080
+      LOREHUB_LORE_IDENTITY: ${LOREHUB_LORE_IDENTITY:-}
+      LOREHUB_OIDC_AUDIENCE: ${LOREHUB_OIDC_AUDIENCE:-}
+      LOREHUB_OIDC_ISSUER: ${LOREHUB_OIDC_ISSUER:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    volumes:
+      - api-data:/var/lib/lorehub
+
+  web:
+    build:
+      context: ..
+      dockerfile: infra/web/Dockerfile
+    environment:
+      LOREHUB_API_URL: http://api:8080
+    depends_on:
+      api:
+        condition: service_started
+    ports:
+      - "3000:3000"
+
+  runner:
+    profiles: ["runner"]
+    platform: linux/amd64
+    build:
+      context: ..
+      dockerfile: infra/api/Dockerfile
+    command: ["runner"]
+    user: root
+    environment:
+      DATABASE_URL: postgresql://lorehub:${POSTGRES_PASSWORD:-lorehub-development}@postgres:5432/lorehub
+      DOCKER_HOST: unix:///var/run/docker.sock
+      LOREHUB_ENV: development
+      LOREHUB_LORE_IDENTITY: ${LOREHUB_LORE_IDENTITY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - runner-data:/var/lib/lorehub
+
+volumes:
+  api-data:
+  lore-data:
+  postgres-data:
+  runner-data:
