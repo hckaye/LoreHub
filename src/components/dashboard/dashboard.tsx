@@ -37,8 +37,8 @@ export function Dashboard({ locale, dictionary, repositories, repositoriesUnavai
         <aside className={styles.sidebar}>
           <div className={styles.sidebarHeading}>
             <div>
-              <h2>{dictionary.home.yourRepositories}</h2>
-              <p>{dictionary.home.yourRepositoriesDescription}</p>
+              <h2>{dictionary.home.availablePublicRepositories}</h2>
+              <p>{dictionary.home.availablePublicRepositoriesDescription}</p>
             </div>
           </div>
           {!repositoriesUnavailable && repositories && repositories.length > 0 ? (
@@ -55,19 +55,21 @@ export function Dashboard({ locale, dictionary, repositories, repositoriesUnavai
           ) : (
             <EmptyState
               body={
-                repositoriesUnavailable ? dictionary.home.apiUnavailableBody : dictionary.home.yourRepositoriesEmptyBody
+                repositoriesUnavailable
+                  ? dictionary.home.apiUnavailableBody
+                  : dictionary.home.availablePublicRepositoriesEmptyBody
               }
               icon={<ServerOff aria-hidden="true" />}
               title={
                 repositoriesUnavailable
                   ? dictionary.home.apiUnavailableTitle
-                  : dictionary.home.yourRepositoriesEmptyTitle
+                  : dictionary.home.availablePublicRepositoriesEmptyTitle
               }
               tone={repositoriesUnavailable ? "warning" : "neutral"}
             />
           )}
         </aside>
-        <main className={styles.main}>
+        <div className={styles.main}>
           <section className={styles.activity}>
             <div className={styles.sectionTitle}>
               <Activity aria-hidden="true" size={18} />
@@ -99,7 +101,7 @@ export function Dashboard({ locale, dictionary, repositories, repositoriesUnavai
               </div>
             )}
           </section>
-        </main>
+        </div>
       </div>
     </div>
   );

@@ -18,13 +18,20 @@ The response is expected to be JSON with one of these shapes:
     "email": "name@example.test",
     "locale": "en"
   },
-  "csrfToken": "short-lived-token"
+  "session": {
+    "id": "session-id",
+    "createdAt": "2026-08-09T00:00:00Z",
+    "expiresAt": "2026-09-08T00:00:00Z",
+    "lastSeenAt": "2026-08-09T00:00:00Z"
+  },
+  "csrfToken": "session-bound-token"
 }
 ```
 
 An anonymous browser must receive a stable successful response with `authenticated: false`. A `401` response is treated
 as an expired session, while other failures are shown as an unavailable authentication service. Unknown fields are
-discarded by the frontend normalizer, including any accidental token-shaped fields.
+discarded by the frontend normalizer, including any accidental token-shaped fields. The CSRF value is bound to the
+server-side session and remains valid for that session; it is not an OAuth access token.
 
 ## Same-origin routes
 
