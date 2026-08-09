@@ -19,6 +19,7 @@ Compose uses three separate runner networks. `runner-data` contains the runner, 
 `runner-control` contains only the runner and the Docker engine; and `runner-egress` contains only the engine. Web stays
 on the application network. API and web do not join `runner-control`, and the engine does not join `runner-data`. Act
 job containers use the engine's disposable bridge network, so they cannot route to PostgreSQL or Lore on `runner-data`.
+Development-only PostgreSQL and Lore host ports bind to loopback; production deployments should not publish them.
 
 The engine listens on `2376` with Docker mTLS. The runner receives only the read-only client certificate volume and
 passes `DOCKER_HOST=tcp://runner-engine:2376`, `DOCKER_TLS_VERIFY=1`, and `DOCKER_CERT_PATH=/etc/lorehub/docker-client`

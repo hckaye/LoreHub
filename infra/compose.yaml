@@ -13,7 +13,7 @@ services:
       timeout: 3s
       retries: 20
     ports:
-      - "${POSTGRES_HOST_PORT:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
     networks: [runner-data]
     volumes:
       - postgres-data:/var/lib/postgresql
@@ -30,9 +30,9 @@ services:
       timeout: 3s
       retries: 30
     ports:
-      - "${LORE_P2P_HOST_PORT:-41337}:41337/tcp"
-      - "${LORE_P2P_HOST_PORT:-41337}:41337/udp"
-      - "${LORE_HTTP_HOST_PORT:-41339}:41339"
+      - "127.0.0.1:${LORE_P2P_HOST_PORT:-41337}:41337/tcp"
+      - "127.0.0.1:${LORE_P2P_HOST_PORT:-41337}:41337/udp"
+      - "127.0.0.1:${LORE_HTTP_HOST_PORT:-41339}:41339"
     networks: [runner-data]
     volumes:
       - lore-data:/data
@@ -178,7 +178,7 @@ services:
       retries: 30
     networks: [runner-control, runner-egress]
     volumes:
-      - runner-engine-data:/home/rootless/.local/share/docker
+      - runner-engine-data:/var/lib/docker
       - runner-engine-certs:/certs
 
   runner-cert-init:
