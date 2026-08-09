@@ -93,8 +93,30 @@ export LORE_LIB_PATH=/absolute/path/to/liblore.dylib
 go run ./services/api/cmd/lorehub serve
 ```
 
-OIDCを有効にする場合は`LOREHUB_OIDC_ISSUER`と`LOREHUB_OIDC_AUDIENCE`を設定します。本番環境では両方が
-必須です。Lore側の読み取りidentityは`LOREHUB_LORE_IDENTITY`で指定します。
+認証を使わない開発環境では、`LOREHUB_AUTH_MODE=disabled`（既定値）のまま起動できます。既存のAPIクライアント向け
+Bearer認証だけを使う場合は、`LOREHUB_AUTH_MODE=bearer`、`LOREHUB_OIDC_ISSUER`、`LOREHUB_OIDC_AUDIENCE`を
+設定します。
+
+ブラウザログインを有効にする場合は、KeycloakをOIDC providerとして`LOREHUB_AUTH_MODE=interactive`を設定し、
+`LOREHUB_OIDC_ISSUER`、`LOREHUB_OIDC_AUDIENCE`、`LOREHUB_OIDC_CLIENT_ID`、`LOREHUB_OIDC_CLIENT_SECRET`、
+`LOREHUB_OIDC_REDIRECT_URL`、`LOREHUB_PUBLIC_ORIGIN`、32文字以上の`LOREHUB_AUTH_SECRET`を設定します。
+`LOREHUB_OIDC_CLIENT_ID`はID tokenの対象（例:`lorehub-web`）、`LOREHUB_OIDC_AUDIENCE`はAPI access tokenの対象
+（例:`lorehub-api`）です。両方を同じ値にせず、Keycloakの各tokenに設定したaudienceと一致させます。
+Google、GitHub、Facebook、XなどのログインはKeycloak側のbroker設定で追加します。ログイン状態はLoreHubの
+サーバー側セッションで管理し、ブラウザCookieへOIDC tokenは保存しません。ログイン開始時は`/auth`専用の短命な
+HttpOnly、SameSite=Laxのbinding cookieで開始ブラウザを記録し、callbackでstateと照合します。CookieのSecure属性は
+本番で既定有効です。
+セッション期限、Cookie名、Path、Domain、Secure属性は`LOREHUB_SESSION_TTL`、
+`LOREHUB_SESSION_COOKIE_NAME`、`LOREHUB_SESSION_COOKIE_PATH`、`LOREHUB_SESSION_COOKIE_DOMAIN`、
+`LOREHUB_SESSION_COOKIE_SECURE`で変更できます。binding cookie名は`LOREHUB_LOGIN_BINDING_COOKIE_NAME`で変更でき、
+ログイン transactionとbinding cookieの期限は`LOREHUB_LOGIN_TRANSACTION_TTL`で変更できます（セッションは最大30日、
+transactionは最大15分）。
+
+通常のログインは`GET /auth/login`、Keycloakの登録画面を開始する場合は
+`GET /auth/login?prompt=create`を使います。互換性のため`kc_action=register`も受け付けますが、値は厳密に検証し、
+認証プロバイダーへは`prompt=create`だけを渡します。その他の`prompt`や`kc_action`は400を返します。
+
+Lore側の読み取りidentityは`LOREHUB_LORE_IDENTITY`で指定します。
 
 ## APIの主な入口
 
@@ -102,6 +124,10 @@ OIDCを有効にする場合は`LOREHUB_OIDC_ISSUER`と`LOREHUB_OIDC_AUDIENCE`�
 | ------ | ---------------------------------------------- | ---- | -------------------- |
 | `GET`  | `/health/live`                                 | 不要 | プロセスの確認       |
 | `GET`  | `/health/ready`                                | 不要 | PostgreSQL接続の確認 |
+| `GET`  | `/auth/login`                                  | 不要 | OIDCログイン／登録開始 |
+| `GET`  | `/auth/callback`                               | 不要 | OIDCログイン完了     |
+| `POST` | `/auth/logout`                                 | CSRF | セッション終了       |
+| `GET`  | `/api/v1/auth/session`                         | 不要 | ログイン状態の確認   |
 | `GET`  | `/api/v1/explore/repositories`                 | 不要 | 公開リポジトリ一覧   |
 | `POST` | `/api/v1/organizations`                        | OIDC | 組織作成             |
 | `POST` | `/api/v1/organizations/{org}/repositories`     | OIDC | Loreリポジトリ登録   |
@@ -109,8 +135,9 @@ OIDCを有効にする場合は`LOREHUB_OIDC_ISSUER`と`LOREHUB_OIDC_AUDIENCE`�
 | `GET`  | `/api/v1/repositories/{owner}/{repo}/issues`   | 不要 | 公開Issue一覧        |
 | `POST` | `/api/v1/repositories/{owner}/{repo}/issues`   | OIDC | Issue作成            |
 
-更新APIは`Authorization: Bearer <token>`を要求します。APIはOIDCのissuer、audience、署名、有効期限を検証し、
-初回アクセス時にidentityと利用者を関連付けます。
+更新APIは、既存クライアントからは`Authorization: Bearer <token>`で利用できます。ブラウザセッションで利用する場合は、
+`GET /api/v1/auth/session`が返すCSRF tokenを`X-CSRF-Token`ヘッダーに付けます。APIはOIDCのissuer、audience、署名、
+有効期限、nonceを検証し、初回ログイン時に外部identityとローカル利用者を関連付けます。
 
 ## GitHub Actions互換範囲
 

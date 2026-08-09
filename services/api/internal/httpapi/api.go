@@ -69,12 +69,21 @@ type HealthChecker interface {
 }
 
 type API struct {
-	store         Store
-	lore          loreclient.Client
-	authenticator auth.Authenticator
-	health        HealthChecker
-	loreIdentity  string
-	logger        *slog.Logger
+	store          Store
+	lore           loreclient.Client
+	authenticator  auth.Authenticator
+	health         HealthChecker
+	loreIdentity   string
+	logger         *slog.Logger
+	loginProvider  auth.LoginProvider
+	loginStore     auth.LoginTransactionStore
+	sessionStore   auth.SessionStore
+	cleanupStore   auth.CleanupStore
+	secrets        *auth.SecretCodec
+	publicOrigin   string
+	cookie         sessionCookieConfig
+	sessionTTL     time.Duration
+	transactionTTL time.Duration
 }
 
 func New(
@@ -84,6 +93,7 @@ func New(
 	health HealthChecker,
 	loreIdentity string,
 	logger *slog.Logger,
+	options ...Option,
 ) http.Handler {
 	api := &API{
 		store:         store,
@@ -93,9 +103,16 @@ func New(
 		loreIdentity:  loreIdentity,
 		logger:        logger,
 	}
+	for _, option := range options {
+		option(api)
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health/live", api.live)
 	mux.HandleFunc("GET /health/ready", api.ready)
+	mux.HandleFunc("GET /auth/login", api.login)
+	mux.HandleFunc("GET /auth/callback", api.callback)
+	mux.HandleFunc("POST /auth/logout", api.logout)
+	mux.HandleFunc("GET /api/v1/auth/session", api.session)
 	mux.HandleFunc("GET /api/v1/explore/repositories", api.exploreRepositories)
 	mux.HandleFunc("POST /api/v1/organizations", api.createOrganization)
 	mux.HandleFunc("POST /api/v1/organizations/{organization}/repositories", api.registerRepository)
@@ -400,7 +417,20 @@ func latestRevision(branches []loreclient.Branch, name string) (string, bool) {
 }
 
 func (api *API) actor(writer http.ResponseWriter, request *http.Request) (platform.User, bool) {
-	principal, err := api.authenticator.Authenticate(request.Context(), request.Header.Get("Authorization"))
+	authorization := strings.TrimSpace(request.Header.Get("Authorization"))
+	if authorization == "" {
+		if session, _, found, err := api.lookupSession(request); err != nil {
+			api.internalError(writer, request, "look up authentication session", err)
+			return platform.User{}, false
+		} else if found {
+			if stateChangingMethod(request.Method) && !api.validCSRF(request, session.CSRFDigest) {
+				writeProblem(writer, http.StatusForbidden, "csrf_failed", "A valid CSRF token is required")
+				return platform.User{}, false
+			}
+			return userFromSession(session), true
+		}
+	}
+	principal, err := api.authenticator.Authenticate(request.Context(), authorization)
 	if err != nil {
 		if errors.Is(err, auth.ErrNotConfigured) {
 			writeProblem(writer, http.StatusServiceUnavailable, "authentication_unavailable", err.Error())
