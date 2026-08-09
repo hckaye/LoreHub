@@ -70,9 +70,7 @@ func TestLoadInteractiveAuthenticationUsesSecureProductionCookie(t *testing.T) {
 	t.Setenv("LOREHUB_AUTH_SECRET", strings.Repeat("a", 32))
 	t.Setenv("LOREHUB_SESSION_TTL", "24h")
 	t.Setenv("LOREHUB_LOGIN_TRANSACTION_TTL", "10m")
-	t.Setenv("LOREHUB_LORE_CREDENTIALS",
-		`{"lore-partition":{"identity":"service-identity","token":"short-lived-token",`+
-			`"authUrl":"https://auth.example/login"}}`)
+	t.Setenv("LOREHUB_LORE_AUTHORITY", "auth.example.com")
 
 	settings, err := Load()
 	if err != nil {
@@ -80,8 +78,20 @@ func TestLoadInteractiveAuthenticationUsesSecureProductionCookie(t *testing.T) {
 	}
 	if settings.AuthMode != AuthModeInteractive || !settings.SessionCookieSecure ||
 		settings.OIDCClientID != "lorehub-web" || settings.OIDCAudience != "lorehub-api" ||
-		settings.LoginBindingCookieName != "lorehub_login_binding" {
+		settings.LoginBindingCookieName != "lorehub_login_binding" ||
+		settings.LoreAuthAuthority != "auth.example.com" {
 		t.Fatalf("unexpected interactive production settings: %#v", settings)
+	}
+}
+
+func TestLoadRejectsProductionStaticLoreCredentials(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("LOREHUB_ENV", "production")
+	t.Setenv("LOREHUB_LORE_CREDENTIALS", `{"partition":{"identity":"shared","token":"token",`+
+		`"authUrl":"ucs-auth://auth.example.com"}}`)
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "only allowed in development or test") {
+		t.Fatalf("expected static production credential rejection, got %v", err)
 	}
 }
 
@@ -123,6 +133,7 @@ func setRequiredEnvironment(t *testing.T) {
 	t.Setenv("LOREHUB_LOGIN_TRANSACTION_TTL", "")
 	t.Setenv("LOREHUB_LORE_IDENTITY", "")
 	t.Setenv("LOREHUB_LORE_CREDENTIALS", "")
+	t.Setenv("LOREHUB_LORE_AUTHORITY", "")
 	t.Setenv("LOREHUB_SESSION_COOKIE_SECURE", "")
 	t.Setenv("LOREHUB_SESSION_COOKIE_NAME", "")
 	t.Setenv("LOREHUB_LOGIN_BINDING_COOKIE_NAME", "")

@@ -443,9 +443,11 @@ func (api *API) credential(
 	if actor != nil {
 		principal = loreclient.UserPrincipal(actor.ID)
 	}
+	ref := api.repositoryRef(repository)
 	return api.credentials.ForRepository(request.Context(), loreclient.CredentialRequest{
 		Principal:  principal,
-		Repository: api.repositoryRef(repository),
+		Repository: ref,
+		Partition:  ref.CanonicalPartition(),
 		Scope:      scope,
 	})
 }

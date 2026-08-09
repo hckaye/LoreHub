@@ -140,30 +140,21 @@ transactionは最大15分）。
 認証プロバイダーへは`prompt=create`だけを渡します。その他の`prompt`や`kc_action`は400を返します。
 
 LoreHubのコード閲覧とマージ操作は、ブラウザ利用者のLore tokenをLoreへ転送しません。
-各Lore repository partitionの短命なread/write credentialを`LOREHUB_LORE_CREDENTIALS`へ設定し、
-APIが利用者または明示的なサービス用途と必要なscopeを結び付けます。
-本番の各credentialには`identity`、短命な`token`、正確な`authUrl`が必要です。
+本番では注入されたcredential issuerを毎回呼び、利用者または明示的なサービス用途、Lore partition、
+必要なscopeに結び付いた短命credentialを取得します。`identity`、`token`、`authUrl`、有効期限は
+要求と一致しなければ使用せず、AuthURLは設定した`ucs-auth://` authorityと完全一致する必要があります。
 利用者のwrite/admin権限、branch rule、レビュー、CI、CSRFはLoreHub APIが先に確認します。
 監査記録には実際の利用者を保存します。
-`LOREHUB_LORE_CREDENTIALS`は次のようなJSON object（partitionをキー）としてsecret managerから実行時に注入します。
-
-```json
-{
-  "lore-partition": {
-    "identity": "service-identity",
-    "token": "short-lived-token",
-    "authUrl": "https://auth.example/login"
-  }
-}
-```
-
+本番のcredential issuerが未接続の場合、APIは起動時にfail closedします。
+`LOREHUB_LORE_AUTHORITY`にはissuerが返す`ucs-auth://` authorityを設定します。
 secret、token、identity設定値をリポジトリへコミットしないでください。
-本番でpartitionに対応するcredentialが無い、または3つの認証値が揃わない場合はfail closedになります。
+本番でpartitionに対応するcredentialが無い、要求と一致しない、または期限が不正な場合もfail closedになります。
 `AuthURL`とtokenはログ、エラー、URLへ出力しません。サービスidentityとsecretは最小権限で管理し、
-secret managerから起動時に注入して定期的に短命credentialを更新してください。
+issuerとsecret managerは運用環境の信頼境界で管理し、短命credentialを毎回発行してください。
 
 ローカル開発とtestだけは、`LOREHUB_LORE_ALLOW_DEVELOPMENT_FALLBACK=true`と
-`LOREHUB_LORE_IDENTITY`を明示した場合に限り、認証情報のない開発用credentialを使えます。
+`LOREHUB_LORE_IDENTITY`または開発用`LOREHUB_LORE_CREDENTIALS`を明示した場合に限り、
+認証情報のない開発用credentialを使えます。
 このcredentialは`InsecureDevelopment`として扱われ、本番用SDKでは拒否されます。
 このfallbackはdevelopment環境以外では起動時に拒否されます。
 Actions runnerのcredentialもpartitionとread scopeを指定して解決し、ブラウザのコード閲覧・マージ権限とは分離します。

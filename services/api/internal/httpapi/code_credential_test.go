@@ -172,8 +172,9 @@ func TestCodeAPIUsesAuthenticatedUserPrincipal(t *testing.T) {
 	requestValue := provider.lastRequest()
 	if requestValue.Principal != (loreclient.Principal{UserID: "user-1"}) ||
 		requestValue.Repository.LoreRepositoryID != "0123456789abcdef0123456789abcdef" ||
+		requestValue.Partition != "0123456789abcdef0123456789abcdef" ||
 		requestValue.Scope != loreclient.ScopeRead {
-		t.Fatal("code read did not use the authenticated user principal and repository partition")
+		t.Fatal("code read did not use the authenticated user principal and canonical partition")
 	}
 }
 
@@ -188,7 +189,8 @@ func TestCodeAPIPublicAnonymousReadUsesPublicReaderPurpose(t *testing.T) {
 		t.Fatalf("anonymous public code read status=%d body=%s", response.Code, response.Body.String())
 	}
 	requestValue := provider.lastRequest()
-	if requestValue.Principal != (loreclient.Principal{ServicePurpose: loreclient.ServicePurposePublicReader}) {
-		t.Fatal("anonymous public code read did not use the public-reader service purpose")
+	if requestValue.Principal != (loreclient.Principal{ServicePurpose: loreclient.ServicePurposePublicReader}) ||
+		requestValue.Partition != "0123456789abcdef0123456789abcdef" {
+		t.Fatal("anonymous public code read did not use the public-reader purpose and canonical partition")
 	}
 }

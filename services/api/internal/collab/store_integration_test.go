@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -69,14 +70,14 @@ func setupFixture(t *testing.T, pool *pgxpool.Pool, visibility string, repoRole 
 	`, orgID, ownerSlug, alice.ID)
 	mustExec(t, ctx, pool, `
 		INSERT INTO organization_memberships (organization_id, user_id, role) VALUES
-		($1,$2,'owner'),($1,$3,'member')
-	`, orgID, alice.ID, carol.ID)
+		($1,$2,'owner'),($1,$3,'member'),($1,$4,'member')
+	`, orgID, alice.ID, bob.ID, carol.ID)
 	mustExec(t, ctx, pool, `
 		INSERT INTO repositories (
 			id, organization_id, slug, display_name, description, visibility,
 			lore_repository_id, lore_url, default_branch, created_by
 		) VALUES ($1,$2,$3,'Repo','', $4, $5, $6, 'main', $7)
-	`, repoID, orgID, repoSlug, visibility, "lore-"+orgID[:8], "http://lore.test/"+orgID, alice.ID)
+	`, repoID, orgID, repoSlug, visibility, loreFixtureID(orgID), "http://lore.test/"+orgID, alice.ID)
 	mustExec(t, ctx, pool, `INSERT INTO repository_counters (repository_id) VALUES ($1)`, repoID)
 	if repoRole != "" {
 		mustExec(t, ctx, pool, `
@@ -97,6 +98,10 @@ func setupFixture(t *testing.T, pool *pgxpool.Pool, visibility string, repoRole 
 
 func uuidNew() string {
 	return uuidArg()
+}
+
+func loreFixtureID(value string) string {
+	return strings.ReplaceAll(value, "-", "")
 }
 
 func mustExec(t *testing.T, ctx context.Context, pool *pgxpool.Pool, sql string, args ...any) {

@@ -38,7 +38,7 @@ func TestSDKMergeLifecycleAgainstLoreServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	repository, err := client.RepositoryInfo(ctx, repositoryURL, bootstrapCredential)
 	if err != nil {

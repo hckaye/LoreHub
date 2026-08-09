@@ -46,6 +46,7 @@ type Config struct {
 	LoreCacheDir                 string
 	LoreIdentity                 string
 	LoreCredentials              map[string]loreclient.CredentialMaterial
+	LoreAuthAuthority            string
 	LoreAllowDevelopmentFallback bool
 	LoreBinary                   string
 	ActBinary                    string
@@ -114,6 +115,7 @@ func Load() (Config, error) {
 		LoreCacheDir:                 envOrDefault("LOREHUB_LORE_CACHE_DIR", ".cache/lorehub/repositories"),
 		LoreIdentity:                 os.Getenv("LOREHUB_LORE_IDENTITY"),
 		LoreCredentials:              credentials,
+		LoreAuthAuthority:            strings.TrimSpace(os.Getenv("LOREHUB_LORE_AUTHORITY")),
 		LoreAllowDevelopmentFallback: allowDevelopmentFallback,
 		LoreBinary:                   envOrDefault("LOREHUB_LORE_BINARY", "lore"),
 		ActBinary:                    envOrDefault("LOREHUB_ACT_BINARY", "act"),
@@ -195,9 +197,6 @@ func validate(config Config) error {
 			return err
 		}
 	}
-	if config.Environment != "development" && config.Environment != "test" && len(config.LoreCredentials) == 0 {
-		return errors.New("LOREHUB_LORE_CREDENTIALS is required outside development")
-	}
 	if config.Environment != "development" && config.Environment != "test" && config.LoreAllowDevelopmentFallback {
 		return errors.New("LOREHUB_LORE_ALLOW_DEVELOPMENT_FALLBACK is only allowed in development or test")
 	}
@@ -206,10 +205,12 @@ func validate(config Config) error {
 		return errors.New("LOREHUB_LORE_IDENTITY is only allowed in development or test")
 	}
 	if config.Environment != "development" && config.Environment != "test" {
-		for partition, material := range config.LoreCredentials {
-			if _, err := loreclient.NewCredentialProvider(config.Environment,
-				map[string]loreclient.CredentialMaterial{partition: material}, "", false); err != nil {
-				return fmt.Errorf("invalid Lore credential configuration: %w", err)
+		if len(config.LoreCredentials) != 0 {
+			return errors.New("LOREHUB_LORE_CREDENTIALS is only allowed in development or test")
+		}
+		if config.LoreAuthAuthority != "" {
+			if err := loreclient.ValidateAuthAuthority(config.LoreAuthAuthority); err != nil {
+				return fmt.Errorf("invalid Lore auth authority: %w", err)
 			}
 		}
 	}

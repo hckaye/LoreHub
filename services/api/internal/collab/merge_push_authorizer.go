@@ -11,8 +11,9 @@ import (
 )
 
 // AuthorizeLoreMergePush is the control-plane boundary immediately before a
-// Lore BranchPush. The row lock makes the authorization marker an atomic,
-// idempotent consume point for workers and HTTP requests alike.
+// Lore BranchPush. The row lock makes the exact tuple an atomic, idempotent
+// consume point for workers and HTTP requests alike. This record is not a
+// substitute for a Lore hook that rejects unapproved direct pushes.
 func (s *store) AuthorizeLoreMergePush(
 	ctx context.Context,
 	input loreclient.PushAuthorization,
@@ -142,13 +143,15 @@ func validatePushAuthorization(input loreclient.PushAuthorization) error {
 
 func validateObservedBranch(ctx context.Context, tx pgx.Tx, input loreclient.PushAuthorization) error {
 	var branchID string
+	var observedAt time.Time
 	err := tx.QueryRow(ctx, `
-		SELECT branch_id
+		SELECT branch_id, observed_at
 		FROM repository_branch_states
 		WHERE repository_id = $1 AND branch_name = $2 AND latest_revision = $3
+		  AND observed_at >= now() - interval '2 minutes'
 		ORDER BY observed_at DESC
 		LIMIT 1
-	`, input.RepositoryID, input.TargetBranchName, input.ExpectedTargetRevision).Scan(&branchID)
+	`, input.RepositoryID, input.TargetBranchName, input.ExpectedTargetRevision).Scan(&branchID, &observedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return loreclient.ErrPushAuthorizationDenied
 	}
@@ -158,7 +161,16 @@ func validateObservedBranch(ctx context.Context, tx pgx.Tx, input loreclient.Pus
 	if branchID != input.TargetBranchID {
 		return loreclient.ErrPushAuthorizationDenied
 	}
+	if !observedBranchFresh(observedAt, nowUTC()) {
+		return loreclient.ErrPushAuthorizationDenied
+	}
 	return nil
+}
+
+const observedBranchMaxAge = 2 * time.Minute
+
+func observedBranchFresh(observedAt time.Time, now time.Time) bool {
+	return !observedAt.IsZero() && !observedAt.After(now) && now.Sub(observedAt) <= observedBranchMaxAge
 }
 
 func validatePushPermission(ctx context.Context, tx pgx.Tx, input loreclient.PushAuthorization) error {
@@ -166,13 +178,30 @@ func validatePushPermission(ctx context.Context, tx pgx.Tx, input loreclient.Pus
 	err := tx.QueryRow(ctx, `
 		SELECT EXISTS (
 			SELECT 1
-			FROM repositories r
-			JOIN organizations o ON o.id = r.organization_id
-			LEFT JOIN repository_memberships rm
-				ON rm.repository_id = r.id AND rm.user_id = $2
-			LEFT JOIN organization_memberships om
-				ON om.organization_id = o.id AND om.user_id = $2
-			WHERE r.id = $1 AND (rm.role IN ('write', 'admin') OR om.role IN ('maintainer', 'owner'))
+			FROM users u
+			JOIN repositories r ON r.id = $1 AND r.archived_at IS NULL AND r.lifecycle_state = 'active'
+			JOIN organizations o ON o.id = r.organization_id AND o.active
+			JOIN organization_memberships om
+				ON om.organization_id = o.id AND om.user_id = u.id AND om.active
+			WHERE u.id = $2 AND u.status = 'active'
+			  AND (
+				om.role = 'owner'
+				OR EXISTS (
+					SELECT 1
+					FROM repository_memberships rm
+					WHERE rm.repository_id = r.id AND rm.user_id = u.id AND rm.active
+					  AND rm.role IN ('write', 'maintain', 'admin')
+				)
+				OR EXISTS (
+					SELECT 1
+					FROM team_repository_roles tr
+					JOIN teams t ON t.id = tr.team_id AND t.organization_id = o.id AND t.active
+					JOIN team_memberships tm
+					  ON tm.team_id = t.id AND tm.user_id = u.id AND tm.active
+					WHERE tr.repository_id = r.id AND tr.active
+					  AND tr.role IN ('write', 'maintain', 'admin')
+				)
+			  )
 		)
 	`, input.RepositoryID, input.ActorUserID).Scan(&allowed)
 	if err != nil {

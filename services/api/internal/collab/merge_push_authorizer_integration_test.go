@@ -8,6 +8,7 @@ import (
 	"time"
 
 	loreclient "github.com/lorehub/lorehub/services/api/internal/lore"
+	"github.com/lorehub/lorehub/services/api/internal/platform"
 )
 
 func TestIntegrationLorePushAuthorizationIsAtomicAndIdempotent(t *testing.T) {
@@ -48,7 +49,7 @@ func TestIntegrationLorePushAuthorizationIsAtomicAndIdempotent(t *testing.T) {
 	authorization := loreclient.PushAuthorization{
 		ActorUserID:            fixture.alice.ID,
 		RepositoryID:           fixture.repoID,
-		RepositoryPartition:    "lore-" + fixture.orgID[:8],
+		RepositoryPartition:    loreFixtureID(fixture.orgID),
 		OperationID:            operation.ID,
 		TargetBranchID:         "branch-main",
 		TargetBranchName:       "main",
@@ -147,7 +148,7 @@ func TestIntegrationLorePushAuthorizationSerializesConcurrentConsumers(t *testin
 	authorization := loreclient.PushAuthorization{
 		ActorUserID:            fixture.alice.ID,
 		RepositoryID:           fixture.repoID,
-		RepositoryPartition:    "lore-" + fixture.orgID[:8],
+		RepositoryPartition:    loreFixtureID(fixture.orgID),
 		OperationID:            operation.ID,
 		TargetBranchID:         "branch-concurrent",
 		TargetBranchName:       "main",
@@ -175,6 +176,108 @@ func TestIntegrationLorePushAuthorizationSerializesConcurrentConsumers(t *testin
 	}
 	if got := countAuditAction(t, ctx, pool, "merge_operation.push_authorized"); got != auditBefore+1 {
 		t.Fatalf("concurrent push authorization audit count = %d, want %d", got, auditBefore+1)
+	}
+}
+
+func TestIntegrationLorePushPermissionRequiresActiveRepositoryGrant(t *testing.T) {
+	pool, store := integrationEnv(t)
+	ctx := context.Background()
+	fixture := setupFixture(t, pool, "private", "")
+	teamID := uuidNew()
+	mustExec(t, ctx, pool, `
+		INSERT INTO teams (id, organization_id, slug, display_name, created_by, active)
+		VALUES ($1, $2, 'merge-team', 'Merge Team', $3, true)
+	`, teamID, fixture.orgID, fixture.alice.ID)
+	mustExec(t, ctx, pool, `
+		INSERT INTO team_memberships (team_id, user_id, active) VALUES ($1, $2, true)
+	`, teamID, fixture.bob.ID)
+	mustExec(t, ctx, pool, `
+		INSERT INTO team_repository_roles (team_id, repository_id, role, created_by, active)
+		VALUES ($1, $2, 'maintain', $3, true)
+	`, teamID, fixture.repoID, fixture.alice.ID)
+
+	newAuthorization := func(actor platform.User, revision string) loreclient.PushAuthorization {
+		number := seedMergeRequest(t, ctx, pool, fixture, actor.ID, revision)
+		operation, err := store.AcquireMergeOperation(ctx, actor.ID, fixture.repoID, number,
+			revision, "main-rev", "permission-owner-"+revision, time.Minute)
+		if err != nil {
+			t.Fatalf("acquire permission operation: %v", err)
+		}
+		operation.State = "pushing"
+		operation.StagedRevision = "merged-" + revision
+		operation.ParentRevisions = []string{revision, "main-rev"}
+		if _, err := store.UpdateMergeOperation(ctx, operation); err != nil {
+			t.Fatalf("mark permission operation pushing: %v", err)
+		}
+		branchID := "branch-" + revision
+		mustExec(t, ctx, pool, `
+			INSERT INTO repository_branch_states (repository_id, branch_id, branch_name, latest_revision)
+			VALUES ($1, $2, 'main', 'main-rev')
+		`, fixture.repoID, branchID)
+		return loreclient.PushAuthorization{
+			ActorUserID:            actor.ID,
+			RepositoryID:           fixture.repoID,
+			RepositoryPartition:    loreFixtureID(fixture.orgID),
+			OperationID:            operation.ID,
+			TargetBranchID:         branchID,
+			TargetBranchName:       "main",
+			ExpectedTargetRevision: "main-rev",
+			ProposedRevision:       "merged-" + revision,
+			SourceRevision:         revision,
+			ParentRevisions:        []string{revision, "main-rev"},
+		}
+	}
+
+	teamAuthorization := newAuthorization(fixture.bob, "team-maintain")
+	if err := store.AuthorizeLoreMergePush(ctx, teamAuthorization); err != nil {
+		t.Fatalf("active team maintain grant was denied: %v", err)
+	}
+	staleAuthorization := newAuthorization(fixture.bob, "stale-observation")
+	mustExec(t, ctx, pool, `
+		UPDATE repository_branch_states SET observed_at = now() - interval '2 minutes 1 second'
+		WHERE repository_id = $1 AND branch_id = $2
+	`, fixture.repoID, staleAuthorization.TargetBranchID)
+	if err := store.AuthorizeLoreMergePush(ctx, staleAuthorization); !errors.Is(
+		err, loreclient.ErrPushAuthorizationDenied) {
+		t.Fatalf("stale branch observation error = %v, want denial", err)
+	}
+	mustExec(t, ctx, pool, `
+		UPDATE organization_memberships SET active = false
+		WHERE organization_id = $1 AND user_id = $2
+	`, fixture.orgID, fixture.bob.ID)
+	inactiveAuthorization := newAuthorization(fixture.bob, "inactive-membership")
+	if err := store.AuthorizeLoreMergePush(ctx, inactiveAuthorization); !errors.Is(
+		err, loreclient.ErrPushAuthorizationDenied) {
+		t.Fatalf("inactive organization membership error = %v, want denial", err)
+	}
+	mustExec(t, ctx, pool, `
+		UPDATE organization_memberships SET active = true
+		WHERE organization_id = $1 AND user_id = $2
+	`, fixture.orgID, fixture.bob.ID)
+	mustExec(t, ctx, pool, `
+		INSERT INTO repository_memberships (repository_id, user_id, role, active)
+		VALUES ($1, $2, 'maintain', true)
+	`, fixture.repoID, fixture.carol.ID)
+	directAuthorization := newAuthorization(fixture.carol, "direct-maintain")
+	if err := store.AuthorizeLoreMergePush(ctx, directAuthorization); err != nil {
+		t.Fatalf("active direct maintain grant was denied: %v", err)
+	}
+	mustExec(t, ctx, pool, `
+		UPDATE organization_memberships SET role = 'maintainer' WHERE organization_id = $1 AND user_id = $2
+	`, fixture.orgID, fixture.carol.ID)
+	mustExec(t, ctx, pool, `
+		UPDATE repository_memberships SET active = false WHERE repository_id = $1 AND user_id = $2
+	`, fixture.repoID, fixture.carol.ID)
+	maintainerAuthorization := newAuthorization(fixture.carol, "org-maintainer-only")
+	if err := store.AuthorizeLoreMergePush(ctx, maintainerAuthorization); !errors.Is(
+		err, loreclient.ErrPushAuthorizationDenied) {
+		t.Fatalf("organization maintainer-only grant error = %v, want denial", err)
+	}
+	mustExec(t, ctx, pool, `UPDATE users SET status = 'suspended' WHERE id = $1`, fixture.bob.ID)
+	suspendedAuthorization := newAuthorization(fixture.bob, "suspended-team")
+	if err := store.AuthorizeLoreMergePush(ctx, suspendedAuthorization); !errors.Is(
+		err, loreclient.ErrPushAuthorizationDenied) {
+		t.Fatalf("suspended team member error = %v, want denial", err)
 	}
 }
 
@@ -206,7 +309,7 @@ func TestIntegrationLorePushAuthorizationReconcilesResolutionReplay(t *testing.T
 	authorization := loreclient.PushAuthorization{
 		ActorUserID:            fixture.alice.ID,
 		RepositoryID:           fixture.repoID,
-		RepositoryPartition:    "lore-" + fixture.orgID[:8],
+		RepositoryPartition:    loreFixtureID(fixture.orgID),
 		OperationID:            operation.ID,
 		TargetBranchID:         "branch-replay",
 		TargetBranchName:       "main",

@@ -62,16 +62,23 @@ func run(logger *slog.Logger) error {
 		return nil
 	}
 	var lore *loreclient.SDKClient
-	if settings.Environment == "development" && settings.LoreAllowDevelopmentFallback {
-		lore, err = loreclient.NewDevelopmentSDKClient(settings.LoreCacheDir)
+	var loreCredentials loreclient.CredentialProvider
+	if settings.Environment == "development" || settings.Environment == "test" {
+		loreCredentials, err = loreclient.NewCredentialProvider(settings.Environment, settings.LoreCredentials,
+			settings.LoreIdentity, settings.LoreAllowDevelopmentFallback)
 	} else {
-		lore, err = loreclient.NewSDKClient(settings.LoreCacheDir)
+		// The control-plane issuer is intentionally injected by the production
+		// deployment boundary; no static or shared-identity fallback is wired here.
+		loreCredentials, err = loreclient.NewProductionCredentialProvider(nil, settings.LoreAuthAuthority)
 	}
 	if err != nil {
 		return err
 	}
-	loreCredentials, err := loreclient.NewCredentialProvider(settings.Environment, settings.LoreCredentials,
-		settings.LoreIdentity, settings.LoreAllowDevelopmentFallback)
+	if settings.Environment == "development" || settings.Environment == "test" {
+		lore, err = loreclient.NewDevelopmentSDKClient(settings.LoreCacheDir)
+	} else {
+		lore, err = loreclient.NewSDKClientWithAuthAuthority(settings.LoreCacheDir, settings.LoreAuthAuthority)
+	}
 	if err != nil {
 		return err
 	}
@@ -228,6 +235,7 @@ func (adapter runnerLoreClient) Branches(
 	credential, err := adapter.credentials.ForRepository(ctx, loreclient.CredentialRequest{
 		Principal:  loreclient.ServicePrincipal(loreclient.ServicePurposeActionsRunner),
 		Repository: repository,
+		Partition:  repository.CanonicalPartition(),
 		Scope:      loreclient.ScopeRead,
 	})
 	if err != nil {

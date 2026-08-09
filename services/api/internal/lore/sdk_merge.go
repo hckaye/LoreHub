@@ -159,9 +159,7 @@ func (client *SDKClient) StartMerge(
 		return err
 	})
 	if err != nil {
-		if errors.Is(err, ErrMergeParentCheck) {
-			_ = client.CleanupMergeWorkspace(context.WithoutCancel(ctx), repository, operationID)
-		}
+		_ = client.CleanupMergeWorkspace(context.WithoutCancel(ctx), repository, operationID)
 		return MergeStartResult{}, err
 	}
 	return result, nil
@@ -696,6 +694,9 @@ func (client *SDKClient) PushMerge(
 		}
 		if branchID != result.TargetBranchID || branchName != workspace.TargetBranch || branchRevision != localRevision {
 			return fmt.Errorf("%w: local branch does not match target", ErrMergeParentCheck)
+		}
+		if err := client.checkRemoteMergeRevisions(ctx, repository, workspace, "", readCredential, &result); err != nil {
+			return err
 		}
 		if authorizer == nil {
 			return ErrPushAuthorizationRequired

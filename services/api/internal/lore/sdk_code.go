@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"net/url"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -454,7 +453,7 @@ func (client *SDKClient) openTree(
 	if err != nil {
 		return nil, err
 	}
-	remoteURL, err := storageRemoteURL(repository.URL)
+	remoteURL, err := client.storageRemoteURL(repository.URL)
 	if err != nil {
 		return nil, err
 	}
@@ -677,12 +676,12 @@ func (client *SDKClient) openStorage(
 	return types.LoreStore{}, errors.New("Lore storage response contained no handle")
 }
 
-func storageRemoteURL(repositoryURL string) (string, error) {
-	parsed, err := url.Parse(repositoryURL)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil {
-		return "", errors.New("Lore repository URL must contain a scheme and host without credentials")
+func (client *SDKClient) storageRemoteURL(repositoryURL string) (string, error) {
+	parsed, err := client.validateRepositoryURL(repositoryURL)
+	if err != nil {
+		return "", err
 	}
-	return parsed.Scheme + "://" + parsed.Host, nil
+	return parsed.Scheme + "://" + parsed.Authority, nil
 }
 
 func (client *SDKClient) closeStorage(

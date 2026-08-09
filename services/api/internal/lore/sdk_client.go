@@ -18,19 +18,27 @@ import (
 type SDKClient struct {
 	cacheDirectory           string
 	allowInsecureDevelopment bool
+	expectedAuthHost         string
 	authLock                 sync.Mutex
 	locks                    sync.Map
 }
 
 func NewSDKClient(cacheDirectory string) (*SDKClient, error) {
-	return newSDKClient(cacheDirectory, false)
+	return newSDKClient(cacheDirectory, false, "")
+}
+
+func NewSDKClientWithAuthAuthority(cacheDirectory string, authority string) (*SDKClient, error) {
+	if err := validateAuthAuthority(authority); err != nil {
+		return nil, err
+	}
+	return newSDKClient(cacheDirectory, false, authority)
 }
 
 func NewDevelopmentSDKClient(cacheDirectory string) (*SDKClient, error) {
-	return newSDKClient(cacheDirectory, true)
+	return newSDKClient(cacheDirectory, true, "")
 }
 
-func newSDKClient(cacheDirectory string, allowInsecureDevelopment bool) (*SDKClient, error) {
+func newSDKClient(cacheDirectory string, allowInsecureDevelopment bool, expectedAuthHost string) (*SDKClient, error) {
 	if cacheDirectory == "" {
 		return nil, errors.New("Lore cache directory is required")
 	}
@@ -40,6 +48,7 @@ func newSDKClient(cacheDirectory string, allowInsecureDevelopment bool) (*SDKCli
 	return &SDKClient{
 		cacheDirectory:           cacheDirectory,
 		allowInsecureDevelopment: allowInsecureDevelopment,
+		expectedAuthHost:         expectedAuthHost,
 	}, nil
 }
 
@@ -51,8 +60,8 @@ func (client *SDKClient) RepositoryInfo(
 	if err := ctx.Err(); err != nil {
 		return Repository{}, err
 	}
-	if !strings.HasPrefix(repositoryURL, "lore://") {
-		return Repository{}, errors.New("repository URL must use the lore scheme")
+	if _, err := client.validateRepositoryURL(repositoryURL); err != nil {
+		return Repository{}, err
 	}
 	repositoryRef := RepositoryRef{URL: repositoryURL}
 	if err := ValidateCredential(repositoryRef, credential, ScopeRead); err != nil {
@@ -102,6 +111,9 @@ func (client *SDKClient) Branches(
 	credential Credential,
 ) ([]Branch, error) {
 	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := client.validateRepository(repository); err != nil {
 		return nil, err
 	}
 	if err := ValidateCredential(repository, credential, ScopeRead); err != nil {
@@ -228,13 +240,19 @@ func (client *SDKClient) authenticate(
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	if _, err := client.validateRepositoryURL(remoteURL); err != nil {
+		return err
+	}
 	if credential.InsecureDevelopment {
 		if !client.allowInsecureDevelopment {
 			return errors.New("insecure development Lore credential is not accepted by this client")
 		}
 		return nil
 	}
-	if err := validateProductionCredential(credential); err != nil {
+	if client.expectedAuthHost == "" {
+		return errors.New("production Lore auth authority is not configured")
+	}
+	if err := validateProductionCredential(credential, client.expectedAuthHost); err != nil {
 		return err
 	}
 	lockKey := repositoryPath + "\x00" + credential.Principal.UserID + "\x00" +
@@ -267,4 +285,13 @@ func (client *SDKClient) authenticate(
 		return ErrLoreAuthentication
 	}
 	return nil
+}
+
+func (client *SDKClient) validateRepositoryURL(value string) (parsedRepositoryURL, error) {
+	return parseRepositoryURL(value, client.allowInsecureDevelopment)
+}
+
+func (client *SDKClient) validateRepository(repository RepositoryRef) error {
+	_, err := client.validateRepositoryURL(repository.URL)
+	return err
 }

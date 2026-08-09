@@ -6,8 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
+	"time"
 )
+
+const maxCredentialLifetime = 15 * time.Minute
 
 type Scope string
 
@@ -23,9 +27,11 @@ const (
 )
 
 var (
-	ErrCredentialUnavailable = errors.New("Lore repository credential is unavailable")
-	ErrInvalidPrincipal      = errors.New("Lore credential principal is invalid")
-	ErrLoreAuthentication    = errors.New("Lore credential authentication failed")
+	ErrCredentialUnavailable    = errors.New("Lore repository credential is unavailable")
+	ErrCredentialIssuerRequired = errors.New("production Lore credential issuer is required")
+	ErrInvalidPrincipal         = errors.New("Lore credential principal is invalid")
+	ErrLoreAuthentication       = errors.New("Lore credential authentication failed")
+	ErrCredentialContract       = errors.New("Lore credential contract is invalid")
 )
 
 // Principal identifies the caller that the control plane authorized. Exactly one
@@ -44,16 +50,15 @@ func ServicePrincipal(purpose string) Principal {
 }
 
 func (principal Principal) valid() bool {
-	return (principal.UserID != "") != (principal.ServicePurpose != "")
+	return (validPrincipalValue(principal.UserID) != "") != (validPrincipalValue(principal.ServicePurpose) != "")
 }
 
 func (principal Principal) equal(other Principal) bool {
 	return principal.UserID == other.UserID && principal.ServicePurpose == other.ServicePurpose
 }
 
-// CredentialMaterial is the configured, short-lived credential for one Lore
-// partition. Token and AuthURL are intentionally kept separate and are never
-// included in errors or log fields.
+// CredentialMaterial is allowed only for explicit development and test
+// providers. Production credentials are issued for each request instead.
 type CredentialMaterial struct {
 	Identity string `json:"identity"`
 	Token    string `json:"token"`
@@ -63,6 +68,7 @@ type CredentialMaterial struct {
 type CredentialRequest struct {
 	Principal  Principal
 	Repository RepositoryRef
+	Partition  string
 	Scope      Scope
 }
 
@@ -72,8 +78,27 @@ type Credential struct {
 	Identity            string    `json:"-"`
 	Token               string    `json:"-"`
 	AuthURL             string    `json:"-"`
+	ExpiresAt           time.Time `json:"expiresAt,omitempty"`
 	Principal           Principal `json:"principal"`
 	InsecureDevelopment bool      `json:"insecureDevelopment,omitempty"`
+}
+
+// CredentialIssuer is the future control-plane boundary. Implementations must
+// issue a credential for the complete request, not for a partition alone.
+type CredentialIssuer interface {
+	IssueCredential(context.Context, CredentialRequest) (Credential, error)
+}
+
+type CredentialIssuerFunc func(context.Context, CredentialRequest) (Credential, error)
+
+func (issuer CredentialIssuerFunc) IssueCredential(
+	ctx context.Context,
+	request CredentialRequest,
+) (Credential, error) {
+	if issuer == nil {
+		return Credential{}, ErrCredentialIssuerRequired
+	}
+	return issuer(ctx, request)
 }
 
 type CredentialProvider interface {
@@ -82,13 +107,28 @@ type CredentialProvider interface {
 
 type configuredCredentialProvider struct {
 	environment         string
+	issuer              CredentialIssuer
+	expectedAuthHost    string
 	materials           map[string]CredentialMaterial
 	developmentIdentity string
 	allowDevelopment    bool
 }
 
-func NewCredentialProvider(
+// NewProductionCredentialProvider creates the only provider permitted on the
+// production path. The issuer is called on every request and is never cached.
+func NewProductionCredentialProvider(
+	issuer CredentialIssuer,
+	expectedAuthHost string,
+) (CredentialProvider, error) {
+	return NewCredentialProviderWithIssuer("production", issuer, expectedAuthHost, nil, "", false)
+}
+
+// NewCredentialProviderWithIssuer keeps development configuration compatible
+// while making production credentials injectable and request-scoped.
+func NewCredentialProviderWithIssuer(
 	environment string,
+	issuer CredentialIssuer,
+	expectedAuthHost string,
 	materials map[string]CredentialMaterial,
 	developmentIdentity string,
 	allowDevelopmentFallback bool,
@@ -96,6 +136,26 @@ func NewCredentialProvider(
 	if environment == "" {
 		environment = "production"
 	}
+	if !isDevelopmentEnvironment(environment) {
+		if issuer == nil {
+			return nil, ErrCredentialIssuerRequired
+		}
+		if len(materials) != 0 {
+			return nil, errors.New("static Lore credentials are only allowed in development or test")
+		}
+		if strings.TrimSpace(developmentIdentity) != "" || allowDevelopmentFallback {
+			return nil, errors.New("development Lore credential fallback is not allowed in production")
+		}
+		if err := validateAuthAuthority(expectedAuthHost); err != nil {
+			return nil, err
+		}
+		return configuredCredentialProvider{
+			environment:      environment,
+			issuer:           issuer,
+			expectedAuthHost: expectedAuthHost,
+		}, nil
+	}
+
 	clean := make(map[string]CredentialMaterial, len(materials))
 	for partition, material := range materials {
 		partition = strings.TrimSpace(partition)
@@ -105,18 +165,7 @@ func NewCredentialProvider(
 		if partition == "" {
 			return nil, errors.New("Lore credentials require non-empty partitions")
 		}
-		if environment != "development" && environment != "test" {
-			if err := validateProductionMaterial(material); err != nil {
-				return nil, err
-			}
-		}
 		clean[partition] = material
-	}
-	if environment != "development" && environment != "test" && allowDevelopmentFallback {
-		return nil, errors.New("development Lore credential fallback is not allowed outside development or test")
-	}
-	if environment != "development" && environment != "test" && strings.TrimSpace(developmentIdentity) != "" {
-		return nil, errors.New("identity-only Lore credential fallback is not allowed in production")
 	}
 	return configuredCredentialProvider{
 		environment:         environment,
@@ -124,6 +173,18 @@ func NewCredentialProvider(
 		developmentIdentity: strings.TrimSpace(developmentIdentity),
 		allowDevelopment:    allowDevelopmentFallback,
 	}, nil
+}
+
+// NewCredentialProvider preserves the old constructor for development and
+// test fixtures. Production callers must inject a CredentialIssuer explicitly.
+func NewCredentialProvider(
+	environment string,
+	materials map[string]CredentialMaterial,
+	developmentIdentity string,
+	allowDevelopmentFallback bool,
+) (CredentialProvider, error) {
+	return NewCredentialProviderWithIssuer(environment, nil, "", materials, developmentIdentity,
+		allowDevelopmentFallback)
 }
 
 func NewDevelopmentCredentialProvider(identity string) CredentialProvider {
@@ -138,30 +199,39 @@ func (provider configuredCredentialProvider) ForRepository(
 	if err := ctx.Err(); err != nil {
 		return Credential{}, err
 	}
-	if err := validateCredentialRequest(request); err != nil {
+	partition, err := normalizeCredentialRequest(&request)
+	if err != nil {
 		return Credential{}, err
 	}
-	partition := request.Repository.CanonicalPartition()
+	if provider.issuer != nil {
+		issued, issueErr := provider.issuer.IssueCredential(ctx, request)
+		if issueErr != nil {
+			return Credential{}, fmt.Errorf("%w: issue request", ErrCredentialUnavailable)
+		}
+		if err := ctx.Err(); err != nil {
+			return Credential{}, err
+		}
+		if err := validateIssuedCredential(request, issued, provider.expectedAuthHost); err != nil {
+			return Credential{}, err
+		}
+		return issued, nil
+	}
 	if material, ok := provider.materials[partition]; ok {
-		insecureDevelopment := (provider.environment == "development" || provider.environment == "test") &&
-			(material.Token == "" || material.AuthURL == "")
-		credential := Credential{
+		if material.Identity == "" {
+			return Credential{}, ErrCredentialUnavailable
+		}
+		// Static material is deliberately not passed to the Lore auth store.
+		// It is an explicit insecure fixture, even when extra JSON fields exist.
+		return Credential{
 			Partition:           partition,
 			Scope:               request.Scope,
 			Identity:            material.Identity,
-			Token:               material.Token,
-			AuthURL:             material.AuthURL,
 			Principal:           request.Principal,
-			InsecureDevelopment: insecureDevelopment,
-		}
-		if provider.environment != "development" && provider.environment != "test" {
-			if err := validateProductionCredential(credential); err != nil {
-				return Credential{}, err
-			}
-		}
-		return credential, nil
+			InsecureDevelopment: true,
+		}, nil
 	}
-	if provider.environment == "development" && provider.allowDevelopment && provider.developmentIdentity != "" {
+	if isDevelopmentEnvironment(provider.environment) && provider.allowDevelopment &&
+		provider.developmentIdentity != "" {
 		return Credential{
 			Partition:           partition,
 			Scope:               request.Scope,
@@ -170,8 +240,7 @@ func (provider configuredCredentialProvider) ForRepository(
 			InsecureDevelopment: true,
 		}, nil
 	}
-	return Credential{}, fmt.Errorf("%w for partition %q and scope %q", ErrCredentialUnavailable, partition,
-		request.Scope)
+	return Credential{}, fmt.Errorf("%w for requested Lore partition and scope", ErrCredentialUnavailable)
 }
 
 func ParseCredentialMap(value string) (map[string]CredentialMaterial, error) {
@@ -221,44 +290,131 @@ func ValidateCredential(repository RepositoryRef, credential Credential, scope S
 		}
 		return nil
 	}
-	return validateProductionCredential(credential)
+	return validateProductionCredential(credential, "")
 }
 
-func validateCredentialRequest(request CredentialRequest) error {
+func normalizeCredentialRequest(request *CredentialRequest) (string, error) {
 	if !request.Principal.valid() {
-		return ErrInvalidPrincipal
+		return "", ErrInvalidPrincipal
 	}
 	if request.Scope != ScopeRead && request.Scope != ScopeWrite {
-		return errors.New("unsupported Lore credential scope")
+		return "", errors.New("unsupported Lore credential scope")
 	}
 	partition := request.Repository.CanonicalPartition()
-	if partition == "" && request.Principal.ServicePurpose != ServicePurposeRepositoryRegistration {
-		return errors.New("Lore repository partition is required")
+	if partition == "" || !validPartitionSegment(partition) {
+		return "", errors.New("Lore repository partition is required")
+	}
+	if request.Partition != "" && request.Partition != partition {
+		return "", ErrCredentialContract
+	}
+	request.Partition = partition
+	return partition, nil
+}
+
+func validPrincipalValue(value string) string {
+	if value == "" || strings.TrimSpace(value) != value || strings.ContainsAny(value, "\x00\t\r\n") {
+		return ""
+	}
+	return value
+}
+
+func validateIssuedCredential(
+	request CredentialRequest,
+	credential Credential,
+	expectedAuthHost string,
+) error {
+	if credential.InsecureDevelopment || credential.Partition != request.Partition ||
+		credential.Scope != request.Scope || !credential.Principal.equal(request.Principal) {
+		return ErrCredentialContract
+	}
+	if credential.Identity == "" || credential.Token == "" || credential.AuthURL == "" {
+		return ErrCredentialContract
+	}
+	if request.Principal.UserID != "" && credential.Identity != request.Principal.UserID {
+		return ErrCredentialContract
+	}
+	now := time.Now().UTC()
+	if !credential.ExpiresAt.After(now) || credential.ExpiresAt.After(now.Add(maxCredentialLifetime)) {
+		return ErrCredentialContract
+	}
+	if err := validateAuthURLAgainst(credential.AuthURL, expectedAuthHost); err != nil {
+		return ErrCredentialContract
 	}
 	return nil
 }
 
-func validateProductionMaterial(material CredentialMaterial) error {
-	if material.Identity == "" || material.Token == "" || material.AuthURL == "" {
-		return errors.New("production Lore credentials require identity, token, and auth URL")
+func validateProductionCredential(credential Credential, expectedAuthHost string) error {
+	if !credential.Principal.valid() {
+		return ErrInvalidPrincipal
 	}
-	if err := validateAuthURL(material.AuthURL); err != nil {
+	if credential.Identity == "" || credential.Token == "" || credential.AuthURL == "" {
+		return ErrCredentialUnavailable
+	}
+	if !credential.ExpiresAt.After(time.Now().UTC()) ||
+		credential.ExpiresAt.After(time.Now().UTC().Add(maxCredentialLifetime)) {
+		return ErrCredentialUnavailable
+	}
+	if credential.Principal.UserID != "" && credential.Identity != credential.Principal.UserID {
+		return ErrCredentialContract
+	}
+	if err := validateAuthURLAgainst(credential.AuthURL, expectedAuthHost); err != nil {
 		return err
 	}
 	return nil
 }
 
-func validateProductionCredential(credential Credential) error {
-	if credential.Identity == "" || credential.Token == "" || credential.AuthURL == "" {
-		return ErrCredentialUnavailable
+func validateAuthAuthority(authority string) error {
+	authority = strings.TrimSpace(authority)
+	if authority == "" || strings.ContainsAny(authority, " /?#@\\\t\r\n") {
+		return errors.New("production Lore auth authority is required")
 	}
-	return validateAuthURL(credential.AuthURL)
+	parsed, err := url.Parse("ucs-auth://" + authority)
+	if err != nil || parsed.Host != authority || parsed.Hostname() == "" || parsed.User != nil || parsed.Path != "" ||
+		parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Opaque != "" {
+		return errors.New("production Lore auth authority is invalid")
+	}
+	if port := parsed.Port(); port != "" {
+		portNumber, conversionErr := strconv.Atoi(port)
+		if conversionErr != nil || portNumber < 1 || portNumber > 65535 {
+			return errors.New("production Lore auth authority is invalid")
+		}
+	} else if strings.HasSuffix(authority, ":") {
+		return errors.New("production Lore auth authority is invalid")
+	}
+	return nil
+}
+
+func ValidateAuthAuthority(authority string) error {
+	return validateAuthAuthority(authority)
 }
 
 func validateAuthURL(value string) error {
+	return validateAuthURLAgainst(value, "")
+}
+
+func validateAuthURLAgainst(value string, expectedAuthority string) error {
+	if value == "" || strings.TrimSpace(value) != value ||
+		strings.ContainsAny(value, "\x00\t\r\n ") {
+		return errors.New("Lore AuthURL must use the ucs-auth scheme")
+	}
 	parsed, err := url.Parse(value)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" {
-		return errors.New("Lore AuthURL must be an absolute URL without credentials or fragments")
+	if err != nil || parsed.Scheme != "ucs-auth" || parsed.Host == "" || parsed.User != nil ||
+		parsed.Path != "" || parsed.RawPath != "" || parsed.RawQuery != "" || parsed.ForceQuery ||
+		parsed.Fragment != "" || parsed.RawFragment != "" || parsed.Opaque != "" {
+		return errors.New("Lore AuthURL must be a ucs-auth authority without credentials or path")
+	}
+	if err := validateAuthAuthority(parsed.Host); err != nil {
+		return errors.New("Lore AuthURL authority is invalid")
+	}
+	if expectedAuthority == "" {
+		return nil
+	}
+	if parsed.Host != expectedAuthority {
+		return errors.New("Lore AuthURL authority does not match the configured Lore auth service")
 	}
 	return nil
+}
+
+func isDevelopmentEnvironment(environment string) bool {
+	return environment == "development" || environment == "test"
 }

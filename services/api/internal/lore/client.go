@@ -3,8 +3,6 @@ package lore
 import (
 	"context"
 	"errors"
-	"net/url"
-	"path"
 	"strings"
 	"time"
 )
@@ -38,15 +36,11 @@ func (repository RepositoryRef) CanonicalPartition() string {
 }
 
 func repositoryURLPartition(repositoryURL string) string {
-	parsed, err := url.Parse(repositoryURL)
-	if err != nil || parsed.Host == "" || parsed.User != nil || strings.ContainsRune(parsed.Path, '\x00') {
+	parsed, err := parseRepositoryURL(repositoryURL, true)
+	if err != nil {
 		return ""
 	}
-	partition := strings.TrimSpace(path.Base(parsed.Path))
-	if partition == "." || partition == ".." || partition == "/" {
-		return ""
-	}
-	return partition
+	return parsed.Partition
 }
 
 type Branch struct {

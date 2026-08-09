@@ -100,15 +100,13 @@ func New(
 	logger *slog.Logger,
 	options ...Option,
 ) http.Handler {
-	productionCredentials, _ := loreclient.NewCredentialProvider("production", nil, "", false)
 	api := &API{
-		store:           store,
-		lore:            lore,
-		authenticator:   authenticator,
-		health:          health,
-		loreIdentity:    loreIdentity,
-		loreCredentials: productionCredentials,
-		logger:          logger,
+		store:         store,
+		lore:          lore,
+		authenticator: authenticator,
+		health:        health,
+		loreIdentity:  loreIdentity,
+		logger:        logger,
 	}
 	for _, option := range options {
 		if option != nil {
@@ -219,6 +217,7 @@ func (api *API) loreCredential(
 	return api.loreCredentials.ForRepository(ctx, loreclient.CredentialRequest{
 		Principal:  principal,
 		Repository: repository,
+		Partition:  repository.CanonicalPartition(),
 		Scope:      scope,
 	})
 }
