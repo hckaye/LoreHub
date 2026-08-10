@@ -27,6 +27,8 @@ type WorkerConfig struct {
 	LoreBinary            string
 	CredentialIssuer      CredentialIssuer
 	CredentialPrincipal   CredentialPrincipal
+	Credentials           loreclient.CredentialProvider
+	ServicePrincipal      string
 	JobTokenIssuer        JobTokenIssuer
 	JobTokenRESTScope     string
 	JobTokenGraphQLScope  string
@@ -73,17 +75,29 @@ type Worker struct {
 }
 
 func NewWorker(store *Store, config WorkerConfig, logger *slog.Logger) (*Worker, error) {
-	if config.CredentialIssuer == nil {
-		return nil, errors.New("repository-scoped Lore credential issuer is required")
+	if config.Environment == "" {
+		config.Environment = "production"
+	}
+	if config.Credentials != nil {
+		if err := loreclient.ValidateServiceSubject(config.ServicePrincipal); err != nil {
+			return nil, fmt.Errorf("Actions runner service principal is invalid: %w", err)
+		}
+		if config.RevisionClient == nil {
+			return nil, errors.New("credential-aware Lore revision client is required")
+		}
+	} else {
+		if config.Environment == "production" {
+			return nil, errors.New("scoped Lore credential provider is required in production")
+		}
+		if config.CredentialIssuer == nil {
+			return nil, errors.New("repository-scoped Lore credential issuer is required")
+		}
 	}
 	if config.ExecutionResolver == nil {
 		return nil, errors.New("Actions execution context resolver is required")
 	}
 	if config.JobTokenIssuer == nil {
 		return nil, errors.New("Actions job token issuer is required")
-	}
-	if config.Environment == "" {
-		config.Environment = "production"
 	}
 	if strings.TrimSpace(config.ActionSourceURL) == "" {
 		config.ActionSourceURL = defaultActionSourceURL
@@ -550,6 +564,40 @@ func runAct(ctx context.Context, act *exec.Cmd) error {
 }
 
 func (worker *Worker) cloneRevision(ctx context.Context, job Job, destination string, output io.Writer) error {
+	if worker.config.Credentials != nil {
+		ref := loreclient.RepositoryRef{
+			CacheKey: job.RepositoryID, URL: job.LoreURL, LoreRepositoryID: job.LoreRepositoryID,
+		}
+		partition, err := ref.ValidatedPartition()
+		if err != nil {
+			return fmt.Errorf("validate repository Lore boundary: %w", err)
+		}
+		credential, err := worker.config.Credentials.ForRepository(ctx, loreclient.CredentialRequest{
+			Principal: loreclient.ServicePrincipal(
+				loreclient.ServicePurposeActionsRunner,
+				worker.config.ServicePrincipal,
+			),
+			Repository: ref,
+			Partition:  partition,
+			Scope:      loreclient.ScopeRead,
+		})
+		if err != nil {
+			return errors.New("could not mint scoped Lore credential for CI job")
+		}
+		switch client := worker.config.RevisionClient.(type) {
+		case loreclient.CredentialRevisionClient:
+			err = client.CloneRevisionWithCredential(ctx, ref, credential, job.Revision, destination)
+		case workflowRevisionClient:
+			err = client.CloneWithCredential(ctx, job.LoreURL, job.Revision, destination, credential)
+		default:
+			return errors.New("configured Lore revision client does not accept scoped credentials")
+		}
+		if err != nil {
+			return errors.New("clone Lore revision was rejected")
+		}
+		return nil
+	}
+
 	credential, err := issueLoreCredential(
 		ctx,
 		worker.config.CredentialIssuer,
@@ -561,7 +609,9 @@ func (worker *Worker) cloneRevision(ctx context.Context, job Job, destination st
 		return fmt.Errorf("read repository Lore credential: %w", err)
 	}
 	if worker.config.RevisionClient != nil {
-		repository := loreclient.RepositoryRef{CacheKey: job.RepositoryID, URL: job.LoreURL}
+		repository := loreclient.RepositoryRef{
+			CacheKey: job.RepositoryID, URL: job.LoreURL, LoreRepositoryID: job.LoreRepositoryID,
+		}
 		if client, ok := worker.config.RevisionClient.(loreclient.CredentialRevisionClient); ok {
 			partition := loreclient.RepositoryRef{URL: job.LoreURL}.CanonicalPartition()
 			if partition == "" {

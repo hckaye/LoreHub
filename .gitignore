@@ -44,3 +44,5 @@ next-env.d.ts
 /work/
 /.cache/
 /services/api/lorehub
+/.local-tls/
+/infra/.local-tls/

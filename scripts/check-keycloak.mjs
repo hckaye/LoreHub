@@ -35,9 +35,23 @@ expect(/^\s*keycloak:\s*$/m.test(compose), "compose must define a keycloak servi
 expect(/^\s*keycloak-bootstrap:\s*$/m.test(compose), "compose must define a keycloak-bootstrap service");
 expect(/keycloak-postgres-data:/.test(compose), "compose must declare a keycloak-postgres-data volume");
 expect(/keycloak-data:/.test(compose), "compose must declare a keycloak-data volume");
+expect(/auth-ca-state:\/state/.test(compose), "TLS CA private state must use an init-only volume");
 expect(/\$\{KEYCLOAK_HOST_PORT:-8280\}:8080/.test(compose), "Keycloak host port default must be 8280");
 expect(/condition: service_healthy/.test(compose), "Keycloak must wait for its Postgres healthcheck");
 expect(/LOREHUB_AUTH_MODE: \$\{LOREHUB_AUTH_MODE:-interactive\}/.test(compose), "API must default to interactive auth");
+expect(/LOREHUB_LORE_ROOT_DOMAIN: \$\{LOREHUB_LORE_ROOT_DOMAIN:\?/.test(compose), "Lore root domain must be explicit");
+expect(/LOREHUB_LORE_AUTH_URL: \$\{LOREHUB_LORE_AUTH_URL:\?/.test(compose), "Lore AuthURL must be explicit");
+expect(/LOREHUB_LORE_AUTH_JWKS_URL: \$\{LOREHUB_LORE_AUTH_JWKS_URL:\?/.test(compose), "Lore JWKS URL must be explicit");
+expect(
+  /LOREHUB_LORE_POLICY_ENDPOINT: \$\{LOREHUB_LORE_POLICY_ENDPOINT:\?/.test(compose),
+  "Lore policy endpoint must be explicit",
+);
+expect(
+  /LOREHUB_LORE_OBSERVATION_ENDPOINT: \$\{LOREHUB_LORE_OBSERVATION_ENDPOINT:\?/.test(compose),
+  "Lore observation endpoint must be explicit",
+);
+expect(!compose.includes("LOREHUB_LORE_AUTH_URL:-ucs-auth://"), "Lore AuthURL must not have a hardcoded default");
+expect(!compose.includes("LOREHUB_LORE_AUTH_JWKS_URL:-http://"), "Lore JWKS URL must not have a hardcoded default");
 expect(
   /LOREHUB_OIDC_ISSUER: \$\{LOREHUB_OIDC_ISSUER:-http:\/\/keycloak\.localhost:8280\/realms\/lorehub\}/.test(compose),
   "API must use the local Keycloak issuer",
@@ -78,6 +92,10 @@ expect(
 );
 expect(/restart: unless-stopped/.test(compose), "Keycloak services must have a restart policy");
 expect(/healthcheck:/.test(compose), "Keycloak must define a healthcheck");
+
+const authTLS = read("infra/auth-tls/entrypoint.sh");
+expect(/-keyout \/state\/ca\.key/.test(authTLS), "the development CA key must stay in private init state");
+expect(!/-keyout \/tls\/ca\.key/.test(authTLS), "the shared TLS volume must not receive the CA private key");
 
 // --- Dockerfile (build-time db vendor + health for --optimized) ------------
 const dockerfile = read("infra/keycloak/Dockerfile");
@@ -221,6 +239,7 @@ const requiredEnvVars = [
   "LOREHUB_OIDC_LOGOUT_REDIRECT_URL",
   "LOREHUB_PUBLIC_ORIGIN",
   "LOREHUB_AUTH_SECRET",
+  "LOREHUB_ACTIONS_SECRET_KEY",
   "LOREHUB_SESSION_COOKIE_SECURE",
   "KEYCLOAK_REALM",
   "KEYCLOAK_HOST_PORT",
@@ -270,7 +289,7 @@ for (const name of secretEnvVars) {
 
 // --- best-effort docker compose config validation --------------------------
 try {
-  execFileSync("docker", ["compose", "-f", "infra/compose.yaml", "config", "-q"], {
+  execFileSync("docker", ["compose", "--env-file", ".env.example", "-f", "infra/compose.yaml", "config", "-q"], {
     cwd: root,
     stdio: "pipe",
     env: {
@@ -280,6 +299,7 @@ try {
       KEYCLOAK_ADMIN_PASSWORD: "check",
       LOREHUB_OIDC_CLIENT_SECRET: "check",
       LOREHUB_AUTH_SECRET: "check-check-check-check-check-check-check-check",
+      LOREHUB_ACTIONS_SECRET_KEY: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
     },
   });
 } catch (error) {

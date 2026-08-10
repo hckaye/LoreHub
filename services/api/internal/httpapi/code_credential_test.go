@@ -133,7 +133,7 @@ func (store *publicCodeStore) LookupRepository(
 	return collab.Repository{
 		ID: "public-repo", OrganizationID: "org-1", Owner: owner, Slug: slug,
 		Visibility: "public", LoreRepositoryID: "0123456789abcdef0123456789abcdef",
-		LoreURL: "lore://public", DefaultBranch: "main",
+		LoreURL: "lore://lore.example/0123456789abcdef0123456789abcdef", DefaultBranch: "main",
 	}, nil
 }
 

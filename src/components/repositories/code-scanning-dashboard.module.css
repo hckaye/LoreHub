@@ -1,0 +1,154 @@
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px 14px;
+  color: var(--fg-muted);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.alertList {
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  list-style: none;
+}
+
+.alertRow {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 10px;
+  padding: 14px;
+  border-bottom: 1px solid var(--border-muted);
+}
+
+.alertRow:last-child {
+  border-bottom: 0;
+}
+
+.severityIcon {
+  display: grid;
+  padding-top: 2px;
+  color: var(--fg-muted);
+}
+
+.severityIcon[data-severity="error"],
+.severity[data-severity="error"] {
+  color: var(--danger-fg);
+}
+
+.severityIcon[data-severity="warning"],
+.severity[data-severity="warning"] {
+  color: var(--attention-fg);
+}
+
+.severityIcon[data-severity="note"],
+.severity[data-severity="note"] {
+  color: var(--accent-fg);
+}
+
+.alertMain {
+  display: grid;
+  min-width: 0;
+  gap: 9px;
+}
+
+.titleLine {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.titleLine strong {
+  min-width: 0;
+  color: var(--fg-default);
+  font-size: 0.88rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.severity {
+  flex: 0 0 auto;
+  color: var(--fg-muted);
+  font-size: 0.74rem;
+  font-weight: 650;
+}
+
+.findingDetails {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 18px;
+  margin: 0;
+}
+
+.findingDetails div {
+  display: inline-flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 5px;
+}
+
+.findingDetails dt,
+.detailLabel {
+  color: var(--fg-muted);
+  font-size: 0.72rem;
+}
+
+.findingDetails dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--fg-default);
+  font-size: 0.76rem;
+  overflow-wrap: anywhere;
+}
+
+.findingDetails code,
+.uploadDetails code {
+  color: var(--fg-default);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+}
+
+.uploadDetails {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  color: var(--fg-muted);
+  font-size: 0.74rem;
+}
+
+.uploadDetails > span {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+}
+
+.uploadDetails code {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .summary {
+    justify-content: flex-start;
+  }
+
+  .titleLine {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .findingDetails,
+  .uploadDetails {
+    display: grid;
+  }
+}

@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLoadDefaultsToDeterministicDisabledMode(t *testing.T) {
@@ -22,6 +23,23 @@ func TestLoadDefaultsToDeterministicDisabledMode(t *testing.T) {
 	}
 	if settings.AuthMode != AuthModeDisabled || settings.SessionCookieSecure {
 		t.Fatalf("unexpected development defaults: mode=%q secure=%t", settings.AuthMode, settings.SessionCookieSecure)
+	}
+}
+
+func TestLocalLoreDefaultsFollowTheConfiguredRootDomain(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("LOREHUB_ENV", "development")
+	t.Setenv("LOREHUB_LORE_ROOT_DOMAIN", "control.local")
+
+	settings, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.LoreAuthIssuer != "auth.control.local" ||
+		settings.LoreAuthURL != "ucs-auth://auth.control.local:8443" ||
+		settings.LoreAuthJWKSURL != "http://control.local:8080/.well-known/jwks.json" ||
+		settings.LorePublicURL != "lores://control.local:41337" {
+		t.Fatalf("local Lore defaults did not follow the configured root: %#v", settings)
 	}
 }
 
@@ -59,18 +77,7 @@ func TestLoadRejectsInteractiveAuthenticationWithoutAudience(t *testing.T) {
 }
 
 func TestLoadInteractiveAuthenticationUsesSecureProductionCookie(t *testing.T) {
-	setRequiredEnvironment(t)
-	t.Setenv("LOREHUB_ENV", "production")
-	t.Setenv("LOREHUB_AUTH_MODE", AuthModeInteractive)
-	t.Setenv("LOREHUB_OIDC_ISSUER", "https://keycloak.example/realms/lorehub")
-	t.Setenv("LOREHUB_OIDC_AUDIENCE", "lorehub-api")
-	t.Setenv("LOREHUB_OIDC_CLIENT_ID", "lorehub-web")
-	t.Setenv("LOREHUB_OIDC_CLIENT_SECRET", "client-secret")
-	t.Setenv("LOREHUB_OIDC_REDIRECT_URL", "https://app.example/auth/callback")
-	t.Setenv("LOREHUB_PUBLIC_ORIGIN", "https://app.example")
-	t.Setenv("LOREHUB_AUTH_SECRET", strings.Repeat("a", 32))
-	t.Setenv("LOREHUB_SESSION_TTL", "24h")
-	t.Setenv("LOREHUB_LOGIN_TRANSACTION_TTL", "10m")
+	setProductionEnvironment(t)
 
 	settings, err := Load()
 	if err != nil {
@@ -83,10 +90,86 @@ func TestLoadInteractiveAuthenticationUsesSecureProductionCookie(t *testing.T) {
 	}
 }
 
+func TestLoadForProductionRunnerDoesNotRequireWebAuthentication(t *testing.T) {
+	setProductionEnvironment(t)
+	t.Setenv("LOREHUB_AUTH_MODE", AuthModeDisabled)
+	t.Setenv("LOREHUB_OIDC_ISSUER", "")
+	t.Setenv("LOREHUB_OIDC_AUDIENCE", "")
+	t.Setenv("LOREHUB_OIDC_CLIENT_ID", "")
+	t.Setenv("LOREHUB_OIDC_CLIENT_SECRET", "")
+	t.Setenv("LOREHUB_OIDC_REDIRECT_URL", "")
+	t.Setenv("LOREHUB_AUTH_SECRET", "")
+
+	settings, err := LoadFor("runner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.AuthMode != AuthModeDisabled {
+		t.Fatalf("runner authentication mode = %q, want disabled", settings.AuthMode)
+	}
+}
+
+func TestLoadForMigrateRequiresOnlyDatabaseConfiguration(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/lorehub")
+	t.Setenv("LOREHUB_DATABASE_TIMEOUT", "17s")
+	t.Setenv("LOREHUB_ENV", "production")
+	t.Setenv("LOREHUB_ACTIONS_SECRET_KEY_ID", "")
+	t.Setenv("LOREHUB_ACTIONS_SECRET_KEY", "")
+	t.Setenv("LOREHUB_AUTH_MODE", "invalid")
+	t.Setenv("LOREHUB_RUNNER_PLATFORM_IMAGES", "invalid-json")
+
+	settings, err := LoadFor("migrate")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.DatabaseURL != "postgres://localhost/lorehub" || settings.DatabaseTimeout != 17*time.Second {
+		t.Fatalf("unexpected migration settings: %#v", settings)
+	}
+}
+
+func TestLoadForMigrateValidatesDatabaseConfiguration(t *testing.T) {
+	for _, testCase := range []struct {
+		name    string
+		url     string
+		timeout string
+	}{
+		{name: "missing URL", timeout: "10s"},
+		{name: "invalid timeout", url: "postgres://localhost/lorehub", timeout: "later"},
+		{name: "zero timeout", url: "postgres://localhost/lorehub", timeout: "0s"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Setenv("DATABASE_URL", testCase.url)
+			t.Setenv("LOREHUB_DATABASE_TIMEOUT", testCase.timeout)
+			if _, err := LoadFor("migrate"); err == nil {
+				t.Fatal("invalid migration database configuration was accepted")
+			}
+		})
+	}
+}
+
+func TestLoadRejectsUnmanagedAndInsecureLoreEndpoints(t *testing.T) {
+	setProductionEnvironment(t)
+	t.Setenv("LOREHUB_LORE_AUTH_JWKS_URL", "https://lorehub.example.evil/.well-known/jwks.json")
+	if _, err := Load(); err == nil {
+		t.Fatal("an evil suffix must not be accepted as a managed Lore endpoint")
+	}
+
+	setProductionEnvironment(t)
+	t.Setenv("LOREHUB_LORE_POLICY_ENDPOINT", "http://lorehub.example/internal/lore/policy")
+	if _, err := Load(); err == nil {
+		t.Fatal("an HTTP production policy endpoint must be rejected")
+	}
+
+	setProductionEnvironment(t)
+	t.Setenv("LOREHUB_LORE_AUTH_AUDIENCE", "api")
+	if _, err := Load(); err == nil {
+		t.Fatal("the stock Lore audience shorthand must be rejected")
+	}
+}
+
 func TestLoadAdvertisesOnlyCompleteProvisionedProviderAliases(t *testing.T) {
 	setRequiredEnvironment(t)
-	providerSettings := identityProviderSettings()
-	for _, provider := range providerSettings {
+	for _, provider := range identityProviderSettings() {
 		t.Setenv(provider.client, "")
 		t.Setenv(provider.secret, "")
 	}
@@ -122,23 +205,28 @@ func TestLoadAdvertisesAllFourProviderAliasesWhenFullyConfigured(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsMissingProductionServicePrincipal(t *testing.T) {
+	setProductionEnvironment(t)
+	t.Setenv("LOREHUB_OBSERVER_SERVICE_PRINCIPAL", "")
+
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(),
+		"LOREHUB_OBSERVER_SERVICE_PRINCIPAL") {
+		t.Fatalf("expected a missing observer service principal error, got %v", err)
+	}
+}
+
 func TestLoadRejectsProductionStaticLoreCredentials(t *testing.T) {
-	setRequiredEnvironment(t)
-	t.Setenv("LOREHUB_ENV", "production")
+	setProductionEnvironment(t)
 	t.Setenv("LOREHUB_LORE_CREDENTIALS", `{"partition":{"identity":"shared","token":"token",`+
 		`"authUrl":"ucs-auth://auth.example.com"}}`)
 	_, err := Load()
-	if err == nil || !strings.Contains(err.Error(), "only allowed in development or test") {
+	if err == nil || !strings.Contains(err.Error(), "limited to development and test") {
 		t.Fatalf("expected static production credential rejection, got %v", err)
 	}
 }
 
 func TestLoadRejectsProductionMissingServiceSubject(t *testing.T) {
-	setRequiredEnvironment(t)
-	t.Setenv("LOREHUB_ENV", "production")
-	t.Setenv("LOREHUB_PUBLIC_ORIGIN", "https://actions.example")
-	t.Setenv("LOREHUB_LORE_PUBLIC_READER_SUBJECT", "public-reader-subject")
-	t.Setenv("LOREHUB_LORE_ACTIONS_RUNNER_SUBJECT", "actions-runner-subject")
+	setProductionEnvironment(t)
 	t.Setenv("LOREHUB_LORE_REPOSITORY_REGISTRATION_SUBJECT", "")
 	_, err := Load()
 	if err == nil || !strings.Contains(err.Error(), "LOREHUB_LORE_REPOSITORY_REGISTRATION_SUBJECT") {
@@ -147,11 +235,8 @@ func TestLoadRejectsProductionMissingServiceSubject(t *testing.T) {
 }
 
 func TestLoadRejectsProductionInvalidServiceSubject(t *testing.T) {
-	setRequiredEnvironment(t)
-	t.Setenv("LOREHUB_ENV", "production")
+	setProductionEnvironment(t)
 	t.Setenv("LOREHUB_LORE_PUBLIC_READER_SUBJECT", "public reader")
-	t.Setenv("LOREHUB_LORE_ACTIONS_RUNNER_SUBJECT", "actions-runner-subject")
-	t.Setenv("LOREHUB_LORE_REPOSITORY_REGISTRATION_SUBJECT", "registration-subject")
 	_, err := Load()
 	if err == nil || !strings.Contains(err.Error(), "LOREHUB_LORE_PUBLIC_READER_SUBJECT") {
 		t.Fatalf("expected invalid production service subject rejection, got %v", err)
@@ -168,23 +253,33 @@ func TestLoadRejectsInvalidLoginBindingCookieName(t *testing.T) {
 	}
 }
 
-func TestLoadRejectsProductionIdentityFallback(t *testing.T) {
+func TestLoadRejectsLegacyLoreIdentityOutsideExplicitProfile(t *testing.T) {
 	setRequiredEnvironment(t)
-	t.Setenv("LOREHUB_ENV", "production")
-	t.Setenv("LOREHUB_LORE_IDENTITY", "legacy-shared-identity")
-	t.Setenv("LOREHUB_LORE_CREDENTIALS",
-		`{"lore-partition":{"identity":"service-identity","token":"short-lived-token",`+
-			`"authUrl":"https://auth.example/login"}}`)
+	t.Setenv("LOREHUB_LORE_IDENTITY", "shared-local-identity")
 
 	_, err := Load()
-	if err == nil || !strings.Contains(err.Error(), "development-only Lore identity fallback") {
-		t.Fatalf("expected production identity fallback error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "explicit local-insecure profile") {
+		t.Fatalf("expected legacy identity rejection, got %v", err)
+	}
+}
+
+func TestLoadAllowsExplicitLocalInsecureLegacyProfile(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("LOREHUB_ENV", "local-insecure")
+	t.Setenv("LOREHUB_LORE_IDENTITY", "isolated-local-identity")
+	t.Setenv("LOREHUB_ALLOW_LEGACY_LORE_IDENTITY", "true")
+
+	settings, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !settings.AllowLegacyLoreIdentity || settings.LoreIdentity != "isolated-local-identity" {
+		t.Fatalf("unexpected local legacy settings: %#v", settings)
 	}
 }
 
 func TestLoadRejectsDevelopmentLoreIdentityOutsideDevelopment(t *testing.T) {
-	setRequiredEnvironment(t)
-	t.Setenv("LOREHUB_ENV", "production")
+	setProductionEnvironment(t)
 	t.Setenv("LOREHUB_DEV_ALLOW_LORE_IDENTITY_FALLBACK", "true")
 	t.Setenv("LOREHUB_DEV_LORE_IDENTITY", "development-only")
 
@@ -195,8 +290,7 @@ func TestLoadRejectsDevelopmentLoreIdentityOutsideDevelopment(t *testing.T) {
 }
 
 func TestLoadRejectsDevelopmentActionsContextOutsideDevelopment(t *testing.T) {
-	setRequiredEnvironment(t)
-	t.Setenv("LOREHUB_ENV", "production")
+	setProductionEnvironment(t)
 	t.Setenv("LOREHUB_DEV_ALLOW_ACTIONS_CONTEXT_FALLBACK", "true")
 	t.Setenv("LOREHUB_PUBLIC_ORIGIN", "https://actions.example")
 
@@ -207,14 +301,44 @@ func TestLoadRejectsDevelopmentActionsContextOutsideDevelopment(t *testing.T) {
 }
 
 func TestLoadRejectsDevelopmentActionsJobTokenOutsideDevelopment(t *testing.T) {
-	setRequiredEnvironment(t)
-	t.Setenv("LOREHUB_ENV", "production")
+	setProductionEnvironment(t)
 	t.Setenv("LOREHUB_DEV_ALLOW_ACTIONS_JOB_TOKEN_FALLBACK", "true")
 	t.Setenv("LOREHUB_PUBLIC_ORIGIN", "https://actions.example")
 
 	_, err := Load()
 	if err == nil || !strings.Contains(err.Error(), "development-only Actions job token fallback") {
 		t.Fatalf("expected development-only Actions job token to fail closed, got %v", err)
+	}
+}
+
+func TestLoadRequiresDedicatedActionsEncryptionKey(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("LOREHUB_ACTIONS_SECRET_KEY", "not-base64")
+
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "exactly 32 bytes") {
+		t.Fatalf("expected an invalid Actions encryption key to fail, got %v", err)
+	}
+}
+
+func TestLoadRejectsLineWrappedActionsEncryptionKey(t *testing.T) {
+	setRequiredEnvironment(t)
+	key := "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+	t.Setenv("LOREHUB_ACTIONS_SECRET_KEY", key[:8]+"\n"+key[8:])
+
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "unbroken base64") {
+		t.Fatalf("expected a line-wrapped Actions encryption key to fail, got %v", err)
+	}
+}
+
+func TestLoadRejectsCrossOriginActionsTokenAudience(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("LOREHUB_ACTIONS_JOB_TOKEN_AUDIENCE", "http://attacker.example/api/v3")
+
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "public LoreHub origin") {
+		t.Fatalf("expected a cross-origin Actions token audience to fail, got %v", err)
 	}
 }
 
@@ -247,8 +371,7 @@ func TestLoadParsesRunnerMappingAndPublicActionsURLs(t *testing.T) {
 }
 
 func TestLoadRejectsHTTPActionsOriginInProduction(t *testing.T) {
-	setRequiredEnvironment(t)
-	t.Setenv("LOREHUB_ENV", "production")
+	setProductionEnvironment(t)
 	t.Setenv("LOREHUB_PUBLIC_ORIGIN", "http://localhost:3000")
 
 	_, err := Load()
@@ -280,22 +403,17 @@ func TestLoadRejectsUnboundedRunnerTimeout(t *testing.T) {
 }
 
 func TestLoadRejectsProductionStaticLoreCredentialsWithHTTPSAuthURL(t *testing.T) {
-	setRequiredEnvironment(t)
-	t.Setenv("LOREHUB_ENV", "production")
+	setProductionEnvironment(t)
 	t.Setenv("LOREHUB_LORE_CREDENTIALS", `{"partition":{"identity":"shared","token":"token",`+
 		`"authUrl":"https://auth.example/login"}}`)
 	_, err := Load()
-	if err == nil || !strings.Contains(err.Error(), "only allowed in development or test") {
+	if err == nil || !strings.Contains(err.Error(), "limited to development and test") {
 		t.Fatalf("expected static production credential rejection, got %v", err)
 	}
 }
 
 func TestLoadRequiresProductionLoreServiceSubjects(t *testing.T) {
-	setRequiredEnvironment(t)
-	t.Setenv("LOREHUB_ENV", "production")
-	t.Setenv("LOREHUB_PUBLIC_ORIGIN", "https://actions.example")
-	t.Setenv("LOREHUB_PUBLIC_API_URL", "https://actions.example/api/v1")
-	t.Setenv("LOREHUB_PUBLIC_GRAPHQL_URL", "https://actions.example/api/graphql")
+	setProductionEnvironment(t)
 	t.Setenv("LOREHUB_LORE_PUBLIC_READER_SUBJECT", "")
 	_, err := Load()
 	if err == nil || !strings.Contains(err.Error(), "LOREHUB_LORE_PUBLIC_READER_SUBJECT") {
@@ -307,7 +425,12 @@ func setRequiredEnvironment(t *testing.T) {
 	t.Helper()
 	t.Setenv("DATABASE_URL", "postgres://localhost/lorehub")
 	t.Setenv("LOREHUB_ENV", "development")
-	t.Setenv("LOREHUB_RUNNER_SUBJECT", "")
+	t.Setenv("LOREHUB_ACTIONS_SECRET_KEY_ID", "test-actions-v1")
+	t.Setenv(
+		"LOREHUB_ACTIONS_SECRET_KEY",
+		"MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
+	)
+	t.Setenv("LOREHUB_ACTIONS_JOB_TOKEN_AUDIENCE", "")
 	t.Setenv("LOREHUB_DEV_ALLOW_LORE_IDENTITY_FALLBACK", "")
 	t.Setenv("LOREHUB_DEV_LORE_IDENTITY", "")
 	t.Setenv("LOREHUB_AUTH_MODE", "")
@@ -323,19 +446,7 @@ func setRequiredEnvironment(t *testing.T) {
 	t.Setenv("LOREHUB_LORE_IDENTITY", "")
 	t.Setenv("LOREHUB_LORE_CREDENTIALS", "")
 	t.Setenv("LOREHUB_LORE_AUTHORITY", "")
-	t.Setenv("LOREHUB_LORE_PUBLIC_READER_SUBJECT", "")
-	t.Setenv("LOREHUB_LORE_ACTIONS_RUNNER_SUBJECT", "")
-	t.Setenv("LOREHUB_LORE_REPOSITORY_REGISTRATION_SUBJECT", "")
 	t.Setenv("LOREHUB_LORE_ALLOW_DEVELOPMENT_FALLBACK", "")
-	t.Setenv("LOREHUB_LORE_PUBLIC_READER_SUBJECT", "public-reader-subject")
-	t.Setenv("LOREHUB_LORE_ACTIONS_RUNNER_SUBJECT", "actions-runner-subject")
-	t.Setenv("LOREHUB_LORE_REPOSITORY_REGISTRATION_SUBJECT", "registration-subject")
-	t.Setenv("LOREHUB_OIDC_ISSUER", "")
-	t.Setenv("LOREHUB_OIDC_AUDIENCE", "")
-	t.Setenv("LOREHUB_OIDC_CLIENT_ID", "")
-	t.Setenv("LOREHUB_OIDC_CLIENT_SECRET", "")
-	t.Setenv("LOREHUB_OIDC_REDIRECT_URL", "")
-	t.Setenv("LOREHUB_PUBLIC_ORIGIN", "")
 	t.Setenv("LOREHUB_PUBLIC_API_URL", "")
 	t.Setenv("LOREHUB_PUBLIC_GRAPHQL_URL", "")
 	t.Setenv("LOREHUB_RUNNER_PLATFORM_IMAGES", "")
@@ -343,16 +454,58 @@ func setRequiredEnvironment(t *testing.T) {
 	t.Setenv("LOREHUB_DEV_ACTIONS_CONTEXT_JSON", "")
 	t.Setenv("LOREHUB_DEV_ALLOW_ACTIONS_JOB_TOKEN_FALLBACK", "")
 	t.Setenv("LOREHUB_DEV_ACTIONS_JOB_TOKEN", "")
-	t.Setenv("LOREHUB_AUTH_SECRET", "")
-	t.Setenv("LOREHUB_SESSION_TTL", "")
-	t.Setenv("LOREHUB_LOGIN_TRANSACTION_TTL", "")
 	t.Setenv("LOREHUB_SESSION_COOKIE_SECURE", "")
 	t.Setenv("LOREHUB_SESSION_COOKIE_NAME", "")
 	t.Setenv("LOREHUB_LOGIN_BINDING_COOKIE_NAME", "")
 	t.Setenv("LOREHUB_SESSION_COOKIE_PATH", "")
 	t.Setenv("LOREHUB_SESSION_COOKIE_DOMAIN", "")
-	for _, provider := range identityProviderSettings() {
-		t.Setenv(provider.client, "")
-		t.Setenv(provider.secret, "")
+	t.Setenv("LOREHUB_ALLOW_LEGACY_LORE_IDENTITY", "")
+	for _, name := range []string{
+		"LOREHUB_LORE_AUTH_ISSUER", "LOREHUB_LORE_AUTH_AUDIENCE", "LOREHUB_LORE_ROOT_DOMAIN",
+		"LOREHUB_LORE_AUTH_JWKS_URL", "LOREHUB_LORE_AUTH_URL", "LOREHUB_LORE_AUTH_LOGIN_URL",
+		"LOREHUB_LORE_PUBLIC_URL", "LOREHUB_LORE_POLICY_ENDPOINT", "LOREHUB_LORE_OBSERVATION_ENDPOINT",
+		"LOREHUB_LORE_PUBLIC_READER_SUBJECT", "LOREHUB_LORE_ACTIONS_RUNNER_SUBJECT",
+		"LOREHUB_OBSERVER_SERVICE_PRINCIPAL", "LOREHUB_LORE_REPOSITORY_REGISTRATION_SUBJECT",
+		"LOREHUB_AUTH_SIGNING_KEY_PATH", "LOREHUB_AUTH_SIGNING_KEY", "LOREHUB_AUTH_SIGNING_KEY_KID",
+		"LOREHUB_AUTH_PREVIOUS_KEYS", "LOREHUB_LORE_AUTH_TLS_CERT", "LOREHUB_LORE_AUTH_TLS_KEY",
+		"LOREHUB_POLICY_TLS_CERT", "LOREHUB_POLICY_TLS_KEY", "LOREHUB_POLICY_TLS_CLIENT_CA",
+	} {
+		t.Setenv(name, "")
 	}
+}
+
+func setProductionEnvironment(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("LOREHUB_ENV", "production")
+	t.Setenv("LOREHUB_AUTH_MODE", AuthModeInteractive)
+	t.Setenv("LOREHUB_OIDC_ISSUER", "https://keycloak.example/realms/lorehub")
+	t.Setenv("LOREHUB_OIDC_AUDIENCE", "lorehub-api")
+	t.Setenv("LOREHUB_OIDC_CLIENT_ID", "lorehub-web")
+	t.Setenv("LOREHUB_OIDC_CLIENT_SECRET", "client-secret")
+	t.Setenv("LOREHUB_OIDC_REDIRECT_URL", "https://app.example/auth/callback")
+	t.Setenv("LOREHUB_PUBLIC_ORIGIN", "https://app.example")
+	t.Setenv("LOREHUB_AUTH_SECRET", strings.Repeat("a", 32))
+	t.Setenv("LOREHUB_SESSION_TTL", "24h")
+	t.Setenv("LOREHUB_LOGIN_TRANSACTION_TTL", "10m")
+	t.Setenv("LOREHUB_LORE_ROOT_DOMAIN", "lorehub.example")
+	t.Setenv("LOREHUB_LORE_AUTH_ISSUER", "auth.lorehub.example")
+	t.Setenv("LOREHUB_LORE_AUTH_AUDIENCE", "lorehub.example")
+	t.Setenv("LOREHUB_LORE_AUTHORITY", "auth.lorehub.example:8443")
+	t.Setenv("LOREHUB_LORE_AUTH_URL", "ucs-auth://auth.lorehub.example:8443")
+	t.Setenv("LOREHUB_LORE_AUTH_LOGIN_URL", "https://lorehub.example/auth/lore/confirm")
+	t.Setenv("LOREHUB_LORE_AUTH_JWKS_URL", "https://lorehub.example/.well-known/jwks.json")
+	t.Setenv("LOREHUB_LORE_PUBLIC_URL", "lores://lorehub.example:41337")
+	t.Setenv("LOREHUB_AUTH_SIGNING_KEY_PATH", "/keys/current.pem")
+	t.Setenv("LOREHUB_AUTH_SIGNING_KEY_KID", "current")
+	t.Setenv("LOREHUB_LORE_AUTH_TLS_CERT", "/tls/server.crt")
+	t.Setenv("LOREHUB_LORE_AUTH_TLS_KEY", "/tls/server.key")
+	t.Setenv("LOREHUB_POLICY_TLS_CERT", "/tls/server.crt")
+	t.Setenv("LOREHUB_POLICY_TLS_KEY", "/tls/server.key")
+	t.Setenv("LOREHUB_POLICY_TLS_CLIENT_CA", "/tls/ca.crt")
+	t.Setenv("LOREHUB_LORE_POLICY_ENDPOINT", "https://lorehub.example:8444/internal/lore/policy")
+	t.Setenv("LOREHUB_LORE_OBSERVATION_ENDPOINT", "https://lorehub.example:8444/internal/lore/observation")
+	t.Setenv("LOREHUB_LORE_PUBLIC_READER_SUBJECT", "00000000-0000-4000-8000-000000000001")
+	t.Setenv("LOREHUB_LORE_ACTIONS_RUNNER_SUBJECT", "00000000-0000-4000-8000-000000000002")
+	t.Setenv("LOREHUB_OBSERVER_SERVICE_PRINCIPAL", "00000000-0000-4000-8000-000000000003")
+	t.Setenv("LOREHUB_LORE_REPOSITORY_REGISTRATION_SUBJECT", "00000000-0000-4000-8000-000000000004")
 }

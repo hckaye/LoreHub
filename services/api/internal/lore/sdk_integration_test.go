@@ -2,6 +2,7 @@ package lore
 
 import (
 	"context"
+	"net/url"
 	"os"
 	"testing"
 	"time"
@@ -94,6 +95,140 @@ func TestSDKClientAgainstLoreServer(t *testing.T) {
 	}
 	if diff.Source != history[1].Revision || diff.Target != latest || len(diff.Files) == 0 {
 		t.Fatalf("revision diff did not contain a changed file: %#v", diff)
+	}
+}
+
+func TestSDKClientLoreAuthBoundaryAgainstLoreServer(t *testing.T) {
+	variables := []string{
+		"LOREHUB_TEST_LORE_URL", "LOREHUB_TEST_LORE_OTHER_URL", "LOREHUB_TEST_LORE_AUTH_URL",
+		"LOREHUB_TEST_LORE_IDENTITY", "LOREHUB_TEST_LORE_READ_TOKEN", "LOREHUB_TEST_LORE_OTHER_TOKEN",
+		"LOREHUB_TEST_LORE_BASE_TOKEN", "LOREHUB_TEST_LORE_EXPIRED_TOKEN",
+		"LOREHUB_TEST_LORE_WRONG_ISSUER_TOKEN", "LOREHUB_TEST_LORE_WRONG_AUDIENCE_TOKEN",
+		"LOREHUB_TEST_LORE_WRONG_KID_TOKEN",
+	}
+	for _, variable := range variables {
+		if os.Getenv(variable) == "" {
+			t.Skipf("%s is not set", variable)
+		}
+	}
+	authURL := os.Getenv("LOREHUB_TEST_LORE_AUTH_URL")
+	parsedAuthURL, err := url.Parse(authURL)
+	if err != nil || parsedAuthURL.Scheme != "ucs-auth" || parsedAuthURL.Host == "" {
+		t.Fatalf("invalid test AuthURL: %q", authURL)
+	}
+	client, err := NewSDKClientWithAuthAuthority(loreTestTempDir(t), parsedAuthURL.Host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity := os.Getenv("LOREHUB_TEST_LORE_IDENTITY")
+	firstURL := os.Getenv("LOREHUB_TEST_LORE_URL")
+	secondURL := os.Getenv("LOREHUB_TEST_LORE_OTHER_URL")
+	firstPartition := repositoryURLPartition(firstURL)
+	secondPartition := repositoryURLPartition(secondURL)
+	if firstPartition == "" || secondPartition == "" || firstPartition == secondPartition {
+		t.Fatalf("test repositories must have two distinct partitions: %q, %q", firstURL, secondURL)
+	}
+	firstRef := RepositoryRef{CacheKey: "auth-boundary-first", URL: firstURL, LoreRepositoryID: firstPartition}
+	secondRef := RepositoryRef{CacheKey: "auth-boundary-second", URL: secondURL, LoreRepositoryID: secondPartition}
+	readCredential := boundaryCredential(os.Getenv("LOREHUB_TEST_LORE_READ_TOKEN"), authURL,
+		os.Getenv("LOREHUB_TEST_LORE_BASE_TOKEN"), firstPartition, identity, ScopeRead)
+	otherCredential := boundaryCredential(os.Getenv("LOREHUB_TEST_LORE_OTHER_TOKEN"), authURL,
+		os.Getenv("LOREHUB_TEST_LORE_BASE_TOKEN"), secondPartition, identity, ScopeRead)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	repository, err := client.RepositoryInfo(ctx, firstURL, readCredential)
+	if err != nil {
+		t.Fatalf("valid gRPC repository read failed: %v", err)
+	}
+	if repository.ID != firstPartition {
+		t.Fatalf("repository identity mismatch: got %q want %q", repository.ID, firstPartition)
+	}
+	branches, err := client.Branches(ctx, firstRef, readCredential)
+	if err != nil || len(branches) == 0 {
+		t.Fatalf("valid branch read failed: branches=%#v error=%v", branches, err)
+	}
+	latest := ""
+	for _, branch := range branches {
+		if branch.LatestRevision != "" {
+			latest = branch.LatestRevision
+			break
+		}
+	}
+	if latest == "" {
+		t.Fatal("the first repository must contain an observed revision for the QUIC read check")
+	}
+	tree, err := CodeClient(client).Tree(ctx, firstRef, latest, "", readCredential, 100)
+	if err != nil || tree.Revision != latest {
+		t.Fatalf("valid QUIC tree read failed: tree=%#v error=%v", tree, err)
+	}
+	if _, err := client.Branches(ctx, secondRef, otherCredential); err != nil {
+		t.Fatalf("valid second-partition read failed: %v", err)
+	}
+
+	negativeTokens := []struct {
+		name  string
+		token string
+	}{
+		{name: "zero-resource-base", token: os.Getenv("LOREHUB_TEST_LORE_BASE_TOKEN")},
+		{name: "expired", token: os.Getenv("LOREHUB_TEST_LORE_EXPIRED_TOKEN")},
+		{name: "wrong-issuer", token: os.Getenv("LOREHUB_TEST_LORE_WRONG_ISSUER_TOKEN")},
+		{name: "wrong-audience", token: os.Getenv("LOREHUB_TEST_LORE_WRONG_AUDIENCE_TOKEN")},
+		{name: "wrong-kid", token: os.Getenv("LOREHUB_TEST_LORE_WRONG_KID_TOKEN")},
+	}
+	for _, testCase := range negativeTokens {
+		t.Run(testCase.name, func(t *testing.T) {
+			credential := boundaryCredential(os.Getenv("LOREHUB_TEST_LORE_READ_TOKEN"), authURL,
+				testCase.token, firstPartition,
+				identity+"-"+testCase.name, ScopeRead)
+			if _, err := client.Branches(ctx, firstRef, credential); err == nil {
+				t.Fatalf("%s token was accepted by the data plane", testCase.name)
+			}
+		})
+	}
+	for _, testCase := range []struct {
+		name       string
+		token      string
+		partition  string
+		repository RepositoryRef
+	}{
+		{name: "first-token-on-second", token: os.Getenv("LOREHUB_TEST_LORE_READ_TOKEN"),
+			partition: secondPartition, repository: secondRef},
+		{name: "second-token-on-first", token: os.Getenv("LOREHUB_TEST_LORE_OTHER_TOKEN"),
+			partition: firstPartition, repository: firstRef},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			credential := boundaryCredential(testCase.token, authURL,
+				os.Getenv("LOREHUB_TEST_LORE_BASE_TOKEN"), testCase.partition,
+				identity+"-"+testCase.name, ScopeRead)
+			if _, err := client.Branches(ctx, testCase.repository, credential); err == nil {
+				t.Fatal("a token for another Lore partition was accepted")
+			}
+		})
+	}
+	readAsWrite := boundaryCredential(os.Getenv("LOREHUB_TEST_LORE_READ_TOKEN"), authURL,
+		os.Getenv("LOREHUB_TEST_LORE_BASE_TOKEN"), firstPartition, identity+"-write", ScopeWrite)
+	if err := client.CreateRepositoryWithCredential(ctx, firstURL, firstPartition, "blocked", "blocked",
+		readAsWrite); err == nil {
+		t.Fatal("a read-only token was accepted by the gRPC write path")
+	}
+}
+
+func boundaryCredential(
+	resourceToken string,
+	authURL string,
+	authenticationToken string,
+	partition string,
+	identity string,
+	scope Scope,
+) Credential {
+	return Credential{
+		Partition: partition, Scope: scope, ResourceID: "urc-" + partition, Subject: identity,
+		RequestedScopes: []string{string(scope)}, GrantedScopes: []string{string(scope)}, Identity: identity,
+		Token: resourceToken, AuthenticationToken: authenticationToken, AuthURL: authURL,
+		ExpiresAt:               time.Now().UTC().Add(5 * time.Minute),
+		AuthenticationExpiresAt: time.Now().UTC().Add(5 * time.Minute),
+		Principal:               UserPrincipal(identity),
 	}
 }
 

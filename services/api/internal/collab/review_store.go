@@ -48,7 +48,7 @@ func scanMergeRequest(row pgx.Row) (MergeRequest, error) {
 }
 
 // UpdateMergeRequest edits title/body or closes/reopens. The merged state is
-// terminal and not reachable here. Author or triage+ actors may update.
+// terminal and not reachable here. A triage+ actor may update.
 func (s *store) UpdateMergeRequest(
 	ctx context.Context,
 	actor platform.User,
@@ -56,14 +56,14 @@ func (s *store) UpdateMergeRequest(
 	number int64,
 	input UpdateMergeRequestInput,
 ) (MergeRequest, error) {
-	allowed, authorID, orgID, state, err := s.checkMergeRequestMutation(ctx, actor, repoID, number)
+	allowed, orgID, state, err := s.checkMergeRequestMutation(ctx, actor, repoID, number)
 	if err != nil {
 		return MergeRequest{}, err
 	}
 	if state == "merged" {
 		return MergeRequest{}, platform.ErrConflict
 	}
-	if !allowed && authorID != actor.ID {
+	if !allowed {
 		return MergeRequest{}, platform.ErrForbidden
 	}
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
@@ -120,25 +120,25 @@ func (s *store) checkMergeRequestMutation(
 	actor platform.User,
 	repoID string,
 	number int64,
-) (bool, string, string, string, error) {
-	var authorID, orgID, state string
+) (bool, string, string, error) {
+	var orgID, state string
 	err := s.pool.QueryRow(ctx, `
-		SELECT mr.author_id, r.organization_id, mr.state
+		SELECT r.organization_id, mr.state
 		FROM merge_requests mr
 		JOIN repositories r ON r.id = mr.repository_id
 		WHERE mr.repository_id = $1 AND mr.number = $2
-	`, repoID, number).Scan(&authorID, &orgID, &state)
+	`, repoID, number).Scan(&orgID, &state)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return false, "", "", "", platform.ErrNotFound
+		return false, "", "", platform.ErrNotFound
 	}
 	if err != nil {
-		return false, "", "", "", fmt.Errorf("find merge request for mutation: %w", err)
+		return false, "", "", fmt.Errorf("find merge request for mutation: %w", err)
 	}
 	access, err := s.permFromRef(ctx, actor, repoID, orgID)
 	if err != nil {
-		return false, "", "", "", err
+		return false, "", "", err
 	}
-	return access.AtLeast(PermTriage), authorID, orgID, state, nil
+	return access.AtLeast(PermTriage), orgID, state, nil
 }
 
 func buildMergeRequestUpdateQuery(

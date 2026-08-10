@@ -158,8 +158,57 @@ func TestIntegrationRepositoryPermission(t *testing.T) {
 	if err != nil {
 		t.Fatalf("carol permission: %v", err)
 	}
-	if carolAccess.Permission != PermRead {
-		t.Errorf("carol (org member) permission = %v, want PermRead", carolAccess.Permission)
+	if carolAccess.Permission != PermNone {
+		t.Errorf("carol (org member) permission = %v, want PermNone", carolAccess.Permission)
+	}
+}
+
+func TestIntegrationOutsideDirectCollaboratorAccess(t *testing.T) {
+	pool, s := integrationEnv(t)
+	ctx := context.Background()
+	fix := setupFixture(t, pool, "private", "")
+	outsider := platform.User{ID: uuidNew(), Username: "outside-" + fix.orgID[:8], DisplayName: "Outside"}
+	mustExec(t, ctx, pool, `
+		INSERT INTO users (id, username, display_name) VALUES ($1, $2, $3)
+	`, outsider.ID, outsider.Username, outsider.DisplayName)
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id = $1`, outsider.ID)
+	})
+	mustExec(t, ctx, pool, `
+		INSERT INTO repository_memberships (repository_id, user_id, role, active)
+		VALUES ($1, $2, 'write', true)
+	`, fix.repoID, outsider.ID)
+
+	repository, err := s.LookupRepository(ctx, &outsider, fix.ownerSlug, fix.repoSlug)
+	if err != nil {
+		t.Fatalf("outside private lookup: %v", err)
+	}
+	access, err := s.RepositoryPermission(ctx, outsider, repository)
+	if err != nil {
+		t.Fatalf("outside private permission: %v", err)
+	}
+	if access.Permission != PermWrite {
+		t.Fatalf("outside permission = %v, want PermWrite", access.Permission)
+	}
+
+	mustExec(t, ctx, pool, `UPDATE repositories SET visibility = 'public' WHERE id = $1`, fix.repoID)
+	mustExec(t, ctx, pool, `UPDATE repository_memberships SET active = false WHERE repository_id = $1 AND user_id = $2`,
+		fix.repoID, outsider.ID)
+	repository, err = s.LookupRepository(ctx, &outsider, fix.ownerSlug, fix.repoSlug)
+	if err != nil {
+		t.Fatalf("outside public lookup: %v", err)
+	}
+	access, err = s.RepositoryPermission(ctx, outsider, repository)
+	if err != nil {
+		t.Fatalf("outside public permission: %v", err)
+	}
+	if access.Permission != PermRead {
+		t.Fatalf("outside public permission = %v, want PermRead", access.Permission)
+	}
+
+	mustExec(t, ctx, pool, `UPDATE users SET status = 'suspended' WHERE id = $1`, outsider.ID)
+	if _, err := s.LookupRepository(ctx, &outsider, fix.ownerSlug, fix.repoSlug); !errors.Is(err, platform.ErrNotFound) {
+		t.Fatalf("suspended outside lookup error = %v, want not found", err)
 	}
 }
 
@@ -169,7 +218,7 @@ func TestIntegrationIssueUpdatePermissionAndPrecondition(t *testing.T) {
 	fix := setupFixture(t, pool, "public", "triage")
 	number := seedIssue(t, ctx, pool, fix, fix.alice.ID, "open")
 
-	// Author can edit even without triage (carol has no repo role, only org member read).
+	// Author can edit even without triage (carol has no repository role).
 	_, err := s.UpdateIssue(ctx, fix.alice, fix.repoID, number, UpdateIssueInput{
 		Title: ptrString("Edited by author"),
 	})

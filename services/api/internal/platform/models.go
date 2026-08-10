@@ -35,6 +35,8 @@ type Repository struct {
 	AllowMergeRequests bool      `json:"allowMergeRequests"`
 	IssueCount         int64     `json:"issueCount"`
 	MergeRequestCount  int64     `json:"mergeRequestCount"`
+	LifecycleState     string    `json:"lifecycleState,omitempty"`
+	ProvisioningError  string    `json:"provisioningError,omitempty"`
 	UpdatedAt          time.Time `json:"updatedAt"`
 }
 
@@ -95,6 +97,126 @@ type RegisterRepositoryInput struct {
 	LoreRepositoryID string
 	LoreURL          string
 	DefaultBranch    string
+}
+
+type ProvisionRepositoryInput struct {
+	Slug          string
+	DisplayName   string
+	Description   string
+	Visibility    string
+	DefaultBranch string
+}
+
+type Team struct {
+	ID               string    `json:"id"`
+	OrganizationID   string    `json:"organizationId"`
+	Organization     string    `json:"organization,omitempty"`
+	OrganizationSlug string    `json:"organizationSlug,omitempty"`
+	Slug             string    `json:"slug"`
+	DisplayName      string    `json:"displayName"`
+	Description      string    `json:"description"`
+	ViewerRole       string    `json:"viewerRole,omitempty"`
+	MemberCount      int64     `json:"memberCount,omitempty"`
+	CreatedAt        time.Time `json:"createdAt"`
+	UpdatedAt        time.Time `json:"updatedAt"`
+}
+
+type TeamMember struct {
+	TeamID      string    `json:"teamId"`
+	UserID      string    `json:"userId"`
+	Username    string    `json:"username"`
+	DisplayName string    `json:"displayName"`
+	Role        string    `json:"role"`
+	Active      bool      `json:"active"`
+	CreatedAt   time.Time `json:"createdAt"`
+	JoinedAt    time.Time `json:"joinedAt,omitempty"`
+}
+
+type TeamRepositoryRole struct {
+	TeamID       string    `json:"teamId"`
+	RepositoryID string    `json:"repositoryId"`
+	Owner        string    `json:"owner"`
+	Repository   string    `json:"repository"`
+	Role         string    `json:"role"`
+	CreatedAt    time.Time `json:"createdAt"`
+	UpdatedAt    time.Time `json:"updatedAt"`
+}
+
+type Collaborator struct {
+	UserID      string `json:"userId"`
+	Username    string `json:"username"`
+	DisplayName string `json:"displayName"`
+	Role        string `json:"role"`
+	Active      bool   `json:"active"`
+	Source      string `json:"source"`
+}
+
+type OrganizationMember struct {
+	UserID      string    `json:"userId"`
+	Username    string    `json:"username"`
+	DisplayName string    `json:"displayName"`
+	Role        string    `json:"role"`
+	Active      bool      `json:"active"`
+	CreatedAt   time.Time `json:"createdAt"`
+}
+
+type RepositoryLink struct {
+	ID                 string    `json:"id"`
+	SourceRepositoryID string    `json:"sourceRepositoryId"`
+	SourceRepository   string    `json:"sourceRepository"`
+	TargetRepositoryID string    `json:"targetRepositoryId"`
+	TargetRepository   string    `json:"targetRepository"`
+	Kind               string    `json:"kind"`
+	CreatedAt          time.Time `json:"createdAt"`
+}
+
+type SetTeamInput struct {
+	Slug        string
+	DisplayName string
+	Description string
+}
+
+type SetOrganizationMemberInput struct {
+	Username string
+	Role     string
+	Active   bool
+}
+
+type SetTeamMemberInput struct {
+	Username string
+	Role     string
+	Active   bool
+}
+
+type SetTeamRepositoryRoleInput struct {
+	Role string
+}
+
+type SetCollaboratorInput struct {
+	Username string
+	Role     string
+	Active   bool
+}
+
+type SetRepositoryPolicyInput struct {
+	AllowCrossRepositoryLinks bool `json:"allowCrossRepositoryLinks"`
+	ObliterateEnabled         bool `json:"obliterateEnabled"`
+}
+
+type RepositoryPolicy struct {
+	AllowCrossRepositoryLinks bool `json:"allowCrossRepositoryLinks"`
+	ObliterateEnabled         bool `json:"obliterateEnabled"`
+}
+
+type MergeAuthorizationInput struct {
+	OperationID    string
+	RepositoryID   string
+	BranchID       string
+	BranchName     string
+	ExpectedBase   string
+	ExpectedHead   string
+	SourceRevision string
+	Lifetime       time.Duration
 }
 
 type CreateIssueInput struct {

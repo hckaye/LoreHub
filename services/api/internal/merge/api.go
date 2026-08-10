@@ -17,7 +17,10 @@ import (
 	"github.com/lorehub/lorehub/services/api/internal/platform"
 )
 
-const mergeLease = 5 * time.Minute
+const (
+	mergeLease                 = 5 * time.Minute
+	mergeAuthorizationLifetime = 2 * time.Minute
+)
 
 var (
 	errInvalidMergePaths = errors.New("invalid merge paths")
@@ -25,14 +28,21 @@ var (
 )
 
 type API struct {
-	store       collab.Store
-	workflow    collab.MergeWorkflowStore
-	lore        loreclient.Client
-	merge       loreclient.MergeClient
-	actors      collab.ActorResolver
-	credentials loreclient.CredentialProvider
-	pushAuth    loreclient.PushAuthorizer
-	logger      *slog.Logger
+	store              collab.Store
+	workflow           collab.MergeWorkflowStore
+	lore               loreclient.Client
+	merge              loreclient.MergeClient
+	actors             collab.ActorResolver
+	credentials        loreclient.CredentialProvider
+	pushAuth           loreclient.PushAuthorizer
+	mergeAuthorization MergeAuthorizationStore
+	logger             *slog.Logger
+}
+
+// MergeAuthorizationStore persists the exact proposed revision tuple that the
+// Lore push hook consumes atomically for a protected branch merge.
+type MergeAuthorizationStore interface {
+	PrepareMergeAuthorization(context.Context, string, platform.MergeAuthorizationInput) error
 }
 
 // Register mounts readiness, continuation, conflict resolution and final push
@@ -46,10 +56,12 @@ func Register(
 	actors collab.ActorResolver,
 	credentials loreclient.CredentialProvider,
 	pushAuthorizer loreclient.PushAuthorizer,
+	mergeAuthorization MergeAuthorizationStore,
 	logger *slog.Logger,
 ) {
 	api := &API{store: store, workflow: workflow, lore: lore, merge: mergeClient,
-		actors: actors, credentials: credentials, pushAuth: pushAuthorizer, logger: logger}
+		actors: actors, credentials: credentials, pushAuth: pushAuthorizer,
+		mergeAuthorization: mergeAuthorization, logger: logger}
 	base := "/api/v1/repositories/{owner}/{repository}/merge-requests/{number}"
 	mux.HandleFunc("GET "+base+"/merge-readiness", api.readiness)
 	mux.HandleFunc("GET "+base+"/merge-operation", api.operation)

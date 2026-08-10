@@ -15,6 +15,8 @@ LoreHubは、Loreリポジトリ向けの共同開発基盤です。LoreをVCS�
 - Loreのbranch merge、競合解決、abort、restart、pushを含むプルリクエストのmerge lifecycle
 - PostgreSQLのmigration、組織、権限、リポジトリ登録、Issue、レビュー、CI、監査用schema
 - OIDCトークンを検証するGo API
+- Lore 0.8.6互換のUCS認証、resource限定JWT、JWKS、TLS、protected branch hook
+- 組織チーム、直接collaborator、リポジトリ方針、明示的なobliterate権限、Lore Links宣言
 - 公開リポジトリ、branch、Issueを表示する英語／日本語UI
 - Loreのbranch latestを確認してCIを登録するworker
 - `.github/workflows`を`nektos/act`で実行するGitHub Actions互換runner
@@ -86,8 +88,16 @@ LOREHUB_AUTH_MODE=disabled go run ./services/api/cmd/lorehub serve
 Keycloakの構成、ソーシャルプロバイダー、SMTP、本番のTLSとリバースプロキシ、バックアップについては
 [Keycloak運用ガイド](docs/operations/keycloak.md)を参照してください。
 
-開発用Lore Serverはデータと自己署名証明書をDocker volumeへ保存します。認証なしの単一ノード構成なので、公開環境で
-使ってはいけません。本番ではLore公式のストレージ、JWT検証、TLS、バックアップ構成を使用してください。
+開発用Lore ServerはデータとローカルCAで署名したTLS証明書をDocker volumeへ保存します。CA秘密鍵は初期化専用の
+別volumeに隔離され、Lore/APIからは参照できません。ComposeでもJWT検証とUCS gRPC認証を有効にしています。
+ローカルCAのtrust手順、本番の鍵交代、Lore hook、partition境界は
+[認可境界の運用ガイド](docs/operations/control-plane-authorization.md)を参照してください。
+
+Lore 0.8.6の`environment.endpoint.auth_url`はUCS認証とRebacが共用します。このComposeは公式の
+`ucs-auth://auth.lorehub.localhost:8443`広告を使い、Lore 0.8.6のclientがUCS接続をHTTPSへ変換します。hostのCLIが
+同じpublic URLを使えるよう、Lore container内だけAuthURLの名前をローカルbridgeへ解決します。bridgeは設定した内部HTTPS
+authorityへCAとSANを検証して転送します。issuer、audience、JWKS、Lore URLも同じmanaged root domainに揃えています。
+詳細は運用ガイドの「URL、audience、鍵」を参照してください。
 
 ### CI runner
 
@@ -149,17 +159,18 @@ transactionは最大15分）。
 
 Lore側の読み取りはservice subject、repository partition、`read` scopeをcredential issuerへ渡し、短命の
 repository限定credentialを受け取ります。本番credentialは要求されたsubjectと一致するIdentityに加え、Token、
-AuthURL、Identity、有効期限をすべて持つ必要があります。組み込みLore SDKのadapterはToken/AuthURLの接続が未完了
-なのでfail closedします。本番ではissuerやcredential-aware Lore clientが未注入ならrunner処理をfail closedし、
-ファイルcredentialや共有identityにはfallbackしません。開発用identity fallbackはdevelopment/localだけで明示的に
-許可します。
+AuthURL、Identity、有効期限をすべて持ちます。Control PlaneはPostgreSQLの実効権限を評価してrepository-scoped JWTを
+発行し、組み込みLore SDK clientがそのcredentialでexact revisionを読み取ります。ファイルcredentialや共有identityへは
+fallbackしません。開発用identity fallbackはdevelopment/localだけで明示的に許可します。
 
 Actions実行時は、service subject、organization/repository partition、job environmentをexecution-context resolverへ
 渡します。organization、repository、environmentの変数とsecretをenvironment優先で解決し、変数はactの`--var`だけ、
 secretは一時0600ファイルで渡します。システムが発行するGITHUB_TOKENは別の短命job/run/attempt限定契約で受け取り、
 secret fileへだけ注入します。secretと`::add-mask::`出力は保存前にマスクし、resolverまたはToken issuerのエラーは
-実行を開始せず、secretファイルも全終了経路で削除します。本番resolverとToken issuerはcontrol planeから注入し、固定値の
-開発用adapterは明示的なdevelopment/local設定でだけ利用できます。
+実行を開始せず、secretファイルも全終了経路で削除します。本番resolverはPostgreSQLの3 scopeを読み、AES-256-GCMで
+暗号化したsecretを実行時だけ復号します。GITHUB_TOKENはRS256で署名し、発行時と利用時の両方でjob、run、attempt、
+repository、有効lease、CI service principalを再確認します。固定値の開発用adapterは明示的なdevelopment/local設定で
+だけ利用できます。
 
 コード閲覧とmerge操作も同じcredential provider境界を使い、ブラウザ利用者のLore tokenをLoreへ転送しません。
 本番のissuerは利用者またはサービスprincipal、repository partition、要求scopeを受け取り、要求subjectと一致する
@@ -175,7 +186,7 @@ APIをDockerコンテナで起動する場合のdiscovery到達性について�
 ## APIの主な入口
 
 - `GET /health/live` — 認証不要 — プロセスの確認
-- `GET /health/ready` — 認証不要 — PostgreSQL接続の確認
+- `GET /health/ready` — 認証不要 — DB、migration、署名鍵、TLSの確認
 - `GET /auth/login` — 認証不要 — OIDCログイン／登録開始
 - `GET /auth/callback` — 認証不要 — OIDCログイン完了
 - `POST /auth/logout` — CSRF — セッション終了

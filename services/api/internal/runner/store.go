@@ -14,11 +14,12 @@ import (
 )
 
 type Repository struct {
-	ID            string
-	Owner         string
-	Slug          string
-	LoreURL       string
-	DefaultBranch string
+	ID               string
+	Owner            string
+	Slug             string
+	LoreRepositoryID string
+	LoreURL          string
+	DefaultBranch    string
 }
 
 type ObservedBranch struct {
@@ -28,20 +29,21 @@ type ObservedBranch struct {
 }
 
 type Job struct {
-	ID             string
-	Attempt        int
-	RunID          string
-	ActorID        string
-	WorkflowPath   string
-	RepositoryID   string
-	OrganizationID string
-	Owner          string
-	Repository     string
-	LoreURL        string
-	Revision       string
-	Branch         string
-	EventName      string
-	EventPayload   json.RawMessage
+	ID               string
+	Attempt          int
+	RunID            string
+	ActorID          string
+	WorkflowPath     string
+	RepositoryID     string
+	OrganizationID   string
+	Owner            string
+	Repository       string
+	LoreRepositoryID string
+	LoreURL          string
+	Revision         string
+	Branch           string
+	EventName        string
+	EventPayload     json.RawMessage
 }
 
 type Artifact struct {
@@ -66,6 +68,45 @@ func NewStoreWithFiles(pool *pgxpool.Pool, logDirectory string, artifactDirector
 		logDirectory:      logDirectory,
 		artifactDirectory: artifactDirectory,
 	}
+}
+
+func (store *Store) RepositoryPartition(ctx context.Context, repositoryID string) (string, error) {
+	var partition string
+	err := store.pool.QueryRow(ctx, `
+		SELECT r.lore_repository_id
+		FROM repositories r
+		JOIN organizations o ON o.id = r.organization_id AND o.active
+		WHERE r.id = $1 AND r.archived_at IS NULL AND r.lifecycle_state = 'active'
+	`, repositoryID).Scan(&partition)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", errors.New("repository is not active for Actions polling")
+	}
+	if err != nil {
+		return "", fmt.Errorf("read repository Lore partition: %w", err)
+	}
+	return partition, nil
+}
+
+func (store *Store) ReconcileBranchStates(
+	ctx context.Context,
+	repositoryID string,
+	observedBranchIDs []string,
+) error {
+	transaction, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin branch reconciliation: %w", err)
+	}
+	defer func() { _ = transaction.Rollback(context.WithoutCancel(ctx)) }()
+	if _, err := transaction.Exec(ctx, `
+		DELETE FROM repository_branch_states
+		WHERE repository_id = $1 AND branch_id <> ALL($2::text[])
+	`, repositoryID, observedBranchIDs); err != nil {
+		return fmt.Errorf("remove missed Lore branch observations: %w", err)
+	}
+	if err := transaction.Commit(ctx); err != nil {
+		return fmt.Errorf("commit branch reconciliation: %w", err)
+	}
+	return nil
 }
 
 func (store *Store) EnqueueScheduledRuns(
@@ -465,7 +506,8 @@ func (store *Store) ClaimJob(ctx context.Context, workerID string, lease time.Du
 	err = transaction.QueryRow(ctx, `
 		SELECT j.id, j.attempt, run.id, COALESCE(run.actor_id::text, ''),
 		       COALESCE(workflow.path, workflow_revision.path, ''), r.id,
-		       o.id, o.slug, r.slug, r.lore_url, run.revision, run.branch, run.event_name, run.event_payload
+		       o.id, o.slug, r.slug, r.lore_repository_id, r.lore_url,
+		       run.revision, run.branch, run.event_name, run.event_payload
 		FROM ci_jobs j
 		JOIN ci_runs run ON run.id = j.run_id
 		LEFT JOIN ci_workflows workflow ON workflow.id = run.workflow_id
@@ -483,6 +525,7 @@ func (store *Store) ClaimJob(ctx context.Context, workerID string, lease time.Du
 		&job.OrganizationID,
 		&job.Owner,
 		&job.Repository,
+		&job.LoreRepositoryID,
 		&job.LoreURL,
 		&job.Revision,
 		&job.Branch,

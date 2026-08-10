@@ -339,6 +339,11 @@ func (api *API) session(writer http.ResponseWriter, request *http.Request) {
 		writeJSON(writer, http.StatusOK, anonymousSessionResponse())
 		return
 	}
+	if _, err := api.store.ActiveUser(request.Context(), session.UserID); err != nil {
+		api.clearSessionCookie(writer)
+		writeProblem(writer, http.StatusUnauthorized, "authentication_required", "Authentication is required")
+		return
+	}
 	writeJSON(writer, http.StatusOK, authenticatedSessionResponse(session, api.secrets.CSRFToken(sessionToken)))
 }
 

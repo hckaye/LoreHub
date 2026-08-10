@@ -50,26 +50,28 @@ to verify that stronger layer.
 
 ## Lore credentials
 
-The runner and poller call a `CredentialIssuer` with a service subject, the exact repository partition, the Lore URL,
-and the `read` scope. Production credentials must return nonempty Token, AuthURL, Identity, and expiry, with Identity
-equal to the requested subject and the repository and scope equal to the request.
-The `CredentialRevisionClient` and `CredentialBranchClient` interfaces are the integration boundary for the control
-plane issuer. The bundled Lore SDK adapter accepts only its local identity form and deliberately fails closed for
-token/AuthURL credentials; this revision does not claim that identity-only adapter is production authentication.
-Production has no file or shared-identity fallback: the process fails closed until the issuer and credential-aware Lore
-client are injected. The only static identity adapter is an explicit development/local test fallback and is rejected
-in production.
+The runner and poller request a short-lived Lore credential with a dedicated service principal, the exact repository
+partition, and the `read` scope. The Control Plane resolves the active PostgreSQL grant and signs a resource-scoped JWT.
+The Lore SDK client uses that credential for branch observation and exact-revision checkout. Repository URLs and their
+partition IDs are validated together before a token is issued or used. Production has no file or shared-identity
+fallback. The only static identity adapter is an explicit development/local test fallback and is rejected in
+production.
 
 The runner also resolves an `actions:execute` context using the service subject, repository and organization partitions,
 and the literal job environment. Repository, organization, and environment variables/secrets are merged with
 environment precedence. Variables are passed to act as `--var` entries only; secrets are passed through a temporary
 0600 `--secret-file`, masked in logs, and removed on every exit. Variables do not become environment variables. A
-resolver error fails the job before act starts. A separate production `JobTokenIssuer` receives the exact job, run,
-attempt, repository, actor, service subject, REST/GraphQL scopes, and requested expiry; it returns a short-lived exact
-GITHUB_TOKEN subject.
-The token is reserved, passed only through the secret file, and exposed by act as `github.token` and
-`secrets.GITHUB_TOKEN`. The production issuer is fail-closed until the control-plane verifier is injected. The only
-static token adapter is explicitly development/test-only.
+resolver error fails the job before act starts. The PostgreSQL resolver verifies the active `ci_runner` grant, reads
+organization, repository, and environment entries in one repeatable-read transaction, and decrypts AES-256-GCM secret
+values only in runner memory. Management APIs return variable values and secret metadata, never secret plaintext.
+
+The production `JobTokenIssuer` receives the exact job, run, attempt, repository, actor, service subject, REST/GraphQL
+scopes, and requested expiry. It issues a `kid`-identified RS256 GITHUB_TOKEN valid for no more than 15 minutes.
+Issuance and verification both recheck the active organization/repository, job lease, cancellation state, `ci_runner`
+principal,
+and repository grant. The token is reserved, passed only through the secret file, and exposed by act as `github.token`
+and `secrets.GITHUB_TOKEN`. A GitHub-compatible SARIF endpoint accepts this token, validates the same job boundary, and
+stores bounded SARIF 2.1.0 documents and alerts in PostgreSQL. Static token/context adapters are development/test-only.
 
 `LOREHUB_RUNNER_PLATFORM_IMAGES` may add validated operator-owned runner-label mappings. The deployed default is
 `ubuntu-latest=ghcr.io/catthehacker/ubuntu:act-24.04`; unmapped literal labels fail closed. Workflow files cannot

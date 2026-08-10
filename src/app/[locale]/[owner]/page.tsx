@@ -6,20 +6,20 @@ import { isLocale } from "@/i18n/config";
 import { getUserProfile, getUserRepositories } from "@/lib/lorehub-api";
 
 type PublicUserPageProps = {
-  params: Promise<{ locale: string; username: string }>;
+  params: Promise<{ locale: string; owner: string }>;
 };
 
 export const dynamic = "force-dynamic";
 
 export default async function PublicUserPage({ params }: PublicUserPageProps) {
-  const { locale: value, username } = await params;
+  const { locale: value, owner } = await params;
   if (!isLocale(value)) {
     notFound();
   }
   const [dictionary, profile, repositories] = await Promise.all([
     getDictionary(value),
-    getUserProfile(username),
-    getUserRepositories(username),
+    getUserProfile(owner),
+    getUserRepositories(owner),
   ]);
   return (
     <UserProfilePage

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -134,60 +133,6 @@ func (store *Store) UpdateOrganization(
 		return OrganizationView{}, fmt.Errorf("commit organization update: %w", err)
 	}
 	return store.Organization(ctx, &actor, slug)
-}
-
-func (store *Store) CreateTeam(
-	ctx context.Context,
-	actor User,
-	organizationSlug string,
-	input CreateTeamInput,
-) (Team, error) {
-	if err := validateSlug(input.Slug); err != nil {
-		return Team{}, err
-	}
-	organizationID, role, err := store.organizationRole(ctx, actor.ID, organizationSlug)
-	if err != nil {
-		return Team{}, err
-	}
-	if role != "owner" && role != "maintainer" {
-		return Team{}, ErrForbidden
-	}
-	team := Team{
-		ID:               uuid.NewString(),
-		OrganizationID:   organizationID,
-		OrganizationSlug: organizationSlug,
-		Slug:             input.Slug,
-		DisplayName:      strings.TrimSpace(input.DisplayName),
-		Description:      strings.TrimSpace(input.Description),
-	}
-	transaction, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
-	if err != nil {
-		return Team{}, fmt.Errorf("begin team creation: %w", err)
-	}
-	defer func() { _ = transaction.Rollback(context.WithoutCancel(ctx)) }()
-	_, err = transaction.Exec(ctx, `
-		INSERT INTO teams (id, organization_id, slug, display_name, description, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6)
-	`, team.ID, organizationID, team.Slug, team.DisplayName, team.Description, actor.ID)
-	if err != nil {
-		return Team{}, translateConstraintError("create team", err)
-	}
-	_, err = transaction.Exec(ctx, `
-		INSERT INTO team_memberships (team_id, user_id, role) VALUES ($1, $2, 'maintainer')
-	`, team.ID, actor.ID)
-	if err != nil {
-		return Team{}, fmt.Errorf("add team creator: %w", err)
-	}
-	if err := insertAudit(ctx, transaction, actor.ID, organizationID, "", "team.create", "team", team.ID); err != nil {
-		return Team{}, err
-	}
-	if err := insertOutbox(ctx, transaction, "team.created", team.ID, team); err != nil {
-		return Team{}, err
-	}
-	if err := transaction.Commit(ctx); err != nil {
-		return Team{}, fmt.Errorf("commit team creation: %w", err)
-	}
-	return store.Team(ctx, &actor, organizationSlug, input.Slug)
 }
 
 func (store *Store) Teams(
@@ -320,47 +265,6 @@ func (store *Store) TeamMembers(
 		return nil, fmt.Errorf("iterate team members: %w", err)
 	}
 	return members, nil
-}
-
-func (store *Store) UpdateTeam(
-	ctx context.Context,
-	actor User,
-	organizationSlug string,
-	teamSlug string,
-	input UpdateTeamInput,
-) (Team, error) {
-	team, err := store.Team(ctx, &actor, organizationSlug, teamSlug)
-	if err != nil {
-		return Team{}, err
-	}
-	if !teamManager(team.ViewerRole) {
-		return Team{}, ErrForbidden
-	}
-	transaction, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
-	if err != nil {
-		return Team{}, fmt.Errorf("begin team update: %w", err)
-	}
-	defer func() { _ = transaction.Rollback(context.WithoutCancel(ctx)) }()
-	_, err = transaction.Exec(ctx, `
-		UPDATE teams
-		SET display_name = COALESCE($2, display_name), description = COALESCE($3, description), updated_at = now()
-		WHERE id = $1 AND active
-	`, team.ID, input.DisplayName, input.Description)
-	if err != nil {
-		return Team{}, translateConstraintError("update team", err)
-	}
-	if err := insertAudit(
-		ctx, transaction, actor.ID, team.OrganizationID, "", "team.update", "team", team.ID,
-	); err != nil {
-		return Team{}, err
-	}
-	if err := insertOutbox(ctx, transaction, "team.updated", team.ID+":"+uuid.NewString(), input); err != nil {
-		return Team{}, err
-	}
-	if err := transaction.Commit(ctx); err != nil {
-		return Team{}, fmt.Errorf("commit team update: %w", err)
-	}
-	return store.Team(ctx, &actor, organizationSlug, teamSlug)
 }
 
 func (store *Store) AddTeamMember(

@@ -1,6 +1,40 @@
 [server.quic.certificate]
-cert_file = "/data/certificates/cert.pem"
-pkey_file = "/data/certificates/key.pem"
+cert_file = "/etc/lore/auth-tls/server.crt"
+pkey_file = "/etc/lore/auth-tls/server.key"
+
+[server.grpc]
+verify_client_certs = false
+
+[server.grpc.certificate]
+cert_file = "/etc/lore/auth-tls/server.crt"
+pkey_file = "/etc/lore/auth-tls/server.key"
+
+[server.auth]
+jwt_issuer = "@AUTH_ISSUER@"
+jwt_audience = ["@AUTH_AUDIENCE@"]
+
+[server.quic]
+verify_client_certs = false
+
+[server.auth.jwk]
+endpoint = "@INTERNAL_JWKS_ENDPOINT@"
+
+[environment.endpoint]
+# This is the public UCS Auth advertisement. Lore 0.8.6 maps ucs-auth:// to
+# HTTPS for the gRPC connection and keeps this exact value as the token-store key.
+auth_url = "@PUBLIC_AUTH_URL@"
+
+[hooks.lorehub_policy]
+enabled = true
+environment = "development"
+root_domain = "@ROOT_DOMAIN@"
+endpoint = "@INTERNAL_POLICY_ENDPOINT@"
+observation_endpoint = "@INTERNAL_OBSERVATION_ENDPOINT@"
+auth_endpoint = "@INTERNAL_AUTH_URL@"
+jwks_endpoint = "@INTERNAL_JWKS_ENDPOINT@"
+ca_certificate = "/etc/lore/auth-tls/ca.crt"
+client_certificate = "/etc/lore/auth-tls/lore-client.crt"
+client_key = "/etc/lore/auth-tls/lore-client.key"
 
 [immutable_store.local]
 path = "/data/store"

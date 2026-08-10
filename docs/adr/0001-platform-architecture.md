@@ -36,7 +36,8 @@ SDK固有の型は`internal/lore`から外へ出さない。画面やIssue機能
 
 LoreHubのブラウザ認証とLoreのcredentialは分離する。利用者の権限とCSRFをAPIで確認した後、Loreのread/write操作は
 repository partition、呼び出し元の利用者または明示的なサービス用途、scopeを組にして解決する。本番credentialは
-identity、短命token、正確なAuthURLをsecret managerから実行時に注入する。共通identityを利用者の認証確認なしに使ってはならない。
+PostgreSQLの現在の権限から短命tokenを発行し、正確なidentity、partition、AuthURLを持たせる。署名秘密鍵はSecret、
+KMS、または権限を絞ったファイルから読む。共通identityを利用者の認証確認なしに使ってはならない。
 認証値が欠けた場合はfail closedとし、認証情報のないcredentialは明示的なdevelopment/test fixtureに限定する。
 LoreHubのログインはOIDC authorization codeとPKCEを使い、APIはアクセストークンの発行者と対象を検証する。ブラウザは
 OIDC tokenを保持せず、Go APIが期限付きサーバー側セッションをCookieで管理する。既存のBearer APIクライアントも維持する。
@@ -58,6 +59,11 @@ outboxへ記録し、workerが再送する。重複通知は外部イベントID
 2. 指定されたLore revisionを隔離された作業場所へcloneする。
 3. GitHub Actions互換のイベントJSON、環境変数、短命な権限トークンを作る。
 4. `act`を非特権の隔離環境で実行し、状態、ログ、成果物を保存する。
+
+organization、repository、environmentのActions variableとsecretはPostgreSQLで管理する。secretは専用鍵による
+AES-256-GCMで暗号化し、runnerが有効なCI service principalとrepository grantを確認した実行時だけ復号する。
+GITHUB_TOKENはjob、run、attempt、repository、有効leaseに限定した短命RS256 JWTとし、SARIF uploadなどの内部APIでも
+同じ境界を再確認する。
 
 `act`はGitHubのサービスそのものではないため、Windows/macOS runner、GitHub固有API、未対応構文には差がある。
 対応範囲をAPIと画面で明示し、GitHub公開のワークフロー例を使った実行テストで差を検出する。

@@ -93,6 +93,26 @@ type ActionsStore interface {
 	) (runner.FileDownload, error)
 }
 
+type ActionsSecurityStore interface {
+	UploadSARIF(context.Context, runner.SARIFUploadInput) (runner.SARIFUploadMetadata, error)
+	ListSARIFUploads(
+		context.Context,
+		runner.SARIFRepositorySelector,
+		int,
+	) ([]runner.SARIFUploadMetadata, error)
+	GetSARIFUpload(
+		context.Context,
+		runner.SARIFRepositorySelector,
+		string,
+	) (runner.SARIFUploadMetadata, error)
+	ListCodeScanningAlerts(
+		context.Context,
+		runner.SARIFRepositorySelector,
+		string,
+		int,
+	) ([]runner.CodeScanningAlert, error)
+}
+
 func WithActions(store ActionsStore) Option {
 	return func(api *API) { api.actions = store }
 }

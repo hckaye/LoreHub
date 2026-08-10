@@ -83,6 +83,11 @@ export type Notification = {
   createdAt: string;
 };
 
+export type NotificationPage = {
+  items: Notification[];
+  nextCursor: string | null;
+};
+
 export type NotificationPreferences = {
   inAppEnabled: boolean;
   emailEnabled: boolean;
@@ -402,6 +407,36 @@ export type CIRunDetail = {
   workflow: CIWorkflow;
   jobs: CIJob[];
   artifacts: CIArtifact[];
+};
+
+export type CodeScanningSeverity = "none" | "note" | "warning" | "error";
+
+export type SARIFUploadMetadata = {
+  id: string;
+  repositoryId: string;
+  runId: string;
+  jobId: string;
+  attempt: number;
+  tools: string[];
+  revision: string;
+  ref: string;
+  version: "2.1.0";
+  documentSize: number;
+  resultsCount: number;
+  createdAt: string;
+};
+
+export type CodeScanningAlert = {
+  id: string;
+  uploadId: string;
+  repositoryId: string;
+  tool: string;
+  ruleId: string;
+  level: CodeScanningSeverity;
+  message: string;
+  path: string;
+  startLine?: number;
+  createdAt: string;
 };
 
 export type APIResult<T> =

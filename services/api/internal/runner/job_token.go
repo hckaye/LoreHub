@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	defaultJobTokenRESTScope    = "actions:job"
-	defaultJobTokenGraphQLScope = "actions:job"
+	JobTokenRESTScope    = "actions:job"
+	JobTokenGraphQLScope = "actions:job"
 )
 
 type JobTokenRequest struct {
@@ -87,10 +87,10 @@ func issueJobToken(
 		return JobToken{}, errors.New("Actions job token issuer is not configured")
 	}
 	if restScope == "" {
-		restScope = defaultJobTokenRESTScope
+		restScope = JobTokenRESTScope
 	}
 	if graphqlScope == "" {
-		graphqlScope = defaultJobTokenGraphQLScope
+		graphqlScope = JobTokenGraphQLScope
 	}
 	request := JobTokenRequest{
 		JobID:            job.ID,

@@ -66,7 +66,11 @@ async function visit(directory) {
 }
 
 async function check(url) {
-  const contents = await readFile(url, "utf8");
+  const bytes = await readFile(url);
+  if (extname(url.pathname) === "" && bytes.includes(0)) {
+    return;
+  }
+  const contents = bytes.toString("utf8");
   const lines = contents.split(/\r?\n/);
   const displayPath = join(...url.pathname.split("/").slice(-6));
   if (lines.length >= 1_000) {

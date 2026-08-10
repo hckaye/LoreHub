@@ -64,3 +64,7 @@ X（旧Twitter）は、Keycloak 26.7で非推奨になった組み込みTwitter�
 `LOREHUB_AUTH_MODE=disabled` を明示したとき、Go APIはOIDC検証を無効化した現在の挙動を維持します。既存の
 Bearerクライアントだけを使う場合は `LOREHUB_AUTH_MODE=bearer` にします。既定のCompose構成は
 `LOREHUB_AUTH_MODE=interactive`、issuerは `http://keycloak.localhost:8280/realms/lorehub` です。
+
+これはLoreのデータ認証を無効にする設定ではありません。ComposeのLore Serverは、APIが発行する短命で
+`urc-{repository_id}`に限定されたJWTを検証します。LoreのUCS認証、JWKS、鍵交代、TLS、protected branch hookの
+運用は[認可境界の運用ガイド](../operations/control-plane-authorization.md)を参照してください。

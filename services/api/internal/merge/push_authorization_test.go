@@ -17,6 +17,24 @@ type recordingPushAuthorizer struct {
 	err   error
 }
 
+type recordingMergeAuthorization struct {
+	userID string
+	input  platform.MergeAuthorizationInput
+	count  int
+	err    error
+}
+
+func (authorization *recordingMergeAuthorization) PrepareMergeAuthorization(
+	_ context.Context,
+	userID string,
+	input platform.MergeAuthorizationInput,
+) error {
+	authorization.userID = userID
+	authorization.input = input
+	authorization.count++
+	return authorization.err
+}
+
 func (authorizer *recordingPushAuthorizer) AuthorizeLoreMergePush(
 	_ context.Context,
 	input loreclient.PushAuthorization,
@@ -28,9 +46,10 @@ func (authorizer *recordingPushAuthorizer) AuthorizeLoreMergePush(
 
 func TestFixedPushAuthorizerPinsRequestActorRepositoryAndOperation(t *testing.T) {
 	recorder := &recordingPushAuthorizer{}
-	api := &API{pushAuth: recorder}
+	mergeAuthorization := &recordingMergeAuthorization{}
+	api := &API{pushAuth: recorder, mergeAuthorization: mergeAuthorization}
 	actor := platform.User{ID: "actor-1"}
-	repository := collab.Repository{ID: "repository-1"}
+	repository := collab.Repository{ID: "repository-1", LoreRepositoryID: "partition-1"}
 	authorizer := api.fixedPushAuthorizer(actor, repository, "operation-1")
 	input := loreclient.PushAuthorization{
 		ActorUserID:            "wrong-actor",
@@ -57,6 +76,14 @@ func TestFixedPushAuthorizerPinsRequestActorRepositoryAndOperation(t *testing.T)
 		recorder.input.SourceRevision != "source-1" || len(recorder.input.ParentRevisions) != 2 ||
 		recorder.input.ParentRevisions[0] != "source-1" || recorder.input.ParentRevisions[1] != "target-1" {
 		t.Fatalf("authorization tuple was not preserved and pinned: %+v", recorder.input)
+	}
+	if mergeAuthorization.count != 1 || mergeAuthorization.userID != actor.ID ||
+		mergeAuthorization.input.RepositoryID != repository.LoreRepositoryID ||
+		mergeAuthorization.input.BranchID != "branch-1" || mergeAuthorization.input.BranchName != "main" ||
+		mergeAuthorization.input.ExpectedBase != "target-1" ||
+		mergeAuthorization.input.ExpectedHead != "merged-1" ||
+		mergeAuthorization.input.SourceRevision != "source-1" || mergeAuthorization.input.Lifetime <= 0 {
+		t.Fatalf("merge authorization tuple was not prepared exactly: %+v", mergeAuthorization.input)
 	}
 }
 

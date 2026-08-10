@@ -9,6 +9,7 @@ import type {
   CIRunDetail,
   CIRunPage,
   CIWorkflowPage,
+  CodeScanningAlert,
   DashboardData,
   FileHistoryEntry,
   Issue,
@@ -20,28 +21,32 @@ import type {
   MergeReadiness,
   MergeRequest,
   Notification,
+  NotificationPage,
   NotificationPreferences,
   OrganizationView,
   Repository,
   ReviewSummary,
   RevisionHistoryEntry,
+  SARIFUploadMetadata,
   SearchResults,
   Team,
   TeamMember,
   UserProfile,
 } from "./api-types";
 
-export async function getDashboard(): Promise<APIResult<DashboardData>> {
-  return request<DashboardData>("/api/v1/dashboard");
+const apiOrigin = process.env.LOREHUB_API_URL ?? "http://127.0.0.1:8080";
+
+export function getDashboard(): Promise<APIResult<DashboardData>> {
+  return request("/api/v1/dashboard");
 }
 
-export async function getSearchResults(query: string): Promise<APIResult<SearchResults>> {
-  const params = new URLSearchParams({ q: query, type: "all", limit: "30" });
-  return request<SearchResults>(`/api/v1/search?${params.toString()}`);
+export function getSearchResults(query: string): Promise<APIResult<SearchResults>> {
+  const params = new URLSearchParams({ q: query.trim(), limit: "50" });
+  return request(`/api/v1/search?${params.toString()}`);
 }
 
-export async function getUserProfile(username: string): Promise<APIResult<UserProfile>> {
-  return request<UserProfile>(`/api/v1/users/${encodeURIComponent(username)}`);
+export function getUserProfile(username: string): Promise<APIResult<UserProfile>> {
+  return request(`/api/v1/users/${encodeURIComponent(username)}`);
 }
 
 export async function getUserRepositories(username: string): Promise<APIResult<Repository[]>> {
@@ -51,8 +56,17 @@ export async function getUserRepositories(username: string): Promise<APIResult<R
   return result.ok ? { ok: true, data: result.data.repositories } : result;
 }
 
-export async function getOrganization(slug: string): Promise<APIResult<OrganizationView>> {
-  return request<OrganizationView>(`/api/v1/organizations/${encodeURIComponent(slug)}`);
+export async function getNotifications(): Promise<APIResult<Notification[]>> {
+  const result = await request<NotificationPage>("/api/v1/notifications?limit=100");
+  return result.ok ? { ok: true, data: result.data.items } : result;
+}
+
+export function getNotificationPreferences(): Promise<APIResult<NotificationPreferences>> {
+  return request("/api/v1/account/notification-preferences");
+}
+
+export function getOrganization(slug: string): Promise<APIResult<OrganizationView>> {
+  return request(`/api/v1/organizations/${encodeURIComponent(slug)}`);
 }
 
 export async function getOrganizationRepositories(slug: string): Promise<APIResult<Repository[]>> {
@@ -67,24 +81,12 @@ export async function getTeams(slug: string): Promise<APIResult<Team[]>> {
   return result.ok ? { ok: true, data: result.data.teams } : result;
 }
 
-export async function getTeam(slug: string, team: string): Promise<APIResult<{ team: Team; members?: TeamMember[] }>> {
-  return request<{ team: Team; members?: TeamMember[] }>(
-    `/api/v1/organizations/${encodeURIComponent(slug)}/teams/${encodeURIComponent(team)}`,
-  );
+export function getTeam(
+  organization: string,
+  team: string,
+): Promise<APIResult<{ team: Team; members?: TeamMember[] }>> {
+  return request(`/api/v1/organizations/${encodeURIComponent(organization)}/teams/${encodeURIComponent(team)}`);
 }
-
-export async function getNotifications(unreadOnly = false): Promise<APIResult<Notification[]>> {
-  const result = await request<{ items: Notification[] }>(
-    `/api/v1/notifications?unread=${String(unreadOnly)}&limit=100`,
-  );
-  return result.ok ? { ok: true, data: result.data.items } : result;
-}
-
-export async function getNotificationPreferences(): Promise<APIResult<NotificationPreferences>> {
-  return request<NotificationPreferences>("/api/v1/account/notification-preferences");
-}
-
-const apiOrigin = process.env.LOREHUB_API_URL ?? "http://127.0.0.1:8080";
 
 export async function getPublicRepositories(query = ""): Promise<APIResult<Repository[]>> {
   const search = new URLSearchParams({ limit: "100" });
@@ -97,10 +99,6 @@ export async function getPublicRepositories(query = ""): Promise<APIResult<Repos
 
 export function getPublicRepository(owner: string, repository: string): Promise<APIResult<Repository>> {
   return request(`/api/v1/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}`);
-}
-
-export function getRepositorySettings(owner: string, repository: string): Promise<APIResult<Repository>> {
-  return request(`/api/v1/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/settings`);
 }
 
 export async function getBranches(owner: string, repository: string): Promise<APIResult<Branch[]>> {
@@ -133,6 +131,23 @@ export async function getActionRuns(owner: string, repository: string): Promise<
 
 export function getActionRun(owner: string, repository: string, runNumber: number): Promise<APIResult<CIRunDetail>> {
   return request(repositoryPath(owner, repository, `/actions/runs/${encodeURIComponent(String(runNumber))}`));
+}
+
+export async function getSARIFUploads(owner: string, repository: string): Promise<APIResult<SARIFUploadMetadata[]>> {
+  const result = await request<{ sarifUploads: SARIFUploadMetadata[] }>(
+    repositoryPath(owner, repository, "/code-scanning/sarif-uploads?limit=100"),
+  );
+  return result.ok ? { ok: true, data: result.data.sarifUploads } : result;
+}
+
+export async function getCodeScanningAlerts(
+  owner: string,
+  repository: string,
+): Promise<APIResult<CodeScanningAlert[]>> {
+  const result = await request<{ alerts: CodeScanningAlert[] }>(
+    repositoryPath(owner, repository, "/code-scanning/alerts?per_page=1000"),
+  );
+  return result.ok ? { ok: true, data: result.data.alerts } : result;
 }
 
 export type IssueFilter = "open" | "closed" | "all";

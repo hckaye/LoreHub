@@ -49,6 +49,15 @@ gen_secret() {
   fi
 }
 
+gen_base64_key() {
+  bytes=${1:-32}
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -base64 "$bytes" | tr -d '\n'
+  else
+    head -c "$bytes" /dev/urandom | base64 | tr -d '\n'
+  fi
+}
+
 if [ ! -f "$env_file" ]; then
   if [ -f "${root}/.env.example" ]; then
     cp "${root}/.env.example" "$env_file"
@@ -93,6 +102,7 @@ set_var KEYCLOAK_ADMIN_PASSWORD "$(gen_secret 24)"
 set_var KEYCLOAK_DB_PASSWORD "$(gen_secret 24)"
 set_var LOREHUB_OIDC_CLIENT_SECRET "$(gen_secret 32)"
 set_var LOREHUB_AUTH_SECRET "$(gen_secret 32)"
+set_var LOREHUB_ACTIONS_SECRET_KEY "$(gen_base64_key 32)"
 
 chmod 600 "$env_file"
 

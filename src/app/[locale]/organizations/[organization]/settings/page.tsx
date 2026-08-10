@@ -1,37 +1,65 @@
-import { notFound } from "next/navigation";
+import { ServerOff } from "lucide-react";
 
-import { OrganizationPage } from "@/components/organizations/organization-page";
+import { ActionsContextSettings } from "@/components/actions/actions-context-settings";
+import { AuthRequired } from "@/components/auth/auth-required";
+import { OrganizationTeamSettings } from "@/components/organizations/organization-team-settings";
+import { RepositoryPanel, RepositorySection } from "@/components/repositories/repository-section";
+import { EmptyState } from "@/components/ui/empty-state";
 import { getDictionary } from "@/i18n";
 import { isLocale } from "@/i18n/config";
 import { getAuthSession } from "@/lib/auth-api";
-import { getOrganization, getOrganizationRepositories, getTeams } from "@/lib/lorehub-api";
 
-type OrganizationSettingsRouteProps = {
+type OrganizationSettingsPageProps = {
   params: Promise<{ locale: string; organization: string }>;
 };
 
 export const dynamic = "force-dynamic";
 
-export default async function OrganizationSettingsRoute({ params }: OrganizationSettingsRouteProps) {
-  const { locale: value, organization: slug } = await params;
-  if (!isLocale(value)) {
-    notFound();
+export default async function OrganizationSettingsPage({ params }: OrganizationSettingsPageProps) {
+  const { locale: value, organization } = await params;
+  const locale = isLocale(value) ? value : "en";
+  const [dictionary, session] = await Promise.all([getDictionary(locale), getAuthSession()]);
+  if (session.status !== "authenticated") {
+    return (
+      <RepositorySection
+        description={dictionary.organizationSettingsPage.description}
+        title={dictionary.organizationSettingsPage.title}
+      >
+        <AuthRequired
+          dictionary={dictionary}
+          returnTo={`/${locale}/organizations/${encodeURIComponent(organization)}/settings`}
+          session={session}
+        />
+      </RepositorySection>
+    );
   }
-  const [dictionary, session, organization, repositories, teams] = await Promise.all([
-    getDictionary(value),
-    getAuthSession(),
-    getOrganization(slug),
-    getOrganizationRepositories(slug),
-    getTeams(slug),
-  ]);
+  if (session.user === null) {
+    return (
+      <EmptyState
+        body={dictionary.auth.requiredBody}
+        icon={<ServerOff aria-hidden="true" />}
+        title={dictionary.auth.requiredTitle}
+        tone="warning"
+      />
+    );
+  }
   return (
-    <OrganizationPage
-      dictionary={dictionary}
-      locale={value}
-      organization={organization.ok ? organization.data : null}
-      repositories={repositories.ok ? repositories.data : null}
-      session={session}
-      teams={teams.ok ? teams.data : null}
-    />
+    <RepositorySection
+      description={dictionary.organizationSettingsPage.description}
+      title={dictionary.organizationSettingsPage.title}
+    >
+      <RepositoryPanel
+        description={dictionary.actionsSettings.organizationDescription}
+        title={dictionary.actionsSettings.title}
+      >
+        <ActionsContextSettings
+          dictionary={dictionary}
+          locale={locale}
+          session={session}
+          target={{ kind: "organization", organization }}
+        />
+      </RepositoryPanel>
+      <OrganizationTeamSettings dictionary={dictionary} organization={organization} session={session} />
+    </RepositorySection>
   );
 }

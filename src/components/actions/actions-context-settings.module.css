@@ -1,0 +1,254 @@
+.stack {
+  display: grid;
+  gap: 16px;
+}
+
+.scopeControls {
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) minmax(280px, 1fr);
+  gap: 12px;
+  align-items: end;
+}
+
+.scopeControls label,
+.environmentForm label,
+.form label {
+  display: grid;
+  gap: 6px;
+  color: var(--fg-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.scopeControls input,
+.scopeControls select,
+.form input,
+.form select,
+.form textarea {
+  width: 100%;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface-raised);
+  color: var(--fg-default);
+}
+
+.scopeControls input,
+.scopeControls select,
+.form input,
+.form select {
+  min-height: 36px;
+  padding: 0 10px;
+}
+
+.environmentForm {
+  display: grid;
+  grid-template-columns: minmax(200px, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.statusArea:empty {
+  display: none;
+}
+
+.muted,
+.error,
+.success,
+.empty p,
+.callout p,
+.formHeading p {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.muted,
+.empty p,
+.formHeading p {
+  color: var(--fg-muted);
+}
+
+.error {
+  color: var(--danger-fg);
+}
+
+.success {
+  color: var(--success-fg);
+}
+
+.callout,
+.empty {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-subtle, var(--surface-raised));
+}
+
+.callout h3,
+.empty h3,
+.formHeading h3 {
+  margin: 0 0 4px;
+  font-size: 0.9rem;
+}
+
+.callout .secondaryButton {
+  margin-top: 12px;
+}
+
+.tableScroll {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.table th,
+.table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-muted);
+  text-align: left;
+  vertical-align: top;
+}
+
+.table th {
+  background: var(--surface-subtle, var(--surface-raised));
+  color: var(--fg-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.name,
+.value {
+  font-family: var(--font-mono);
+}
+
+.value {
+  display: block;
+  max-width: 360px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.kind {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.secretMetadata {
+  display: grid;
+  gap: 2px;
+  color: var(--fg-muted);
+}
+
+.secretMetadata small {
+  font-family: var(--font-mono);
+}
+
+.rowActions,
+.formActions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.iconButton,
+.dangerIconButton {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  place-items: center;
+  background: var(--surface-raised);
+  color: var(--fg-default);
+}
+
+.dangerIconButton {
+  color: var(--danger-fg);
+}
+
+.form {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) minmax(220px, 1fr);
+  gap: 12px;
+}
+
+.form textarea {
+  min-height: 74px;
+  padding: 9px 10px;
+  resize: vertical;
+}
+
+.primaryButton,
+.secondaryButton {
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.primaryButton {
+  border: 1px solid var(--accent-emphasis);
+  background: var(--accent-emphasis);
+  color: var(--fg-on-emphasis);
+}
+
+.secondaryButton {
+  border: 1px solid var(--border-strong);
+  background: var(--surface-raised);
+  color: var(--fg-default);
+}
+
+.primaryButton:disabled,
+.secondaryButton:disabled,
+.iconButton:disabled,
+.dangerIconButton:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 720px) {
+  .scopeControls,
+  .environmentForm,
+  .formGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .environmentForm .secondaryButton {
+    justify-self: start;
+  }
+}

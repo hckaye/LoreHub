@@ -1,0 +1,19 @@
+diff --git a/lore-server/src/grpc/handlers/branch_create.rs b/lore-server/src/grpc/handlers/branch_create.rs
+--- a/lore-server/src/grpc/handlers/branch_create.rs
++++ b/lore-server/src/grpc/handlers/branch_create.rs
+@@ -102,4 +102,5 @@ async fn handle_local(
+                 .repository(repository_id)
+                 .user(user_id)
+                 .branch(branch)
++                .metadata("branch_name", name.as_str())
+                 .build();
+
+diff --git a/lore-server/src/grpc/revision/v1/branch_create.rs b/lore-server/src/grpc/revision/v1/branch_create.rs
+--- a/lore-server/src/grpc/revision/v1/branch_create.rs
++++ b/lore-server/src/grpc/revision/v1/branch_create.rs
+@@ -155,4 +155,5 @@ async fn handle_local(
+                 .repository(context.repository_id)
+                 .user(&context.user_id)
+                 .branch(branch)
++                .metadata("branch_name", name.as_str())
+                 .build();

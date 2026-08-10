@@ -2,15 +2,15 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
-	"path"
-	"strings"
 	"syscall"
 	"time"
 
@@ -21,8 +21,12 @@ import (
 	"github.com/lorehub/lorehub/services/api/internal/database"
 	"github.com/lorehub/lorehub/services/api/internal/httpapi"
 	loreclient "github.com/lorehub/lorehub/services/api/internal/lore"
+	"github.com/lorehub/lorehub/services/api/internal/loreauth"
+	epic_urc "github.com/lorehub/lorehub/services/api/internal/loreauth/epic_urc"
 	"github.com/lorehub/lorehub/services/api/internal/platform"
 	"github.com/lorehub/lorehub/services/api/internal/runner"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 )
 
 func main() {
@@ -42,7 +46,7 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("unknown command %q: expected serve, migrate, or runner", command)
 	}
 
-	settings, err := config.Load()
+	settings, err := config.LoadFor(command)
 	if err != nil {
 		return err
 	}
@@ -61,19 +65,13 @@ func run(logger *slog.Logger) error {
 		logger.Info("PostgreSQL migrations are current")
 		return nil
 	}
-	var lore *loreclient.SDKClient
-	var loreCredentials loreclient.CredentialProvider
-	if settings.Environment == "development" || settings.Environment == "local" || settings.Environment == "test" {
-		loreCredentials, err = loreclient.NewCredentialProvider(settings.Environment, settings.LoreCredentials,
-			settings.LoreIdentity, settings.LoreAllowDevelopmentFallback)
-	} else {
-		// Production receives an issuer through the control-plane integration boundary.
-		loreCredentials, err = loreclient.NewProductionCredentialProvider(nil, settings.LoreAuthAuthority)
-	}
+	store := platform.NewStore(pool)
+	keyProvider, err := newSigningKeyProvider(settings)
 	if err != nil {
 		return err
 	}
-	if settings.Environment == "development" || settings.Environment == "local" || settings.Environment == "test" {
+	var lore *loreclient.SDKClient
+	if settings.Environment == "local-insecure" {
 		lore, err = loreclient.NewDevelopmentSDKClient(settings.LoreCacheDir)
 	} else {
 		lore, err = loreclient.NewSDKClientWithAuthAuthority(settings.LoreCacheDir, settings.LoreAuthAuthority)
@@ -81,15 +79,45 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	loreAuth, err := newLoreAuthService(store, keyProvider, settings)
+	if err != nil {
+		return err
+	}
+	issuer, err := loreauth.NewCredentialIssuer(loreAuth)
+	if err != nil {
+		return err
+	}
+	loreCredentials, err := loreclient.NewCredentialProviderWithIssuer(settings.Environment, issuer,
+		settings.LoreAuthAuthority, settings.LoreCredentials, settings.LoreIdentity,
+		settings.LoreAllowDevelopmentFallback)
+	if err != nil {
+		return err
+	}
 	if command == "runner" {
-		return runRunner(rootContext, pool, lore, loreCredentials, settings, logger)
+		return runRunner(rootContext, pool, lore, loreCredentials, keyProvider, settings, logger)
 	}
 
 	var authenticator auth.Authenticator
 	var loginProvider auth.LoginProvider
 	var secretCodec *auth.SecretCodec
-	store := platform.NewStore(pool)
 	actionsStore := runner.NewStoreWithFiles(pool, settings.RunnerLogDir, settings.RunnerArtifactDir)
+	actionsContext, err := runner.NewPostgresExecutionContextResolver(
+		pool,
+		settings.ActionsSecretKeyID,
+		settings.ActionsSecretKey,
+	)
+	if err != nil {
+		return err
+	}
+	actionsJobTokens, err := runner.NewPostgresJobTokenService(
+		pool,
+		keyProvider,
+		settings.LoreAuthIssuer,
+		settings.ActionsJobTokenAudience,
+	)
+	if err != nil {
+		return err
+	}
 	switch settings.AuthMode {
 	case config.AuthModeInteractive:
 		provider, err := auth.NewOIDCProvider(rootContext, auth.OIDCConfig{
@@ -118,16 +146,12 @@ func run(logger *slog.Logger) error {
 	default:
 		return fmt.Errorf("unsupported authentication mode %q", settings.AuthMode)
 	}
-	loreIdentity := ""
-	if settings.DevLoreIdentityFallback && (settings.Environment == "development" || settings.Environment == "local") {
-		loreIdentity = settings.DevLoreIdentity
-	}
 	handler := httpapi.New(
 		store,
 		lore,
 		authenticator,
-		pool,
-		loreIdentity,
+		newServiceReadiness(pool, loreAuth, settings),
+		settings.LoreIdentity,
 		logger,
 		httpapi.WithAuthentication(httpapi.AuthOptions{
 			LoginProvider:  loginProvider,
@@ -147,13 +171,20 @@ func run(logger *slog.Logger) error {
 			},
 		}),
 		httpapi.WithActions(actionsStore),
+		httpapi.WithActionsSecurity(actionsStore, actionsJobTokens),
+		httpapi.WithActionsExecutionContext(actionsContext),
 		httpapi.WithIdentityStore(store),
 		httpapi.WithConfiguredLoginProviders(settings.IdentityProviders),
 		httpapi.WithCollaboration(collab.NewStore(pool)),
+		httpapi.WithAuthorization(store),
+		httpapi.WithLoreAuth(loreAuth),
+		httpapi.WithLorePublicURL(settings.LorePublicURL),
+		httpapi.WithLegacyLoreIdentityAllowed(settings.AllowLegacyLoreIdentity),
 		httpapi.WithLoreCredentials(loreCredentials),
 		httpapi.WithLoreServiceSubjects(loreclient.ServiceSubjects{
 			PublicReader:           settings.LorePublicReaderSubject,
 			ActionsRunner:          settings.LoreActionsRunnerSubject,
+			Observer:               settings.LoreObserverSubject,
 			RepositoryRegistration: settings.LoreRepositoryRegistrationSubject,
 		}),
 	)
@@ -167,10 +198,50 @@ func run(logger *slog.Logger) error {
 		MaxHeaderBytes:    1 << 20,
 	}
 
-	serverErrors := make(chan error, 1)
+	policyTLS, err := loadTLSConfig(settings.PolicyTLSCert, settings.PolicyTLSKey,
+		settings.PolicyTLSClientCA, true)
+	if err != nil {
+		return err
+	}
+	authTLS, err := loadTLSConfig(settings.LoreAuthTLSCert, settings.LoreAuthTLSKey, "", false)
+	if err != nil {
+		return err
+	}
+	policyHandler := httpapi.NewInternalPolicyHandler(store)
+	policyServer := &http.Server{
+		Addr: settings.PolicyAddress, Handler: policyHandler, TLSConfig: policyTLS,
+		ReadHeaderTimeout: 2 * time.Second, ReadTimeout: 2 * time.Second, WriteTimeout: 2 * time.Second,
+	}
+	authListener, err := net.Listen("tcp", settings.LoreAuthAddress)
+	if err != nil {
+		return fmt.Errorf("listen Lore auth gRPC: %w", err)
+	}
+	authGRPC := grpc.NewServer(grpc.Creds(credentials.NewTLS(authTLS)))
+	epic_urc.RegisterUrcAuthApiServer(authGRPC, loreAuth)
+	rebac, err := loreauth.NewRebacService(loreAuth)
+	if err != nil {
+		_ = authListener.Close()
+		return err
+	}
+	epic_urc.RegisterRebacApiServer(authGRPC, rebac)
+	policyListener, err := net.Listen("tcp", settings.PolicyAddress)
+	if err != nil {
+		_ = authListener.Close()
+		return fmt.Errorf("listen Lore policy endpoint: %w", err)
+	}
+	tlsPolicyListener := tls.NewListener(policyListener, policyTLS)
+	serverErrors := make(chan error, 3)
 	go func() {
 		logger.Info("LoreHub API listening", "address", settings.HTTPAddress)
 		serverErrors <- server.ListenAndServe()
+	}()
+	go func() {
+		logger.Info("LoreHub UCS auth listening", "address", settings.LoreAuthAddress)
+		serverErrors <- authGRPC.Serve(authListener)
+	}()
+	go func() {
+		logger.Info("LoreHub policy endpoint listening", "address", settings.PolicyAddress)
+		serverErrors <- policyServer.Serve(tlsPolicyListener)
 	}()
 
 	select {
@@ -180,8 +251,15 @@ func run(logger *slog.Logger) error {
 		if err := server.Shutdown(shutdownContext); err != nil {
 			return fmt.Errorf("shut down HTTP server: %w", err)
 		}
+		if err := policyServer.Shutdown(shutdownContext); err != nil {
+			return fmt.Errorf("shut down policy server: %w", err)
+		}
+		authGRPC.GracefulStop()
 		return nil
 	case err := <-serverErrors:
+		authGRPC.Stop()
+		_ = policyServer.Shutdown(context.Background())
+		_ = server.Shutdown(context.Background())
 		if errors.Is(err, http.ErrServerClosed) {
 			return nil
 		}
@@ -189,30 +267,91 @@ func run(logger *slog.Logger) error {
 	}
 }
 
+func loadTLSConfig(certPath string, keyPath string, clientCAPath string, requireClient bool) (*tls.Config, error) {
+	certificate, err := tls.LoadX509KeyPair(certPath, keyPath)
+	if err != nil {
+		return nil, fmt.Errorf("load TLS certificate: %w", err)
+	}
+	config := &tls.Config{MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{certificate}}
+	if !requireClient {
+		return config, nil
+	}
+	caBytes, err := os.ReadFile(clientCAPath)
+	if err != nil {
+		return nil, fmt.Errorf("read policy client CA: %w", err)
+	}
+	clientCAs := x509.NewCertPool()
+	if !clientCAs.AppendCertsFromPEM(caBytes) {
+		return nil, errors.New("policy client CA does not contain a certificate")
+	}
+	config.ClientCAs = clientCAs
+	config.ClientAuth = tls.RequireAndVerifyClientCert
+	config.VerifyConnection = func(state tls.ConnectionState) error {
+		if len(state.PeerCertificates) == 0 || state.PeerCertificates[0].Subject.CommonName != "lore-policy-hook" {
+			return errors.New("policy hook client certificate is invalid")
+		}
+		for _, usage := range state.PeerCertificates[0].ExtKeyUsage {
+			if usage == x509.ExtKeyUsageClientAuth {
+				return nil
+			}
+		}
+		return errors.New("policy hook client certificate lacks client authentication usage")
+	}
+	return config, nil
+}
+
+func newSigningKeyProvider(settings config.Config) (*loreauth.RSAKeyProvider, error) {
+	return loreauth.NewRSAKeyProvider(
+		settings.AuthSigningKeyPath,
+		settings.AuthSigningKeyPEM,
+		settings.AuthSigningKeyKID,
+		settings.AuthPreviousKeys,
+		settings.Environment != "production",
+	)
+}
+
+func newLoreAuthService(
+	store *platform.Store,
+	keyProvider loreauth.SigningKeyProvider,
+	settings config.Config,
+) (*loreauth.Service, error) {
+	tokenService, err := loreauth.NewTokenService(keyProvider, settings.LoreAuthIssuer,
+		settings.LoreAuthAudience, settings.LoreAuthEnvironment, settings.LoreAuthIDP,
+		settings.LoreAuthTokenTTL)
+	if err != nil {
+		return nil, err
+	}
+	return loreauth.NewService(store, store, tokenService, settings.LoreAuthLoginURL, settings.LoreAuthURL,
+		settings.LoreAuthSessionTTL, settings.Environment == "development" || settings.Environment == "local-insecure")
+}
+
 func runRunner(
 	ctx context.Context,
 	pool *pgxpool.Pool,
 	lore *loreclient.SDKClient,
 	credentials loreclient.CredentialProvider,
+	keyProvider runner.JobTokenSigningKeyProvider,
 	settings config.Config,
 	logger *slog.Logger,
 ) error {
 	store := runner.NewStoreWithFiles(pool, settings.RunnerLogDir, settings.RunnerArtifactDir)
-	credentialIssuer, err := configuredLoreCredentialIssuer(settings)
+	executionResolver, err := configuredExecutionContextResolver(pool, settings)
 	if err != nil {
 		return err
 	}
-	executionResolver := configuredExecutionContextResolver(settings)
-	jobTokenIssuer, err := configuredJobTokenIssuer(settings)
+	jobTokenIssuer, err := configuredJobTokenIssuer(pool, keyProvider, settings)
 	if err != nil {
 		return err
 	}
-	credentialPrincipal := runner.CredentialPrincipal{Kind: "service", Subject: settings.RunnerSubject}
+	credentialPrincipal := runner.CredentialPrincipal{
+		Kind: "service", Subject: settings.LoreActionsRunnerSubject,
+	}
 	worker, err := runner.NewWorker(store, runner.WorkerConfig{
 		Environment:         settings.Environment,
 		LoreBinary:          settings.LoreBinary,
-		CredentialIssuer:    credentialIssuer,
 		CredentialPrincipal: credentialPrincipal,
+		Credentials:         credentials,
+		ServicePrincipal:    settings.LoreActionsRunnerSubject,
 		JobTokenIssuer:      jobTokenIssuer,
 		ExecutionResolver:   executionResolver,
 		GitHubContext: runner.GitHubContext{
@@ -240,9 +379,8 @@ func runRunner(
 	if err != nil {
 		return err
 	}
-	poller := runner.NewPoller(store, runnerLoreClient{
-		client: lore, credentials: credentials, actionsRunnerSubject: settings.LoreActionsRunnerSubject,
-	}, credentialIssuer, credentialPrincipal, settings.BranchPollPeriod, logger, settings.RunnerPlatformImages)
+	poller := runner.NewPoller(store, lore, credentials, settings.LoreObserverSubject,
+		settings.BranchPollPeriod, logger, settings.RunnerPlatformImages)
 	errorsChannel := make(chan error, 2)
 	go func() { errorsChannel <- poller.Run(ctx) }()
 	go func() { errorsChannel <- worker.Run(ctx) }()
@@ -253,70 +391,10 @@ func runRunner(
 	return err
 }
 
-type runnerLoreClient struct {
-	client               *loreclient.SDKClient
-	credentials          loreclient.CredentialProvider
-	actionsRunnerSubject string
-}
-
-func (adapter runnerLoreClient) Branches(
-	ctx context.Context,
-	repository loreclient.RepositoryRef,
-	identity string,
-) ([]loreclient.Branch, error) {
-	partition := repository.CanonicalPartition()
-	if partition == "" {
-		parsed, err := url.Parse(repository.URL)
-		if err != nil || parsed.Host == "" {
-			return nil, errors.New("runner Lore repository URL is invalid")
-		}
-		partition = strings.TrimSpace(path.Base(parsed.Path))
-	}
-	if partition == "" || adapter.credentials == nil {
-		return nil, loreclient.ErrCredentialUnavailable
-	}
-	repository.LoreRepositoryID = partition
-	credential, err := adapter.credentials.ForRepository(ctx, loreclient.CredentialRequest{
-		Principal:  loreclient.ServicePrincipal(loreclient.ServicePurposeActionsRunner, adapter.actionsRunnerSubject),
-		Repository: repository,
-		Partition:  repository.CanonicalPartition(),
-		Scope:      loreclient.ScopeRead,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return adapter.client.Branches(ctx, repository, credential)
-}
-
-func (adapter runnerLoreClient) BranchesWithCredential(
-	ctx context.Context,
-	repository loreclient.RepositoryRef,
-	credential loreclient.Credential,
-) ([]loreclient.Branch, error) {
-	return adapter.client.BranchesWithCredential(ctx, repository, credential)
-}
-
-func (adapter runnerLoreClient) CloneRevision(
-	ctx context.Context,
-	repository loreclient.RepositoryRef,
-	identity string,
-	revision string,
-	destination string,
-) error {
-	return adapter.client.CloneRevision(ctx, repository, identity, revision, destination)
-}
-
-func (adapter runnerLoreClient) CloneRevisionWithCredential(
-	ctx context.Context,
-	repository loreclient.RepositoryRef,
-	credential loreclient.Credential,
-	revision string,
-	destination string,
-) error {
-	return adapter.client.CloneRevisionWithCredential(ctx, repository, credential, revision, destination)
-}
-
-func configuredExecutionContextResolver(settings config.Config) runner.ExecutionContextResolver {
+func configuredExecutionContextResolver(
+	pool *pgxpool.Pool,
+	settings config.Config,
+) (runner.ExecutionContextResolver, error) {
 	if settings.DevActionsContextFallback &&
 		(settings.Environment == "development" || settings.Environment == "local") {
 		return runner.NewDevelopmentExecutionContextResolver(runner.ExecutionContext{
@@ -326,25 +404,32 @@ func configuredExecutionContextResolver(settings config.Config) runner.Execution
 			OrganizationSecrets:   settings.DevActionsContext.OrganizationSecrets,
 			RepositorySecrets:     settings.DevActionsContext.RepositorySecrets,
 			EnvironmentSecrets:    settings.DevActionsContext.EnvironmentSecrets,
-		})
+		}), nil
 	}
-	return runner.NewFailClosedExecutionContextResolver()
+	return runner.NewPostgresExecutionContextResolver(
+		pool,
+		settings.ActionsSecretKeyID,
+		settings.ActionsSecretKey,
+	)
 }
 
-func configuredLoreCredentialIssuer(settings config.Config) (runner.CredentialIssuer, error) {
-	if settings.Environment == "development" || settings.Environment == "local" {
-		if settings.DevLoreIdentityFallback {
-			return runner.NewDevelopmentCredentialIssuer(settings.DevLoreIdentity), nil
-		}
-	}
-	return nil, fmt.Errorf("an injected repository-scoped Lore credential issuer is required for %s", settings.Environment)
-}
-
-func configuredJobTokenIssuer(settings config.Config) (runner.JobTokenIssuer, error) {
+func configuredJobTokenIssuer(
+	pool *pgxpool.Pool,
+	keyProvider runner.JobTokenSigningKeyProvider,
+	settings config.Config,
+) (runner.JobTokenIssuer, error) {
 	if settings.Environment == "development" || settings.Environment == "local" {
 		if settings.DevActionsJobTokenFallback {
-			return runner.NewDevelopmentJobTokenIssuer(settings.DevActionsJobToken, settings.RunnerSubject), nil
+			return runner.NewDevelopmentJobTokenIssuer(
+				settings.DevActionsJobToken,
+				settings.LoreActionsRunnerSubject,
+			), nil
 		}
 	}
-	return nil, fmt.Errorf("an injected Actions job token issuer is required for %s", settings.Environment)
+	return runner.NewPostgresJobTokenService(
+		pool,
+		keyProvider,
+		settings.LoreAuthIssuer,
+		settings.ActionsJobTokenAudience,
+	)
 }

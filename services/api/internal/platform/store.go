@@ -17,10 +17,11 @@ import (
 )
 
 var (
-	ErrNotFound  = errors.New("resource not found")
-	ErrForbidden = errors.New("operation is not permitted")
-	ErrConflict  = errors.New("resource already exists")
-	slugPattern  = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$`)
+	ErrNotFound      = errors.New("resource not found")
+	ErrForbidden     = errors.New("operation is not permitted")
+	ErrConflict      = errors.New("resource already exists")
+	slugPattern      = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$`)
+	partitionPattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
 )
 
 type Store struct {
@@ -29,6 +30,22 @@ type Store struct {
 
 func NewStore(pool *pgxpool.Pool) *Store {
 	return &Store{pool: pool}
+}
+
+func (store *Store) ActiveUser(ctx context.Context, userID string) (User, error) {
+	var user User
+	err := store.pool.QueryRow(ctx, `
+		SELECT id, username, display_name, COALESCE(email, ''), locale
+		FROM users
+		WHERE id = $1 AND status = 'active'
+	`, userID).Scan(&user.ID, &user.Username, &user.DisplayName, &user.Email, &user.Locale)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return User{}, ErrForbidden
+	}
+	if err != nil {
+		return User{}, fmt.Errorf("find active user: %w", err)
+	}
+	return user, nil
 }
 
 func (store *Store) EnsureUser(ctx context.Context, principal auth.Principal) (User, error) {
@@ -143,6 +160,9 @@ func (store *Store) CreateOrganization(
 	actor User,
 	input CreateOrganizationInput,
 ) (Organization, error) {
+	if _, err := store.ActiveUser(ctx, actor.ID); err != nil {
+		return Organization{}, err
+	}
 	if err := validateSlug(input.Slug); err != nil {
 		return Organization{}, err
 	}
@@ -203,9 +223,9 @@ func (store *Store) RegisterRepository(
 	err := store.pool.QueryRow(ctx, `
 		SELECT o.id, m.role
 		FROM organizations o
-		JOIN organization_memberships m ON m.organization_id = o.id
+		JOIN organization_memberships m ON m.organization_id = o.id AND m.active
 		JOIN users u ON u.id = m.user_id AND u.status = 'active'
-		WHERE o.slug = $1 AND o.active AND m.user_id = $2 AND m.active
+		WHERE o.slug = $1 AND m.user_id = $2
 	`, organizationSlug, actor.ID).Scan(&organizationID, &role)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Repository{}, ErrForbidden
@@ -215,6 +235,12 @@ func (store *Store) RegisterRepository(
 	}
 	if role != "owner" && role != "maintainer" {
 		return Repository{}, ErrForbidden
+	}
+	if !isLorePartitionID(input.LoreRepositoryID) {
+		return Repository{}, errors.New("Lore repository ID must be the canonical 32-character partition ID")
+	}
+	if err := validatePublicLoreURL(input.LoreURL); err != nil {
+		return Repository{}, err
 	}
 
 	repository := Repository{
@@ -252,6 +278,22 @@ func (store *Store) RegisterRepository(
 	`, repository.ID); err != nil {
 		return Repository{}, fmt.Errorf("create repository counters: %w", err)
 	}
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO repository_policies (repository_id) VALUES ($1)
+	`, repository.ID); err != nil {
+		return Repository{}, fmt.Errorf("create repository policy: %w", err)
+	}
+	if repository.Visibility == "public" {
+		if err := addAnonymousReaderGrant(ctx, transaction, actor.ID, organizationID, repository.ID); err != nil {
+			return Repository{}, err
+		}
+	}
+	if err := addCIReadGrant(ctx, transaction, actor.ID, organizationID, repository.ID); err != nil {
+		return Repository{}, err
+	}
+	if err := addObserverReadGrant(ctx, transaction, actor.ID, organizationID, repository.ID); err != nil {
+		return Repository{}, err
+	}
 	if err := insertAudit(ctx, transaction, actor.ID, organizationID, repository.ID, "repository.register",
 		"repository", repository.ID); err != nil {
 		return Repository{}, err
@@ -270,7 +312,7 @@ func (store *Store) ExploreRepositories(ctx context.Context, limit int) ([]Repos
 		limit = 30
 	}
 	rows, err := store.pool.Query(ctx, repositorySelect+`
-		WHERE o.active AND r.lifecycle_state = 'active' AND r.visibility = 'public' AND r.archived_at IS NULL
+		WHERE r.visibility = 'public' AND r.archived_at IS NULL AND r.lifecycle_state = 'active'
 		GROUP BY r.id, o.slug
 		ORDER BY r.updated_at DESC
 		LIMIT $1
@@ -284,8 +326,9 @@ func (store *Store) ExploreRepositories(ctx context.Context, limit int) ([]Repos
 
 func (store *Store) PublicRepository(ctx context.Context, owner string, slug string) (Repository, error) {
 	row := store.pool.QueryRow(ctx, repositorySelect+`
-		WHERE o.slug = $1 AND o.active AND r.slug = $2 AND r.lifecycle_state = 'active'
+		WHERE o.slug = $1 AND r.slug = $2 AND o.active
 		  AND r.visibility = 'public' AND r.archived_at IS NULL
+		  AND r.lifecycle_state = 'active'
 		GROUP BY r.id, o.slug
 	`, owner, slug)
 	repository, err := scanRepository(row)
@@ -298,6 +341,58 @@ func (store *Store) PublicRepository(ctx context.Context, owner string, slug str
 	return repository, nil
 }
 
+func (store *Store) RepositoryForRead(
+	ctx context.Context,
+	actor *User,
+	owner string,
+	slug string,
+) (Repository, error) {
+	if actor == nil {
+		return store.PublicRepository(ctx, owner, slug)
+	}
+	row := store.pool.QueryRow(ctx, repositorySelect+`
+		JOIN users actor_user ON actor_user.id = $3 AND actor_user.status = 'active'
+		WHERE o.slug = $1 AND r.slug = $2 AND r.archived_at IS NULL
+		  AND r.lifecycle_state = 'active'
+			AND (
+			      r.visibility = 'public'
+			      OR r.visibility = 'internal'
+			      AND EXISTS (
+			          SELECT 1 FROM organization_memberships iom
+			          WHERE iom.organization_id = o.id AND iom.user_id = $3 AND iom.active
+			      )
+				  OR EXISTS (
+			      SELECT 1 FROM organization_memberships om
+			      JOIN users u ON u.id = om.user_id AND u.status = 'active'
+			      WHERE om.organization_id = o.id AND om.user_id = $3 AND om.active
+				        AND om.role = 'owner'
+			  )
+			      OR EXISTS (
+			          SELECT 1 FROM repository_memberships rm
+			          WHERE rm.repository_id = r.id AND rm.user_id = $3 AND rm.active
+			      )
+		      OR EXISTS (
+		          SELECT 1
+		          FROM team_repository_roles tr
+		          JOIN teams t ON t.id = tr.team_id AND t.organization_id = o.id
+		          JOIN team_memberships tm ON tm.team_id = t.id AND tm.user_id = $3 AND tm.active
+		          JOIN organization_memberships om
+		            ON om.organization_id = o.id AND om.user_id = $3 AND om.active
+			          WHERE tr.repository_id = r.id AND tr.active AND t.active
+		      )
+		  )
+		GROUP BY r.id, o.slug
+	`, owner, slug, actor.ID)
+	repository, err := scanRepository(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Repository{}, ErrNotFound
+	}
+	if err != nil {
+		return Repository{}, fmt.Errorf("get readable repository: %w", err)
+	}
+	return repository, nil
+}
+
 func (store *Store) RepositoryForWrite(
 	ctx context.Context,
 	actor User,
@@ -305,33 +400,36 @@ func (store *Store) RepositoryForWrite(
 	slug string,
 ) (Repository, error) {
 	row := store.pool.QueryRow(ctx, repositorySelect+`
-		WHERE o.slug = $1 AND o.active AND r.slug = $2
-		  AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
-		  AND EXISTS (SELECT 1 FROM users actor_user WHERE actor_user.id = $3 AND actor_user.status = 'active')
+		JOIN users actor_user ON actor_user.id = $3 AND actor_user.status = 'active'
+		WHERE o.slug = $1 AND r.slug = $2 AND r.archived_at IS NULL
+		  AND r.lifecycle_state = 'active'
 		  AND (
-		      EXISTS (
-		          SELECT 1 FROM repository_memberships rm
-		          WHERE rm.repository_id = r.id AND rm.user_id = $3
-		            AND rm.role IN ('admin', 'write') AND rm.active
+			  EXISTS (
+			          SELECT 1 FROM repository_memberships rm
+			          WHERE rm.repository_id = r.id AND rm.user_id = $3 AND rm.active
+		            AND rm.role IN ('admin', 'maintain', 'write')
 		      )
+			      OR EXISTS (
+			          SELECT 1 FROM organization_memberships om
+			          WHERE om.organization_id = o.id AND om.user_id = $3
+			            AND om.active AND om.role = 'owner'
+			      )
 		      OR EXISTS (
-		          SELECT 1 FROM organization_memberships om
-		          WHERE om.organization_id = o.id AND om.user_id = $3
-		            AND om.role = 'owner' AND om.active
+		          SELECT 1
+		          FROM team_repository_roles tr
+		          JOIN teams t ON t.id = tr.team_id AND t.organization_id = o.id
+		          JOIN team_memberships tm ON tm.team_id = t.id AND tm.user_id = $3 AND tm.active
+		          JOIN organization_memberships om
+		            ON om.organization_id = o.id AND om.user_id = $3 AND om.active
+			          WHERE tr.repository_id = r.id AND tr.active AND t.active
+			            AND tr.role IN ('admin', 'maintain', 'write')
 		      )
 		  )
 		GROUP BY r.id, o.slug
 	`, owner, slug, actor.ID)
 	repository, err := scanRepository(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		visible, visibilityErr := store.repositoryVisibleForActor(ctx, actor.ID, owner, slug)
-		if visibilityErr != nil {
-			return Repository{}, visibilityErr
-		}
-		if !visible {
-			return Repository{}, ErrNotFound
-		}
-		return Repository{}, ErrForbidden
+		return Repository{}, ErrNotFound
 	}
 	if err != nil {
 		return Repository{}, fmt.Errorf("get writable repository: %w", err)
@@ -353,12 +451,12 @@ func (store *Store) ListPublicIssues(
 		       assignee.username, COUNT(c.id), i.created_at, i.updated_at
 		FROM issues i
 		JOIN repositories r ON r.id = i.repository_id
-		  AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
 		JOIN organizations o ON o.id = r.organization_id AND o.active
 		JOIN users author ON author.id = i.author_id
 		LEFT JOIN users assignee ON assignee.id = i.assignee_id
 		LEFT JOIN issue_comments c ON c.issue_id = i.id
-		WHERE o.slug = $1 AND r.slug = $2 AND r.visibility = 'public' AND i.state = $3
+		WHERE o.slug = $1 AND r.slug = $2 AND o.active
+		  AND r.visibility = 'public' AND r.lifecycle_state = 'active' AND i.state = $3
 		GROUP BY i.id, author.username, assignee.username
 		ORDER BY i.updated_at DESC
 		LIMIT 100
@@ -389,29 +487,9 @@ func (store *Store) CreateIssue(
 	slug string,
 	input CreateIssueInput,
 ) (Issue, error) {
-	var repositoryID string
-	var organizationID string
-	var visibility string
-	err := store.pool.QueryRow(ctx, `
-		SELECT r.id, r.organization_id, r.visibility
-		FROM repositories r
-		JOIN organizations o ON o.id = r.organization_id AND o.active
-		WHERE o.slug = $1 AND r.slug = $2 AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
-	`, owner, slug).Scan(&repositoryID, &organizationID, &visibility)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return Issue{}, ErrNotFound
-	}
+	repositoryID, organizationID, err := store.writableRepository(ctx, actor.ID, owner, slug)
 	if err != nil {
-		return Issue{}, fmt.Errorf("find repository for issue: %w", err)
-	}
-	if visibility != "public" {
-		allowed, err := store.canReadRepository(ctx, actor.ID, repositoryID, organizationID)
-		if err != nil {
-			return Issue{}, err
-		}
-		if !allowed {
-			return Issue{}, ErrForbidden
-		}
+		return Issue{}, err
 	}
 
 	transaction, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
@@ -479,11 +557,11 @@ func (store *Store) ListPublicMergeRequests(
 		       mr.created_at, mr.updated_at
 		FROM merge_requests mr
 		JOIN repositories r ON r.id = mr.repository_id
-		  AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
 		JOIN organizations o ON o.id = r.organization_id AND o.active
 		JOIN users author ON author.id = mr.author_id
 		LEFT JOIN merge_request_reviews review ON review.merge_request_id = mr.id
-		WHERE o.slug = $1 AND r.slug = $2 AND r.visibility = 'public' AND mr.state = $3
+		WHERE o.slug = $1 AND r.slug = $2 AND o.active
+		  AND r.visibility = 'public' AND r.lifecycle_state = 'active' AND mr.state = $3
 		GROUP BY mr.id, author.username
 		ORDER BY mr.updated_at DESC
 		LIMIT 100
@@ -596,9 +674,9 @@ func (store *Store) ListPublicCIRuns(
 		       run.status, run.conclusion, run.queued_at, run.started_at, run.completed_at
 		FROM ci_runs run
 		JOIN repositories r ON r.id = run.repository_id
-		  AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
 		JOIN organizations o ON o.id = r.organization_id AND o.active
-		WHERE o.slug = $1 AND r.slug = $2 AND r.visibility = 'public'
+		WHERE o.slug = $1 AND r.slug = $2 AND o.active
+		  AND r.visibility = 'public' AND r.lifecycle_state = 'active'
 		ORDER BY run.run_number DESC
 		LIMIT 50
 	`, owner, slug)
@@ -643,18 +721,37 @@ func (store *Store) writableRepository(
 	err := store.pool.QueryRow(ctx, `
 		SELECT r.id, r.organization_id,
 		       EXISTS (
-		           SELECT 1 FROM repository_memberships rm
-		           WHERE rm.repository_id = r.id AND rm.user_id = $3
-		             AND rm.role IN ('admin', 'write') AND rm.active
-		           UNION ALL
-		           SELECT 1 FROM organization_memberships om
-		           WHERE om.organization_id = o.id AND om.user_id = $3
-		             AND om.role = 'owner' AND om.active
+		           SELECT 1
+		           FROM users actor_user
+		           WHERE actor_user.id = $3 AND actor_user.status = 'active'
+		             AND (
+		                 EXISTS (
+		                     SELECT 1 FROM repository_memberships rm
+		                     WHERE rm.repository_id = r.id AND rm.user_id = $3 AND rm.active
+		                       AND rm.role IN ('admin', 'maintain', 'write')
+		                 )
+			                 OR EXISTS (
+			                     SELECT 1 FROM organization_memberships om
+			                     WHERE om.organization_id = o.id AND om.user_id = $3
+			                       AND om.active AND om.role = 'owner'
+			                 )
+		                 OR EXISTS (
+		                     SELECT 1
+		                     FROM team_repository_roles tr
+		                     JOIN teams t ON t.id = tr.team_id AND t.organization_id = o.id
+		                     JOIN team_memberships tm
+		                       ON tm.team_id = t.id AND tm.user_id = $3 AND tm.active
+		                     JOIN organization_memberships om
+		                       ON om.organization_id = o.id AND om.user_id = $3 AND om.active
+			                     WHERE tr.repository_id = r.id AND tr.active AND t.active
+			                       AND tr.role IN ('admin', 'maintain', 'write')
+		                 )
+		             )
 		       )
 		FROM repositories r
 		JOIN organizations o ON o.id = r.organization_id AND o.active
-		WHERE o.slug = $1 AND r.slug = $2 AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
-		  AND EXISTS (SELECT 1 FROM users actor_user WHERE actor_user.id = $3 AND actor_user.status = 'active')
+		WHERE o.slug = $1 AND r.slug = $2 AND o.active
+		  AND r.archived_at IS NULL AND r.lifecycle_state = 'active'
 	`, owner, slug, userID).Scan(&repositoryID, &organizationID, &allowed)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", "", ErrNotFound
@@ -663,38 +760,9 @@ func (store *Store) writableRepository(
 		return "", "", fmt.Errorf("check repository write permission: %w", err)
 	}
 	if !allowed {
-		visible, visibilityErr := store.repositoryVisibleForActor(ctx, userID, owner, slug)
-		if visibilityErr != nil {
-			return "", "", visibilityErr
-		}
-		if !visible {
-			return "", "", ErrNotFound
-		}
 		return "", "", ErrForbidden
 	}
 	return repositoryID, organizationID, nil
-}
-
-func (store *Store) repositoryVisibleForActor(
-	ctx context.Context,
-	userID string,
-	owner string,
-	slug string,
-) (bool, error) {
-	var visible bool
-	err := store.pool.QueryRow(ctx, `
-		SELECT EXISTS (
-			SELECT 1
-			FROM repositories r
-			JOIN organizations o ON o.id = r.organization_id
-			WHERE o.slug = $1 AND r.slug = $2
-			  AND `+repositoryAccessClause("r", "$3")+`
-		)
-	`, owner, slug, userID).Scan(&visible)
-	if err != nil {
-		return false, fmt.Errorf("check repository visibility: %w", err)
-	}
-	return visible, nil
 }
 
 func (store *Store) canReadRepository(
@@ -707,9 +775,41 @@ func (store *Store) canReadRepository(
 	err := store.pool.QueryRow(ctx, `
 		SELECT EXISTS (
 			SELECT 1
-			FROM repositories r
-			WHERE r.id = $1 AND r.organization_id = $3
-			  AND `+repositoryAccessClause("r", "$2")+`
+			FROM users actor_user
+			JOIN repositories readable
+			  ON readable.id = $1 AND readable.organization_id = $3
+			 AND readable.lifecycle_state = 'active'
+			JOIN organizations readable_organization
+			  ON readable_organization.id = readable.organization_id AND readable_organization.active
+			WHERE actor_user.id = $2 AND actor_user.status = 'active'
+			  AND (
+				  EXISTS (
+					  SELECT 1 FROM organization_memberships
+					  WHERE organization_id = $3 AND user_id = $2 AND active
+					    AND readable.visibility IN ('internal', 'public')
+				  )
+				  OR
+				  EXISTS (
+					  SELECT 1
+						  FROM repository_memberships rm
+						  WHERE rm.repository_id = $1 AND rm.user_id = $2 AND rm.active
+				  )
+					  OR EXISTS (
+						  SELECT 1 FROM organization_memberships
+						  WHERE organization_id = $3 AND user_id = $2 AND active
+						    AND role = 'owner'
+					  )
+				  OR EXISTS (
+					  SELECT 1
+					  FROM team_repository_roles tr
+					  JOIN teams t ON t.id = tr.team_id AND t.organization_id = $3
+					  JOIN team_memberships tm
+					    ON tm.team_id = t.id AND tm.user_id = $2 AND tm.active
+					  JOIN organization_memberships om
+					    ON om.organization_id = $3 AND om.user_id = $2 AND om.active
+					  WHERE tr.repository_id = $1 AND tr.active AND t.active
+				  )
+			  )
 		)
 	`, repositoryID, userID, organizationID).Scan(&allowed)
 	if err != nil {
@@ -719,11 +819,12 @@ func (store *Store) canReadRepository(
 }
 
 const repositorySelect = `
-	SELECT r.id, r.organization_id, o.slug, r.slug, r.display_name, r.description,
-	       r.visibility, r.lore_repository_id, r.lore_url, r.default_branch,
-	       r.homepage_url, r.allow_issues, r.allow_merge_requests,
-	       COUNT(DISTINCT i.id) FILTER (WHERE i.state = 'open'),
-	       COUNT(DISTINCT mr.id) FILTER (WHERE mr.state = 'open'), r.updated_at
+		SELECT r.id, r.organization_id, o.slug, r.slug, r.display_name, r.description,
+		       r.visibility, r.lore_repository_id, r.lore_url, r.default_branch,
+		       r.homepage_url, r.allow_issues, r.allow_merge_requests,
+		       COUNT(DISTINCT i.id) FILTER (WHERE i.state = 'open'),
+		       COUNT(DISTINCT mr.id) FILTER (WHERE mr.state = 'open'),
+		       r.lifecycle_state, COALESCE(r.provisioning_error, ''), r.updated_at
 	FROM repositories r
 	JOIN organizations o ON o.id = r.organization_id AND o.active
 	LEFT JOIN issues i ON i.repository_id = r.id
@@ -752,6 +853,8 @@ func scanRepository(row rowScanner) (Repository, error) {
 		&repository.AllowMergeRequests,
 		&repository.IssueCount,
 		&repository.MergeRequestCount,
+		&repository.LifecycleState,
+		&repository.ProvisioningError,
 		&repository.UpdatedAt,
 	)
 	return repository, err
@@ -770,6 +873,10 @@ func scanRepositories(rows pgx.Rows) ([]Repository, error) {
 		return nil, fmt.Errorf("iterate repositories: %w", err)
 	}
 	return repositories, nil
+}
+
+func isLorePartitionID(value string) bool {
+	return partitionPattern.MatchString(value)
 }
 
 func validateSlug(slug string) error {

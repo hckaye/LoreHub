@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -349,6 +350,7 @@ func (store *Store) syncNotifications(ctx context.Context, transaction pgx.Tx) e
 			if err != nil {
 				return err
 			}
+			sort.Strings(preferences)
 			message := notificationMessage(event, scope)
 			for _, recipient := range preferences {
 				var activeRecipient string

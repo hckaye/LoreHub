@@ -1,13 +1,14 @@
-import { LockKeyhole, ServerOff, Settings2 } from "lucide-react";
+import { LockKeyhole, ServerOff } from "lucide-react";
 
+import { ActionsContextSettings } from "@/components/actions/actions-context-settings";
 import { AuthRequired } from "@/components/auth/auth-required";
+import { RepositoryAccessSettings } from "@/components/repositories/repository-access-settings";
 import { RepositoryPanel, RepositorySection } from "@/components/repositories/repository-section";
-import { RepositorySettingsForm } from "@/components/repositories/repository-settings-form";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getDictionary } from "@/i18n";
 import { isLocale } from "@/i18n/config";
 import { getAuthSession } from "@/lib/auth-api";
-import { getPublicRepository, getRepositorySettings } from "@/lib/lorehub-api";
+import { getPublicRepository } from "@/lib/lorehub-api";
 import { repositoryPath } from "@/lib/routes";
 
 import styles from "@/components/repositories/repository-detail.module.css";
@@ -21,7 +22,7 @@ export const dynamic = "force-dynamic";
 export default async function RepositorySettingsPage({ params }: RepositorySettingsPageProps) {
   const { locale: value, owner, repository } = await params;
   const locale = isLocale(value) ? value : "en";
-  const [dictionary, session, publicRepositoryResult] = await Promise.all([
+  const [dictionary, session, repositoryResult] = await Promise.all([
     getDictionary(locale),
     getAuthSession(),
     getPublicRepository(owner, repository),
@@ -37,8 +38,6 @@ export default async function RepositorySettingsPage({ params }: RepositorySetti
       </RepositorySection>
     );
   }
-  const settingsResult = await getRepositorySettings(owner, repository);
-  const repositoryResult = settingsResult.ok ? settingsResult : publicRepositoryResult;
   if (!repositoryResult.ok) {
     return (
       <EmptyState
@@ -52,19 +51,9 @@ export default async function RepositorySettingsPage({ params }: RepositorySetti
   const data = repositoryResult.data;
   return (
     <RepositorySection description={dictionary.settingsPage.description} title={dictionary.settingsPage.title}>
-      {settingsResult.ok ? (
-        <RepositorySettingsForm dictionary={dictionary} repository={settingsResult.data} session={session} />
-      ) : (
-        <RepositoryPanel
-          description={dictionary.settingsPage.readOnlyBody}
-          title={dictionary.settingsPage.readOnlyTitle}
-        >
-          <div className={styles.readOnly}>
-            <Settings2 aria-hidden="true" size={18} />
-            <span>{dictionary.common.readOnly}</span>
-          </div>
-        </RepositoryPanel>
-      )}
+      <RepositoryPanel description={dictionary.settingsPage.readOnlyBody} title={dictionary.settingsPage.readOnlyTitle}>
+        <p>{dictionary.settingsPage.readOnlyBody}</p>
+      </RepositoryPanel>
       <RepositoryPanel title={dictionary.settingsPage.repositoryIdentity}>
         <dl className={styles.details}>
           <div>
@@ -96,6 +85,10 @@ export default async function RepositorySettingsPage({ params }: RepositorySetti
             </dd>
           </div>
           <div>
+            <dt>{dictionary.settingsPage.canonicalNote}</dt>
+            <dd>{dictionary.settingsPage.canonicalNote}</dd>
+          </div>
+          <div>
             <dt>{dictionary.settingsPage.loreUrl}</dt>
             <dd>
               <code>{data.loreUrl}</code>
@@ -108,6 +101,23 @@ export default async function RepositorySettingsPage({ params }: RepositorySetti
             </dd>
           </div>
         </dl>
+      </RepositoryPanel>
+      <RepositoryPanel
+        description={dictionary.settingsPage.accessDescription}
+        title={dictionary.settingsPage.accessTitle}
+      >
+        <RepositoryAccessSettings dictionary={dictionary} repository={data} session={session} />
+      </RepositoryPanel>
+      <RepositoryPanel
+        description={dictionary.actionsSettings.repositoryDescription}
+        title={dictionary.actionsSettings.title}
+      >
+        <ActionsContextSettings
+          dictionary={dictionary}
+          locale={locale}
+          session={session}
+          target={{ kind: "repository", owner: data.owner, repository: data.slug }}
+        />
       </RepositoryPanel>
     </RepositorySection>
   );
