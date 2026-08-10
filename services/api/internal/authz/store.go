@@ -30,6 +30,7 @@ type PolicyCheck struct {
 	ResourceID       string
 	Operation        string
 	BranchID         string
+	BranchName       string
 	ProposedRevision string
 }
 

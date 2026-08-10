@@ -37,9 +37,13 @@ func (store *Store) PrepareMergeAuthorization(
 	if !authz.ExpandPermissions(permissionSet)[authz.PermissionWrite] {
 		return ErrForbidden
 	}
-	if input.BranchID == "" || input.BranchName == "" || input.ExpectedBase == "" ||
+	if input.OperationID == "" || input.BranchID == "" || input.BranchName == "" || input.ExpectedBase == "" ||
 		input.ExpectedHead == "" || input.SourceRevision == "" {
 		return errors.New("merge authorization fields are required")
+	}
+	operationID, err := uuid.Parse(input.OperationID)
+	if err != nil {
+		return errors.New("merge authorization operation ID is invalid")
 	}
 	expiresAt := time.Now().UTC().Add(input.Lifetime)
 	transaction, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
@@ -47,12 +51,36 @@ func (store *Store) PrepareMergeAuthorization(
 		return fmt.Errorf("begin merge authorization transaction: %w", err)
 	}
 	defer func() { _ = transaction.Rollback(context.WithoutCancel(ctx)) }()
+	var operationRepository, operationActor, operationSource, operationTarget, operationStaged, operationBranch,
+		operationState string
+	err = transaction.QueryRow(ctx, `
+		SELECT mo.repository_id, mo.actor_id, mo.source_revision, mo.target_revision,
+		       COALESCE(mo.staged_revision, ''), mr.target_branch, mo.state
+		FROM merge_operations mo
+		JOIN merge_requests mr
+		  ON mr.id = mo.merge_request_id AND mr.repository_id = mo.repository_id
+		WHERE mo.id = $1
+		FOR UPDATE
+	`, operationID).Scan(&operationRepository, &operationActor, &operationSource, &operationTarget,
+		&operationStaged, &operationBranch, &operationState)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrForbidden
+	}
+	if err != nil {
+		return fmt.Errorf("verify merge operation: %w", err)
+	}
+	if operationActor != userID || operationRepository != repository.ID ||
+		operationSource != input.SourceRevision || operationTarget != input.ExpectedBase ||
+		operationStaged != input.ExpectedHead || operationBranch != input.BranchName ||
+		(operationState != "ready_to_push" && operationState != "pushing") {
+		return ErrForbidden
+	}
 	_, err = transaction.Exec(ctx, `
 		INSERT INTO lore_merge_authorizations (
-			id, repository_id, user_id, target_branch_id, target_branch_name,
+			id, merge_operation_id, repository_id, user_id, target_branch_id, target_branch_name,
 			expected_current_revision, proposed_revision, source_revision, expires_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-	`, uuid.New(), repository.ID, userID, input.BranchID, input.BranchName,
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+	`, uuid.New(), operationID, repository.ID, userID, input.BranchID, input.BranchName,
 		input.ExpectedBase, input.ExpectedHead, input.SourceRevision, expiresAt)
 	if err != nil {
 		return fmt.Errorf("store merge authorization: %w", err)
@@ -94,6 +122,19 @@ func (store *Store) consumePreparedMergeAuthorization(
 			  AND target_branch_name = $4 AND expected_current_revision = $5
 			  AND proposed_revision = $6 AND source_revision <> ''
 			  AND expires_at > now() AND consumed_at IS NULL
+			  AND EXISTS (
+				SELECT 1
+				FROM merge_operations operation
+				JOIN merge_requests request ON request.id = operation.merge_request_id
+				WHERE operation.id = lore_merge_authorizations.merge_operation_id
+				  AND operation.repository_id = lore_merge_authorizations.repository_id
+				  AND operation.actor_id = lore_merge_authorizations.user_id
+				  AND operation.source_revision = lore_merge_authorizations.source_revision
+				  AND operation.target_revision = lore_merge_authorizations.expected_current_revision
+				  AND operation.staged_revision = lore_merge_authorizations.proposed_revision
+				  AND request.target_branch = lore_merge_authorizations.target_branch_name
+				  AND operation.state IN ('ready_to_push', 'pushing')
+			)
 			RETURNING id, repository_id, source_revision
 		)
 		SELECT consumed.id, repository.organization_id, consumed.source_revision

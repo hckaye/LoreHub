@@ -128,13 +128,15 @@ func (api *API) listPublicLoreBranches(
 	if api.loreAuth == nil {
 		return nil, errScopedLoreCredentialUnavailable
 	}
-	credential, err := api.loreAuth.IssueServiceResourceToken(ctx, "lorehub-anonymous-reader",
+	if api.serviceSubjects.PublicReader == "" {
+		return nil, errScopedLoreCredentialUnavailable
+	}
+	credential, err := api.loreAuth.IssueServiceResourceToken(ctx,
+		loreclient.ServicePrincipal(loreclient.ServicePurposePublicReader, api.serviceSubjects.PublicReader),
 		"urc-"+repository.LoreRepositoryID, []string{authz.PermissionRead})
 	if err != nil {
 		return nil, errScopedLoreCredentialUnavailable
 	}
-	credential.Principal = loreclient.ServicePrincipal(loreclient.ServicePurposePublicReader,
-		credential.Subject)
 	branches, err := api.lore.Branches(ctx, loreclient.RepositoryRef{
 		CacheKey: repository.ID, URL: repository.LoreURL, LoreRepositoryID: repository.LoreRepositoryID,
 	}, credential)
@@ -196,18 +198,24 @@ func (api *API) repositoryInfoForRegistration(
 	if !containsPermission(resource.Permission, authz.PermissionAdmin) {
 		return loreclient.Repository{}, errors.New("the Lore token lacks repository administration scope")
 	}
+	authenticationToken, authenticationExpiresAt, err := api.loreAuth.IssueAuthenticationToken(ctx, actor.ID)
+	if err != nil {
+		return loreclient.Repository{}, errors.New("could not issue the Lore authentication token")
+	}
 	credential := loreclient.Credential{
-		Partition:       partition,
-		Scope:           loreclient.ScopeWrite,
-		ResourceID:      resource.ResourceID,
-		Subject:         claims.Subject,
-		RequestedScopes: []string{string(loreclient.ScopeWrite)},
-		GrantedScopes:   []string{string(loreclient.ScopeWrite)},
-		Identity:        claims.Subject,
-		Token:           rawToken,
-		AuthURL:         api.loreAuth.AuthURL(),
-		ExpiresAt:       claims.Expiry.Time(),
-		Principal:       loreclient.UserPrincipal(actor.ID),
+		Partition:               partition,
+		Scope:                   loreclient.ScopeRead,
+		ResourceID:              resource.ResourceID,
+		Subject:                 claims.Subject,
+		RequestedScopes:         []string{string(loreclient.ScopeWrite)},
+		GrantedScopes:           []string{string(loreclient.ScopeWrite)},
+		Identity:                claims.Subject,
+		Token:                   rawToken,
+		AuthenticationToken:     authenticationToken,
+		AuthURL:                 api.loreAuth.AuthURL(),
+		ExpiresAt:               claims.Expiry.Time(),
+		AuthenticationExpiresAt: authenticationExpiresAt,
+		Principal:               loreclient.UserPrincipal(actor.ID),
 	}
 	info, err := api.lore.RepositoryInfo(ctx, repositoryURL, credential)
 	if err != nil || info.ID != partition {

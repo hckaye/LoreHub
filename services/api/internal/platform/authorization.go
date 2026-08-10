@@ -108,27 +108,36 @@ func (store *Store) EffectivePermissions(
 		return authz.ResourcePermissions{}, fmt.Errorf("find service principal permissions: %w", err)
 	}
 	var status string
-	var organizationRole string
 	err = store.pool.QueryRow(ctx, `
-		SELECT u.status, om.role
-		FROM users u
-		JOIN organizations o ON o.id = $2 AND o.active
-		JOIN organization_memberships om
-		  ON om.user_id = u.id AND om.organization_id = $2 AND om.active
-		WHERE u.id = $1
-	`, userID, repository.OrganizationID).Scan(&status, &organizationRole)
+		SELECT status
+		FROM users
+		WHERE id = $1
+	`, userID).Scan(&status)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return authz.ResourcePermissions{ResourceID: resourceID}, nil
 	}
 	if err != nil {
-		return authz.ResourcePermissions{}, fmt.Errorf("find active organization membership: %w", err)
+		return authz.ResourcePermissions{}, fmt.Errorf("find Lore user status: %w", err)
 	}
 	if status != "active" {
 		return authz.ResourcePermissions{ResourceID: resourceID}, nil
 	}
+	var organizationRole string
+	err = store.pool.QueryRow(ctx, `
+		SELECT role
+		FROM organization_memberships
+		WHERE organization_id = $1 AND user_id = $2 AND active
+	`, repository.OrganizationID, userID).Scan(&organizationRole)
+	if errors.Is(err, pgx.ErrNoRows) {
+		organizationRole = ""
+	} else if err != nil {
+		return authz.ResourcePermissions{}, fmt.Errorf("find active organization membership: %w", err)
+	}
 	permissions := make(map[string]bool)
-	if repository.LifecycleState == "active" &&
-		(repository.Visibility == "internal" || repository.Visibility == "public") {
+	if repository.LifecycleState == "active" && repository.Visibility == "public" {
+		permissions[authz.PermissionRead] = true
+	}
+	if repository.LifecycleState == "active" && repository.Visibility == "internal" && organizationRole != "" {
 		permissions[authz.PermissionRead] = true
 	}
 	if repository.LifecycleState == "active" && organizationRole == "owner" {
@@ -172,6 +181,8 @@ func (store *Store) EffectivePermissions(
 		JOIN team_memberships tm
 		  ON tm.team_id = tr.team_id AND tm.user_id = $2 AND tm.active
 		JOIN teams t ON t.id = tr.team_id AND t.organization_id = $3 AND t.active
+		JOIN organization_memberships om
+		  ON om.organization_id = t.organization_id AND om.user_id = $2 AND om.active
 		WHERE tr.repository_id = $1 AND tr.active
 	`, repository.ID, userID, repository.OrganizationID)
 	if err != nil {
@@ -249,24 +260,42 @@ func (store *Store) ListResourcePermissions(
 		SELECT DISTINCT r.lore_repository_id
 		FROM repositories r
 		JOIN organizations o ON o.id = r.organization_id AND o.active
-		JOIN organization_memberships om
-		  ON om.organization_id = r.organization_id AND om.user_id = $1 AND om.active
-		JOIN users u ON u.id = om.user_id AND u.status = 'active'
+		JOIN users u ON u.id = $1 AND u.status = 'active'
 		WHERE r.archived_at IS NULL AND r.lifecycle_state = 'active'
 		  AND (
-				 r.visibility IN ('internal', 'public')
-			  OR om.role = 'owner'
-			  OR EXISTS (
-				  SELECT 1 FROM repository_memberships rm
-				  WHERE rm.repository_id = r.id AND rm.user_id = $1 AND rm.active
+				 r.visibility = 'public'
+			  OR (
+				  r.visibility = 'internal'
+				  AND EXISTS (
+					  SELECT 1 FROM organization_memberships om
+					  WHERE om.organization_id = r.organization_id
+						AND om.user_id = $1 AND om.active
+				  )
 			  )
-			  OR EXISTS (
-				  SELECT 1
-				  FROM team_repository_roles tr
-				  JOIN teams t ON t.id = tr.team_id AND t.organization_id = r.organization_id
-				  JOIN team_memberships tm
-				    ON tm.team_id = t.id AND tm.user_id = $1 AND tm.active
-					  WHERE tr.repository_id = r.id AND tr.active AND t.active
+			  OR (
+				  r.visibility = 'private'
+				  AND (
+					  EXISTS (
+						  SELECT 1 FROM organization_memberships om
+						  WHERE om.organization_id = r.organization_id
+							AND om.user_id = $1 AND om.role = 'owner' AND om.active
+					  )
+					  OR EXISTS (
+						  SELECT 1 FROM repository_memberships rm
+						  WHERE rm.repository_id = r.id AND rm.user_id = $1 AND rm.active
+					  )
+					  OR EXISTS (
+						  SELECT 1
+						  FROM team_repository_roles tr
+						  JOIN teams t
+							ON t.id = tr.team_id AND t.organization_id = r.organization_id AND t.active
+						  JOIN team_memberships tm
+							ON tm.team_id = t.id AND tm.user_id = $1 AND tm.active
+						  JOIN organization_memberships om
+							ON om.organization_id = r.organization_id AND om.user_id = $1 AND om.active
+						  WHERE tr.repository_id = r.id AND tr.active
+					  )
+				  )
 			  )
 		  )`+where+`
 		ORDER BY r.lore_repository_id
@@ -354,9 +383,6 @@ func (store *Store) CheckPolicy(
 	if !authz.RequirePermission(check.Operation, permissionSet) {
 		return authz.PolicyDecision{}, nil
 	}
-	if check.Operation == authz.OperationBranchCreate {
-		return authz.PolicyDecision{Allowed: true}, nil
-	}
 	if check.Operation != authz.OperationBranchPush && check.Operation != authz.OperationBranchCreate &&
 		check.Operation != authz.OperationBranchDelete && check.Operation != authz.OperationMerge {
 		return authz.PolicyDecision{Allowed: true}, nil
@@ -364,6 +390,16 @@ func (store *Store) CheckPolicy(
 	repository, err := store.authorizationRepository(ctx, check.ResourceID)
 	if err != nil {
 		return authz.PolicyDecision{}, err
+	}
+	if check.Operation == authz.OperationBranchCreate {
+		if check.BranchName == "" {
+			return authz.PolicyDecision{}, nil
+		}
+		protected, err := store.branchBlocksDirectPush(ctx, repository.ID, check.BranchName)
+		if err != nil {
+			return authz.PolicyDecision{}, err
+		}
+		return authz.PolicyDecision{Allowed: !protected}, nil
 	}
 	if check.BranchID == "" ||
 		(check.Operation == authz.OperationBranchPush && check.ProposedRevision == "") {
@@ -376,33 +412,15 @@ func (store *Store) CheckPolicy(
 	if branchID == "" || branchName == "" || currentRevision == "" {
 		return authz.PolicyDecision{}, nil
 	}
-	rows, err := store.pool.Query(ctx, `
-		SELECT pattern, block_direct_push
-		FROM branch_rules
-		WHERE repository_id = $1
-	`, repository.ID)
+	protected, err := store.branchBlocksDirectPush(ctx, repository.ID, branchName)
 	if err != nil {
-		return authz.PolicyDecision{}, fmt.Errorf("find branch policy: %w", err)
+		return authz.PolicyDecision{}, err
 	}
-	protected := false
-	for rows.Next() {
-		var pattern string
-		var blockDirectPush bool
-		if err := rows.Scan(&pattern, &blockDirectPush); err != nil {
-			rows.Close()
-			return authz.PolicyDecision{}, fmt.Errorf("scan branch policy: %w", err)
-		}
-		if blockDirectPush && branchMatches(pattern, branchName) {
-			protected = true
-		}
-	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return authz.PolicyDecision{}, fmt.Errorf("iterate branch policy: %w", err)
-	}
-	rows.Close()
 	if !protected {
 		return authz.PolicyDecision{Allowed: true}, nil
+	}
+	if check.Operation == authz.OperationBranchDelete {
+		return authz.PolicyDecision{}, nil
 	}
 	if check.Operation != authz.OperationMerge && check.Operation != authz.OperationBranchPush {
 		return authz.PolicyDecision{}, nil
@@ -416,6 +434,36 @@ func (store *Store) CheckPolicy(
 		return authz.PolicyDecision{}, err
 	}
 	return authz.PolicyDecision{Allowed: consumed}, nil
+}
+
+func (store *Store) branchBlocksDirectPush(
+	ctx context.Context,
+	repositoryID string,
+	branchName string,
+) (bool, error) {
+	rows, err := store.pool.Query(ctx, `
+		SELECT pattern, block_direct_push
+		FROM branch_rules
+		WHERE repository_id = $1
+	`, repositoryID)
+	if err != nil {
+		return false, fmt.Errorf("find branch policy: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var pattern string
+		var blockDirectPush bool
+		if err := rows.Scan(&pattern, &blockDirectPush); err != nil {
+			return false, fmt.Errorf("scan branch policy: %w", err)
+		}
+		if blockDirectPush && branchMatches(pattern, branchName) {
+			return true, nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return false, fmt.Errorf("iterate branch policy: %w", err)
+	}
+	return false, nil
 }
 
 func (store *Store) resolveBranchPolicyInput(

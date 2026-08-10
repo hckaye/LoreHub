@@ -23,8 +23,6 @@ func (store *Store) ListRepositoryCollaborators(
 		SELECT u.id, u.username, u.display_name, rm.role, rm.active, 'direct'
 		FROM repository_memberships rm
 		JOIN users u ON u.id = rm.user_id
-		JOIN organization_memberships om
-		  ON om.organization_id = $2 AND om.user_id = rm.user_id AND om.active
 		WHERE rm.repository_id = $1 AND u.status = 'active'
 		UNION ALL
 		SELECT u.id, u.username, u.display_name, tr.role, tm.active, 'team:' || t.slug
@@ -71,10 +69,8 @@ func (store *Store) SetRepositoryCollaborator(
 	err = store.pool.QueryRow(ctx, `
 		SELECT u.id
 		FROM users u
-		JOIN organization_memberships om
-		  ON om.user_id = u.id AND om.organization_id = $2 AND om.active
 		WHERE u.username = $1 AND u.status = 'active'
-	`, strings.ToLower(strings.TrimSpace(input.Username)), organizationID).Scan(&userID)
+	`, strings.ToLower(strings.TrimSpace(input.Username))).Scan(&userID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Collaborator{}, ErrNotFound
 	}

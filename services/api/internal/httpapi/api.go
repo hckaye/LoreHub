@@ -119,6 +119,37 @@ type HealthChecker interface {
 	Ping(ctx context.Context) error
 }
 
+type IdentityStore interface {
+	Dashboard(context.Context, platform.User) (platform.Dashboard, error)
+	Search(context.Context, *platform.User, string, string, int) (platform.SearchResults, error)
+	UserProfile(context.Context, *platform.User, string) (platform.UserProfile, error)
+	UserRepositories(context.Context, *platform.User, string) ([]platform.Repository, error)
+	UpdateProfile(context.Context, platform.User, platform.UpdateProfileInput) (platform.UserProfile, error)
+	CreateTeam(context.Context, platform.User, string, platform.SetTeamInput) (platform.Team, error)
+	UpdateTeam(context.Context, platform.User, string, string, platform.SetTeamInput) (platform.Team, error)
+	ListNotifications(context.Context, platform.User, bool, int) (platform.NotificationPage, error)
+	UnreadNotificationCount(context.Context, platform.User) (int64, error)
+	MarkNotificationRead(context.Context, platform.User, string) error
+	MarkAllNotificationsRead(context.Context, platform.User) error
+	NotificationPreferences(context.Context, platform.User) (platform.NotificationPreferences, error)
+	UpdateNotificationPreferences(
+		context.Context, platform.User, platform.UpdateNotificationPreferencesInput,
+	) (platform.NotificationPreferences, error)
+	Organization(context.Context, *platform.User, string) (platform.OrganizationView, error)
+	OrganizationRepositories(context.Context, *platform.User, string) ([]platform.Repository, error)
+	UpdateOrganization(
+		context.Context, platform.User, string, platform.UpdateOrganizationInput,
+	) (platform.OrganizationView, error)
+	Teams(context.Context, *platform.User, string) ([]platform.Team, error)
+	Team(context.Context, *platform.User, string, string) (platform.Team, error)
+	TeamMembers(context.Context, *platform.User, string, string) ([]platform.TeamMember, error)
+	AddTeamMember(context.Context, platform.User, string, string, string, string) (platform.TeamMember, error)
+	RemoveTeamMember(context.Context, platform.User, string, string, string) error
+	UpdateRepositorySettings(
+		context.Context, platform.User, string, string, platform.UpdateRepositorySettingsInput,
+	) (platform.Repository, error)
+}
+
 type API struct {
 	store                   Store
 	lore                    loreclient.Client
@@ -143,6 +174,8 @@ type API struct {
 	sessionTTL              time.Duration
 	transactionTTL          time.Duration
 	lorePublicURL           string
+	identityStore           IdentityStore
+	loginProviders          []string
 }
 
 func New(
@@ -177,15 +210,39 @@ func New(
 	mux.HandleFunc("GET /auth/callback", api.callback)
 	mux.HandleFunc("POST /auth/logout", api.logout)
 	mux.HandleFunc("GET /api/v1/auth/session", api.session)
+	mux.HandleFunc("GET /api/v1/auth/providers", api.providers)
 	mux.HandleFunc("GET /.well-known/jwks.json", api.jwks)
 	mux.HandleFunc("GET /auth/lore/confirm", api.loreAuthConfirm)
 	mux.HandleFunc("POST /auth/lore/confirm", api.loreAuthConfirm)
+	mux.HandleFunc("GET /api/v1/dashboard", api.dashboard)
+	mux.HandleFunc("GET /api/v1/search", api.search)
+	mux.HandleFunc("GET /api/v1/users/{username}", api.userProfile)
+	mux.HandleFunc("GET /api/v1/users/{username}/repositories", api.userRepositories)
+	mux.HandleFunc("PATCH /api/v1/account/profile", api.updateProfile)
+	mux.HandleFunc("GET /api/v1/account/notification-preferences", api.notificationPreferences)
+	mux.HandleFunc("PATCH /api/v1/account/notification-preferences", api.updateNotificationPreferences)
+	mux.HandleFunc("GET /api/v1/notifications", api.notifications)
+	mux.HandleFunc("GET /api/v1/notifications/unread-count", api.unreadNotificationCount)
+	mux.HandleFunc("PATCH /api/v1/notifications/{notificationID}/read", api.markNotificationRead)
+	mux.HandleFunc("POST /api/v1/notifications/read-all", api.markAllNotificationsRead)
 	mux.HandleFunc("GET /api/v1/explore/repositories", api.exploreRepositories)
 	mux.HandleFunc("POST /api/v1/organizations", api.createOrganization)
+	mux.HandleFunc("GET /api/v1/organizations/{organization}", api.organization)
+	mux.HandleFunc("PATCH /api/v1/organizations/{organization}/settings", api.updateOrganization)
+	mux.HandleFunc("GET /api/v1/organizations/{organization}/repositories", api.organizationRepositories)
+	mux.HandleFunc("GET /api/v1/organizations/{organization}/teams/{team}", api.team)
+	mux.HandleFunc("PATCH /api/v1/organizations/{organization}/teams/{team}/settings", api.updateIdentityTeam)
+	mux.HandleFunc("POST /api/v1/organizations/{organization}/teams/{team}/members", api.addTeamMember)
+	mux.HandleFunc(
+		"DELETE /api/v1/organizations/{organization}/teams/{team}/members/{username}",
+		api.removeTeamMember,
+	)
 	mux.HandleFunc("POST /api/v1/organizations/{organization}/repositories", api.registerRepository)
 	mux.HandleFunc("POST /api/v1/organizations/{organization}/repositories/import", api.importRepository)
 	mux.HandleFunc("POST /api/v1/repositories/{owner}/{repository}/provision", api.retryRepositoryProvisioning)
 	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}", api.publicRepository)
+	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/settings", api.repositorySettings)
+	mux.HandleFunc("PATCH /api/v1/repositories/{owner}/{repository}/settings", api.updateRepositorySettings)
 	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/branches", api.repositoryBranches)
 	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/issues", api.listIssues)
 	mux.HandleFunc("POST /api/v1/repositories/{owner}/{repository}/issues", api.createIssue)
@@ -201,8 +258,9 @@ func New(
 		if workflow, ok := api.collabStore.(collab.MergeWorkflowStore); ok {
 			if mergeClient, mergeOK := api.lore.(loreclient.MergeClient); mergeOK {
 				pushAuthorizer, _ := api.collabStore.(loreclient.PushAuthorizer)
+				mergeAuthorization, _ := api.authorization.(mergeapi.MergeAuthorizationStore)
 				mergeapi.Register(mux, api.collabStore, workflow, api.lore, mergeClient, api,
-					api.loreCredentials, pushAuthorizer, logger)
+					api.loreCredentials, pushAuthorizer, mergeAuthorization, logger)
 			}
 		}
 	}
@@ -328,13 +386,21 @@ func (api *API) ready(writer http.ResponseWriter, request *http.Request) {
 	ctx, cancel := context.WithTimeout(request.Context(), 2*time.Second)
 	defer cancel()
 	if err := api.health.Ping(ctx); err != nil {
-		writeProblem(writer, http.StatusServiceUnavailable, "not_ready", "PostgreSQL is unavailable")
+		writeProblem(
+			writer,
+			http.StatusServiceUnavailable,
+			"not_ready",
+			"LoreHub service prerequisites are unavailable",
+		)
 		return
 	}
 	writeJSON(writer, http.StatusOK, map[string]string{"status": "ready"})
 }
 
 func (api *API) exploreRepositories(writer http.ResponseWriter, request *http.Request) {
+	if _, ok := api.ResolveOptionalActor(writer, request); !ok {
+		return
+	}
 	limit, _ := strconv.Atoi(request.URL.Query().Get("limit"))
 	repositories, err := api.store.ExploreRepositories(request.Context(), limit)
 	if err != nil {
@@ -345,11 +411,11 @@ func (api *API) exploreRepositories(writer http.ResponseWriter, request *http.Re
 }
 
 func (api *API) publicRepository(writer http.ResponseWriter, request *http.Request) {
+	actor, ok := api.ResolveOptionalActor(writer, request)
+	if !ok {
+		return
+	}
 	if api.collabStore != nil {
-		actor, ok := api.ResolveOptionalActor(writer, request)
-		if !ok {
-			return
-		}
 		repository, err := api.collabStore.LookupRepository(request.Context(), actor,
 			request.PathValue("owner"), request.PathValue("repository"))
 		if err != nil {
@@ -359,11 +425,15 @@ func (api *API) publicRepository(writer http.ResponseWriter, request *http.Reque
 		writeJSON(writer, http.StatusOK, repository)
 		return
 	}
-	repository, err := api.store.PublicRepository(
-		request.Context(),
-		request.PathValue("owner"),
-		request.PathValue("repository"),
-	)
+	var repository platform.Repository
+	var err error
+	if reader, supported := api.store.(RepositoryReader); supported {
+		repository, err = reader.RepositoryForRead(request.Context(), actor,
+			request.PathValue("owner"), request.PathValue("repository"))
+	} else {
+		repository, err = api.store.PublicRepository(request.Context(), request.PathValue("owner"),
+			request.PathValue("repository"))
+	}
 	if err != nil {
 		api.platformError(writer, request, "get repository", err)
 		return
@@ -466,12 +536,12 @@ func (api *API) registerRepository(writer http.ResponseWriter, request *http.Req
 }
 
 func (api *API) listIssues(writer http.ResponseWriter, request *http.Request) {
+	actor, actorOK := api.ResolveOptionalActor(writer, request)
+	if !actorOK {
+		return
+	}
 	if api.collabStore != nil {
 		if reader, ok := api.collabStore.(collab.RepositoryReadStore); ok {
-			actor, actorOK := api.ResolveOptionalActor(writer, request)
-			if !actorOK {
-				return
-			}
 			repository, err := api.collabStore.LookupRepository(request.Context(), actor,
 				request.PathValue("owner"), request.PathValue("repository"))
 			if err != nil {
@@ -486,6 +556,10 @@ func (api *API) listIssues(writer http.ResponseWriter, request *http.Request) {
 			writeJSON(writer, http.StatusOK, map[string]any{"issues": issues})
 			return
 		}
+	}
+	if err := api.authorizeFallbackRepositoryRead(request.Context(), actor, request); err != nil {
+		api.platformError(writer, request, "list issues", err)
+		return
 	}
 	issues, err := api.store.ListPublicIssues(
 		request.Context(),
@@ -532,12 +606,12 @@ func (api *API) createIssue(writer http.ResponseWriter, request *http.Request) {
 }
 
 func (api *API) listMergeRequests(writer http.ResponseWriter, request *http.Request) {
+	actor, actorOK := api.ResolveOptionalActor(writer, request)
+	if !actorOK {
+		return
+	}
 	if api.collabStore != nil {
 		if reader, ok := api.collabStore.(collab.RepositoryReadStore); ok {
-			actor, actorOK := api.ResolveOptionalActor(writer, request)
-			if !actorOK {
-				return
-			}
 			repository, err := api.collabStore.LookupRepository(request.Context(), actor,
 				request.PathValue("owner"), request.PathValue("repository"))
 			if err != nil {
@@ -553,6 +627,10 @@ func (api *API) listMergeRequests(writer http.ResponseWriter, request *http.Requ
 			writeJSON(writer, http.StatusOK, map[string]any{"mergeRequests": mergeRequests})
 			return
 		}
+	}
+	if err := api.authorizeFallbackRepositoryRead(request.Context(), actor, request); err != nil {
+		api.platformError(writer, request, "list merge requests", err)
+		return
 	}
 	mergeRequests, err := api.store.ListPublicMergeRequests(
 		request.Context(),
@@ -641,12 +719,12 @@ func (api *API) createMergeRequest(writer http.ResponseWriter, request *http.Req
 }
 
 func (api *API) listCIRuns(writer http.ResponseWriter, request *http.Request) {
+	actor, actorOK := api.ResolveOptionalActor(writer, request)
+	if !actorOK {
+		return
+	}
 	if api.collabStore != nil {
 		if reader, ok := api.collabStore.(collab.RepositoryReadStore); ok {
-			actor, actorOK := api.ResolveOptionalActor(writer, request)
-			if !actorOK {
-				return
-			}
 			repository, err := api.collabStore.LookupRepository(request.Context(), actor,
 				request.PathValue("owner"), request.PathValue("repository"))
 			if err != nil {
@@ -662,6 +740,10 @@ func (api *API) listCIRuns(writer http.ResponseWriter, request *http.Request) {
 			return
 		}
 	}
+	if err := api.authorizeFallbackRepositoryRead(request.Context(), actor, request); err != nil {
+		api.platformError(writer, request, "list CI runs", err)
+		return
+	}
 	runs, err := api.store.ListPublicCIRuns(
 		request.Context(),
 		request.PathValue("owner"),
@@ -672,6 +754,22 @@ func (api *API) listCIRuns(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 	writeJSON(writer, http.StatusOK, map[string]any{"runs": runs})
+}
+
+func (api *API) authorizeFallbackRepositoryRead(
+	ctx context.Context,
+	actor *platform.User,
+	request *http.Request,
+) error {
+	if actor == nil {
+		return nil
+	}
+	reader, ok := api.store.(RepositoryReader)
+	if !ok {
+		return errors.New("authenticated repository visibility is unavailable")
+	}
+	_, err := reader.RepositoryForRead(ctx, actor, request.PathValue("owner"), request.PathValue("repository"))
+	return err
 }
 
 func latestRevision(branches []loreclient.Branch, name string) (string, bool) {

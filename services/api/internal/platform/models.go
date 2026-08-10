@@ -20,21 +20,24 @@ type Organization struct {
 }
 
 type Repository struct {
-	ID                string    `json:"id"`
-	OrganizationID    string    `json:"organizationId"`
-	Owner             string    `json:"owner"`
-	Slug              string    `json:"slug"`
-	DisplayName       string    `json:"displayName"`
-	Description       string    `json:"description"`
-	Visibility        string    `json:"visibility"`
-	LoreRepositoryID  string    `json:"loreRepositoryId"`
-	LoreURL           string    `json:"loreUrl"`
-	DefaultBranch     string    `json:"defaultBranch"`
-	IssueCount        int64     `json:"issueCount"`
-	MergeRequestCount int64     `json:"mergeRequestCount"`
-	LifecycleState    string    `json:"lifecycleState,omitempty"`
-	ProvisioningError string    `json:"provisioningError,omitempty"`
-	UpdatedAt         time.Time `json:"updatedAt"`
+	ID                 string    `json:"id"`
+	OrganizationID     string    `json:"organizationId"`
+	Owner              string    `json:"owner"`
+	Slug               string    `json:"slug"`
+	DisplayName        string    `json:"displayName"`
+	Description        string    `json:"description"`
+	Visibility         string    `json:"visibility"`
+	LoreRepositoryID   string    `json:"loreRepositoryId"`
+	LoreURL            string    `json:"loreUrl"`
+	DefaultBranch      string    `json:"defaultBranch"`
+	HomepageURL        string    `json:"homepageUrl"`
+	AllowIssues        bool      `json:"allowIssues"`
+	AllowMergeRequests bool      `json:"allowMergeRequests"`
+	IssueCount         int64     `json:"issueCount"`
+	MergeRequestCount  int64     `json:"mergeRequestCount"`
+	LifecycleState     string    `json:"lifecycleState,omitempty"`
+	ProvisioningError  string    `json:"provisioningError,omitempty"`
+	UpdatedAt          time.Time `json:"updatedAt"`
 }
 
 type Issue struct {
@@ -105,14 +108,17 @@ type ProvisionRepositoryInput struct {
 }
 
 type Team struct {
-	ID             string    `json:"id"`
-	OrganizationID string    `json:"organizationId"`
-	Organization   string    `json:"organization"`
-	Slug           string    `json:"slug"`
-	DisplayName    string    `json:"displayName"`
-	Description    string    `json:"description"`
-	CreatedAt      time.Time `json:"createdAt"`
-	UpdatedAt      time.Time `json:"updatedAt"`
+	ID               string    `json:"id"`
+	OrganizationID   string    `json:"organizationId"`
+	Organization     string    `json:"organization,omitempty"`
+	OrganizationSlug string    `json:"organizationSlug,omitempty"`
+	Slug             string    `json:"slug"`
+	DisplayName      string    `json:"displayName"`
+	Description      string    `json:"description"`
+	ViewerRole       string    `json:"viewerRole,omitempty"`
+	MemberCount      int64     `json:"memberCount,omitempty"`
+	CreatedAt        time.Time `json:"createdAt"`
+	UpdatedAt        time.Time `json:"updatedAt"`
 }
 
 type TeamMember struct {
@@ -123,6 +129,7 @@ type TeamMember struct {
 	Role        string    `json:"role"`
 	Active      bool      `json:"active"`
 	CreatedAt   time.Time `json:"createdAt"`
+	JoinedAt    time.Time `json:"joinedAt,omitempty"`
 }
 
 type TeamRepositoryRole struct {
@@ -202,6 +209,7 @@ type RepositoryPolicy struct {
 }
 
 type MergeAuthorizationInput struct {
+	OperationID    string
 	RepositoryID   string
 	BranchID       string
 	BranchName     string

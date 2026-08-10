@@ -157,8 +157,12 @@ func TestAuthorizationIntegrationPartitionsTeamsAndRevocation(t *testing.T) {
 		t.Fatalf("deactivate Bob organization membership: %v", err)
 	}
 	permissions, err = fixture.store.EffectivePermissions(ctx, fixture.bob.ID, resourceB)
-	if err != nil || len(permissions.Permissions) != 0 {
-		t.Fatalf("Bob B permissions after organization revoke = %v, err %v", permissions.Permissions, err)
+	if err != nil || !containsPermission(permissions.Permissions, authz.PermissionWrite) {
+		t.Fatalf("Bob direct B permissions after organization revoke = %v, err %v",
+			permissions.Permissions, err)
+	}
+	if _, err := fixture.store.RepositoryForWrite(ctx, fixture.bob, fixture.orgSlug, "b"); err != nil {
+		t.Fatalf("outside direct collaborator should retain repository write: %v", err)
 	}
 	if _, err := fixture.store.SetOrganizationMember(ctx, fixture.manager, fixture.orgSlug,
 		SetOrganizationMemberInput{Username: fixture.bob.Username, Role: "member", Active: true}); err != nil {
@@ -237,8 +241,8 @@ func TestAuthorizationIntegrationPartitionsTeamsAndRevocation(t *testing.T) {
 		SetOrganizationMemberInput{Username: fixture.alice.Username, Role: "member", Active: false}); err != nil {
 		t.Fatalf("deactivate Alice organization membership: %v", err)
 	}
-	if _, err := fixture.store.RepositoryForRead(ctx, &fixture.alice, fixture.orgSlug, "a"); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("inactive member should not fall back to public access: %v", err)
+	if _, err := fixture.store.RepositoryForRead(ctx, &fixture.alice, fixture.orgSlug, "a"); err != nil {
+		t.Fatalf("active user should retain public repository access: %v", err)
 	}
 
 	var auditCount int
@@ -252,6 +256,124 @@ func TestAuthorizationIntegrationPartitionsTeamsAndRevocation(t *testing.T) {
 	}
 	if auditCount < 4 {
 		t.Fatalf("authorization audit count = %d, want at least 4", auditCount)
+	}
+}
+
+func TestAuthorizationIntegrationOutsideDirectCollaboratorMatrix(t *testing.T) {
+	fixture := authorizationIntegrationFixture(t)
+	ctx := context.Background()
+	outsider := User{
+		ID:          uuid.NewString(),
+		Username:    "outside-" + strings.ReplaceAll(uuid.NewString()[:8], "-", ""),
+		DisplayName: "Outside collaborator",
+	}
+	authorizationMustExec(t, fixture.pool,
+		`INSERT INTO users (id, username, display_name) VALUES ($1, $2, $3)`,
+		outsider.ID, outsider.Username, outsider.DisplayName)
+	t.Cleanup(func() {
+		_, _ = fixture.pool.Exec(context.Background(), `DELETE FROM users WHERE id = $1`, outsider.ID)
+	})
+
+	var membershipCount int
+	if err := fixture.pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM organization_memberships WHERE user_id = $1
+	`, outsider.ID).Scan(&membershipCount); err != nil {
+		t.Fatalf("count outside organization memberships: %v", err)
+	}
+	if membershipCount != 0 {
+		t.Fatalf("outside organization memberships = %d, want zero", membershipCount)
+	}
+
+	if _, err := fixture.store.SetRepositoryCollaborator(ctx, fixture.manager, fixture.orgSlug, "a",
+		SetCollaboratorInput{Username: outsider.Username, Role: "read", Active: true}); err != nil {
+		t.Fatalf("grant outside read collaborator: %v", err)
+	}
+	resourceA := "urc-" + fixture.loreA
+	permissions, err := fixture.store.EffectivePermissions(ctx, outsider.ID, resourceA)
+	if err != nil {
+		t.Fatalf("outside read permissions: %v", err)
+	}
+	if !containsPermission(permissions.Permissions, authz.PermissionRead) ||
+		containsPermission(permissions.Permissions, authz.PermissionWrite) {
+		t.Fatalf("outside read permissions = %v, want read only", permissions.Permissions)
+	}
+	resources, _, err := fixture.store.ListResourcePermissions(ctx, outsider.ID, "urc", 50, "")
+	if err != nil {
+		t.Fatalf("list outside resources: %v", err)
+	}
+	if len(resources) != 1 || resources[0].ResourceID != resourceA {
+		t.Fatalf("outside resources = %+v, want only A", resources)
+	}
+	if _, err := fixture.store.RepositoryForRead(ctx, &outsider, fixture.orgSlug, "a"); err != nil {
+		t.Fatalf("outside direct read: %v", err)
+	}
+	if _, err := fixture.store.RepositoryForWrite(ctx, outsider, fixture.orgSlug, "a"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("outside read-only write error = %v, want not found", err)
+	}
+	if _, err := fixture.store.RepositoryForRead(ctx, &outsider, fixture.orgSlug, "b"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("outside unrelated private read error = %v, want not found", err)
+	}
+
+	if _, err := fixture.store.SetRepositoryCollaborator(ctx, fixture.manager, fixture.orgSlug, "a",
+		SetCollaboratorInput{Username: outsider.Username, Role: "write", Active: true}); err != nil {
+		t.Fatalf("promote outside write collaborator: %v", err)
+	}
+	permissions, err = fixture.store.EffectivePermissions(ctx, outsider.ID, resourceA)
+	if err != nil || !containsPermission(permissions.Permissions, authz.PermissionWrite) {
+		t.Fatalf("outside write permissions = %v, err %v", permissions.Permissions, err)
+	}
+	if _, err := fixture.store.RepositoryForWrite(ctx, outsider, fixture.orgSlug, "a"); err != nil {
+		t.Fatalf("outside direct write: %v", err)
+	}
+
+	if _, err := fixture.store.SetRepositoryCollaborator(ctx, fixture.manager, fixture.orgSlug, "a",
+		SetCollaboratorInput{Username: outsider.Username, Role: "admin", Active: true}); err != nil {
+		t.Fatalf("promote outside admin collaborator: %v", err)
+	}
+	permissions, err = fixture.store.EffectivePermissions(ctx, outsider.ID, resourceA)
+	if err != nil || !containsPermission(permissions.Permissions, authz.PermissionAdmin) {
+		t.Fatalf("outside admin permissions = %v, err %v", permissions.Permissions, err)
+	}
+	users, err := fixture.store.UserInfoForResource(ctx, resourceA, []string{outsider.ID})
+	if err != nil || len(users) != 1 || users[0].ID != outsider.ID {
+		t.Fatalf("outside Lore user info = %+v, err %v", users, err)
+	}
+	userInfo, err := fixture.store.UserInfoByDisplayName(ctx, resourceA, outsider.DisplayName)
+	if err != nil || userInfo.ID != outsider.ID {
+		t.Fatalf("outside Lore user by display name = %+v, err %v", userInfo, err)
+	}
+
+	if _, err := fixture.store.SetRepositoryCollaborator(ctx, fixture.manager, fixture.orgSlug, "a",
+		SetCollaboratorInput{Username: outsider.Username, Role: "admin", Active: false}); err != nil {
+		t.Fatalf("revoke outside direct collaborator: %v", err)
+	}
+	authorizationMustExec(t, fixture.pool, `UPDATE repositories SET visibility = 'public' WHERE id = $1`,
+		fixture.repositoryA)
+	permissions, err = fixture.store.EffectivePermissions(ctx, outsider.ID, resourceA)
+	if err != nil || !containsPermission(permissions.Permissions, authz.PermissionRead) {
+		t.Fatalf("outside public permissions = %v, err %v", permissions.Permissions, err)
+	}
+	if _, err := fixture.store.RepositoryForRead(ctx, &outsider, fixture.orgSlug, "a"); err != nil {
+		t.Fatalf("outside public read: %v", err)
+	}
+
+	authorizationMustExec(t, fixture.pool, `UPDATE users SET status = 'suspended' WHERE id = $1`, outsider.ID)
+	permissions, err = fixture.store.EffectivePermissions(ctx, outsider.ID, resourceA)
+	if err != nil {
+		t.Fatalf("suspended outside permissions: %v", err)
+	}
+	if len(permissions.Permissions) != 0 {
+		t.Fatalf("suspended outside permissions = %v, want none", permissions.Permissions)
+	}
+	resources, _, err = fixture.store.ListResourcePermissions(ctx, outsider.ID, "urc", 50, "")
+	if err != nil {
+		t.Fatalf("list suspended outside resources: %v", err)
+	}
+	if len(resources) != 0 {
+		t.Fatalf("suspended outside resources = %+v, want none", resources)
+	}
+	if _, err := fixture.store.RepositoryForRead(ctx, &outsider, fixture.orgSlug, "a"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("suspended outside public read error = %v, want not found", err)
 	}
 }
 
@@ -273,6 +395,10 @@ func TestAuthorizationIntegrationRepositoryGrantRequiresExactRepositoryAdmin(t *
 		t.Fatalf("owner grants team read: %v", err)
 	}
 	if _, err := fixture.store.SetOrganizationMember(ctx, fixture.manager, fixture.orgSlug,
+		SetOrganizationMemberInput{Username: fixture.bob.Username, Role: "owner", Active: true}); err != nil {
+		t.Fatalf("add second owner for maintainer test: %v", err)
+	}
+	if _, err := fixture.store.SetOrganizationMember(ctx, fixture.manager, fixture.orgSlug,
 		SetOrganizationMemberInput{Username: fixture.manager.Username, Role: "maintainer", Active: true}); err != nil {
 		t.Fatalf("demote owner to maintainer: %v", err)
 	}
@@ -291,15 +417,11 @@ func TestAuthorizationIntegrationRepositoryGrantRequiresExactRepositoryAdmin(t *
 		t.Fatalf("maintainer changed team grant to %q, err %v", role, err)
 	}
 
-	if _, err := fixture.store.SetOrganizationMember(ctx, fixture.manager, fixture.orgSlug,
-		SetOrganizationMemberInput{Username: fixture.manager.Username, Role: "owner", Active: true}); err != nil {
-		t.Fatalf("restore owner: %v", err)
-	}
-	if _, err := fixture.store.SetTeamRepositoryRole(ctx, fixture.manager, fixture.orgSlug, team.Slug,
+	if _, err := fixture.store.SetTeamRepositoryRole(ctx, fixture.bob, fixture.orgSlug, team.Slug,
 		fixture.orgSlug, "a", SetTeamRepositoryRoleInput{Role: "admin"}); err != nil {
 		t.Fatalf("owner grants team admin: %v", err)
 	}
-	if _, err := fixture.store.SetRepositoryCollaborator(ctx, fixture.manager, fixture.orgSlug, "a",
+	if _, err := fixture.store.SetRepositoryCollaborator(ctx, fixture.bob, fixture.orgSlug, "a",
 		SetCollaboratorInput{Username: fixture.alice.Username, Role: "admin", Active: true}); err != nil {
 		t.Fatalf("owner grants exact repository admin: %v", err)
 	}
@@ -342,10 +464,17 @@ func TestAuthorizationIntegrationProtectedBranchAndOneTimeMerge(t *testing.T) {
 	}
 	decision, err = fixture.store.CheckPolicy(ctx, authz.PolicyCheck{
 		UserID: fixture.alice.ID, ResourceID: resourceA, Operation: authz.OperationBranchCreate,
-		BranchID: "new-branch-id",
+		BranchID: "new-branch-id", BranchName: "feature/new",
 	})
 	if err != nil || !decision.Allowed {
-		t.Fatalf("branch create should require only general write: %+v, err %v", decision, err)
+		t.Fatalf("unprotected branch create should be allowed: %+v, err %v", decision, err)
+	}
+	decision, err = fixture.store.CheckPolicy(ctx, authz.PolicyCheck{
+		UserID: fixture.alice.ID, ResourceID: resourceA, Operation: authz.OperationBranchCreate,
+		BranchID: "new-main-id", BranchName: "main",
+	})
+	if err != nil || decision.Allowed {
+		t.Fatalf("protected branch create should be denied: %+v, err %v", decision, err)
 	}
 	decision, err = fixture.store.CheckPolicy(ctx, authz.PolicyCheck{
 		UserID: fixture.alice.ID, ResourceID: resourceA, Operation: authz.OperationBranchPush,
@@ -353,6 +482,13 @@ func TestAuthorizationIntegrationProtectedBranchAndOneTimeMerge(t *testing.T) {
 	})
 	if err != nil || decision.Allowed {
 		t.Fatalf("unobserved branch push should fail closed: %+v, err %v", decision, err)
+	}
+	decision, err = fixture.store.CheckPolicy(ctx, authz.PolicyCheck{
+		UserID: fixture.alice.ID, ResourceID: resourceA, Operation: authz.OperationBranchDelete,
+		BranchID: "main-id",
+	})
+	if err != nil || decision.Allowed {
+		t.Fatalf("protected branch delete should fail closed: %+v, err %v", decision, err)
 	}
 	decision, err = fixture.store.CheckPolicy(ctx, authz.PolicyCheck{
 		UserID: fixture.alice.ID, ResourceID: resourceA, Operation: authz.OperationBranchPush,
@@ -363,14 +499,11 @@ func TestAuthorizationIntegrationProtectedBranchAndOneTimeMerge(t *testing.T) {
 		t.Fatalf("feature branch push decision = %+v, err %v", decision, err)
 	}
 
-	err = fixture.store.PrepareMergeAuthorization(ctx, fixture.alice.ID, MergeAuthorizationInput{
+	prepareTestMergeAuthorization(t, fixture, ctx, fixture.alice.ID, MergeAuthorizationInput{
 		RepositoryID: fixture.loreA, BranchID: "main-id", BranchName: "main",
 		ExpectedBase: "base-revision", ExpectedHead: "merge-revision", SourceRevision: "source-revision",
 		Lifetime: time.Minute,
 	})
-	if err != nil {
-		t.Fatalf("issue merge authorization: %v", err)
-	}
 	decision, err = fixture.store.CheckPolicy(ctx, authz.PolicyCheck{
 		UserID: fixture.alice.ID, ResourceID: resourceA, Operation: authz.OperationMerge,
 		BranchID: "main-id", ProposedRevision: "wrong-revision",
@@ -378,6 +511,21 @@ func TestAuthorizationIntegrationProtectedBranchAndOneTimeMerge(t *testing.T) {
 	if err != nil || decision.Allowed {
 		t.Fatalf("wrong merge tuple should be denied: %+v, err %v", decision, err)
 	}
+	authorizationMustExec(t, fixture.pool, `
+		UPDATE lore_merge_authorizations SET source_revision = 'wrong-source'
+		WHERE repository_id = $1 AND proposed_revision = 'merge-revision'
+	`, fixture.repositoryA)
+	decision, err = fixture.store.CheckPolicy(ctx, authz.PolicyCheck{
+		UserID: fixture.alice.ID, ResourceID: resourceA, Operation: authz.OperationMerge,
+		BranchID: "main-id", ProposedRevision: "merge-revision",
+	})
+	if err != nil || decision.Allowed {
+		t.Fatalf("wrong source tuple should be denied: %+v, err %v", decision, err)
+	}
+	authorizationMustExec(t, fixture.pool, `
+		UPDATE lore_merge_authorizations SET source_revision = 'source-revision'
+		WHERE repository_id = $1 AND proposed_revision = 'merge-revision'
+	`, fixture.repositoryA)
 	decision, err = fixture.store.CheckPolicy(ctx, authz.PolicyCheck{
 		UserID: fixture.alice.ID, ResourceID: resourceA, Operation: authz.OperationMerge,
 		BranchID: "main-id", ProposedRevision: "merge-revision",
@@ -396,14 +544,11 @@ func TestAuthorizationIntegrationProtectedBranchAndOneTimeMerge(t *testing.T) {
 		t.Fatal("merge authorization should be single-use")
 	}
 
-	err = fixture.store.PrepareMergeAuthorization(ctx, fixture.alice.ID, MergeAuthorizationInput{
+	prepareTestMergeAuthorization(t, fixture, ctx, fixture.alice.ID, MergeAuthorizationInput{
 		RepositoryID: fixture.loreA, BranchID: "main-id", BranchName: "main",
 		ExpectedBase: "base-revision", ExpectedHead: "merge-revision", SourceRevision: "source-revision",
 		Lifetime: time.Minute,
 	})
-	if err != nil {
-		t.Fatalf("issue concurrent merge authorization: %v", err)
-	}
 	results := make(chan bool, 2)
 	var wait sync.WaitGroup
 	for range 2 {
@@ -429,14 +574,11 @@ func TestAuthorizationIntegrationProtectedBranchAndOneTimeMerge(t *testing.T) {
 	if allowed != 1 {
 		t.Fatalf("concurrent pending merge decisions allowed = %d, want 1", allowed)
 	}
-	err = fixture.store.PrepareMergeAuthorization(ctx, fixture.alice.ID, MergeAuthorizationInput{
+	prepareTestMergeAuthorization(t, fixture, ctx, fixture.alice.ID, MergeAuthorizationInput{
 		RepositoryID: fixture.loreA, BranchID: "main-id", BranchName: "main",
 		ExpectedBase: "base-revision", ExpectedHead: "expired-revision", SourceRevision: "source-revision",
 		Lifetime: time.Minute,
 	})
-	if err != nil {
-		t.Fatalf("issue expiring merge authorization: %v", err)
-	}
 	authorizationMustExec(t, fixture.pool, `
 		UPDATE lore_merge_authorizations SET expires_at = created_at + interval '1 millisecond'
 		WHERE repository_id = $1 AND proposed_revision = 'expired-revision'
@@ -460,6 +602,56 @@ func TestAuthorizationIntegrationProtectedBranchAndOneTimeMerge(t *testing.T) {
 	})
 	if err != nil || !decision.Allowed {
 		t.Fatalf("branch rule change decision = %+v, err %v", decision, err)
+	}
+}
+
+func prepareTestMergeAuthorization(
+	t *testing.T,
+	fixture authorizationFixture,
+	ctx context.Context,
+	userID string,
+	input MergeAuthorizationInput,
+) {
+	t.Helper()
+	mergeRequestID := uuid.New()
+	operationID := uuid.New()
+	number := time.Now().UnixNano()
+	authorizationMustExec(t, fixture.pool, `
+		INSERT INTO merge_requests (
+			id, repository_id, number, title, source_branch, target_branch,
+			source_revision, target_revision, author_id
+		) VALUES ($1, $2, $3, 'test merge', 'feature', $4, $5, $6, $7)
+	`, mergeRequestID, fixture.repositoryA, number, input.BranchName, input.SourceRevision,
+		input.ExpectedBase, userID)
+	authorizationMustExec(t, fixture.pool, `
+		INSERT INTO merge_operations (
+			id, merge_request_id, repository_id, actor_id, source_revision,
+			target_revision, staged_revision, state
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, 'pushing')
+	`, operationID, mergeRequestID, fixture.repositoryA, userID, input.SourceRevision,
+		input.ExpectedBase, input.ExpectedHead)
+	input.OperationID = operationID.String()
+	if err := fixture.store.PrepareMergeAuthorization(ctx, userID, input); err != nil {
+		t.Fatalf("issue merge authorization: %v", err)
+	}
+}
+
+func TestAuthorizationIntegrationRejectsCrossRepositoryMergeOperation(t *testing.T) {
+	fixture := authorizationIntegrationFixture(t)
+	mergeRequestID := uuid.New()
+	authorizationMustExec(t, fixture.pool, `
+		INSERT INTO merge_requests (
+			id, repository_id, number, title, source_branch, target_branch,
+			source_revision, target_revision, author_id
+		) VALUES ($1, $2, $3, 'boundary test', 'feature', 'main', 'source', 'target', $4)
+	`, mergeRequestID, fixture.repositoryA, time.Now().UnixNano(), fixture.alice.ID)
+	_, err := fixture.pool.Exec(context.Background(), `
+		INSERT INTO merge_operations (
+			id, merge_request_id, repository_id, actor_id, source_revision, target_revision, state
+		) VALUES ($1, $2, $3, $4, 'source', 'target', 'created')
+	`, uuid.New(), mergeRequestID, fixture.repositoryB, fixture.alice.ID)
+	if err == nil {
+		t.Fatal("merge operation crossed its merge request repository boundary")
 	}
 }
 
@@ -502,7 +694,7 @@ func TestAuthorizationIntegrationProvisioningPrincipalsAndObservation(t *testing
 	repository, err := fixture.store.BeginRepositoryProvisioning(ctx, fixture.manager, fixture.orgSlug,
 		ProvisionRepositoryInput{
 			Slug: "managed", DisplayName: "管理対象", Visibility: "public", DefaultBranch: "main",
-		}, "lores://lore.lorehub.localhost:41337")
+		}, "lores://lorehub.localhost:41337")
 	if err != nil {
 		t.Fatalf("begin provisioning: %v", err)
 	}
@@ -527,7 +719,7 @@ func TestAuthorizationIntegrationProvisioningPrincipalsAndObservation(t *testing
 	retried, err := fixture.store.BeginRepositoryProvisioning(ctx, fixture.manager, fixture.orgSlug,
 		ProvisionRepositoryInput{
 			Slug: "managed", DisplayName: "管理対象", Visibility: "public", DefaultBranch: "main",
-		}, "lores://lore.lorehub.localhost:41337")
+		}, "lores://lorehub.localhost:41337")
 	if err != nil || retried.ID != repository.ID || retried.LoreRepositoryID != repository.LoreRepositoryID {
 		t.Fatalf("provision retry = %+v, err %v", retried, err)
 	}

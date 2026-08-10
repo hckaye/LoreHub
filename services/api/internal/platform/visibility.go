@@ -14,6 +14,15 @@ func repositoryAccessClause(repositoryAlias, viewerParam string) string {
 			  AND repository_org.active
 		)
 		AND (
+			NULLIF(%s::text, '') IS NULL
+			OR EXISTS (
+				SELECT 1
+				FROM users active_viewer
+				WHERE active_viewer.id = NULLIF(%s::text, '')::uuid
+				  AND active_viewer.status = 'active'
+			)
+		)
+		AND (
 			%s.visibility = 'public'
 			OR (
 				NULLIF(%s::text, '') IS NOT NULL
@@ -87,9 +96,10 @@ func repositoryAccessClause(repositoryAlias, viewerParam string) string {
 				)
 			)
 		)
-	)`, repositoryAlias, repositoryAlias, repositoryAlias, repositoryAlias, viewerParam, viewerParam,
-		repositoryAlias, repositoryAlias, viewerParam, repositoryAlias, repositoryAlias, viewerParam,
-		repositoryAlias, viewerParam, repositoryAlias, repositoryAlias, viewerParam)
+	)`, repositoryAlias, repositoryAlias, repositoryAlias, viewerParam, viewerParam, repositoryAlias,
+		viewerParam, viewerParam, repositoryAlias, repositoryAlias, viewerParam, repositoryAlias,
+		repositoryAlias, viewerParam, repositoryAlias, viewerParam, repositoryAlias, repositoryAlias,
+		viewerParam)
 }
 
 // notificationCurrentAccessClause applies current authorization to materialized notification rows.
@@ -122,35 +132,8 @@ func notificationCurrentAccessClause(notificationAlias, viewerParam string) stri
 					  AND %[1]s.scope_organization_id = current_repository.organization_id
 					  AND current_repository.lifecycle_state = 'active'
 					  AND current_repository.archived_at IS NULL
-					  AND (
-						current_repository.visibility = 'public'
 						AND (
-							EXISTS (
-								SELECT 1
-								FROM repository_memberships repository_grant
-								WHERE repository_grant.repository_id = current_repository.id
-								  AND repository_grant.user_id = NULLIF(%[2]s::text, '')::uuid
-								  AND repository_grant.active
-							)
-							OR EXISTS (
-								SELECT 1
-								FROM team_repository_roles team_grant
-								JOIN teams current_team
-								  ON current_team.id = team_grant.team_id
-								 AND current_team.organization_id = current_repository.organization_id
-								 AND current_team.active
-								JOIN team_memberships team_member
-								  ON team_member.team_id = current_team.id
-								 AND team_member.user_id = NULLIF(%[2]s::text, '')::uuid
-								 AND team_member.active
-								JOIN organization_memberships team_org_member
-								  ON team_org_member.organization_id = current_team.organization_id
-								 AND team_org_member.user_id = team_member.user_id
-								 AND team_org_member.active
-								WHERE team_grant.repository_id = current_repository.id
-								  AND team_grant.active
-							)
-						)
+							current_repository.visibility = 'public'
 						OR (
 							current_repository.visibility = 'internal'
 							AND EXISTS (

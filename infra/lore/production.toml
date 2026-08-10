@@ -17,19 +17,19 @@ jwt_audience = ["@AUTH_AUDIENCE@"]
 verify_client_certs = false
 
 [server.auth.jwk]
-endpoint = "@JWKS_ENDPOINT@"
+endpoint = "@INTERNAL_JWKS_ENDPOINT@"
 
 [environment.endpoint]
-auth_url = "@AUTH_URL@"
+auth_url = "@PUBLIC_AUTH_URL@"
 
 [hooks.lorehub_policy]
 enabled = true
 environment = "production"
 root_domain = "@ROOT_DOMAIN@"
-endpoint = "@POLICY_ENDPOINT@"
-observation_endpoint = "@OBSERVATION_ENDPOINT@"
-auth_endpoint = "@AUTH_URL@"
-jwks_endpoint = "@JWKS_ENDPOINT@"
+endpoint = "@INTERNAL_POLICY_ENDPOINT@"
+observation_endpoint = "@INTERNAL_OBSERVATION_ENDPOINT@"
+auth_endpoint = "@INTERNAL_AUTH_URL@"
+jwks_endpoint = "@INTERNAL_JWKS_ENDPOINT@"
 ca_certificate = "/etc/lore/auth-tls/ca.crt"
 client_certificate = "/etc/lore/auth-tls/lore-client.crt"
 client_key = "/etc/lore/auth-tls/lore-client.key"

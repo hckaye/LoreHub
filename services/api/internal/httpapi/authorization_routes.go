@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/lorehub/lorehub/services/api/internal/authz"
 	"github.com/lorehub/lorehub/services/api/internal/platform"
@@ -426,23 +425,9 @@ type policyRequest struct {
 	ResourceID       string `json:"resourceId"`
 	Operation        string `json:"operation"`
 	BranchID         string `json:"branchId"`
+	BranchName       string `json:"branchName"`
 	ProposedRevision string `json:"proposedRevision"`
 	ClientIP         string `json:"clientIp"`
-}
-
-type mergeAuthorizationStore interface {
-	PrepareMergeAuthorization(ctx context.Context, userID string, input platform.MergeAuthorizationInput) error
-}
-
-type mergeAuthorizationRequest struct {
-	UserID                  string        `json:"userId"`
-	RepositoryID            string        `json:"repositoryId"`
-	TargetBranchID          string        `json:"targetBranchId"`
-	TargetBranchName        string        `json:"targetBranchName"`
-	ExpectedCurrentRevision string        `json:"expectedCurrentRevision"`
-	ProposedRevision        string        `json:"proposedRevision"`
-	SourceRevision          string        `json:"sourceRevision"`
-	Lifetime                time.Duration `json:"lifetime"`
 }
 
 type loreObservationStore interface {
@@ -474,7 +459,8 @@ func (api *API) InternalPolicyHandler() http.Handler {
 		}
 		decision, err := api.authorization.CheckPolicy(request.Context(), authz.PolicyCheck{
 			UserID: input.UserID, ResourceID: input.ResourceID, Operation: input.Operation,
-			BranchID: input.BranchID, ProposedRevision: input.ProposedRevision,
+			BranchID: input.BranchID, BranchName: input.BranchName,
+			ProposedRevision: input.ProposedRevision,
 		})
 		if err != nil {
 			writeProblem(writer, http.StatusForbidden, "policy_denied", "The Lore operation is not authorized")
@@ -489,7 +475,6 @@ func (api *API) InternalPolicyHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/internal/lore/policy", policy)
 	mux.HandleFunc("/internal/lore/observation", api.internalLoreObservation)
-	mux.HandleFunc("/internal/lore/merge-authorization", api.internalLoreMergeAuthorization)
 	return mux
 }
 
@@ -535,38 +520,6 @@ func (api *API) internalLoreObservation(writer http.ResponseWriter, request *htt
 		}
 	default:
 		writeProblem(writer, http.StatusBadRequest, "invalid_input", "The Lore observation operation is invalid")
-		return
-	}
-	writer.WriteHeader(http.StatusNoContent)
-}
-
-func (api *API) internalLoreMergeAuthorization(writer http.ResponseWriter, request *http.Request) {
-	if request.Method != http.MethodPost {
-		writeProblem(writer, http.StatusMethodNotAllowed, "method_not_allowed", "Only POST is supported")
-		return
-	}
-	preparer, ok := api.authorization.(mergeAuthorizationStore)
-	if !ok {
-		writeProblem(writer, http.StatusServiceUnavailable, "merge_unavailable", "Merge authorization is unavailable")
-		return
-	}
-	var input mergeAuthorizationRequest
-	if !decodeJSON(writer, request, &input) {
-		return
-	}
-	if input.UserID == "" || len(input.RepositoryID) != 32 || input.TargetBranchID == "" ||
-		input.TargetBranchName == "" || input.ExpectedCurrentRevision == "" ||
-		input.ProposedRevision == "" || input.SourceRevision == "" {
-		writeProblem(writer, http.StatusBadRequest, "invalid_input", "The exact merge tuple is incomplete")
-		return
-	}
-	err := preparer.PrepareMergeAuthorization(request.Context(), input.UserID, platform.MergeAuthorizationInput{
-		RepositoryID: input.RepositoryID, BranchID: input.TargetBranchID, BranchName: input.TargetBranchName,
-		ExpectedBase: input.ExpectedCurrentRevision, ExpectedHead: input.ProposedRevision,
-		SourceRevision: input.SourceRevision, Lifetime: input.Lifetime,
-	})
-	if err != nil {
-		api.platformError(writer, request, "prepare merge authorization", err)
 		return
 	}
 	writer.WriteHeader(http.StatusNoContent)
@@ -662,7 +615,7 @@ func (api *API) renderLoreConfirmation(
 	}
 	htmlPage := "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>Lore access</title></head><body>" +
 		"<main><h1>Allow Lore to access this account?</h1>" + noticeHTML +
-		"<p>This grants LoreHub only the repositories currently authorized for your account.</p>" +
+		"<p>LoreHub will issue only short-lived repository-scoped access after this confirmation.</p>" +
 		"<form id=\"confirm\" method=\"post\"><input type=\"hidden\" name=\"session\" value=\"" +
 		html.EscapeString(sessionCode) + "\"><input type=\"hidden\" name=\"csrfToken\" value=\"" +
 		html.EscapeString(csrf) + "\"><button type=\"submit\">Allow</button></form>" +

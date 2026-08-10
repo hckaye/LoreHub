@@ -119,6 +119,7 @@ CREATE INDEX IF NOT EXISTS lore_auth_sessions_expiry_idx
 
 CREATE TABLE IF NOT EXISTS lore_merge_authorizations (
     id uuid PRIMARY KEY,
+    merge_operation_id uuid NOT NULL REFERENCES merge_operations (id) ON DELETE CASCADE,
     repository_id uuid NOT NULL REFERENCES repositories (id) ON DELETE CASCADE,
     user_id uuid NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     target_branch_id varchar(64) NOT NULL,
@@ -131,6 +132,9 @@ CREATE TABLE IF NOT EXISTS lore_merge_authorizations (
     consumed_at timestamptz,
     CONSTRAINT lore_merge_authorizations_expiry_check CHECK (expires_at > created_at)
 );
+
+ALTER TABLE lore_merge_authorizations
+    ALTER COLUMN merge_operation_id SET NOT NULL;
 
 CREATE INDEX IF NOT EXISTS lore_merge_authorizations_lookup_idx
     ON lore_merge_authorizations (

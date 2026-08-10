@@ -29,7 +29,7 @@ RUN apt-get update \
 FROM debian:trixie-slim
 
 RUN apt-get update \
-    && apt-get install --yes --no-install-recommends ca-certificates \
+    && apt-get install --yes --no-install-recommends ca-certificates curl \
     && groupadd --system lorehub \
     && useradd --system --gid lorehub --create-home lorehub \
     && mkdir -p /var/lib/lorehub \

@@ -128,7 +128,7 @@ func run(logger *slog.Logger) error {
 		store,
 		lore,
 		authenticator,
-		pool,
+		newServiceReadiness(pool, loreAuth, settings),
 		settings.LoreIdentity,
 		logger,
 		httpapi.WithAuthentication(httpapi.AuthOptions{
@@ -148,6 +148,8 @@ func run(logger *slog.Logger) error {
 				Secure:           settings.SessionCookieSecure,
 			},
 		}),
+		httpapi.WithIdentityStore(store),
+		httpapi.WithConfiguredLoginProviders(settings.IdentityProviders),
 		httpapi.WithCollaboration(collab.NewStore(pool)),
 		httpapi.WithAuthorization(store),
 		httpapi.WithLoreAuth(loreAuth),

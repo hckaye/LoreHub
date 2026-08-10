@@ -34,27 +34,6 @@ type OrganizationView struct {
 	CreatedAt                   time.Time `json:"createdAt"`
 }
 
-type Team struct {
-	ID               string    `json:"id"`
-	OrganizationID   string    `json:"organizationId"`
-	OrganizationSlug string    `json:"organizationSlug"`
-	Slug             string    `json:"slug"`
-	DisplayName      string    `json:"displayName"`
-	Description      string    `json:"description"`
-	ViewerRole       string    `json:"viewerRole"`
-	MemberCount      int64     `json:"memberCount"`
-	CreatedAt        time.Time `json:"createdAt"`
-	UpdatedAt        time.Time `json:"updatedAt"`
-}
-
-type TeamMember struct {
-	UserID      string    `json:"userId"`
-	Username    string    `json:"username"`
-	DisplayName string    `json:"displayName"`
-	Role        string    `json:"role"`
-	JoinedAt    time.Time `json:"joinedAt"`
-}
-
 type Dashboard struct {
 	Repositories        []Repository       `json:"repositories"`
 	Organizations       []OrganizationView `json:"organizations"`
@@ -121,11 +100,7 @@ type UpdateOrganizationInput struct {
 	DefaultRepositoryVisibility *string
 }
 
-type CreateTeamInput struct {
-	Slug        string
-	DisplayName string
-	Description string
-}
+type CreateTeamInput = SetTeamInput
 
 type UpdateTeamInput struct {
 	DisplayName *string

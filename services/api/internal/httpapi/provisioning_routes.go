@@ -103,11 +103,13 @@ func (api *API) provisionManagedRepository(
 		repository.LoreRepositoryID, repository.DisplayName, repository.Description, credential); err == nil {
 		return provisioner.MarkRepositoryProvisioned(request.Context(), actor, repository.ID)
 	}
+	if api.serviceSubjects.RepositoryRegistration == "" {
+		return errors.New("repository provisioning service principal is not configured")
+	}
 	serviceCredential, serviceErr := api.loreAuth.IssueServiceResourceToken(request.Context(),
-		"lorehub-provisioner", resourceID, []string{authz.PermissionAdmin})
+		loreclient.ServicePrincipal(loreclient.ServicePurposeRepositoryRegistration,
+			api.serviceSubjects.RepositoryRegistration), resourceID, []string{authz.PermissionAdmin})
 	if serviceErr == nil {
-		serviceCredential.Principal = loreclient.ServicePrincipal(
-			loreclient.ServicePurposeRepositoryRegistration, serviceCredential.Subject)
 		info, infoErr := api.lore.RepositoryInfo(request.Context(), repository.LoreURL, serviceCredential)
 		if infoErr == nil && info.ID == repository.LoreRepositoryID {
 			return provisioner.MarkRepositoryProvisioned(request.Context(), actor, repository.ID)

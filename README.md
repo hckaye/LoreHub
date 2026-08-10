@@ -87,14 +87,16 @@ LOREHUB_AUTH_MODE=disabled go run ./services/api/cmd/lorehub serve
 Keycloakの構成、ソーシャルプロバイダー、SMTP、本番のTLSとリバースプロキシ、バックアップについては
 [Keycloak運用ガイド](docs/operations/keycloak.md)を参照してください。
 
-開発用Lore ServerはデータとローカルCAで署名したTLS証明書をDocker volumeへ保存します。ComposeでもJWT検証と
-UCS gRPC認証を有効にしています。ローカルCAのtrust手順、本番の鍵交代、Lore hook、partition境界は
+開発用Lore ServerはデータとローカルCAで署名したTLS証明書をDocker volumeへ保存します。CA秘密鍵は初期化専用の
+別volumeに隔離され、Lore/APIからは参照できません。ComposeでもJWT検証とUCS gRPC認証を有効にしています。
+ローカルCAのtrust手順、本番の鍵交代、Lore hook、partition境界は
 [認可境界の運用ガイド](docs/operations/control-plane-authorization.md)を参照してください。
 
 Lore 0.8.6の`environment.endpoint.auth_url`はUCS認証とRebacが共用します。このComposeは公式の
 `ucs-auth://auth.lorehub.localhost:8443`広告を使い、Lore 0.8.6のclientがUCS接続をHTTPSへ変換します。hostのCLIが
-同じpublic URLを使えるよう、container内だけmanaged root domainの名前をhost gatewayへ解決します。issuer、audience、
-JWKS、Lore URLも同じmanaged root domainに揃えています。詳細は運用ガイドの「URL、audience、鍵」を参照してください。
+同じpublic URLを使えるよう、Lore container内だけAuthURLの名前をローカルbridgeへ解決します。bridgeは設定した内部HTTPS
+authorityへCAとSANを検証して転送します。issuer、audience、JWKS、Lore URLも同じmanaged root domainに揃えています。
+詳細は運用ガイドの「URL、audience、鍵」を参照してください。
 
 ### CI runner
 
@@ -102,8 +104,9 @@ JWKS、Lore URLも同じmanaged root domainに揃えています。詳細は運�
 docker compose -f infra/compose.yaml --profile runner up --build
 ```
 
-開発用profileはホストのDocker socketをrunnerへ渡します。任意コードを実行できるため、信頼できないリポジトリには
-使えません。本番ではAPIと別の専用ノードに配置し、rootlessコンテナまたはVMでジョブごとに隔離してください。
+runner profileはホストのDocker socketを渡しません。任意コードを実行するrunnerは、専用のrunner-engineまたはVMを
+使い、ジョブごとに隔離してください。本番ではAPIと別の専用ノードに配置し、runner-engineへの接続も専用の認証境界で
+保護します。
 
 ## ホスト上での開発
 

@@ -22,22 +22,25 @@ func (store *Store) UserInfoForResource(
 	rows, err := store.pool.Query(ctx, `
 		SELECT DISTINCT u.id, u.username, u.display_name
 		FROM users u
-		JOIN organization_memberships om
+		LEFT JOIN organization_memberships om
 		  ON om.user_id = u.id AND om.organization_id = $1 AND om.active
 		WHERE u.status = 'active'
 		  AND (
 			  EXISTS (
 				  SELECT 1 FROM repositories internal_repository
-				  WHERE internal_repository.id = $2
+					WHERE internal_repository.id = $2
 				    AND internal_repository.visibility = 'internal'
+				    AND om.user_id IS NOT NULL
 			  )
 			  OR
 			  EXISTS (SELECT 1 FROM repository_memberships rm
 			          WHERE rm.repository_id = $2 AND rm.user_id = u.id AND rm.active)
-			  OR EXISTS (SELECT 1 FROM team_memberships tm
-			             JOIN team_repository_roles tr ON tr.team_id = tm.team_id
-		             JOIN teams t ON t.id = tm.team_id AND t.organization_id = $1 AND t.active
-		             WHERE tm.user_id = u.id AND tm.active AND tr.active AND tr.repository_id = $2)
+				  OR EXISTS (SELECT 1 FROM team_memberships tm
+				             JOIN team_repository_roles tr ON tr.team_id = tm.team_id
+			             JOIN teams t ON t.id = tm.team_id AND t.organization_id = $1 AND t.active
+				             JOIN organization_memberships team_org
+				               ON team_org.organization_id = $1 AND team_org.user_id = u.id AND team_org.active
+				             WHERE tm.user_id = u.id AND tm.active AND tr.active AND tr.repository_id = $2)
 			  OR om.role = 'owner'
 		  )
 		  AND ($3::uuid[] IS NULL OR u.id = ANY($3::uuid[]))
@@ -89,22 +92,25 @@ func (store *Store) UserInfoByDisplayName(
 	err = store.pool.QueryRow(ctx, `
 		SELECT u.id, u.username, u.display_name
 		FROM users u
-		JOIN organization_memberships om
+		LEFT JOIN organization_memberships om
 		  ON om.user_id = u.id AND om.organization_id = $1 AND om.active
 		WHERE u.status = 'active' AND u.display_name = $2
 		  AND (
 			  EXISTS (
 				  SELECT 1 FROM repositories internal_repository
-				  WHERE internal_repository.id = $3
+					WHERE internal_repository.id = $3
 				    AND internal_repository.visibility = 'internal'
+				    AND om.user_id IS NOT NULL
 			  )
 			  OR
 			  EXISTS (SELECT 1 FROM repository_memberships rm
 			          WHERE rm.repository_id = $3 AND rm.user_id = u.id AND rm.active)
-			  OR EXISTS (SELECT 1 FROM team_memberships tm
-			             JOIN team_repository_roles tr ON tr.team_id = tm.team_id
-		             JOIN teams t ON t.id = tm.team_id AND t.organization_id = $1 AND t.active
-		             WHERE tm.user_id = u.id AND tm.active AND tr.active AND tr.repository_id = $3)
+				  OR EXISTS (SELECT 1 FROM team_memberships tm
+				             JOIN team_repository_roles tr ON tr.team_id = tm.team_id
+				             JOIN teams t ON t.id = tm.team_id AND t.organization_id = $1 AND t.active
+				             JOIN organization_memberships team_org
+				               ON team_org.organization_id = $1 AND team_org.user_id = u.id AND team_org.active
+				             WHERE tm.user_id = u.id AND tm.active AND tr.active AND tr.repository_id = $3)
 			  OR om.role = 'owner'
 		  )
 		LIMIT 1

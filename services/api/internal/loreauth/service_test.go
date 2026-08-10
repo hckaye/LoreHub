@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/lorehub/lorehub/services/api/internal/authz"
+	loreclient "github.com/lorehub/lorehub/services/api/internal/lore"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -18,9 +19,11 @@ import (
 const testResource = "urc-0123456789abcdef0123456789abcdef"
 
 type fakeAuthPolicy struct {
-	mu        sync.RWMutex
-	users     map[string]authz.UserInfo
-	resources map[string]map[string][]string
+	mu               sync.RWMutex
+	users            map[string]authz.UserInfo
+	resources        map[string]map[string][]string
+	serviceUsers     map[string]authz.UserInfo
+	serviceResources map[string]map[string][]string
 }
 
 func (policy *fakeAuthPolicy) EffectivePermissions(
@@ -81,6 +84,24 @@ func (policy *fakeAuthPolicy) UserInfo(_ context.Context, userID string) (authz.
 		return authz.UserInfo{}, errors.New("unknown user")
 	}
 	return user, nil
+}
+
+func (policy *fakeAuthPolicy) ServicePrincipalResource(
+	_ context.Context,
+	name string,
+	resourceID string,
+) (authz.UserInfo, []string, error) {
+	policy.mu.RLock()
+	defer policy.mu.RUnlock()
+	principal, ok := policy.serviceUsers[name]
+	if !ok {
+		return authz.UserInfo{}, nil, errors.New("unknown service principal")
+	}
+	permissions := policy.serviceResources[name][resourceID]
+	if len(permissions) == 0 {
+		return authz.UserInfo{}, nil, errors.New("service principal has no grant")
+	}
+	return principal, append([]string(nil), permissions...), nil
 }
 
 func (policy *fakeAuthPolicy) UserInfoForResource(
@@ -202,6 +223,21 @@ func newTestService(t *testing.T, policy *fakeAuthPolicy, sessions *fakeSessions
 		t.Fatal(err)
 	}
 	return service, tokens
+}
+
+func TestNewServiceRejectsNonCanonicalAuthURL(t *testing.T) {
+	tokens, _ := newTestTokenService(t)
+	for _, authURL := range []string{
+		"ucs-auth://auth.example:8443/path",
+		"ucs-auth://auth.example:8443?tenant=one",
+		"ucs-auth://user:password@auth.example:8443",
+	} {
+		_, err := NewService(testPolicy(), &fakeSessions{sessions: make(map[string]*fakeSession)}, tokens,
+			"https://app.example/auth/lore/confirm", authURL, 5*time.Minute, false)
+		if err == nil {
+			t.Fatalf("accepted non-canonical Lore AuthURL %q", authURL)
+		}
+	}
 }
 
 func bearerContext(raw string) context.Context {
@@ -333,6 +369,98 @@ func TestAuthenticationTokenDoesNotEnumerateResourcesForUserWithoutRepositories(
 	}
 	if _, err := tokens.VerifyResourceToken(response.UserToken.UserToken); err == nil {
 		t.Fatal("base authentication token must not be usable as a data-plane token")
+	}
+}
+
+func TestServiceCredentialIsTypedAndBindsSubjectScopeAndExpiry(t *testing.T) {
+	policy := testPolicy()
+	const subject = "00000000-0000-4000-8000-000000000001"
+	policy.serviceUsers = map[string]authz.UserInfo{
+		"lorehub-anonymous-reader": {
+			ID: subject, Username: "lorehub-anonymous-reader", DisplayName: "Public reader",
+		},
+	}
+	policy.serviceResources = map[string]map[string][]string{
+		"lorehub-anonymous-reader": {
+			testResource: {authz.PermissionRead},
+		},
+	}
+	service, tokens := newTestService(t, policy, &fakeSessions{sessions: make(map[string]*fakeSession)})
+	principal := loreclient.ServicePrincipal(loreclient.ServicePurposePublicReader, subject)
+	credential, err := service.IssueServiceResourceToken(
+		context.Background(), principal, testResource, []string{authz.PermissionRead},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if credential.Token == "" || credential.AuthenticationToken == "" || credential.AuthURL == "" ||
+		credential.ExpiresAt.Before(time.Now()) || credential.AuthenticationExpiresAt.Before(time.Now()) ||
+		credential.Subject != subject || credential.Identity != subject || credential.ResourceID != testResource ||
+		credential.Principal != principal || len(credential.RequestedScopes) != 1 ||
+		len(credential.GrantedScopes) != 1 {
+		t.Fatalf("service credential is not an exact typed credential: %+v", credential)
+	}
+	verified, err := tokens.VerifyResourceToken(credential.Token)
+	if err != nil || verified.Claims.Subject != subject || !verified.Claims.IsServiceAccount ||
+		len(verified.Claims.Resources) != 1 || verified.Claims.Resources[0].ResourceID != testResource {
+		t.Fatalf("service credential claims are not bound: claims=%#v error=%v", verified.Claims, err)
+	}
+	base, err := tokens.VerifyAuthenticationToken(credential.AuthenticationToken)
+	if err != nil || base.Claims.Subject != subject || !base.Claims.IsServiceAccount ||
+		len(base.Claims.Resources) != 0 {
+		t.Fatalf("service credential authentication claims are not bound: claims=%#v error=%v",
+			base.Claims, err)
+	}
+	if _, err := service.IssueServiceResourceToken(context.Background(),
+		loreclient.ServicePrincipal(loreclient.ServicePurposePublicReader, "wrong-subject"),
+		testResource, []string{authz.PermissionRead}); !errors.Is(err, loreclient.ErrCredentialContract) {
+		t.Fatalf("wrong service subject error = %v, want contract rejection", err)
+	}
+	service.tokens.lifetime = -time.Second
+	if _, err := service.IssueServiceResourceToken(context.Background(), principal, testResource,
+		[]string{authz.PermissionRead}); err == nil {
+		t.Fatal("expired service credential was accepted")
+	}
+}
+
+func TestServiceAuthenticationTokenExchangesToServiceResourceToken(t *testing.T) {
+	policy := testPolicy()
+	const subject = "00000000-0000-4000-8000-000000000001"
+	policy.serviceUsers = map[string]authz.UserInfo{
+		"lorehub-anonymous-reader": {
+			ID: subject, Username: "lorehub-anonymous-reader", DisplayName: "Public reader",
+		},
+	}
+	policy.serviceResources = map[string]map[string][]string{
+		"lorehub-anonymous-reader": {testResource: {authz.PermissionRead}},
+	}
+	service, tokens := newTestService(t, policy, &fakeSessions{sessions: make(map[string]*fakeSession)})
+	credential, err := service.IssueServiceResourceToken(context.Background(),
+		loreclient.ServicePrincipal(loreclient.ServicePurposePublicReader, subject), testResource,
+		[]string{authz.PermissionRead})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := service.ExchangeUserTokenForMultiresourceToken(
+		bearerContext(credential.AuthenticationToken),
+		&ExchangeUserTokenForMultiresourceTokenRequest{ResourceId: []string{testResource}},
+	)
+	if err != nil || response.Token == nil {
+		t.Fatalf("service exchange failed: response=%#v error=%v", response, err)
+	}
+	verified, err := tokens.VerifyResourceToken(response.Token.UserToken)
+	if err != nil || verified.Claims.Subject != subject || !verified.Claims.IsServiceAccount {
+		t.Fatalf("service exchange lost service principal binding: claims=%#v error=%v",
+			verified.Claims, err)
+	}
+	policy.mu.Lock()
+	policy.serviceResources["lorehub-anonymous-reader"][testResource] = nil
+	policy.mu.Unlock()
+	if _, err := service.ExchangeUserTokenForMultiresourceToken(
+		bearerContext(credential.AuthenticationToken),
+		&ExchangeUserTokenForMultiresourceTokenRequest{ResourceId: []string{testResource}},
+	); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("revoked service grant error = %v, want PermissionDenied", err)
 	}
 }
 
@@ -470,5 +598,7 @@ func testPolicy() *fakeAuthPolicy {
 		resources: map[string]map[string][]string{
 			"alice": {testResource: {authz.PermissionRead, authz.PermissionWrite}},
 		},
+		serviceUsers:     make(map[string]authz.UserInfo),
+		serviceResources: make(map[string]map[string][]string),
 	}
 }

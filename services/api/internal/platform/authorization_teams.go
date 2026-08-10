@@ -60,6 +60,7 @@ func (store *Store) CreateTeam(
 		return Team{}, err
 	}
 	team := Team{ID: uuid.NewString(), OrganizationID: organizationID, Organization: organizationSlug,
+		OrganizationSlug: organizationSlug, ViewerRole: "maintainer", MemberCount: 1,
 		Slug: input.Slug, DisplayName: limitText(strings.TrimSpace(input.DisplayName), 160),
 		Description: limitText(input.Description, 10_000), CreatedAt: time.Now().UTC()}
 	team.UpdatedAt = team.CreatedAt
@@ -74,6 +75,12 @@ func (store *Store) CreateTeam(
 	`, team.ID, team.OrganizationID, team.Slug, team.DisplayName, team.Description, actor.ID, team.CreatedAt)
 	if err != nil {
 		return Team{}, translateConstraintError("create team", err)
+	}
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO team_memberships (team_id, user_id, role, active)
+		VALUES ($1, $2, 'maintainer', true)
+	`, team.ID, actor.ID); err != nil {
+		return Team{}, fmt.Errorf("add team creator: %w", err)
 	}
 	if err := insertAuditDetails(ctx, transaction, actor.ID, organizationID, "", "team.create",
 		"team", team.ID, map[string]any{"slug": team.Slug}); err != nil {
@@ -108,7 +115,7 @@ func (store *Store) UpdateTeam(
 	err = transaction.QueryRow(ctx, `
 		UPDATE teams
 		SET display_name = $3, description = $4, updated_at = now()
-		WHERE organization_id = $1 AND slug = $2
+		WHERE organization_id = $1 AND slug = $2 AND active
 		RETURNING id, organization_id, slug, display_name, description, created_at, updated_at
 	`, organizationID, teamSlug, limitText(strings.TrimSpace(input.DisplayName), 160),
 		limitText(input.Description, 10_000)).Scan(&team.ID, &team.OrganizationID, &team.Slug,
@@ -120,6 +127,7 @@ func (store *Store) UpdateTeam(
 		return Team{}, fmt.Errorf("update team: %w", err)
 	}
 	team.Organization = organizationSlug
+	team.OrganizationSlug = organizationSlug
 	if err := insertAuditDetails(ctx, transaction, actor.ID, organizationID, "", "team.update", "team", team.ID,
 		map[string]any{"displayName": team.DisplayName}); err != nil {
 		return Team{}, err
@@ -151,7 +159,7 @@ func (store *Store) DeleteTeam(
 	var teamID string
 	err = transaction.QueryRow(ctx, `
 		DELETE FROM teams
-		WHERE organization_id = $1 AND slug = $2
+		WHERE organization_id = $1 AND slug = $2 AND active
 		RETURNING id
 	`, organizationID, teamSlug).Scan(&teamID)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -185,7 +193,7 @@ func (store *Store) ListTeamMembers(
 		FROM teams t
 		JOIN team_memberships tm ON tm.team_id = t.id
 		JOIN users u ON u.id = tm.user_id
-		WHERE t.organization_id = $1 AND t.slug = $2
+		WHERE t.organization_id = $1 AND t.slug = $2 AND t.active
 		ORDER BY u.username
 	`, organizationID, teamSlug)
 	if err != nil {
@@ -225,7 +233,7 @@ func (store *Store) SetTeamMember(
 		JOIN organizations o ON o.id = t.organization_id
 		JOIN organization_memberships om ON om.organization_id = o.id AND om.active
 		JOIN users u ON u.id = om.user_id AND u.username = $3 AND u.status = 'active'
-		WHERE t.organization_id = $1 AND t.slug = $2
+		WHERE t.organization_id = $1 AND t.slug = $2 AND t.active AND o.active
 	`, organizationID, teamSlug, strings.ToLower(strings.TrimSpace(input.Username))).Scan(&teamID, &userID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return TeamMember{}, ErrNotFound

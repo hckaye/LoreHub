@@ -6,6 +6,7 @@ import type {
   APIResult,
   Branch,
   CIRun,
+  DashboardData,
   FileHistoryEntry,
   Issue,
   LoreDiff,
@@ -15,12 +16,72 @@ import type {
   MergeOperation,
   MergeReadiness,
   MergeRequest,
+  Notification,
+  NotificationPage,
+  NotificationPreferences,
+  OrganizationView,
   Repository,
   ReviewSummary,
   RevisionHistoryEntry,
+  SearchResults,
+  Team,
+  TeamMember,
+  UserProfile,
 } from "./api-types";
 
 const apiOrigin = process.env.LOREHUB_API_URL ?? "http://127.0.0.1:8080";
+
+export function getDashboard(): Promise<APIResult<DashboardData>> {
+  return request("/api/v1/dashboard");
+}
+
+export function getSearchResults(query: string): Promise<APIResult<SearchResults>> {
+  const params = new URLSearchParams({ q: query.trim(), limit: "50" });
+  return request(`/api/v1/search?${params.toString()}`);
+}
+
+export function getUserProfile(username: string): Promise<APIResult<UserProfile>> {
+  return request(`/api/v1/users/${encodeURIComponent(username)}`);
+}
+
+export async function getUserRepositories(username: string): Promise<APIResult<Repository[]>> {
+  const result = await request<{ repositories: Repository[] }>(
+    `/api/v1/users/${encodeURIComponent(username)}/repositories`,
+  );
+  return result.ok ? { ok: true, data: result.data.repositories } : result;
+}
+
+export async function getNotifications(): Promise<APIResult<Notification[]>> {
+  const result = await request<NotificationPage>("/api/v1/notifications?limit=100");
+  return result.ok ? { ok: true, data: result.data.items } : result;
+}
+
+export function getNotificationPreferences(): Promise<APIResult<NotificationPreferences>> {
+  return request("/api/v1/account/notification-preferences");
+}
+
+export function getOrganization(slug: string): Promise<APIResult<OrganizationView>> {
+  return request(`/api/v1/organizations/${encodeURIComponent(slug)}`);
+}
+
+export async function getOrganizationRepositories(slug: string): Promise<APIResult<Repository[]>> {
+  const result = await request<{ repositories: Repository[] }>(
+    `/api/v1/organizations/${encodeURIComponent(slug)}/repositories`,
+  );
+  return result.ok ? { ok: true, data: result.data.repositories } : result;
+}
+
+export async function getTeams(slug: string): Promise<APIResult<Team[]>> {
+  const result = await request<{ teams: Team[] }>(`/api/v1/organizations/${encodeURIComponent(slug)}/teams`);
+  return result.ok ? { ok: true, data: result.data.teams } : result;
+}
+
+export function getTeam(
+  organization: string,
+  team: string,
+): Promise<APIResult<{ team: Team; members?: TeamMember[] }>> {
+  return request(`/api/v1/organizations/${encodeURIComponent(organization)}/teams/${encodeURIComponent(team)}`);
+}
 
 export async function getPublicRepositories(query = ""): Promise<APIResult<Repository[]>> {
   const search = new URLSearchParams({ limit: "100" });

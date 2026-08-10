@@ -43,7 +43,8 @@ func (s *store) AuthorizeLoreMergePush(
 		       mo.push_authorized_revision, mo.push_authorized_actor_id::text,
 		       mo.push_authorized_target_branch_id, mo.push_authorized_at
 		FROM merge_operations mo
-		JOIN merge_requests mr ON mr.id = mo.merge_request_id
+		JOIN merge_requests mr
+		  ON mr.id = mo.merge_request_id AND mr.repository_id = mo.repository_id
 		JOIN repositories r ON r.id = mo.repository_id
 		WHERE mo.id = $1 AND mo.repository_id = $2 AND mr.target_branch = $3
 		FOR UPDATE
@@ -181,7 +182,7 @@ func validatePushPermission(ctx context.Context, tx pgx.Tx, input loreclient.Pus
 			FROM users u
 			JOIN repositories r ON r.id = $1 AND r.archived_at IS NULL AND r.lifecycle_state = 'active'
 			JOIN organizations o ON o.id = r.organization_id AND o.active
-			JOIN organization_memberships om
+			LEFT JOIN organization_memberships om
 				ON om.organization_id = o.id AND om.user_id = u.id AND om.active
 			WHERE u.id = $2 AND u.status = 'active'
 			  AND (
@@ -198,6 +199,8 @@ func validatePushPermission(ctx context.Context, tx pgx.Tx, input loreclient.Pus
 					JOIN teams t ON t.id = tr.team_id AND t.organization_id = o.id AND t.active
 					JOIN team_memberships tm
 					  ON tm.team_id = t.id AND tm.user_id = u.id AND tm.active
+					JOIN organization_memberships team_org
+					  ON team_org.organization_id = o.id AND team_org.user_id = u.id AND team_org.active
 					WHERE tr.repository_id = r.id AND tr.active
 					  AND tr.role IN ('write', 'maintain', 'admin')
 				)

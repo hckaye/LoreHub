@@ -35,9 +35,10 @@ server-side session and remains valid for that session; it is not an OAuth acces
 
 ## Same-origin routes
 
-`next.config.ts` rewrites `/api/*` and `/auth/*` to `LOREHUB_API_URL`. Browser code therefore uses same-origin paths and
-does not depend on an internal Docker hostname. The browser sends `credentials: "include"` for mutations and includes
-the session CSRF token in `X-CSRF-Token`.
+The App Router handlers for `/api/*` and `/auth/*` forward requests to `LOREHUB_API_URL` at runtime. Browser code
+therefore uses same-origin paths and does not depend on an internal Docker hostname. Keeping the upstream URL out of
+the image build also allows one immutable Web image to run in different environments. The browser sends
+`credentials: "include"` for mutations and includes the session CSRF token in `X-CSRF-Token`.
 
 The logout request is `POST /auth/logout`. Issue, pull request, organization, and repository forms use the existing API
 mutation endpoints and show the actual unauthorized, forbidden, invalid, conflict, and unavailable states returned by
@@ -55,6 +56,6 @@ registration, the link still returns the provider error visibly instead of prete
 ## Local proxy configuration
 
 Set `LOREHUB_API_URL` to the API origin reachable by the Next.js server, for example
-`http://api.lorehub.localhost:8080` in Compose or
+`http://lorehub.localhost:8080` in Compose or
 `http://127.0.0.1:8080` for host development. This variable is intentionally not `NEXT_PUBLIC_*`; it is used by server
-fetches and Next rewrites only.
+fetches and the same-origin proxy handlers only.

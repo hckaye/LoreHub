@@ -245,6 +245,12 @@ func (service *TokenService) MintAuthenticationToken(
 	return service.mintToken(tokenPrincipal{user: user}, nil, false)
 }
 
+func (service *TokenService) MintServiceAuthenticationToken(
+	principal authz.UserInfo,
+) (string, time.Time, error) {
+	return service.mintToken(tokenPrincipal{user: principal, serviceAccount: true}, nil, false)
+}
+
 type tokenPrincipal struct {
 	user           authz.UserInfo
 	serviceAccount bool
@@ -351,7 +357,7 @@ func (service *TokenService) verify(raw string, resourceToken bool) (VerifiedTok
 	if resourceToken && len(claims.Resources) == 0 {
 		return VerifiedToken{}, errors.New("Lore token has no resource scope")
 	}
-	if !resourceToken && (len(claims.Resources) != 0 || claims.IsServiceAccount) {
+	if !resourceToken && len(claims.Resources) != 0 {
 		return VerifiedToken{}, errors.New("Lore authentication token has an invalid scope")
 	}
 	if len(claims.Resources) > 0 {

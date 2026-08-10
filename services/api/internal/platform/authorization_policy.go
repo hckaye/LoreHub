@@ -279,18 +279,16 @@ func (store *Store) repositoryAdminAccess(
 		SELECT r.id, r.organization_id
 		FROM repositories r
 		JOIN organizations o ON o.id = r.organization_id
-		JOIN organization_memberships om
+		JOIN users u ON u.id = $3 AND u.status = 'active'
+		LEFT JOIN organization_memberships om
 		  ON om.organization_id = o.id AND om.user_id = $3 AND om.active
-		JOIN users u ON u.id = om.user_id AND u.status = 'active'
 		WHERE o.slug = $1 AND r.slug = $2 AND o.active
 		  AND r.archived_at IS NULL AND r.lifecycle_state = 'active'
 		  AND (
 			  om.role = 'owner'
-			  OR EXISTS (
-				  SELECT 1 FROM repository_memberships rm
-				  JOIN organization_memberships rom
-				    ON rom.organization_id = o.id AND rom.user_id = $3 AND rom.active
-				  WHERE rm.repository_id = r.id AND rm.user_id = $3
+				OR EXISTS (
+					SELECT 1 FROM repository_memberships rm
+					WHERE rm.repository_id = r.id AND rm.user_id = $3
 				    AND rm.active AND rm.role = 'admin'
 			  )
 				OR EXISTS (

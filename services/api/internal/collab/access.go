@@ -65,9 +65,6 @@ func lookupRepository(
 		FROM repositories r
 		JOIN organizations o ON o.id = r.organization_id AND o.active
 		JOIN users actor_user ON actor_user.id = $3 AND actor_user.status = 'active'
-		JOIN organization_memberships actor_membership
-		  ON actor_membership.organization_id = o.id AND actor_membership.user_id = $3
-		 AND actor_membership.active
 		WHERE o.slug = $1 AND r.slug = $2 AND r.archived_at IS NULL AND r.lifecycle_state = 'active'
 		  AND (
 		      r.visibility = 'public'
@@ -85,8 +82,6 @@ func lookupRepository(
 		      )
 		      OR EXISTS (
 		          SELECT 1 FROM repository_memberships rm
-		          JOIN organization_memberships rom
-		            ON rom.organization_id = o.id AND rom.user_id = $3 AND rom.active
 		          WHERE rm.repository_id = r.id AND rm.user_id = $3 AND rm.active
 		      )
 		      OR EXISTS (
@@ -152,7 +147,7 @@ func repositoryPermission(
 		JOIN users actor_user ON actor_user.id = $3 AND actor_user.status = 'active'
 		LEFT JOIN repository_memberships rm
 		    ON rm.repository_id = r.id AND rm.user_id = $3 AND rm.active
-		JOIN organization_memberships om
+		LEFT JOIN organization_memberships om
 		    ON om.organization_id = o.id AND om.user_id = $3 AND om.active
 		WHERE r.id = $1 AND o.id = $2 AND r.archived_at IS NULL AND r.lifecycle_state = 'active'
 	`, repo.ID, repo.OrganizationID, actor.ID).Scan(&repoRole, &orgRole)
@@ -195,6 +190,9 @@ func repositoryPermission(
 		access.RepositoryRole = *teamRole
 	}
 	access.Permission = combineRoles(repoRole, orgRole, repo.Visibility)
+	if repo.Visibility == "public" && access.Permission < PermRead {
+		access.Permission = PermRead
+	}
 	if team := rolePermission(teamRole); team > access.Permission {
 		access.Permission = team
 	}

@@ -63,9 +63,12 @@ identityは使いません。交換で発行されるtokenは5〜10分だけ有�
 出しません。
 
 実Loreで境界を確認する場合は、二つのpartitionのURLと、read、base、期限切れ、issuer違い、audience違い、kid違いの
-tokenを環境変数へ渡し、リポジトリrootで`./scripts/test-lore-auth-boundary.sh`を実行します。このscriptはtokenの値を
-表示せず、stock Lore SDKを使ってQUICとgRPCの両方を確認します。二つのLore repositoryと各tokenの準備は運用環境側で
-行います。
+tokenを環境変数へ渡し、PostgreSQLへ接続できる`DATABASE_URL`を設定して、リポジトリrootで
+`./scripts/test-lore-auth-boundary.sh`を実行します。このscriptはtokenの値を表示せず、stock Lore SDKを使って
+QUICとgRPCの両方を確認した後、teamの付与・取り消し、外部collaborator、protected branchへの直接push拒否、
+一度だけ使えるmerge認可をPostgreSQL上で確認します。Lore 0.8.6のstock protocolにはteamやbranch policyの概念が
+ないため、これらはControl Planeのpolicy testで検証します。別管理のLore Serverだけを確認する場合に限り、
+`LOREHUB_SMOKE_LORE_ONLY=1`を指定できます。二つのLore repositoryと各tokenの準備は運用環境側で行います。
 
 ## URL、audience、鍵
 
@@ -75,15 +78,17 @@ issuer、audience、AuthURL、JWKS、Lore公開URLは、同じ管理対象root d
 issuer:   auth.lorehub.example
 audience: lorehub.example
 AuthURL:  ucs-auth://auth.lorehub.example:8443
-JWKS:     https://api.lorehub.example/.well-known/jwks.json
-Lore:     lores://lore.lorehub.example:41337
+JWKS:     https://lorehub.example/.well-known/jwks.json
+Lore:     lores://lorehub.example:41337
 ```
 
 ローカルは`lorehub.localhost`をrootにし、HTTPの認証endpoint、JWKS、確認画面を使えます。JWT issuerはURLではなく、
 stock clientがremoteの許可ドメインとして扱う`auth.lorehub.localhost`です。LoreのUCS gRPC endpointは
 `ucs-auth://auth.lorehub.localhost:8443`で、Lore 0.8.6のclientがHTTPSへ変換します。`lore`、`api`、Docker内部名を
-public URLやaudienceには設定しません。hostのLore CLIが解決できるpublic AuthURLを広告し、container内だけDNS aliasを
-host gatewayへ向けます。token-storeのキーとroot domainは書き換えません。
+public URLやaudienceには設定しません。hostのLore CLIが解決できるpublic AuthURLを広告し、Lore container内だけAuthURLの
+名前をローカルbridgeへ向けます。bridgeは`LOREHUB_LORE_INTERNAL_AUTH_URL`のHTTPS authorityへCAとSANを検証して接続し、
+公開AuthURLとtoken-storeのキーは書き換えません。productionでは、コンテナ内でAuthURLの名前をbridgeのloopbackへ解決
+できるようにしてください。
 
 本番で認証endpoint、JWKS、確認画面がHTTPSでない、署名鍵、kid、TLS設定、JWT検証設定がない場合、APIは起動しません。ローカル
 のHTTP設定は開発用profileだけに限定されます。
@@ -104,21 +109,23 @@ read tokenによるwriteは拒否します。
 CLIで接続するときは、`infra/.local-tls/lorehub-local-ca.crt`をTLS trust storeへ追加してください。これはローカル用で、
 本番のCAや秘密鍵として使いません。
 
-hookからLoreHubのpolicy endpointへは、固定された`https://api.lorehub.localhost:8444/internal/lore/policy`を使い、
-相互TLSと約150msのtimeoutを適用します。hookのclient証明書は専用の`lore-policy-hook` identityとclientAuth用途を
-持たなければなりません。接続失敗、証明書不正、形式不正、拒否応答はすべて拒否にします。本番でも同じ専用identityを
-別のservice証明書と共有しません。
+hookからLoreHubのpolicy endpointへは、設定したmanaged root配下の
+`https://<policy-host>:8444/internal/lore/policy`を使い、相互TLSと約150msのtimeoutを適用します。観測endpointも同じ
+root配下の固定パスにします。hookのclient証明書は専用の`lore-policy-hook` identityとclientAuth用途を持たなければ
+なりません。接続失敗、証明書不正、SAN不一致、形式不正、拒否応答はすべて拒否にします。本番ではendpoint、root、JWKS、
+AuthURL、TLS CA、client証明書、client鍵を省略できず、サービス証明書とhook証明書を共有しません。
 
 ## protected branchとmerge
 
-Loreイメージは公式v0.8.6を浅くcloneしてビルドし、公式hook registryへLoreHubのhook moduleだけを登録します。Loreの
-ソース全体をこのリポジトリへコピーせず、forkも保守しません。更新時は公式tagの変更で`HookContext`、JWT検証、UCS client、
-environment広告、hook registryを確認し、同じ手順でイメージを再ビルドします。
+Loreイメージは公式v0.8.6を浅くcloneしてビルドし、公式hook registryへLoreHubのhook moduleを登録します。Lore 0.8.6は
+BranchCreateのhook contextへbranch名を渡さないため、二つのBranchCreate handlerだけにbranch名metadataを追加する小さな
+patchもビルド時に適用します。Loreのソース全体をこのリポジトリへコピーせず、forkも保守しません。更新時は公式tagの変更で
+`HookContext`、JWT検証、UCS client、environment広告、hook registryを確認し、patchの必要性も再評価します。
 
-hookが使う`HookContext`はrepository、user、branch ID、proposed revision、client_ip metadataだけです。branch名と現在の
+hookが使う`HookContext`はrepository、user、branch ID、branch名、proposed revision、client_ip metadataです。現在の
 revisionはbranch IDをキーにPostgreSQLの観測状態から解決します。観測がない、2分より古い、または状態が不足するpushと
-deleteは拒否します。BranchCreateにはbranch名がないため、一般writeだけを確認し、最初の成功したpushまたは定期reconcileで
-branchを観測します。成功したBranchPushはrevisionを更新し、BranchDeleteは状態を削除します。hookのpost観測を失った場合は、
+deleteは拒否します。BranchCreateは受け取った名前を既存のbranch ruleと照合し、直接pushを禁止した名前の作成を拒否します。
+成功したBranchPushはrevisionを更新し、BranchDeleteは状態を削除します。hookのpost観測を失った場合は、
 専用observer service principalによる定期pollerがLoreのbranch一覧を読み、状態を補正します。
 
 protected branchへの直接pushは拒否します。merge workerが正確な提案revisionを作った後、内部mTLS endpointへ一度だけ

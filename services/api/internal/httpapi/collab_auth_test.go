@@ -35,7 +35,7 @@ func (store *authCollabStore) LookupRepository(
 	return collab.Repository{
 		ID: "private-repo", OrganizationID: "org-1", Owner: owner, Slug: slug,
 		Visibility: "private", LoreRepositoryID: "0123456789abcdef0123456789abcdef",
-		LoreURL: "lore://private", DefaultBranch: "main",
+		LoreURL: "lore://lore.example/0123456789abcdef0123456789abcdef", DefaultBranch: "main",
 	}, nil
 }
 

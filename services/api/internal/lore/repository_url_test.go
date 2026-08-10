@@ -41,6 +41,16 @@ func TestPlainRepositoryURLIsExplicitDevelopmentOnly(t *testing.T) {
 	}
 }
 
+func TestRepositoryRefRejectsMismatchedIDAndURLPartitions(t *testing.T) {
+	ref := RepositoryRef{
+		LoreRepositoryID: "repository-a",
+		URL:              "lores://lore.example/repository-b",
+	}
+	if _, err := ref.ValidatedPartition(); err == nil {
+		t.Fatal("repository reference accepted two different partition boundaries")
+	}
+}
+
 func TestProductionSDKRejectsPlainRepositoryBeforeLoreCall(t *testing.T) {
 	client, err := NewSDKClientWithAuthAuthority(t.TempDir(), "auth.example.com")
 	if err != nil {
@@ -48,8 +58,10 @@ func TestProductionSDKRejectsPlainRepositoryBeforeLoreCall(t *testing.T) {
 	}
 	credential := Credential{
 		Partition: "project", Scope: ScopeRead, Identity: "user-a", Token: "token",
-		AuthURL: "ucs-auth://auth.example.com", ExpiresAt: time.Now().UTC().Add(time.Minute),
-		Principal: UserPrincipal("user-a"),
+		AuthenticationToken: "authentication-token",
+		AuthURL:             "ucs-auth://auth.example.com", ExpiresAt: time.Now().UTC().Add(time.Minute),
+		AuthenticationExpiresAt: time.Now().UTC().Add(time.Minute),
+		Principal:               UserPrincipal("user-a"),
 	}
 	if _, err := client.RepositoryInfo(t.Context(), "lore://lore.example/project", credential); err == nil {
 		t.Fatal("production SDK accepted a plaintext Lore repository URL")

@@ -352,9 +352,6 @@ func (store *Store) RepositoryForRead(
 	}
 	row := store.pool.QueryRow(ctx, repositorySelect+`
 		JOIN users actor_user ON actor_user.id = $3 AND actor_user.status = 'active'
-		JOIN organization_memberships actor_membership
-		  ON actor_membership.organization_id = r.organization_id
-		 AND actor_membership.user_id = $3 AND actor_membership.active
 		WHERE o.slug = $1 AND r.slug = $2 AND r.archived_at IS NULL
 		  AND r.lifecycle_state = 'active'
 			AND (
@@ -372,8 +369,6 @@ func (store *Store) RepositoryForRead(
 			  )
 			      OR EXISTS (
 			          SELECT 1 FROM repository_memberships rm
-			          JOIN organization_memberships om
-			            ON om.organization_id = o.id AND om.user_id = rm.user_id AND om.active
 			          WHERE rm.repository_id = r.id AND rm.user_id = $3 AND rm.active
 			      )
 		      OR EXISTS (
@@ -409,11 +404,9 @@ func (store *Store) RepositoryForWrite(
 		WHERE o.slug = $1 AND r.slug = $2 AND r.archived_at IS NULL
 		  AND r.lifecycle_state = 'active'
 		  AND (
-		      EXISTS (
-		          SELECT 1 FROM repository_memberships rm
-		          JOIN organization_memberships om
-		            ON om.organization_id = o.id AND om.user_id = $3 AND om.active
-		          WHERE rm.repository_id = r.id AND rm.user_id = $3 AND rm.active
+			  EXISTS (
+			          SELECT 1 FROM repository_memberships rm
+			          WHERE rm.repository_id = r.id AND rm.user_id = $3 AND rm.active
 		            AND rm.role IN ('admin', 'maintain', 'write')
 		      )
 			      OR EXISTS (
@@ -734,8 +727,6 @@ func (store *Store) writableRepository(
 		             AND (
 		                 EXISTS (
 		                     SELECT 1 FROM repository_memberships rm
-		                     JOIN organization_memberships om
-		                       ON om.organization_id = o.id AND om.user_id = $3 AND om.active
 		                     WHERE rm.repository_id = r.id AND rm.user_id = $3 AND rm.active
 		                       AND rm.role IN ('admin', 'maintain', 'write')
 		                 )
@@ -800,10 +791,8 @@ func (store *Store) canReadRepository(
 				  OR
 				  EXISTS (
 					  SELECT 1
-					  FROM repository_memberships rm
-					  JOIN organization_memberships om
-					    ON om.organization_id = $3 AND om.user_id = $2 AND om.active
-					  WHERE rm.repository_id = $1 AND rm.user_id = $2 AND rm.active
+						  FROM repository_memberships rm
+						  WHERE rm.repository_id = $1 AND rm.user_id = $2 AND rm.active
 				  )
 					  OR EXISTS (
 						  SELECT 1 FROM organization_memberships
@@ -832,6 +821,7 @@ func (store *Store) canReadRepository(
 const repositorySelect = `
 		SELECT r.id, r.organization_id, o.slug, r.slug, r.display_name, r.description,
 		       r.visibility, r.lore_repository_id, r.lore_url, r.default_branch,
+		       r.homepage_url, r.allow_issues, r.allow_merge_requests,
 		       COUNT(DISTINCT i.id) FILTER (WHERE i.state = 'open'),
 		       COUNT(DISTINCT mr.id) FILTER (WHERE mr.state = 'open'),
 		       r.lifecycle_state, COALESCE(r.provisioning_error, ''), r.updated_at
@@ -858,6 +848,9 @@ func scanRepository(row rowScanner) (Repository, error) {
 		&repository.LoreRepositoryID,
 		&repository.LoreURL,
 		&repository.DefaultBranch,
+		&repository.HomepageURL,
+		&repository.AllowIssues,
+		&repository.AllowMergeRequests,
 		&repository.IssueCount,
 		&repository.MergeRequestCount,
 		&repository.LifecycleState,

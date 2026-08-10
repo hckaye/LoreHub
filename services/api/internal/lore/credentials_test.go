@@ -34,17 +34,19 @@ func (issuer *recordingCredentialIssuer) IssueCredential(
 func productionCredential(request CredentialRequest, token string) Credential {
 	identity := request.Principal.identity()
 	return Credential{
-		Partition:       request.Partition,
-		Scope:           request.Scope,
-		ResourceID:      "urc-" + request.Partition,
-		Subject:         identity,
-		RequestedScopes: []string{string(request.Scope)},
-		GrantedScopes:   []string{string(request.Scope)},
-		Identity:        identity,
-		Token:           token,
-		AuthURL:         "ucs-auth://auth.example.com",
-		ExpiresAt:       time.Now().UTC().Add(5 * time.Minute),
-		Principal:       request.Principal,
+		Partition:               request.Partition,
+		Scope:                   request.Scope,
+		ResourceID:              "urc-" + request.Partition,
+		Subject:                 identity,
+		RequestedScopes:         []string{string(request.Scope)},
+		GrantedScopes:           []string{string(request.Scope)},
+		Identity:                identity,
+		Token:                   token,
+		AuthenticationToken:     token + "-authentication",
+		AuthURL:                 "ucs-auth://auth.example.com",
+		ExpiresAt:               time.Now().UTC().Add(5 * time.Minute),
+		AuthenticationExpiresAt: time.Now().UTC().Add(5 * time.Minute),
+		Principal:               request.Principal,
 	}
 }
 
@@ -141,6 +143,9 @@ func TestCredentialRequestRejectsNonCanonicalPartitionAndPrincipal(t *testing.T)
 		"empty partition": {Principal: UserPrincipal("user-a"), Repository: RepositoryRef{}, Scope: ScopeRead},
 		"unsafe partition": {Principal: UserPrincipal("user-a"),
 			Repository: RepositoryRef{LoreRepositoryID: "../repo"}, Scope: ScopeRead},
+		"URL partition mismatch": {Principal: UserPrincipal("user-a"),
+			Repository: RepositoryRef{LoreRepositoryID: "repo-a", URL: "lores://lore.example/repo-b"},
+			Scope:      ScopeRead},
 	} {
 		name, request := name, request
 		t.Run(name, func(t *testing.T) {
@@ -187,6 +192,14 @@ func TestProductionCredentialIssuerRejectsMismatchAndExpiry(t *testing.T) {
 		"principal": func(value Credential) Credential { value.Principal = UserPrincipal("user-other"); return value },
 		"scope":     func(value Credential) Credential { value.Scope = ScopeWrite; return value },
 		"identity":  func(value Credential) Credential { value.Identity = "other-user"; return value },
+		"authentication-token": func(value Credential) Credential {
+			value.AuthenticationToken = ""
+			return value
+		},
+		"authentication-expiry": func(value Credential) Credential {
+			value.AuthenticationExpiresAt = time.Now().UTC().Add(-time.Second)
+			return value
+		},
 		"expired": func(value Credential) Credential {
 			value.ExpiresAt = time.Now().UTC().Add(-time.Second)
 			return value
@@ -215,6 +228,22 @@ func TestProductionCredentialIssuerRejectsMismatchAndExpiry(t *testing.T) {
 				t.Fatalf("credential material leaked in error: %v", err)
 			}
 		})
+	}
+}
+
+func TestProductionCredentialIssuerRejectsUnusableWriteDownscope(t *testing.T) {
+	request := CredentialRequest{Principal: UserPrincipal("user-a"), Repository: RepositoryRef{
+		LoreRepositoryID: "repo-a",
+	}, Scope: ScopeWrite}
+	issuer := &recordingCredentialIssuer{issue: func(request CredentialRequest) Credential {
+		credential := productionCredential(request, "token")
+		credential.Scope = ScopeRead
+		credential.GrantedScopes = []string{string(ScopeRead)}
+		return credential
+	}}
+	_, err := productionProvider(t, issuer).ForRepository(context.Background(), request)
+	if !errors.Is(err, ErrCredentialContract) {
+		t.Fatalf("write downscope error = %v, want ErrCredentialContract", err)
 	}
 }
 

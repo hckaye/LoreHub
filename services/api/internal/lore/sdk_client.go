@@ -353,7 +353,7 @@ func (client *SDKClient) authenticate(
 	defer cleanupGlobals()
 	args, cleanupArgs := types.NewLoreAuthLoginWithTokenArgs(types.LoreAuthLoginWithTokenArgs{
 		RemoteUrl: remoteURL,
-		Token:     credential.Token,
+		Token:     credential.AuthenticationToken,
 		TokenType: "lore",
 		AuthUrl:   credential.AuthURL,
 	})
@@ -369,6 +369,13 @@ func (client *SDKClient) validateRepositoryURL(value string) (parsedRepositoryUR
 }
 
 func (client *SDKClient) validateRepository(repository RepositoryRef) error {
-	_, err := client.validateRepositoryURL(repository.URL)
-	return err
+	parsed, err := client.validateRepositoryURL(repository.URL)
+	if err != nil {
+		return err
+	}
+	idPartition := strings.TrimSpace(repository.LoreRepositoryID)
+	if idPartition != "" && idPartition != parsed.Partition {
+		return errors.New("Lore repository URL partition does not match repository ID")
+	}
+	return nil
 }

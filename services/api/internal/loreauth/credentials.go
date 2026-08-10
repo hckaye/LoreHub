@@ -27,30 +27,25 @@ func (issuer *CredentialIssuer) IssueCredential(
 	if issuer == nil || issuer.service == nil {
 		return loreclient.Credential{}, errors.New("Lore credential issuer is unavailable")
 	}
+	partition, err := request.Repository.ValidatedPartition()
+	if err != nil || request.Partition != partition {
+		return loreclient.Credential{}, loreclient.ErrCredentialContract
+	}
+	if request.Scope != loreclient.ScopeRead && request.Scope != loreclient.ScopeWrite {
+		return loreclient.Credential{}, loreclient.ErrCredentialContract
+	}
 	requested := []string{"read"}
 	if request.Scope == loreclient.ScopeWrite {
 		requested = []string{"write"}
 	}
 	var credential loreclient.Credential
-	var err error
 	if request.Principal.UserID != "" {
 		credential, err = issuer.service.IssueResourceToken(
 			ctx, request.Principal.UserID, "urc-"+request.Partition, requested,
 		)
 	} else {
-		principalName, nameErr := servicePrincipalName(request.Principal.ServicePurpose)
-		if nameErr != nil {
-			return loreclient.Credential{}, nameErr
-		}
-		credential, err = issuer.service.IssueServiceResourceToken(
-			ctx, principalName, "urc-"+request.Partition, requested,
-		)
-		if err == nil {
-			if credential.Subject != request.Principal.Subject {
-				return loreclient.Credential{}, loreclient.ErrCredentialContract
-			}
-			credential.Principal = request.Principal
-		}
+		credential, err = issuer.service.IssueServiceResourceToken(ctx, request.Principal,
+			"urc-"+request.Partition, requested)
 	}
 	if err != nil {
 		return loreclient.Credential{}, err

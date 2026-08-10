@@ -97,18 +97,23 @@ type CredentialRequest struct {
 }
 
 type Credential struct {
-	Partition           string    `json:"partition,omitempty"`
-	Scope               Scope     `json:"scope,omitempty"`
-	ResourceID          string    `json:"resourceId,omitempty"`
-	Subject             string    `json:"-"`
-	RequestedScopes     []string  `json:"requestedScopes,omitempty"`
-	GrantedScopes       []string  `json:"grantedScopes,omitempty"`
-	Identity            string    `json:"-"`
-	Token               string    `json:"-"`
-	AuthURL             string    `json:"-"`
-	ExpiresAt           time.Time `json:"expiresAt,omitempty"`
-	Principal           Principal `json:"principal"`
-	InsecureDevelopment bool      `json:"insecureDevelopment,omitempty"`
+	Partition       string   `json:"partition,omitempty"`
+	Scope           Scope    `json:"scope,omitempty"`
+	ResourceID      string   `json:"resourceId,omitempty"`
+	Subject         string   `json:"-"`
+	RequestedScopes []string `json:"requestedScopes,omitempty"`
+	GrantedScopes   []string `json:"grantedScopes,omitempty"`
+	Identity        string   `json:"-"`
+	// Token is the exact resource-scoped Lore JWT used after exchange.
+	Token string `json:"-"`
+	// AuthenticationToken is a zero-resource JWT used only by stock Lore to
+	// perform the subsequent resource exchange.
+	AuthenticationToken     string    `json:"-"`
+	AuthURL                 string    `json:"-"`
+	ExpiresAt               time.Time `json:"expiresAt,omitempty"`
+	AuthenticationExpiresAt time.Time `json:"-"`
+	Principal               Principal `json:"principal"`
+	InsecureDevelopment     bool      `json:"insecureDevelopment,omitempty"`
 }
 
 // CredentialIssuer is the future control-plane boundary. Implementations must
@@ -302,7 +307,10 @@ func ValidateCredential(repository RepositoryRef, credential Credential, scope S
 	if !credential.Principal.valid() {
 		return ErrInvalidPrincipal
 	}
-	partition := repository.CanonicalPartition()
+	partition, err := repository.ValidatedPartition()
+	if err != nil {
+		return err
+	}
 	if partition != "" && credential.Partition != partition {
 		return errors.New("Lore credential partition does not match repository")
 	}
@@ -328,9 +336,9 @@ func normalizeCredentialRequest(request *CredentialRequest) (string, error) {
 	if request.Scope != ScopeRead && request.Scope != ScopeWrite {
 		return "", errors.New("unsupported Lore credential scope")
 	}
-	partition := request.Repository.CanonicalPartition()
-	if partition == "" || !validPartitionSegment(partition) {
-		return "", errors.New("Lore repository partition is required")
+	partition, err := request.Repository.ValidatedPartition()
+	if err != nil {
+		return "", err
 	}
 	if request.Partition != "" && request.Partition != partition {
 		return "", ErrCredentialContract
@@ -370,7 +378,8 @@ func validateIssuedCredential(
 		return ErrCredentialContract
 	}
 	if credential.ResourceID != "urc-"+request.Partition || credential.Subject == "" ||
-		credential.Identity == "" || credential.Token == "" || credential.AuthURL == "" {
+		credential.Identity == "" || credential.Token == "" || credential.AuthenticationToken == "" ||
+		credential.AuthURL == "" {
 		return ErrCredentialContract
 	}
 	if credential.Identity != credential.Subject || credential.Identity != request.Principal.identity() {
@@ -383,6 +392,10 @@ func validateIssuedCredential(
 	if !credential.ExpiresAt.After(now) || credential.ExpiresAt.After(now.Add(maxCredentialLifetime)) {
 		return ErrCredentialContract
 	}
+	if !credential.AuthenticationExpiresAt.After(now) ||
+		credential.AuthenticationExpiresAt.After(now.Add(maxCredentialLifetime)) {
+		return ErrCredentialContract
+	}
 	if err := validateAuthURLAgainst(credential.AuthURL, expectedAuthHost); err != nil {
 		return ErrCredentialContract
 	}
@@ -393,18 +406,25 @@ func validateProductionCredential(credential Credential, expectedAuthHost string
 	if !credential.Principal.valid() {
 		return ErrInvalidPrincipal
 	}
-	if credential.Identity == "" || credential.Token == "" || credential.AuthURL == "" {
+	if credential.Identity == "" || credential.Token == "" || credential.AuthenticationToken == "" ||
+		credential.AuthURL == "" {
 		return ErrCredentialUnavailable
 	}
 	if !credential.ExpiresAt.After(time.Now().UTC()) ||
 		credential.ExpiresAt.After(time.Now().UTC().Add(maxCredentialLifetime)) {
 		return ErrCredentialUnavailable
 	}
+	if !credential.AuthenticationExpiresAt.After(time.Now().UTC()) ||
+		credential.AuthenticationExpiresAt.After(time.Now().UTC().Add(maxCredentialLifetime)) {
+		return ErrCredentialUnavailable
+	}
 	if credential.Identity != credential.Principal.identity() {
 		return ErrCredentialContract
 	}
 	if credential.Subject == "" || credential.Subject != credential.Identity ||
-		credential.ResourceID == "" || len(credential.GrantedScopes) == 0 {
+		!validPartitionSegment(credential.Partition) ||
+		credential.ResourceID != "urc-"+credential.Partition ||
+		!validCredentialScopeSubset(credential.RequestedScopes, credential.GrantedScopes) {
 		return ErrCredentialContract
 	}
 	if err := validateAuthURLAgainst(credential.AuthURL, expectedAuthHost); err != nil {
@@ -414,10 +434,7 @@ func validateProductionCredential(credential Credential, expectedAuthHost string
 }
 
 func credentialScopeNarrowed(requested Scope, granted Scope) bool {
-	if requested == ScopeRead {
-		return granted == ScopeRead
-	}
-	return requested == ScopeWrite && (granted == ScopeRead || granted == ScopeWrite)
+	return requested == granted
 }
 
 func validScopeLists(requested Scope, requestedScopes []string, grantedScopes []string) bool {
@@ -436,6 +453,25 @@ func validScopeLists(requested Scope, requestedScopes []string, grantedScopes []
 	}
 	for _, scope := range grantedScopes {
 		if (scope != string(ScopeRead) && scope != string(ScopeWrite)) || !requestedSet[scope] {
+			return false
+		}
+	}
+	return true
+}
+
+func validCredentialScopeSubset(requestedScopes []string, grantedScopes []string) bool {
+	if len(requestedScopes) == 0 || len(grantedScopes) == 0 {
+		return false
+	}
+	requestedSet := make(map[string]bool, len(requestedScopes))
+	for _, scope := range requestedScopes {
+		if scope != string(ScopeRead) && scope != string(ScopeWrite) || requestedSet[scope] {
+			return false
+		}
+		requestedSet[scope] = true
+	}
+	for _, scope := range grantedScopes {
+		if scope != string(ScopeRead) && scope != string(ScopeWrite) || !requestedSet[scope] {
 			return false
 		}
 	}
@@ -465,6 +501,10 @@ func validateAuthAuthority(authority string) error {
 
 func ValidateAuthAuthority(authority string) error {
 	return validateAuthAuthority(authority)
+}
+
+func ValidateAuthURL(value string) error {
+	return validateAuthURL(value)
 }
 
 func validateAuthURL(value string) error {

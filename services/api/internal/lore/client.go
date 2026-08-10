@@ -27,12 +27,36 @@ type RepositoryRef struct {
 }
 
 func (repository RepositoryRef) CanonicalPartition() string {
+	partition, _ := repository.ValidatedPartition()
+	return partition
+}
+
+// ValidatedPartition returns the single partition named by the control-plane
+// repository ID and Lore URL. Supplying two different partitions is always a
+// contract error; callers must never silently prefer one security boundary.
+func (repository RepositoryRef) ValidatedPartition() (string, error) {
 	idPartition := strings.TrimSpace(repository.LoreRepositoryID)
-	urlPartition := repositoryURLPartition(repository.URL)
-	if idPartition != "" {
-		return idPartition
+	if idPartition != "" && !validPartitionSegment(idPartition) {
+		return "", errors.New("Lore repository ID partition is invalid")
 	}
-	return urlPartition
+	urlPartition := ""
+	if repository.URL != "" {
+		parsed, err := parseRepositoryURL(repository.URL, true)
+		if err != nil {
+			return "", err
+		}
+		urlPartition = parsed.Partition
+	}
+	if idPartition != "" && urlPartition != "" && idPartition != urlPartition {
+		return "", errors.New("Lore repository URL partition does not match repository ID")
+	}
+	if idPartition == "" {
+		idPartition = urlPartition
+	}
+	if idPartition == "" {
+		return "", errors.New("Lore repository partition is required")
+	}
+	return idPartition, nil
 }
 
 func repositoryURLPartition(repositoryURL string) string {

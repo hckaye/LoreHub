@@ -2,12 +2,13 @@
 set -eu
 
 umask 077
-mkdir -p /tls
+mkdir -p /state /tls
 
 environment=${LOREHUB_ENV:-development}
 root_domain=${LOREHUB_LORE_ROOT_DOMAIN:-lorehub.localhost}
 
 if [ "$environment" = production ]; then
+  rm -f /tls/ca.key /tls/ca.srl
   for required in ca.crt server.key server.crt lore-client.key lore-client.crt; do
     test -s "/input/${required}"
     cp "/input/${required}" "/tls/${required}"
@@ -32,8 +33,8 @@ if [ "$environment" = production ]; then
   exit 0
 fi
 
-if [ -e /tls/ca.crt ]; then
-  for required in ca.key server.key server.crt lore-client.key lore-client.crt; do
+if [ -e /tls/ca.crt ] && [ -e /state/ca.key ]; then
+  for required in server.key server.crt lore-client.key lore-client.crt; do
     test -s "/tls/${required}"
   done
   chown 0:999 /tls/server.key /tls/lore-client.key
@@ -45,8 +46,18 @@ if [ -e /tls/ca.crt ]; then
   exit 0
 fi
 
+rm -f \
+  /state/ca.key \
+  /state/ca.srl \
+  /tls/ca.crt \
+  /tls/ca.key \
+  /tls/ca.srl \
+  /tls/lore-client.crt \
+  /tls/lore-client.key \
+  /tls/server.crt \
+  /tls/server.key
 openssl req -x509 -newkey rsa:3072 -nodes \
-  -keyout /tls/ca.key -out /tls/ca.crt -days 3650 \
+  -keyout /state/ca.key -out /tls/ca.crt -days 3650 \
   -subj "/CN=LoreHub local CA" \
   -addext "basicConstraints=critical,CA:TRUE,pathlen:1" \
   -addext "keyUsage=critical,keyCertSign,cRLSign"
@@ -67,8 +78,8 @@ subjectAltName=${server_san}
 EOF
 openssl req -newkey rsa:2048 -nodes -keyout /tls/server.key \
   -out /tmp/server.csr -subj "/CN=lorehub-api"
-openssl x509 -req -in /tmp/server.csr -CA /tls/ca.crt -CAkey /tls/ca.key \
-  -CAcreateserial -out /tls/server.crt -days 825 -sha256 \
+openssl x509 -req -in /tmp/server.csr -CA /tls/ca.crt -CAkey /state/ca.key \
+  -CAserial /state/ca.srl -CAcreateserial -out /tls/server.crt -days 825 -sha256 \
   -extfile /tmp/server.ext
 
 cat >/tmp/client.ext <<'EOF'
@@ -78,15 +89,16 @@ extendedKeyUsage=clientAuth
 EOF
 openssl req -newkey rsa:2048 -nodes -keyout /tls/lore-client.key \
   -out /tmp/client.csr -subj "/CN=lore-policy-hook"
-openssl x509 -req -in /tmp/client.csr -CA /tls/ca.crt -CAkey /tls/ca.key \
-  -CAcreateserial -out /tls/lore-client.crt -days 825 -sha256 \
+openssl x509 -req -in /tmp/client.csr -CA /tls/ca.crt -CAkey /state/ca.key \
+  -CAserial /state/ca.srl -out /tls/lore-client.crt -days 825 -sha256 \
   -extfile /tmp/client.ext
 
 chmod 0600 /tls/*.key
+chmod 0600 /state/ca.key
 chmod 0644 /tls/*.crt
 chown 0:999 /tls/server.key /tls/lore-client.key
 chmod 0640 /tls/server.key /tls/lore-client.key
-rm -f /tmp/server.csr /tmp/client.csr /tmp/server.ext /tmp/client.ext /tls/ca.srl
+rm -f /tmp/server.csr /tmp/client.csr /tmp/server.ext /tmp/client.ext /state/ca.srl
 
 if [ -d /export ]; then
   cp /tls/ca.crt /export/lorehub-local-ca.crt

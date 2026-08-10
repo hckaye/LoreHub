@@ -24,6 +24,23 @@ func TestLoadDefaultsToDeterministicDisabledMode(t *testing.T) {
 	}
 }
 
+func TestLocalLoreDefaultsFollowTheConfiguredRootDomain(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("LOREHUB_ENV", "development")
+	t.Setenv("LOREHUB_LORE_ROOT_DOMAIN", "control.local")
+
+	settings, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.LoreAuthIssuer != "auth.control.local" ||
+		settings.LoreAuthURL != "ucs-auth://auth.control.local:8443" ||
+		settings.LoreAuthJWKSURL != "http://control.local:8080/.well-known/jwks.json" ||
+		settings.LorePublicURL != "lores://control.local:41337" {
+		t.Fatalf("local Lore defaults did not follow the configured root: %#v", settings)
+	}
+}
+
 func TestLoadRejectsIncompleteInteractiveAuthentication(t *testing.T) {
 	setRequiredEnvironment(t)
 	t.Setenv("LOREHUB_AUTH_MODE", AuthModeInteractive)
@@ -76,8 +93,8 @@ func TestLoadInteractiveAuthenticationUsesSecureProductionCookie(t *testing.T) {
 	t.Setenv("LOREHUB_LORE_AUTHORITY", "auth.lorehub.example:8443")
 	t.Setenv("LOREHUB_LORE_AUTH_URL", "ucs-auth://auth.lorehub.example:8443")
 	t.Setenv("LOREHUB_LORE_AUTH_LOGIN_URL", "https://lorehub.example/auth/lore/confirm")
-	t.Setenv("LOREHUB_LORE_AUTH_JWKS_URL", "https://api.lorehub.example/.well-known/jwks.json")
-	t.Setenv("LOREHUB_LORE_PUBLIC_URL", "lores://lore.lorehub.example:41337")
+	t.Setenv("LOREHUB_LORE_AUTH_JWKS_URL", "https://lorehub.example/.well-known/jwks.json")
+	t.Setenv("LOREHUB_LORE_PUBLIC_URL", "lores://lorehub.example:41337")
 	t.Setenv("LOREHUB_AUTH_SIGNING_KEY_PATH", "/keys/current.pem")
 	t.Setenv("LOREHUB_AUTH_SIGNING_KEY_KID", "current")
 	t.Setenv("LOREHUB_LORE_AUTH_TLS_CERT", "/tls/server.crt")
@@ -85,8 +102,8 @@ func TestLoadInteractiveAuthenticationUsesSecureProductionCookie(t *testing.T) {
 	t.Setenv("LOREHUB_POLICY_TLS_CERT", "/tls/server.crt")
 	t.Setenv("LOREHUB_POLICY_TLS_KEY", "/tls/server.key")
 	t.Setenv("LOREHUB_POLICY_TLS_CLIENT_CA", "/tls/ca.crt")
-	t.Setenv("LOREHUB_LORE_POLICY_ENDPOINT", "https://api.lorehub.example:8444/internal/lore/policy")
-	t.Setenv("LOREHUB_LORE_OBSERVATION_ENDPOINT", "https://api.lorehub.example:8444/internal/lore/observation")
+	t.Setenv("LOREHUB_LORE_POLICY_ENDPOINT", "https://lorehub.example:8444/internal/lore/policy")
+	t.Setenv("LOREHUB_LORE_OBSERVATION_ENDPOINT", "https://lorehub.example:8444/internal/lore/observation")
 	t.Setenv("LOREHUB_LORE_PUBLIC_READER_SUBJECT", "00000000-0000-4000-8000-000000000001")
 	t.Setenv("LOREHUB_LORE_ACTIONS_RUNNER_SUBJECT", "00000000-0000-4000-8000-000000000002")
 	t.Setenv("LOREHUB_OBSERVER_SERVICE_PRINCIPAL", "00000000-0000-4000-8000-000000000003")
@@ -100,6 +117,36 @@ func TestLoadInteractiveAuthenticationUsesSecureProductionCookie(t *testing.T) {
 		settings.OIDCClientID != "lorehub-web" || settings.OIDCAudience != "lorehub-api" ||
 		settings.LoginBindingCookieName != "lorehub_login_binding" {
 		t.Fatalf("unexpected interactive production settings: %#v", settings)
+	}
+}
+
+func TestLoadRejectsUnmanagedAndInsecureLoreEndpoints(t *testing.T) {
+	setProductionEnvironment(t)
+	t.Setenv("LOREHUB_LORE_AUTH_JWKS_URL", "https://lorehub.example.evil/.well-known/jwks.json")
+	if _, err := Load(); err == nil {
+		t.Fatal("an evil suffix must not be accepted as a managed Lore endpoint")
+	}
+
+	setProductionEnvironment(t)
+	t.Setenv("LOREHUB_LORE_POLICY_ENDPOINT", "http://lorehub.example/internal/lore/policy")
+	if _, err := Load(); err == nil {
+		t.Fatal("an HTTP production policy endpoint must be rejected")
+	}
+
+	setProductionEnvironment(t)
+	t.Setenv("LOREHUB_LORE_AUTH_AUDIENCE", "api")
+	if _, err := Load(); err == nil {
+		t.Fatal("the stock Lore audience shorthand must be rejected")
+	}
+}
+
+func TestLoadRejectsMissingProductionServicePrincipal(t *testing.T) {
+	setProductionEnvironment(t)
+	t.Setenv("LOREHUB_OBSERVER_SERVICE_PRINCIPAL", "")
+
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(),
+		"LOREHUB_OBSERVER_SERVICE_PRINCIPAL") {
+		t.Fatalf("expected a missing observer service principal error, got %v", err)
 	}
 }
 
@@ -157,4 +204,40 @@ func setRequiredEnvironment(t *testing.T) {
 	t.Setenv("LOREHUB_SESSION_COOKIE_DOMAIN", "")
 	t.Setenv("LOREHUB_LORE_IDENTITY", "")
 	t.Setenv("LOREHUB_ALLOW_LEGACY_LORE_IDENTITY", "")
+}
+
+func setProductionEnvironment(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("LOREHUB_ENV", "production")
+	t.Setenv("LOREHUB_AUTH_MODE", AuthModeInteractive)
+	t.Setenv("LOREHUB_OIDC_ISSUER", "https://keycloak.example/realms/lorehub")
+	t.Setenv("LOREHUB_OIDC_AUDIENCE", "lorehub-api")
+	t.Setenv("LOREHUB_OIDC_CLIENT_ID", "lorehub-web")
+	t.Setenv("LOREHUB_OIDC_CLIENT_SECRET", "client-secret")
+	t.Setenv("LOREHUB_OIDC_REDIRECT_URL", "https://app.example/auth/callback")
+	t.Setenv("LOREHUB_PUBLIC_ORIGIN", "https://app.example")
+	t.Setenv("LOREHUB_AUTH_SECRET", strings.Repeat("a", 32))
+	t.Setenv("LOREHUB_SESSION_TTL", "24h")
+	t.Setenv("LOREHUB_LOGIN_TRANSACTION_TTL", "10m")
+	t.Setenv("LOREHUB_LORE_ROOT_DOMAIN", "lorehub.example")
+	t.Setenv("LOREHUB_LORE_AUTH_ISSUER", "auth.lorehub.example")
+	t.Setenv("LOREHUB_LORE_AUTH_AUDIENCE", "lorehub.example")
+	t.Setenv("LOREHUB_LORE_AUTHORITY", "auth.lorehub.example:8443")
+	t.Setenv("LOREHUB_LORE_AUTH_URL", "ucs-auth://auth.lorehub.example:8443")
+	t.Setenv("LOREHUB_LORE_AUTH_LOGIN_URL", "https://lorehub.example/auth/lore/confirm")
+	t.Setenv("LOREHUB_LORE_AUTH_JWKS_URL", "https://lorehub.example/.well-known/jwks.json")
+	t.Setenv("LOREHUB_LORE_PUBLIC_URL", "lores://lorehub.example:41337")
+	t.Setenv("LOREHUB_AUTH_SIGNING_KEY_PATH", "/keys/current.pem")
+	t.Setenv("LOREHUB_AUTH_SIGNING_KEY_KID", "current")
+	t.Setenv("LOREHUB_LORE_AUTH_TLS_CERT", "/tls/server.crt")
+	t.Setenv("LOREHUB_LORE_AUTH_TLS_KEY", "/tls/server.key")
+	t.Setenv("LOREHUB_POLICY_TLS_CERT", "/tls/server.crt")
+	t.Setenv("LOREHUB_POLICY_TLS_KEY", "/tls/server.key")
+	t.Setenv("LOREHUB_POLICY_TLS_CLIENT_CA", "/tls/ca.crt")
+	t.Setenv("LOREHUB_LORE_POLICY_ENDPOINT", "https://lorehub.example:8444/internal/lore/policy")
+	t.Setenv("LOREHUB_LORE_OBSERVATION_ENDPOINT", "https://lorehub.example:8444/internal/lore/observation")
+	t.Setenv("LOREHUB_LORE_PUBLIC_READER_SUBJECT", "00000000-0000-4000-8000-000000000001")
+	t.Setenv("LOREHUB_LORE_ACTIONS_RUNNER_SUBJECT", "00000000-0000-4000-8000-000000000002")
+	t.Setenv("LOREHUB_OBSERVER_SERVICE_PRINCIPAL", "00000000-0000-4000-8000-000000000003")
+	t.Setenv("LOREHUB_LORE_REPOSITORY_REGISTRATION_SUBJECT", "00000000-0000-4000-8000-000000000004")
 }

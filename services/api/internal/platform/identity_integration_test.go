@@ -54,6 +54,9 @@ func TestIdentitySearchFiltersPrivateResources(t *testing.T) {
 	mustIdentityExec(t, pool, `
 		INSERT INTO organization_memberships (organization_id, user_id, role) VALUES ($1, $2, 'owner')
 	`, orgID, alice.ID)
+	mustIdentityExec(t, pool, `
+		INSERT INTO organization_memberships (organization_id, user_id, role) VALUES ($1, $2, 'member')
+	`, orgID, bob.ID)
 	for _, fixture := range []struct {
 		id         string
 		slug       string
@@ -125,6 +128,7 @@ func TestIdentityVisibilityMatrixCoversEveryRepositoryProjection(t *testing.T) {
 		role string
 	}{
 		{owner.ID, "owner"}, {maintainer.ID, "maintainer"}, {member.ID, "member"},
+		{grantee.ID, "member"},
 		{suspendedOwner.ID, "owner"},
 	} {
 		mustIdentityExec(t, pool, `
@@ -190,7 +194,7 @@ func TestIdentityVisibilityMatrixCoversEveryRepositoryProjection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("explicit grant search: %v", err)
 	}
-	assertVisibleRepositories("explicit grant search", search.Repositories, "public", "private")
+	assertVisibleRepositories("explicit grant search", search.Repositories, "public", "internal", "private")
 	search, err = store.Search(ctx, &owner, "visibility-", "repositories", 20)
 	if err != nil {
 		t.Fatalf("organization owner search: %v", err)
@@ -205,7 +209,7 @@ func TestIdentityVisibilityMatrixCoversEveryRepositoryProjection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("suspended owner search: %v", err)
 	}
-	assertVisibleRepositories("suspended owner search", search.Repositories, "public")
+	assertVisibleRepositories("suspended owner search", search.Repositories)
 
 	profile, err := store.UserProfile(ctx, nil, owner.Username)
 	if err != nil || profile.RepositoryCount != 1 {
@@ -216,8 +220,8 @@ func TestIdentityVisibilityMatrixCoversEveryRepositoryProjection(t *testing.T) {
 		t.Fatalf("organization member profile count = %d, err=%v; want 2", profile.RepositoryCount, err)
 	}
 	profile, err = store.UserProfile(ctx, &grantee, owner.Username)
-	if err != nil || profile.RepositoryCount != 2 {
-		t.Fatalf("explicit grant profile count = %d, err=%v; want 2", profile.RepositoryCount, err)
+	if err != nil || profile.RepositoryCount != 3 {
+		t.Fatalf("explicit grant profile count = %d, err=%v; want 3", profile.RepositoryCount, err)
 	}
 	profile, err = store.UserProfile(ctx, &owner, owner.Username)
 	if err != nil || profile.RepositoryCount != 3 {
@@ -228,8 +232,8 @@ func TestIdentityVisibilityMatrixCoversEveryRepositoryProjection(t *testing.T) {
 		t.Fatalf("organization maintainer profile count = %d, err=%v; want 2", profile.RepositoryCount, err)
 	}
 	profile, err = store.UserProfile(ctx, &suspendedOwner, owner.Username)
-	if err != nil || profile.RepositoryCount != 1 {
-		t.Fatalf("suspended owner profile count = %d, err=%v; want 1", profile.RepositoryCount, err)
+	if err != nil || profile.RepositoryCount != 0 {
+		t.Fatalf("suspended owner profile count = %d, err=%v; want 0", profile.RepositoryCount, err)
 	}
 	userRepositories, err := store.UserRepositories(ctx, nil, owner.Username)
 	if err != nil {
@@ -245,7 +249,7 @@ func TestIdentityVisibilityMatrixCoversEveryRepositoryProjection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("explicit grant profile repositories: %v", err)
 	}
-	assertVisibleRepositories("explicit grant profile repositories", userRepositories, "public", "private")
+	assertVisibleRepositories("explicit grant profile repositories", userRepositories, "public", "internal", "private")
 	userRepositories, err = store.UserRepositories(ctx, &owner, owner.Username)
 	if err != nil {
 		t.Fatalf("organization owner profile repositories: %v", err)
@@ -260,7 +264,7 @@ func TestIdentityVisibilityMatrixCoversEveryRepositoryProjection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("suspended owner profile repositories: %v", err)
 	}
-	assertVisibleRepositories("suspended owner profile repositories", userRepositories, "public")
+	assertVisibleRepositories("suspended owner profile repositories", userRepositories)
 
 	organization, err := store.Organization(ctx, nil, orgSlug)
 	if err != nil || organization.RepositoryCount != 1 {
@@ -279,8 +283,8 @@ func TestIdentityVisibilityMatrixCoversEveryRepositoryProjection(t *testing.T) {
 		t.Fatalf("organization maintainer count = %d, err=%v; want 2", organization.RepositoryCount, err)
 	}
 	organization, err = store.Organization(ctx, &suspendedOwner, orgSlug)
-	if err != nil || organization.RepositoryCount != 1 {
-		t.Fatalf("suspended owner organization count = %d, err=%v; want 1", organization.RepositoryCount, err)
+	if err != nil || organization.RepositoryCount != 0 {
+		t.Fatalf("suspended owner organization count = %d, err=%v; want 0", organization.RepositoryCount, err)
 	}
 	organizationRepositories, err := store.OrganizationRepositories(ctx, nil, orgSlug)
 	if err != nil {
@@ -296,7 +300,9 @@ func TestIdentityVisibilityMatrixCoversEveryRepositoryProjection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("explicit grant organization repositories: %v", err)
 	}
-	assertVisibleRepositories("explicit grant organization repositories", organizationRepositories, "public", "private")
+	assertVisibleRepositories(
+		"explicit grant organization repositories", organizationRepositories, "public", "internal", "private",
+	)
 	organizationRepositories, err = store.OrganizationRepositories(ctx, &owner, orgSlug)
 	if err != nil {
 		t.Fatalf("organization owner repositories: %v", err)
@@ -311,7 +317,7 @@ func TestIdentityVisibilityMatrixCoversEveryRepositoryProjection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("suspended owner repositories: %v", err)
 	}
-	assertVisibleRepositories("suspended owner repositories", organizationRepositories, "public")
+	assertVisibleRepositories("suspended owner repositories", organizationRepositories)
 
 	dashboard, err := store.Dashboard(ctx, member)
 	if err != nil {
@@ -330,7 +336,7 @@ func TestIdentityVisibilityMatrixCoversEveryRepositoryProjection(t *testing.T) {
 	}{
 		{owner, []string{"public", "internal", "private"}},
 		{maintainer, []string{"public", "internal"}},
-		{suspendedOwner, []string{"public"}},
+		{suspendedOwner, []string{}},
 	} {
 		dashboard, err = store.Dashboard(ctx, dashboardUser.user)
 		if err != nil {
@@ -376,7 +382,7 @@ func TestIdentityNotificationsRespectRepositoryVisibilityAndActiveRecipients(t *
 		INSERT INTO organizations (id, slug, display_name, visibility, created_by)
 		VALUES ($1, $2, 'Notification organization', 'public', $3)
 	`, orgID, orgSlug, owner.ID)
-	for _, userID := range []string{owner.ID, member.ID, teamUser.ID, suspended.ID} {
+	for _, userID := range []string{owner.ID, member.ID, grantee.ID, teamUser.ID, suspended.ID} {
 		mustIdentityExec(t, pool, `
 			INSERT INTO organization_memberships (organization_id, user_id, role) VALUES ($1, $2, 'member')
 		`, orgID, userID)
@@ -456,7 +462,7 @@ func TestIdentityNotificationsRespectRepositoryVisibilityAndActiveRecipients(t *
 	want := map[string]map[string]bool{
 		owner.ID:     {"public": true, "internal": true, "private": true},
 		member.ID:    {"internal": true},
-		grantee.ID:   {"private": true},
+		grantee.ID:   {"internal": true, "private": true},
 		teamUser.ID:  {"internal": true, "private": true},
 		suspended.ID: {},
 	}
@@ -505,7 +511,7 @@ func TestIdentityNotificationsRespectRepositoryVisibilityAndActiveRecipients(t *
 	mustIdentityExec(t, pool, `
 		DELETE FROM repository_memberships WHERE repository_id = $1 AND user_id = $2
 	`, repositoryIDs["private"], grantee.ID)
-	assertRevoked(grantee, 0, false)
+	assertRevoked(grantee, 1, false)
 	mustIdentityExec(t, pool, `
 		DELETE FROM team_repository_roles WHERE team_id = $1 AND repository_id = $2
 	`, teamID, repositoryIDs["private"])

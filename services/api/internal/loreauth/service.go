@@ -51,9 +51,7 @@ func NewService(
 	if parsed.Scheme != "https" && !(allowInsecureLoginURL && parsed.Scheme == "http") {
 		return nil, errors.New("Lore auth login URL must use HTTPS outside local development")
 	}
-	authEndpoint, err := url.Parse(authURL)
-	if err != nil || authEndpoint.User != nil || authEndpoint.Scheme != "ucs-auth" || authEndpoint.Host == "" ||
-		authEndpoint.RawQuery != "" || authEndpoint.Fragment != "" {
+	if err := loreclient.ValidateAuthURL(authURL); err != nil {
 		return nil, errors.New("Lore auth URL must be a fixed ucs-auth endpoint")
 	}
 	return &Service{policy: policy, sessions: sessions, tokens: tokens, loginURL: strings.TrimRight(loginURL, "/"),
@@ -125,6 +123,10 @@ func (service *Service) IssueResourceToken(
 	if err != nil {
 		return loreclient.Credential{}, err
 	}
+	authenticationToken, _, err := service.tokens.MintAuthenticationToken(user)
+	if err != nil {
+		return loreclient.Credential{}, err
+	}
 	token, _, err := service.tokens.MintResourceToken(user, []LoreResourcePermission{{
 		ResourceID: resourceID,
 		Permission: authz.PermissionList(narrowed),
@@ -132,7 +134,19 @@ func (service *Service) IssueResourceToken(
 	if err != nil {
 		return loreclient.Credential{}, err
 	}
-	return service.credentialFromToken(token, resourceID, requested, loreclient.UserPrincipal(userID))
+	return service.credentialFromToken(token, authenticationToken, resourceID, requested,
+		loreclient.UserPrincipal(userID))
+}
+
+func (service *Service) IssueAuthenticationToken(
+	ctx context.Context,
+	userID string,
+) (string, time.Time, error) {
+	user, err := service.policy.UserInfo(ctx, userID)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	return service.tokens.MintAuthenticationToken(user)
 }
 
 type servicePrincipalPolicy interface {
@@ -145,20 +159,30 @@ type servicePrincipalPolicy interface {
 
 func (service *Service) IssueServiceResourceToken(
 	ctx context.Context,
-	principalName string,
+	principal loreclient.Principal,
 	resourceID string,
 	requested []string,
 ) (loreclient.Credential, error) {
 	if !authz.ValidResourceID(resourceID) {
 		return loreclient.Credential{}, authz.ErrInvalidResource
 	}
+	if principal.UserID != "" || principal.ServicePurpose == "" || principal.Subject == "" {
+		return loreclient.Credential{}, loreclient.ErrInvalidPrincipal
+	}
+	principalName, err := servicePrincipalName(principal.ServicePurpose)
+	if err != nil {
+		return loreclient.Credential{}, err
+	}
 	policy, ok := service.policy.(servicePrincipalPolicy)
 	if !ok {
 		return loreclient.Credential{}, errors.New("service principal policy is unavailable")
 	}
-	principal, granted, err := policy.ServicePrincipalResource(ctx, principalName, resourceID)
+	servicePrincipal, granted, err := policy.ServicePrincipalResource(ctx, principalName, resourceID)
 	if err != nil {
 		return loreclient.Credential{}, err
+	}
+	if servicePrincipal.ID != principal.Subject {
+		return loreclient.Credential{}, loreclient.ErrCredentialContract
 	}
 	narrowed, err := authz.IntersectPermissions(permissionMap(granted), requested)
 	if err != nil || len(narrowed) == 0 {
@@ -167,19 +191,23 @@ func (service *Service) IssueServiceResourceToken(
 		}
 		return loreclient.Credential{}, authz.ErrScopeWidened
 	}
-	token, _, err := service.tokens.MintServiceResourceToken(principal, []LoreResourcePermission{{
+	token, _, err := service.tokens.MintServiceResourceToken(servicePrincipal, []LoreResourcePermission{{
 		ResourceID: resourceID,
 		Permission: authz.PermissionList(narrowed),
 	}})
 	if err != nil {
 		return loreclient.Credential{}, err
 	}
-	return service.credentialFromToken(token, resourceID, requested,
-		loreclient.ServicePrincipal("service", principal.ID))
+	authenticationToken, _, err := service.tokens.MintServiceAuthenticationToken(servicePrincipal)
+	if err != nil {
+		return loreclient.Credential{}, err
+	}
+	return service.credentialFromToken(token, authenticationToken, resourceID, requested, principal)
 }
 
 func (service *Service) credentialFromToken(
 	rawToken string,
+	authenticationToken string,
 	resourceID string,
 	requested []string,
 	principal loreclient.Principal,
@@ -187,6 +215,20 @@ func (service *Service) credentialFromToken(
 	verified, err := service.tokens.VerifyResourceToken(rawToken)
 	if err != nil {
 		return loreclient.Credential{}, errors.New("issued Lore token could not be verified")
+	}
+	principalSubject := principal.UserID
+	if principalSubject == "" {
+		principalSubject = principal.Subject
+	}
+	if verified.Claims.Subject != principalSubject ||
+		verified.Claims.IsServiceAccount != (principal.ServicePurpose != "") {
+		return loreclient.Credential{}, loreclient.ErrCredentialContract
+	}
+	verifiedAuthentication, err := service.tokens.VerifyAuthenticationToken(authenticationToken)
+	if err != nil || verifiedAuthentication.Claims.Subject != principalSubject ||
+		verifiedAuthentication.Claims.IsServiceAccount != (principal.ServicePurpose != "") ||
+		len(verifiedAuthentication.Claims.Resources) != 0 {
+		return loreclient.Credential{}, loreclient.ErrCredentialContract
 	}
 	permissions, found := resourcePermissions(verified.Claims.Resources, resourceID)
 	if !found || len(permissions) == 0 {
@@ -198,17 +240,19 @@ func (service *Service) credentialFromToken(
 		scope = loreclient.ScopeWrite
 	}
 	return loreclient.Credential{
-		Partition:       strings.TrimPrefix(resourceID, "urc-"),
-		Scope:           scope,
-		ResourceID:      resourceID,
-		Subject:         verified.Claims.Subject,
-		RequestedScopes: []string{string(scopeForRequested(requested))},
-		GrantedScopes:   []string{string(scope)},
-		Identity:        verified.Claims.Subject,
-		Token:           rawToken,
-		AuthURL:         service.authURL,
-		ExpiresAt:       verified.Claims.Expiry.Time(),
-		Principal:       principal,
+		Partition:               strings.TrimPrefix(resourceID, "urc-"),
+		Scope:                   scope,
+		ResourceID:              resourceID,
+		Subject:                 verified.Claims.Subject,
+		RequestedScopes:         []string{string(scopeForRequested(requested))},
+		GrantedScopes:           []string{string(scope)},
+		Identity:                verified.Claims.Subject,
+		Token:                   rawToken,
+		AuthenticationToken:     authenticationToken,
+		AuthURL:                 service.authURL,
+		ExpiresAt:               verified.Claims.Expiry.Time(),
+		AuthenticationExpiresAt: verifiedAuthentication.Claims.Expiry.Time(),
+		Principal:               principal,
 	}, nil
 }
 
@@ -372,21 +416,56 @@ func (service *Service) ExchangeUserTokenForMultiresourceToken(
 			return nil, status.Error(codes.InvalidArgument, "resource IDs must be exact urc-{repository_id} values")
 		}
 		seen[resourceID] = true
-		current, err := service.policy.EffectivePermissions(ctx, claims.Subject, resourceID)
-		if err != nil {
-			return nil, status.Error(codes.PermissionDenied, "requested Lore resource is not authorized")
+		var permissions []string
+		if claims.IsServiceAccount {
+			servicePolicy, ok := service.policy.(servicePrincipalPolicy)
+			if !ok || claims.PreferredUsername == "" {
+				return nil, status.Error(codes.PermissionDenied,
+					"service principal authorization is unavailable")
+			}
+			principal, granted, policyErr := servicePolicy.ServicePrincipalResource(
+				ctx, claims.PreferredUsername, resourceID,
+			)
+			if policyErr != nil || principal.ID != claims.Subject {
+				return nil, status.Error(codes.PermissionDenied,
+					"requested Lore resource is not authorized")
+			}
+			permissions = granted
+		} else {
+			current, permissionErr := service.policy.EffectivePermissions(ctx, claims.Subject, resourceID)
+			if permissionErr != nil {
+				return nil, status.Error(codes.PermissionDenied,
+					"requested Lore resource is not authorized")
+			}
+			permissions = current.Permissions
 		}
-		permissions := current.Permissions
 		if len(permissions) == 0 {
 			return nil, status.Error(codes.PermissionDenied, "requested Lore resource is not authorized")
 		}
 		resources = append(resources, LoreResourcePermission{ResourceID: resourceID, Permission: permissions})
 	}
-	user, err := service.policy.UserInfo(ctx, claims.Subject)
-	if err != nil {
-		return nil, status.Error(codes.PermissionDenied, "authenticated user is unavailable")
+	var user authz.UserInfo
+	if claims.IsServiceAccount {
+		servicePolicy := service.policy.(servicePrincipalPolicy)
+		principal, _, serviceErr := servicePolicy.ServicePrincipalResource(ctx,
+			claims.PreferredUsername, resources[0].ResourceID)
+		if serviceErr != nil || principal.ID != claims.Subject {
+			return nil, status.Error(codes.PermissionDenied, "service principal is unavailable")
+		}
+		user = principal
+	} else {
+		user, err = service.policy.UserInfo(ctx, claims.Subject)
+		if err != nil {
+			return nil, status.Error(codes.PermissionDenied, "authenticated user is unavailable")
+		}
 	}
-	rawToken, expiresAt, err := service.tokens.MintResourceToken(user, resources)
+	var rawToken string
+	var expiresAt time.Time
+	if claims.IsServiceAccount {
+		rawToken, expiresAt, err = service.tokens.MintServiceResourceToken(user, resources)
+	} else {
+		rawToken, expiresAt, err = service.tokens.MintResourceToken(user, resources)
+	}
 	if err != nil {
 		return nil, status.Error(codes.Internal, "could not issue resource token")
 	}
