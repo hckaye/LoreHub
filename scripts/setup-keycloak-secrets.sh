@@ -102,6 +102,7 @@ set_var KEYCLOAK_ADMIN_PASSWORD "$(gen_secret 24)"
 set_var KEYCLOAK_DB_PASSWORD "$(gen_secret 24)"
 set_var LOREHUB_OIDC_CLIENT_SECRET "$(gen_secret 32)"
 set_var LOREHUB_AUTH_SECRET "$(gen_secret 32)"
+set_var LOREHUB_ACTIONS_SECRET_KEY_ID "local-actions-v1"
 set_var LOREHUB_ACTIONS_SECRET_KEY "$(gen_base64_key 32)"
 
 chmod 600 "$env_file"

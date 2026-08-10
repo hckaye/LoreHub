@@ -27,7 +27,7 @@ assert_no_secret_output() {
       ;;
   esac
   for key in POSTGRES_PASSWORD KEYCLOAK_ADMIN_PASSWORD KEYCLOAK_DB_PASSWORD \
-    LOREHUB_OIDC_CLIENT_SECRET LOREHUB_AUTH_SECRET; do
+    LOREHUB_OIDC_CLIENT_SECRET LOREHUB_AUTH_SECRET LOREHUB_ACTIONS_SECRET_KEY; do
     secret=$(value_for "$key")
     case "$output_text" in
       *"$secret"*)
@@ -49,9 +49,10 @@ output=$("${root}/scripts/setup-keycloak-secrets.sh" --env-file "$env_file")
 assert_no_secret_output "$output"
 test "$(file_mode "$env_file")" = 600
 for key in POSTGRES_PASSWORD KEYCLOAK_ADMIN_PASSWORD KEYCLOAK_DB_PASSWORD \
-  LOREHUB_OIDC_CLIENT_SECRET LOREHUB_AUTH_SECRET; do
+  LOREHUB_OIDC_CLIENT_SECRET LOREHUB_AUTH_SECRET LOREHUB_ACTIONS_SECRET_KEY; do
   test -n "$(value_for "$key")"
 done
+test "$(value_for LOREHUB_ACTIONS_SECRET_KEY_ID)" = local-actions-v1
 
 printf '%s\n' \
   'MY_POSTGRES_PASSWORD=must-stay' \
@@ -59,6 +60,7 @@ printf '%s\n' \
   'MY_KEYCLOAK_DB_PASSWORD=must-stay' \
   'MY_LOREHUB_OIDC_CLIENT_SECRET=must-stay' \
   'MY_LOREHUB_AUTH_SECRET=must-stay' \
+  'MY_LOREHUB_ACTIONS_SECRET_KEY=must-stay' \
   'POSTGRES_PASSWORD=preserve-me' \
   'NON_SECRET_SETTING=keep-me' >"$env_file"
 chmod 644 "$env_file"
@@ -71,12 +73,14 @@ test "$(value_for MY_KEYCLOAK_ADMIN_PASSWORD)" = must-stay
 test "$(value_for MY_KEYCLOAK_DB_PASSWORD)" = must-stay
 test "$(value_for MY_LOREHUB_OIDC_CLIENT_SECRET)" = must-stay
 test "$(value_for MY_LOREHUB_AUTH_SECRET)" = must-stay
+test "$(value_for MY_LOREHUB_ACTIONS_SECRET_KEY)" = must-stay
 test "$(value_for NON_SECRET_SETTING)" = keep-me
 for key in POSTGRES_PASSWORD KEYCLOAK_ADMIN_PASSWORD KEYCLOAK_DB_PASSWORD \
-  LOREHUB_OIDC_CLIENT_SECRET LOREHUB_AUTH_SECRET; do
+  LOREHUB_OIDC_CLIENT_SECRET LOREHUB_AUTH_SECRET LOREHUB_ACTIONS_SECRET_KEY; do
   test "$(count_for "$key")" = 1
   test -n "$(value_for "$key")"
 done
+test "$(value_for LOREHUB_ACTIONS_SECRET_KEY_ID)" = local-actions-v1
 
 preserved=$(value_for POSTGRES_PASSWORD)
 output=$("${root}/scripts/setup-keycloak-secrets.sh" --env-file "$env_file" --force)
@@ -85,9 +89,10 @@ forced=$(value_for POSTGRES_PASSWORD)
 test "$forced" != "$preserved"
 test "$(file_mode "$env_file")" = 600
 for key in POSTGRES_PASSWORD KEYCLOAK_ADMIN_PASSWORD KEYCLOAK_DB_PASSWORD \
-  LOREHUB_OIDC_CLIENT_SECRET LOREHUB_AUTH_SECRET; do
+  LOREHUB_OIDC_CLIENT_SECRET LOREHUB_AUTH_SECRET LOREHUB_ACTIONS_SECRET_KEY; do
   test "$(count_for "$key")" = 1
 done
+test "$(count_for LOREHUB_ACTIONS_SECRET_KEY_ID)" = 1
 test "$(value_for NON_SECRET_SETTING)" = keep-me
 
 echo "Keycloak secret setup behavior passed."
