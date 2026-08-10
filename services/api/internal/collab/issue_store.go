@@ -61,8 +61,8 @@ func scanIssue(row pgx.Row) (Issue, error) {
 
 // UpdateIssue applies a partial update to an issue. When IfMatch is set, the
 // update is conditional on the stored updated_at matching, providing optimistic
-// concurrency; a mismatch returns ErrPreconditionFailed. Only the author or a
-// triage+ actor may update; insufficient permission returns ErrForbidden.
+// concurrency; a mismatch returns ErrPreconditionFailed. A triage+ actor may
+// update; insufficient permission returns ErrForbidden.
 func (s *store) UpdateIssue(
 	ctx context.Context,
 	actor platform.User,
@@ -70,11 +70,11 @@ func (s *store) UpdateIssue(
 	number int64,
 	input UpdateIssueInput,
 ) (Issue, error) {
-	allowed, authorID, orgID, err := s.checkIssueMutation(ctx, actor, repoID, number)
+	allowed, orgID, err := s.checkIssueMutation(ctx, actor, repoID, number)
 	if err != nil {
 		return Issue{}, err
 	}
-	if !allowed && authorID != actor.ID {
+	if !allowed {
 		return Issue{}, platform.ErrForbidden
 	}
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
@@ -129,32 +129,32 @@ func (s *store) UpdateIssue(
 }
 
 // checkIssueMutation reports whether the actor has triage+ permission on the
-// issue's repository and returns the issue author and organization id.
+// issue's repository and returns the organization id.
 func (s *store) checkIssueMutation(
 	ctx context.Context,
 	actor platform.User,
 	repoID string,
 	number int64,
-) (bool, string, string, error) {
-	var authorID, orgID string
+) (bool, string, error) {
+	var orgID string
 	err := s.pool.QueryRow(ctx, `
-		SELECT i.author_id, r.organization_id
+		SELECT r.organization_id
 		FROM issues i
 		JOIN repositories r ON r.id = i.repository_id
 		WHERE i.repository_id = $1 AND i.number = $2
-	`, repoID, number).Scan(&authorID, &orgID)
+	`, repoID, number).Scan(&orgID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return false, "", "", platform.ErrNotFound
+		return false, "", platform.ErrNotFound
 	}
 	if err != nil {
-		return false, "", "", fmt.Errorf("find issue for mutation: %w", err)
+		return false, "", fmt.Errorf("find issue for mutation: %w", err)
 	}
 	repo := Repository{ID: repoID, OrganizationID: orgID}
 	access, err := s.RepositoryPermission(ctx, actor, repo)
 	if err != nil {
-		return false, "", "", err
+		return false, "", err
 	}
-	return access.AtLeast(PermTriage), authorID, orgID, nil
+	return access.AtLeast(PermTriage), orgID, nil
 }
 
 func buildIssueUpdateQuery(

@@ -63,7 +63,7 @@ outboxへ記録し、workerが再送する。重複通知は外部イベントID
 対応範囲をAPIと画面で明示し、GitHub公開のワークフロー例を使った実行テストで差を検出する。
 
 任意コードを実行するrunnerはAPIと同じホストへ置かない。本番では専用ノード上のrootlessコンテナまたはVMを使い、
-ホストのDocker socketを直接渡さない。開発環境だけは、明示的なprofileでローカルDockerを利用できる。
+ホストのDocker socketを直接渡さない。runnerは専用のrunner-engineまたはVMで隔離して実行する。
 
 ### 画面と翻訳
 

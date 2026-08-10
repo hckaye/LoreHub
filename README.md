@@ -11,10 +11,11 @@ LoreHubは、Loreリポジトリ向けの共同開発基盤です。LoreをVCS�
 
 ## 現在実装されている範囲
 
-- Lore公式Go SDKを使ったリポジトリ確認、branch一覧、revision tree、ファイル、履歴、差分取得
-- Loreのbranch merge、競合解決、abort、restart、pushを含むプルリクエストのマージ lifecycle
+- Lore公式Go SDKを使ったリポジトリ確認とbranch一覧取得
 - PostgreSQLのmigration、組織、権限、リポジトリ登録、Issue、レビュー、CI、監査用schema
 - OIDCトークンを検証するGo API
+- Lore 0.8.6互換のUCS認証、resource限定JWT、JWKS、TLS、protected branch hook
+- 組織チーム、直接collaborator、リポジトリ方針、明示的なobliterate権限、Lore Links宣言
 - 公開リポジトリ、branch、Issueを表示する英語／日本語UI
 - Loreのbranch latestを確認してCIを登録するworker
 - `.github/workflows`を`nektos/act`で実行するGitHub Actions互換runner
@@ -86,8 +87,16 @@ LOREHUB_AUTH_MODE=disabled go run ./services/api/cmd/lorehub serve
 Keycloakの構成、ソーシャルプロバイダー、SMTP、本番のTLSとリバースプロキシ、バックアップについては
 [Keycloak運用ガイド](docs/operations/keycloak.md)を参照してください。
 
-開発用Lore Serverはデータと自己署名証明書をDocker volumeへ保存します。認証なしの単一ノード構成なので、公開環境で
-使ってはいけません。本番ではLore公式のストレージ、JWT検証、TLS、バックアップ構成を使用してください。
+開発用Lore ServerはデータとローカルCAで署名したTLS証明書をDocker volumeへ保存します。CA秘密鍵は初期化専用の
+別volumeに隔離され、Lore/APIからは参照できません。ComposeでもJWT検証とUCS gRPC認証を有効にしています。
+ローカルCAのtrust手順、本番の鍵交代、Lore hook、partition境界は
+[認可境界の運用ガイド](docs/operations/control-plane-authorization.md)を参照してください。
+
+Lore 0.8.6の`environment.endpoint.auth_url`はUCS認証とRebacが共用します。このComposeは公式の
+`ucs-auth://auth.lorehub.localhost:8443`広告を使い、Lore 0.8.6のclientがUCS接続をHTTPSへ変換します。hostのCLIが
+同じpublic URLを使えるよう、Lore container内だけAuthURLの名前をローカルbridgeへ解決します。bridgeは設定した内部HTTPS
+authorityへCAとSANを検証して転送します。issuer、audience、JWKS、Lore URLも同じmanaged root domainに揃えています。
+詳細は運用ガイドの「URL、audience、鍵」を参照してください。
 
 ### CI runner
 
@@ -95,8 +104,9 @@ Keycloakの構成、ソーシャルプロバイダー、SMTP、本番のTLSと�
 docker compose -f infra/compose.yaml --profile runner up --build
 ```
 
-開発用profileはホストのDocker socketをrunnerへ渡します。任意コードを実行できるため、信頼できないリポジトリには
-使えません。本番ではAPIと別の専用ノードに配置し、rootlessコンテナまたはVMでジョブごとに隔離してください。
+runner profileはホストのDocker socketを渡しません。任意コードを実行するrunnerは、専用のrunner-engineまたはVMを
+使い、ジョブごとに隔離してください。本番ではAPIと別の専用ノードに配置し、runner-engineへの接続も専用の認証境界で
+保護します。
 
 ## ホスト上での開発
 
@@ -139,29 +149,8 @@ transactionは最大15分）。
 `GET /auth/login?prompt=create`を使います。互換性のため`kc_action=register`も受け付けますが、値は厳密に検証し、
 認証プロバイダーへは`prompt=create`だけを渡します。その他の`prompt`や`kc_action`は400を返します。
 
-LoreHubのコード閲覧とマージ操作は、ブラウザ利用者のLore tokenをLoreへ転送しません。
-本番では注入されたcredential issuerを毎回呼び、利用者または明示的なサービス用途、Lore partition、
-必要なscopeに結び付いた短命credentialを取得します。`identity`、`token`、`authUrl`、有効期限は
-要求と一致しなければ使用せず、AuthURLは設定した`ucs-auth://` authorityと完全一致する必要があります。
-利用者のwrite/admin権限、branch rule、レビュー、CI、CSRFはLoreHub APIが先に確認します。
-監査記録には実際の利用者を保存します。
-本番のcredential issuerが未接続の場合、APIは起動時にfail closedします。
-`LOREHUB_LORE_AUTHORITY`にはissuerが返す`ucs-auth://` authorityを設定します。
-サービス用principalは用途名だけでは成立せず、対応するJWTの不変なsubjectも必要です。本番では
-`LOREHUB_LORE_PUBLIC_READER_SUBJECT`、`LOREHUB_LORE_ACTIONS_RUNNER_SUBJECT`、
-`LOREHUB_LORE_REPOSITORY_REGISTRATION_SUBJECT`を明示設定します。subjectが用途名と同じである必要はなく、
-issuerが返すcredentialの`identity`は要求したsubjectと完全一致しなければ使用しません。
-secret、token、identity設定値をリポジトリへコミットしないでください。
-本番でpartitionに対応するcredentialが無い、要求と一致しない、または期限が不正な場合もfail closedになります。
-`AuthURL`とtokenはログ、エラー、URLへ出力しません。サービスidentityとsecretは最小権限で管理し、
-issuerとsecret managerは運用環境の信頼境界で管理し、短命credentialを毎回発行してください。
-
-ローカル開発とtestだけは、`LOREHUB_LORE_ALLOW_DEVELOPMENT_FALLBACK=true`と
-`LOREHUB_LORE_IDENTITY`または開発用`LOREHUB_LORE_CREDENTIALS`を明示した場合に限り、
-認証情報のない開発用credentialを使えます。
-このcredentialは`InsecureDevelopment`として扱われ、本番用SDKでは拒否されます。
-このfallbackはdevelopment環境以外では起動時に拒否されます。
-Actions runnerのcredentialもpartitionとread scopeを指定して解決し、ブラウザのコード閲覧・マージ権限とは分離します。
+Loreの読み取り・書き込み・mergeとrunnerのcheckoutは、現在の利用者またはrunner専用利用者の短命resource限定
+tokenを使います。`LOREHUB_LORE_IDENTITY`は隔離したlocal互換モードでのみ使え、本番では設定できません。
 
 Keycloakを使う場合、ローカルのissuerは
 `http://keycloak.localhost:8280/realms/lorehub`、audienceは`lorehub-api`です。本番では公開HTTPSのissuerを設定します。
@@ -170,31 +159,24 @@ APIをDockerコンテナで起動する場合のdiscovery到達性について�
 
 ## APIの主な入口
 
-- `GET`（不要）: `/health/live` — プロセスの確認
-- `GET`（不要）: `/health/ready` — PostgreSQL接続の確認
-- `GET`（不要）: `/auth/login` — OIDCログイン／登録開始
-- `GET`（不要）: `/auth/callback` — OIDCログイン完了
-- `POST`（CSRF）: `/auth/logout` — セッション終了
-- `GET`（不要）: `/api/v1/auth/session` — ログイン状態の確認
-- `GET`（不要）: `/api/v1/explore/repositories` — 公開リポジトリ一覧
-- `POST`（OIDC）: `/api/v1/organizations` — 組織作成
-- `POST`（OIDC）: `/api/v1/organizations/{org}/repositories` — Loreリポジトリ登録
-- `GET`（不要）: `/api/v1/repositories/{owner}/{repo}/branches` — Lore branch一覧
-- `GET`（任意認証）: `/api/v1/repositories/{owner}/{repo}/tree`、`/file`、`/file/history`、`/raw`
-  — Loreのツリーとファイル
-- `GET`（任意認証）: `/api/v1/repositories/{owner}/{repo}/revisions`、`/diff` — 履歴と差分
-- `GET`（不要）: `/api/v1/repositories/{owner}/{repo}/issues` — 公開Issue一覧
-- `POST`（OIDC）: `/api/v1/repositories/{owner}/{repo}/issues` — Issue作成
-- `GET`（任意認証）: `/api/v1/repositories/{owner}/{repo}/merge-requests/{number}/merge-readiness`
-  — マージ条件確認
-- `POST`（CSRF／write）: `/api/v1/repositories/{owner}/{repo}/merge-requests/{number}/merge/start`
-  と `/merge/continue` — Lore merge開始／再開
-- `POST`（CSRF／write）: `/api/v1/repositories/{owner}/{repo}/merge-requests/{number}/merge`
-  — Lore pushとDB確定
+| Method | Path                                           | 認証          | 目的                   |
+| ------ | ---------------------------------------------- | ------------- | ---------------------- |
+| `GET`  | `/health/live`                                 | 不要          | プロセスの確認         |
+| `GET`  | `/health/ready`                                | 不要          | PostgreSQL接続の確認   |
+| `GET`  | `/auth/login`                                  | 不要          | OIDCログイン／登録開始 |
+| `GET`  | `/auth/callback`                               | 不要          | OIDCログイン完了       |
+| `POST` | `/auth/logout`                                 | CSRF          | セッション終了         |
+| `GET`  | `/api/v1/auth/session`                         | 不要          | ログイン状態の確認     |
+| `GET`  | `/api/v1/explore/repositories`                 | 不要          | 公開リポジトリ一覧     |
+| `POST` | `/api/v1/organizations`                        | OIDC          | 組織作成               |
+| `POST` | `/api/v1/organizations/{org}/repositories`     | OIDC          | Loreリポジトリ登録     |
+| `GET`  | `/api/v1/repositories/{owner}/{repo}/branches` | OIDC／session | Lore branch一覧        |
+| `GET`  | `/api/v1/repositories/{owner}/{repo}/issues`   | 不要          | 公開Issue一覧          |
+| `POST` | `/api/v1/repositories/{owner}/{repo}/issues`   | OIDC          | Issue作成              |
 
 更新APIは、既存クライアントからは`Authorization: Bearer <token>`で利用できます。ブラウザセッションで利用する場合は、
-`GET /api/v1/auth/session`が返すCSRF tokenを`X-CSRF-Token`ヘッダーに付けます。APIはOIDCのissuer、audience、
-署名、有効期限、nonceを検証し、初回ログイン時に外部identityとローカル利用者を関連付けます。
+`GET /api/v1/auth/session`が返すCSRF tokenを`X-CSRF-Token`ヘッダーに付けます。APIはOIDCのissuer、audience、署名、
+有効期限、nonceを検証し、初回ログイン時に外部identityとローカル利用者を関連付けます。
 
 ## GitHub Actions互換範囲
 

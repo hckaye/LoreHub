@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package epic_urc;
+
+option go_package = "github.com/lorehub/lorehub/services/api/internal/loreauth/epic_urc";
+
+import "auth_session.proto";
+import "auth_exchange.proto";
+import "auth_permission.proto";
+import "auth_user.proto";
+
+service UrcAuthApi {
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse) {};
+  rpc StartAuthSession(StartAuthSessionRequest)
+      returns (StartAuthSessionResponse) {};
+  rpc GetAuthSession(GetAuthSessionRequest) returns (GetAuthSessionResponse) {};
+  rpc RefreshAuthSession(RefreshAuthSessionRequest)
+      returns (RefreshAuthSessionResponse) {};
+  rpc VerifyUser(VerifyUserRequest) returns (VerifyUserResponse) {};
+
+  // For external authentication token login.
+  rpc ExchangeExternalTokenForUserToken(
+      ExchangeExternalTokenForUserTokenRequest)
+      returns (ExchangeExternalTokenForUserTokenResponse) {};
+
+  // For API key login.
+  rpc ExchangeAPIKeyForUserToken(ExchangeAPIKeyForUserTokenRequest)
+      returns (ExchangeAPIKeyForUserTokenResponse) {};
+
+  // For token exchange.
+  rpc ExchangeUserTokenForMultiresourceToken(
+      ExchangeUserTokenForMultiresourceTokenRequest)
+      returns (ExchangeUserTokenForMultiresourceTokenResponse) {};
+
+  // For permission checks.
+  rpc CheckUserPermission(CheckUserPermissionRequest)
+      returns (CheckUserPermissionResponse) {};
+  rpc LookupUserPermissions(LookupUserPermissionsRequest)
+      returns (LookupUserPermissionsResponse) {};
+
+  // User metadata.
+  rpc GetUserInfo(GetUserInfoRequest) returns (GetUserInfoResponse) {};
+  rpc GetUserId(GetUserIdRequest) returns (GetUserIdResponse) {};
+  rpc GetProviderUserId(GetProviderUserIdRequest)
+      returns (GetProviderUserIdResponse) {};
+}

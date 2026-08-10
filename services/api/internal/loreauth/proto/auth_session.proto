@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package epic_urc;
+
+option go_package = "github.com/lorehub/lorehub/services/api/internal/loreauth/epic_urc";
+
+import "auth_token.proto";
+
+message TargetUser {
+  oneof user {
+    string user_token = 1;
+  }
+}
+
+message HealthCheckRequest {}
+
+message HealthCheckResponse { string status = 1; }
+
+message StartAuthSessionRequest { string client_state = 1; }
+
+message StartAuthSessionResponse {
+  string session_code = 1;
+  string login_url = 2;
+}
+
+message GetAuthSessionRequest {
+  string session_code = 1;
+  string client_state = 2;
+}
+
+message GetAuthSessionResponse { optional UserToken user_token = 1; }
+
+message RefreshAuthSessionRequest {}
+
+message RefreshAuthSessionResponse { optional UserToken user_token = 1; }

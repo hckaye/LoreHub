@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package ucs.auth;
+
+option go_package = "github.com/lorehub/lorehub/services/api/internal/loreauth/epic_urc";
+
+// This is the companion resource-management contract used by Lore 0.8.6.
+// The user-facing authentication contract remains epic_urc.UrcAuthApi.
+service RebacApi {
+  rpc CreateResource(CreateResourceRequest) returns (CreateResourceResponse) {};
+  rpc DeleteResource(DeleteResourceRequest) returns (DeleteResourceResponse) {};
+}
+
+message CreateResourceRequest {
+  string resource_id = 1;
+  string resource_name = 2;
+}
+
+message CreateResourceResponse {}
+
+message DeleteResourceRequest { string resource_id = 1; }
+
+message DeleteResourceResponse {}

@@ -6,7 +6,12 @@ export type MutationFailureKind = "unauthorized" | "forbidden" | "invalid" | "co
 
 export type MutationResult<T> = { ok: true; data: T } | { ok: false; kind: MutationFailureKind; code: string | null };
 
-export async function postJson<T>(path: string, input: unknown, csrfToken: string): Promise<MutationResult<T>> {
+export async function postJson<T>(
+  path: string,
+  input: unknown,
+  csrfToken: string,
+  extraHeaders: Record<string, string> = {},
+): Promise<MutationResult<T>> {
   try {
     const response = await fetch(path, {
       method: "POST",
@@ -15,6 +20,7 @@ export async function postJson<T>(path: string, input: unknown, csrfToken: strin
         Accept: "application/json",
         "Content-Type": "application/json",
         "X-CSRF-Token": csrfToken,
+        ...extraHeaders,
       },
       body: JSON.stringify(input),
     });

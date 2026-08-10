@@ -35,7 +35,7 @@ func (store *authCollabStore) LookupRepository(
 	return collab.Repository{
 		ID: "private-repo", OrganizationID: "org-1", Owner: owner, Slug: slug,
 		Visibility: "private", LoreRepositoryID: "0123456789abcdef0123456789abcdef",
-		LoreURL: "lore://private", DefaultBranch: "main",
+		LoreURL: "lore://lore.example/0123456789abcdef0123456789abcdef", DefaultBranch: "main",
 	}, nil
 }
 
@@ -276,8 +276,8 @@ func TestCollaborationPrivateReadAnonymousAndBearerCompatible(t *testing.T) {
 	request.AddCookie(expiredCookie)
 	response = httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
-	if response.Code != http.StatusNotFound {
-		t.Fatalf("expired cookie authorized private read: status=%d body=%s", response.Code, response.Body.String())
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("expired cookie was not rejected: status=%d body=%s", response.Code, response.Body.String())
 	}
 
 	request = httptest.NewRequest(http.MethodPatch, target, strings.NewReader(`{"title":"new"}`))

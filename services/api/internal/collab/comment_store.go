@@ -90,13 +90,24 @@ func (s *store) CreateIssueComment(
 	number int64,
 	body string,
 ) (IssueComment, error) {
+	orgID, err := s.repoOrgID(ctx, repoID)
+	if err != nil {
+		return IssueComment{}, err
+	}
+	access, err := s.permFromRef(ctx, actor, repoID, orgID)
+	if err != nil {
+		return IssueComment{}, err
+	}
+	if !access.AtLeast(PermTriage) {
+		return IssueComment{}, platform.ErrForbidden
+	}
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return IssueComment{}, fmt.Errorf("begin comment transaction: %w", err)
 	}
 	defer rollback(ctx, tx)
 
-	var issueID, orgID string
+	var issueID string
 	err = tx.QueryRow(ctx, `
 		SELECT i.id, r.organization_id
 		FROM issues i
@@ -143,8 +154,8 @@ func (s *store) CreateIssueComment(
 	return comment, nil
 }
 
-// UpdateIssueComment edits a comment body. Only the author or a write+ actor may
-// edit; the original author and created_at are preserved and edited_at is set.
+// UpdateIssueComment edits a comment body. A triage+ actor is required; the
+// original author and created_at are preserved and edited_at is set.
 func (s *store) UpdateIssueComment(
 	ctx context.Context,
 	actor platform.User,
@@ -157,14 +168,12 @@ func (s *store) UpdateIssueComment(
 	if err != nil {
 		return IssueComment{}, err
 	}
-	if !existing.canEdit(actor) {
-		access, err := s.permFromRef(ctx, actor, existing.RepoID, existing.OrgID)
-		if err != nil {
-			return IssueComment{}, err
-		}
-		if !access.AtLeast(PermWrite) {
-			return IssueComment{}, platform.ErrForbidden
-		}
+	access, err := s.permFromRef(ctx, actor, existing.RepoID, existing.OrgID)
+	if err != nil {
+		return IssueComment{}, err
+	}
+	if !access.AtLeast(PermTriage) {
+		return IssueComment{}, platform.ErrForbidden
 	}
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
@@ -204,8 +213,8 @@ func (s *store) UpdateIssueComment(
 	return updated, nil
 }
 
-// DeleteIssueComment removes a comment. Only the author or a write+ actor may
-// delete; the issue's updated_at is bumped transactionally.
+// DeleteIssueComment removes a comment. A triage+ actor is required; the
+// issue's updated_at is bumped transactionally.
 func (s *store) DeleteIssueComment(
 	ctx context.Context,
 	actor platform.User,
@@ -217,14 +226,12 @@ func (s *store) DeleteIssueComment(
 	if err != nil {
 		return err
 	}
-	if !existing.canEdit(actor) {
-		access, err := s.permFromRef(ctx, actor, existing.RepoID, existing.OrgID)
-		if err != nil {
-			return err
-		}
-		if !access.AtLeast(PermWrite) {
-			return platform.ErrForbidden
-		}
+	access, err := s.permFromRef(ctx, actor, existing.RepoID, existing.OrgID)
+	if err != nil {
+		return err
+	}
+	if !access.AtLeast(PermTriage) {
+		return platform.ErrForbidden
 	}
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
@@ -263,10 +270,6 @@ type commentRef struct {
 	IssueComment
 	RepoID string
 	OrgID  string
-}
-
-func (ref commentRef) canEdit(actor platform.User) bool {
-	return ref.AuthorID == actor.ID
 }
 
 func (s *store) findCommentForMutation(

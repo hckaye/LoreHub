@@ -122,7 +122,15 @@ until "$KCADM" config credentials \
 done
 echo "[bootstrap] authenticated; configuring realm ${REALM}"
 
-realm_args=(-s "verifyEmail=${VERIFY_EMAIL}" -s "passwordPolicy=${PASSWORD_POLICY}")
+ssl_required="NONE"
+if [ "$ENVIRONMENT" = "production" ]; then
+  ssl_required="EXTERNAL"
+fi
+realm_args=(
+  -s "verifyEmail=${VERIFY_EMAIL}"
+  -s "passwordPolicy=${PASSWORD_POLICY}"
+  -s "sslRequired=${ssl_required}"
+)
 if [ "$VERIFY_EMAIL" = "true" ]; then
   realm_args+=(-s "smtpServer=$(smtp_json)")
 fi

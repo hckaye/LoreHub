@@ -1,0 +1,46 @@
+[server.quic.certificate]
+cert_file = "/etc/lore/auth-tls/server.crt"
+pkey_file = "/etc/lore/auth-tls/server.key"
+
+[server.grpc]
+verify_client_certs = false
+
+[server.grpc.certificate]
+cert_file = "/etc/lore/auth-tls/server.crt"
+pkey_file = "/etc/lore/auth-tls/server.key"
+
+[server.auth]
+jwt_issuer = "@AUTH_ISSUER@"
+jwt_audience = ["@AUTH_AUDIENCE@"]
+
+[server.quic]
+verify_client_certs = false
+
+[server.auth.jwk]
+endpoint = "@INTERNAL_JWKS_ENDPOINT@"
+
+[environment.endpoint]
+auth_url = "@PUBLIC_AUTH_URL@"
+
+[hooks.lorehub_policy]
+enabled = true
+environment = "production"
+root_domain = "@ROOT_DOMAIN@"
+endpoint = "@INTERNAL_POLICY_ENDPOINT@"
+observation_endpoint = "@INTERNAL_OBSERVATION_ENDPOINT@"
+auth_endpoint = "@INTERNAL_AUTH_URL@"
+jwks_endpoint = "@INTERNAL_JWKS_ENDPOINT@"
+ca_certificate = "/etc/lore/auth-tls/ca.crt"
+client_certificate = "/etc/lore/auth-tls/lore-client.crt"
+client_key = "/etc/lore/auth-tls/lore-client.key"
+
+[immutable_store.local]
+path = "/data/store"
+flush_delay_seconds = 10
+
+[mutable_store.local]
+path = "/data/store"
+flush_delay_seconds = 10
+
+[topology]
+provider = "none"

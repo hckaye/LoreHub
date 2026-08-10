@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -19,6 +20,10 @@ type fakeStore struct {
 }
 
 func (store fakeStore) EnsureUser(context.Context, auth.Principal) (platform.User, error) {
+	return store.user, nil
+}
+
+func (store fakeStore) ActiveUser(context.Context, string) (platform.User, error) {
 	return store.user, nil
 }
 
@@ -108,6 +113,29 @@ func (fakeLore) Branches(
 type healthy struct{}
 
 func (healthy) Ping(context.Context) error { return nil }
+
+type unhealthy struct{}
+
+func (unhealthy) Ping(context.Context) error { return errors.New("dependency unavailable") }
+
+func TestReadyReflectsServiceDependencies(t *testing.T) {
+	for name, testCase := range map[string]struct {
+		health HealthChecker
+		status int
+	}{
+		"ready":     {health: healthy{}, status: http.StatusOK},
+		"not-ready": {health: unhealthy{}, status: http.StatusServiceUnavailable},
+	} {
+		t.Run(name, func(t *testing.T) {
+			api := &API{health: testCase.health}
+			response := httptest.NewRecorder()
+			api.ready(response, httptest.NewRequest(http.MethodGet, "/health/ready", nil))
+			if response.Code != testCase.status {
+				t.Fatalf("readiness status = %d, want %d", response.Code, testCase.status)
+			}
+		})
+	}
+}
 
 func TestExploreRepositories(t *testing.T) {
 	t.Parallel()

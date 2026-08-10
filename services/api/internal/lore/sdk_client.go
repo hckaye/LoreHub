@@ -171,6 +171,83 @@ func (client *SDKClient) Branches(
 	return branches, nil
 }
 
+func (client *SDKClient) CloneWithCredential(
+	ctx context.Context,
+	repositoryURL string,
+	revision string,
+	destination string,
+	credential Credential,
+) error {
+	parsed, err := client.validateRepositoryURL(repositoryURL)
+	if err != nil {
+		return err
+	}
+	ref := RepositoryRef{URL: repositoryURL, LoreRepositoryID: parsed.Partition}
+	if err := ValidateCredential(ref, credential, ScopeRead); err != nil {
+		return err
+	}
+	if strings.TrimSpace(destination) == "" || strings.ContainsAny(destination, "\x00\r\n") {
+		return errors.New("Lore clone destination is invalid")
+	}
+	if err := client.authenticate(ctx, destination, repositoryURL, credential); err != nil {
+		return err
+	}
+	globals, cleanupGlobals := types.NewLoreGlobalArgs(types.LoreGlobalArgs{
+		RepositoryPath: destination, Identity: credential.Identity, Remote: true, Cache: true,
+	})
+	defer cleanupGlobals()
+	args, cleanupArgs := types.NewLoreRepositoryCloneArgs(types.LoreRepositoryCloneArgs{
+		RepositoryUrl: repositoryURL, Revision: revision,
+	})
+	defer cleanupArgs()
+	if _, err := loresdk.RepositoryClone(&globals, &args).Wait(); err != nil {
+		return fmt.Errorf("clone Lore revision: %w", err)
+	}
+	return nil
+}
+
+func (client *SDKClient) CreateRepositoryWithCredential(
+	ctx context.Context,
+	repositoryURL string,
+	repositoryID string,
+	name string,
+	description string,
+	credential Credential,
+) error {
+	if len(repositoryID) != 32 {
+		return errors.New("Lore repository ID must be exactly 32 hexadecimal characters")
+	}
+	if _, err := hex.DecodeString(repositoryID); err != nil {
+		return errors.New("Lore repository ID must be exactly 32 hexadecimal characters")
+	}
+	parsed, err := client.validateRepositoryURL(repositoryURL)
+	if err != nil {
+		return err
+	}
+	if parsed.Partition != repositoryID {
+		return errors.New("Lore repository URL partition does not match repository ID")
+	}
+	if err := ValidateCredential(RepositoryRef{URL: repositoryURL, LoreRepositoryID: repositoryID}, credential,
+		ScopeWrite); err != nil {
+		return err
+	}
+	if err := client.authenticate(ctx, "", repositoryURL, credential); err != nil {
+		return err
+	}
+	globals, cleanupGlobals := types.NewLoreGlobalArgs(types.LoreGlobalArgs{
+		Identity: credential.Identity, Remote: true, InMemory: true,
+	})
+	defer cleanupGlobals()
+	args, cleanupArgs := types.NewLoreRepositoryCreateArgs(types.LoreRepositoryCreateArgs{
+		RepositoryUrl: repositoryURL, Description: description, Id: repositoryID, UseSharedStore: true,
+	})
+	defer cleanupArgs()
+	if _, err := loresdk.RepositoryCreate(&globals, &args).Wait(); err != nil {
+		return fmt.Errorf("create Lore repository %q: %w", name, err)
+	}
+	return nil
+}
+
 func (client *SDKClient) ensureBareClone(repositoryURL string, cachePath string, identity string) error {
 	if _, err := os.Stat(filepath.Join(cachePath, ".lore", "config.toml")); err == nil {
 		return nil
@@ -276,7 +353,7 @@ func (client *SDKClient) authenticate(
 	defer cleanupGlobals()
 	args, cleanupArgs := types.NewLoreAuthLoginWithTokenArgs(types.LoreAuthLoginWithTokenArgs{
 		RemoteUrl: remoteURL,
-		Token:     credential.Token,
+		Token:     credential.AuthenticationToken,
 		TokenType: "lore",
 		AuthUrl:   credential.AuthURL,
 	})
@@ -292,6 +369,13 @@ func (client *SDKClient) validateRepositoryURL(value string) (parsedRepositoryUR
 }
 
 func (client *SDKClient) validateRepository(repository RepositoryRef) error {
-	_, err := client.validateRepositoryURL(repository.URL)
-	return err
+	parsed, err := client.validateRepositoryURL(repository.URL)
+	if err != nil {
+		return err
+	}
+	idPartition := strings.TrimSpace(repository.LoreRepositoryID)
+	if idPartition != "" && idPartition != parsed.Partition {
+		return errors.New("Lore repository URL partition does not match repository ID")
+	}
+	return nil
 }

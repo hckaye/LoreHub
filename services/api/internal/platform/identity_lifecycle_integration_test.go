@@ -119,7 +119,7 @@ func TestIdentityCanonicalLifecycleBoundary(t *testing.T) {
 	assertSearch("direct grant", &direct, "public", "private")
 	assertSearch("team grant", &teamUser, "public", "private", "internal")
 	assertSearch("owner", &owner, "public", "internal", "private")
-	assertSearch("suspended owner", &suspendedOwner, "public")
+	assertSearch("suspended owner", &suspendedOwner)
 
 	mustIdentityExec(t, pool, `UPDATE team_repository_roles SET active = false WHERE team_id = $1`, teamID)
 	assertSearch("inactive team grant", &teamUser, "public", "internal")
@@ -161,7 +161,8 @@ func TestIdentityNotificationCurrentAuthorizationAndUserScope(t *testing.T) {
 		user string
 		role string
 	}{
-		{owner.ID, "owner"}, {suspendedOwner.ID, "owner"}, {teamUser.ID, "member"}, {member.ID, "member"},
+		{owner.ID, "owner"}, {suspendedOwner.ID, "owner"}, {direct.ID, "member"},
+		{teamUser.ID, "member"}, {member.ID, "member"},
 	} {
 		mustIdentityExec(t, pool, `
 			INSERT INTO organization_memberships (organization_id, user_id, role) VALUES ($1, $2, $3)

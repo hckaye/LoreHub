@@ -100,7 +100,7 @@ func (api *API) teams(writer http.ResponseWriter, request *http.Request) {
 	writeJSON(writer, http.StatusOK, map[string]any{"teams": teams})
 }
 
-func (api *API) createTeam(writer http.ResponseWriter, request *http.Request) {
+func (api *API) createIdentityTeam(writer http.ResponseWriter, request *http.Request) {
 	if api.identityStore == nil {
 		api.identityUnavailable(writer)
 		return
@@ -124,7 +124,7 @@ func (api *API) createTeam(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 	team, err := api.identityStore.CreateTeam(request.Context(), actor, request.PathValue("organization"),
-		platform.CreateTeamInput{Slug: input.Slug, DisplayName: input.DisplayName, Description: input.Description})
+		platform.SetTeamInput{Slug: input.Slug, DisplayName: input.DisplayName, Description: input.Description})
 	if err != nil {
 		api.platformError(writer, request, "create team", err)
 		return
@@ -160,7 +160,7 @@ func (api *API) team(writer http.ResponseWriter, request *http.Request) {
 	writeJSON(writer, http.StatusOK, response)
 }
 
-func (api *API) updateTeam(writer http.ResponseWriter, request *http.Request) {
+func (api *API) updateIdentityTeam(writer http.ResponseWriter, request *http.Request) {
 	if api.identityStore == nil {
 		api.identityUnavailable(writer)
 		return
@@ -181,15 +181,22 @@ func (api *API) updateTeam(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 	team, err := api.identityStore.UpdateTeam(request.Context(), actor, request.PathValue("organization"),
-		request.PathValue("team"), platform.UpdateTeamInput{
-			DisplayName: input.DisplayName,
-			Description: input.Description,
+		request.PathValue("team"), platform.SetTeamInput{
+			DisplayName: valueOrEmpty(input.DisplayName),
+			Description: valueOrEmpty(input.Description),
 		})
 	if err != nil {
 		api.platformError(writer, request, "update team", err)
 		return
 	}
 	writeJSON(writer, http.StatusOK, team)
+}
+
+func valueOrEmpty(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func (api *API) teamMembers(writer http.ResponseWriter, request *http.Request) {

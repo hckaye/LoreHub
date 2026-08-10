@@ -867,7 +867,7 @@ func TestCreateBranchRuleForbiddenForWrite(t *testing.T) {
 	}
 }
 
-func TestCreateBranchRuleOrgMaintainerAllowed(t *testing.T) {
+func TestCreateBranchRuleOrgMaintainerDenied(t *testing.T) {
 	t.Parallel()
 	store := &fakeStore{
 		user: alice(),
@@ -886,8 +886,8 @@ func TestCreateBranchRuleOrgMaintainerAllowed(t *testing.T) {
 	recorder := doRequest(handler, http.MethodPost,
 		"/api/v1/repositories/acme/lore/branch-rules", body,
 		"Authorization", "Bearer alice", "Content-Type", "application/json")
-	if recorder.Code != http.StatusCreated {
-		t.Fatalf("org maintainer expected 201, got %d %s", recorder.Code, recorder.Body.String())
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("org maintainer expected 403, got %d %s", recorder.Code, recorder.Body.String())
 	}
 }
 

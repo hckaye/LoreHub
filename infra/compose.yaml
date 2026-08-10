@@ -1,6 +1,21 @@
 name: lorehub
 
 services:
+  tls-init:
+    build:
+      context: ..
+      dockerfile: infra/auth-tls/Dockerfile
+    volumes:
+      - auth-ca-state:/state
+      - auth-tls:/tls
+      - ./.local-tls:/export
+      - ${LOREHUB_TLS_SOURCE_DIR:-./.local-tls}:/input:ro
+    environment:
+      LOREHUB_ENV: ${LOREHUB_ENV:-development}
+      LOREHUB_LORE_ROOT_DOMAIN: ${LOREHUB_LORE_ROOT_DOMAIN:?LOREHUB_LORE_ROOT_DOMAIN is required}
+      LOREHUB_TLS_SERVER_NAMES: ${LOREHUB_TLS_SERVER_NAMES:?LOREHUB_TLS_SERVER_NAMES is required}
+    restart: "no"
+
   postgres:
     image: postgres:18.4-alpine
     environment:
@@ -28,12 +43,40 @@ services:
       interval: 5s
       timeout: 3s
       retries: 30
+    environment:
+      LOREHUB_ENV: ${LOREHUB_ENV:-development}
+      LOREHUB_LORE_ROOT_DOMAIN: ${LOREHUB_LORE_ROOT_DOMAIN:?LOREHUB_LORE_ROOT_DOMAIN is required}
+      LOREHUB_LORE_AUTH_ISSUER: ${LOREHUB_LORE_AUTH_ISSUER:?LOREHUB_LORE_AUTH_ISSUER is required}
+      LOREHUB_LORE_AUTH_AUDIENCE: ${LOREHUB_LORE_AUTH_AUDIENCE:?LOREHUB_LORE_AUTH_AUDIENCE is required}
+      LOREHUB_LORE_AUTH_URL: ${LOREHUB_LORE_AUTH_URL:?LOREHUB_LORE_AUTH_URL is required}
+      LOREHUB_LORE_AUTH_JWKS_URL: ${LOREHUB_LORE_AUTH_JWKS_URL:?LOREHUB_LORE_AUTH_JWKS_URL is required}
+      LOREHUB_LORE_POLICY_ENDPOINT: ${LOREHUB_LORE_POLICY_ENDPOINT:?LOREHUB_LORE_POLICY_ENDPOINT is required}
+      LOREHUB_LORE_OBSERVATION_ENDPOINT: ${LOREHUB_LORE_OBSERVATION_ENDPOINT:?required}
+      LOREHUB_LORE_INTERNAL_AUTH_JWKS_URL: >-
+        ${LOREHUB_LORE_INTERNAL_AUTH_JWKS_URL:?required}
+      LOREHUB_LORE_INTERNAL_AUTH_URL: ${LOREHUB_LORE_INTERNAL_AUTH_URL:?LOREHUB_LORE_INTERNAL_AUTH_URL is required}
+      LOREHUB_LORE_INTERNAL_POLICY_ENDPOINT: >-
+        ${LOREHUB_LORE_INTERNAL_POLICY_ENDPOINT:?required}
+      LOREHUB_LORE_INTERNAL_OBSERVATION_ENDPOINT: >-
+        ${LOREHUB_LORE_INTERNAL_OBSERVATION_ENDPOINT:?required}
     ports:
-      - "41337:41337/tcp"
-      - "41337:41337/udp"
-      - "41339:41339"
+      - "${LORE_HOST_PORT:-41337}:41337/tcp"
+      - "${LORE_HOST_PORT:-41337}:41337/udp"
+      - "${LORE_HTTP_HOST_PORT:-41339}:41339"
     volumes:
       - lore-data:/data
+      - auth-tls:/etc/lore/auth-tls:ro
+    depends_on:
+      api:
+        condition: service_healthy
+      tls-init:
+        condition: service_completed_successfully
+    extra_hosts:
+      - "auth.${LOREHUB_LORE_ROOT_DOMAIN:?LOREHUB_LORE_ROOT_DOMAIN is required}:127.0.0.1"
+    networks:
+      default:
+        aliases:
+          - "lore.${LOREHUB_LORE_ROOT_DOMAIN:?LOREHUB_LORE_ROOT_DOMAIN is required}"
     restart: unless-stopped
 
   api:
@@ -41,25 +84,47 @@ services:
     build:
       context: ..
       dockerfile: infra/api/Dockerfile
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/health/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
     environment:
       DATABASE_URL: postgresql://lorehub:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/lorehub
       LOREHUB_ENV: ${LOREHUB_ENV:-development}
       LOREHUB_AUTH_MODE: ${LOREHUB_AUTH_MODE:-interactive}
       LOREHUB_HTTP_ADDRESS: :8080
-      LOREHUB_LORE_IDENTITY: ${LOREHUB_LORE_IDENTITY:-}
-      LOREHUB_LORE_CREDENTIALS: ${LOREHUB_LORE_CREDENTIALS:-}
-      LOREHUB_LORE_PUBLIC_READER_SUBJECT: ${LOREHUB_LORE_PUBLIC_READER_SUBJECT:-development-public-reader}
-      LOREHUB_LORE_ACTIONS_RUNNER_SUBJECT: ${LOREHUB_LORE_ACTIONS_RUNNER_SUBJECT:-development-actions-runner}
-      LOREHUB_LORE_REPOSITORY_REGISTRATION_SUBJECT: >-
-        ${LOREHUB_LORE_REPOSITORY_REGISTRATION_SUBJECT:-development-registration}
-      LOREHUB_LORE_ALLOW_DEVELOPMENT_FALLBACK: ${LOREHUB_LORE_ALLOW_DEVELOPMENT_FALLBACK:-false}
+      LOREHUB_LORE_ROOT_DOMAIN: ${LOREHUB_LORE_ROOT_DOMAIN:?LOREHUB_LORE_ROOT_DOMAIN is required}
+      LOREHUB_LORE_AUTH_ISSUER: ${LOREHUB_LORE_AUTH_ISSUER:?LOREHUB_LORE_AUTH_ISSUER is required}
+      LOREHUB_LORE_AUTH_AUDIENCE: ${LOREHUB_LORE_AUTH_AUDIENCE:?LOREHUB_LORE_AUTH_AUDIENCE is required}
+      LOREHUB_LORE_AUTHORITY: ${LOREHUB_LORE_AUTHORITY:?LOREHUB_LORE_AUTHORITY is required}
+      LOREHUB_LORE_AUTH_URL: ${LOREHUB_LORE_AUTH_URL:?LOREHUB_LORE_AUTH_URL is required}
+      LOREHUB_LORE_AUTH_JWKS_URL: ${LOREHUB_LORE_AUTH_JWKS_URL:?LOREHUB_LORE_AUTH_JWKS_URL is required}
+      LOREHUB_LORE_POLICY_ENDPOINT: ${LOREHUB_LORE_POLICY_ENDPOINT:?LOREHUB_LORE_POLICY_ENDPOINT is required}
+      LOREHUB_LORE_OBSERVATION_ENDPOINT: ${LOREHUB_LORE_OBSERVATION_ENDPOINT:?required}
+      LOREHUB_LORE_AUTH_LOGIN_URL: ${LOREHUB_LORE_AUTH_LOGIN_URL:?LOREHUB_LORE_AUTH_LOGIN_URL is required}
+      LOREHUB_LORE_PUBLIC_URL: ${LOREHUB_LORE_PUBLIC_URL:?LOREHUB_LORE_PUBLIC_URL is required}
+      LOREHUB_LORE_AUTH_ADDRESS: :8443
+      LOREHUB_LORE_AUTH_TLS_CERT: /var/lib/lorehub/tls/server.crt
+      LOREHUB_LORE_AUTH_TLS_KEY: /var/lib/lorehub/tls/server.key
+      LOREHUB_AUTH_SIGNING_KEY_PATH: /var/lib/lorehub/keys/lore-auth.pem
+      LOREHUB_AUTH_SIGNING_KEY_KID: ${LOREHUB_AUTH_SIGNING_KEY_KID:?LOREHUB_AUTH_SIGNING_KEY_KID is required}
+      LOREHUB_POLICY_ADDRESS: :8444
+      LOREHUB_POLICY_TLS_CERT: /var/lib/lorehub/tls/server.crt
+      LOREHUB_POLICY_TLS_KEY: /var/lib/lorehub/tls/server.key
+      LOREHUB_POLICY_TLS_CLIENT_CA: /var/lib/lorehub/tls/ca.crt
+      LOREHUB_LORE_PUBLIC_READER_SUBJECT: ${LOREHUB_LORE_PUBLIC_READER_SUBJECT:?required}
+      LOREHUB_LORE_ACTIONS_RUNNER_SUBJECT: ${LOREHUB_LORE_ACTIONS_RUNNER_SUBJECT:?required}
+      LOREHUB_OBSERVER_SERVICE_PRINCIPAL: ${LOREHUB_OBSERVER_SERVICE_PRINCIPAL:?required}
+      LOREHUB_LORE_REPOSITORY_REGISTRATION_SUBJECT: ${LOREHUB_LORE_REPOSITORY_REGISTRATION_SUBJECT:?required}
       LOREHUB_OIDC_ISSUER: ${LOREHUB_OIDC_ISSUER:-http://keycloak.localhost:8280/realms/lorehub}
       LOREHUB_OIDC_AUDIENCE: ${LOREHUB_OIDC_AUDIENCE:-lorehub-api}
       LOREHUB_OIDC_CLIENT_ID: ${LOREHUB_OIDC_CLIENT_ID:-lorehub-web}
-      LOREHUB_OIDC_CLIENT_SECRET: ${LOREHUB_OIDC_CLIENT_SECRET:-}
+      LOREHUB_OIDC_CLIENT_SECRET: ${LOREHUB_OIDC_CLIENT_SECRET:?LOREHUB_OIDC_CLIENT_SECRET is required}
       LOREHUB_OIDC_REDIRECT_URL: ${LOREHUB_OIDC_REDIRECT_URL:-http://localhost:3000/auth/callback}
       LOREHUB_PUBLIC_ORIGIN: ${LOREHUB_PUBLIC_ORIGIN:-http://localhost:3000}
-      LOREHUB_AUTH_SECRET: ${LOREHUB_AUTH_SECRET:-}
+      LOREHUB_AUTH_SECRET: ${LOREHUB_AUTH_SECRET:?LOREHUB_AUTH_SECRET is required}
       LOREHUB_SESSION_COOKIE_NAME: ${LOREHUB_SESSION_COOKIE_NAME:-lorehub_session}
       LOREHUB_LOGIN_BINDING_COOKIE_NAME: ${LOREHUB_LOGIN_BINDING_COOKIE_NAME:-lorehub_login_binding}
       LOREHUB_SESSION_COOKIE_PATH: ${LOREHUB_SESSION_COOKIE_PATH:-/}
@@ -67,14 +132,6 @@ services:
       LOREHUB_SESSION_COOKIE_SECURE: ${LOREHUB_SESSION_COOKIE_SECURE:-false}
       LOREHUB_SESSION_TTL: ${LOREHUB_SESSION_TTL:-720h}
       LOREHUB_LOGIN_TRANSACTION_TTL: ${LOREHUB_LOGIN_TRANSACTION_TTL:-10m}
-      LOREHUB_IDP_GOOGLE_CLIENT_ID: ${LOREHUB_IDP_GOOGLE_CLIENT_ID:-}
-      LOREHUB_IDP_GOOGLE_CLIENT_SECRET: ${LOREHUB_IDP_GOOGLE_CLIENT_SECRET:-}
-      LOREHUB_IDP_GITHUB_CLIENT_ID: ${LOREHUB_IDP_GITHUB_CLIENT_ID:-}
-      LOREHUB_IDP_GITHUB_CLIENT_SECRET: ${LOREHUB_IDP_GITHUB_CLIENT_SECRET:-}
-      LOREHUB_IDP_FACEBOOK_CLIENT_ID: ${LOREHUB_IDP_FACEBOOK_CLIENT_ID:-}
-      LOREHUB_IDP_FACEBOOK_CLIENT_SECRET: ${LOREHUB_IDP_FACEBOOK_CLIENT_SECRET:-}
-      LOREHUB_IDP_X_CLIENT_ID: ${LOREHUB_IDP_X_CLIENT_ID:-}
-      LOREHUB_IDP_X_CLIENT_SECRET: ${LOREHUB_IDP_X_CLIENT_SECRET:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -82,12 +139,28 @@ services:
         condition: service_healthy
       keycloak-bootstrap:
         condition: service_completed_successfully
+      tls-init:
+        condition: service_completed_successfully
     extra_hosts:
       - "keycloak.localhost:host-gateway"
+      - "${LOREHUB_LORE_ROOT_DOMAIN:?LOREHUB_LORE_ROOT_DOMAIN is required}:host-gateway"
+      - "auth.${LOREHUB_LORE_ROOT_DOMAIN:?LOREHUB_LORE_ROOT_DOMAIN is required}:host-gateway"
+      - "api.${LOREHUB_LORE_ROOT_DOMAIN:?LOREHUB_LORE_ROOT_DOMAIN is required}:host-gateway"
+      - "lore.${LOREHUB_LORE_ROOT_DOMAIN:?LOREHUB_LORE_ROOT_DOMAIN is required}:host-gateway"
+    networks:
+      default:
+        aliases:
+          - "${LOREHUB_LORE_ROOT_DOMAIN:?LOREHUB_LORE_ROOT_DOMAIN is required}"
+          - "api.${LOREHUB_LORE_ROOT_DOMAIN:?LOREHUB_LORE_ROOT_DOMAIN is required}"
+          - "auth.${LOREHUB_LORE_ROOT_DOMAIN:?LOREHUB_LORE_ROOT_DOMAIN is required}"
     ports:
-      - "8080:8080"
+      - "${LOREHUB_HOST_PORT:-8080}:8080"
+      - "${LOREHUB_AUTH_HOST_PORT:-8443}:8443"
+      - "${LOREHUB_POLICY_HOST_PORT:-8444}:8444"
     volumes:
       - api-data:/var/lib/lorehub
+      - auth-signing:/var/lib/lorehub/keys
+      - auth-tls:/var/lib/lorehub/tls:ro
     restart: unless-stopped
 
   web:
@@ -95,14 +168,14 @@ services:
       context: ..
       dockerfile: infra/web/Dockerfile
     environment:
-      LOREHUB_API_URL: http://api:8080
-      LOREHUB_OIDC_ISSUER: ${LOREHUB_OIDC_ISSUER:-http://keycloak.localhost:8280/realms/lorehub}
-      LOREHUB_OIDC_CLIENT_ID: ${LOREHUB_OIDC_CLIENT_ID:-lorehub-web}
+      LOREHUB_API_URL: ${LOREHUB_WEB_API_URL:?LOREHUB_WEB_API_URL is required}
+      LOREHUB_OIDC_ISSUER: ${LOREHUB_OIDC_ISSUER:?LOREHUB_OIDC_ISSUER is required}
+      LOREHUB_OIDC_CLIENT_ID: ${LOREHUB_OIDC_CLIENT_ID:?LOREHUB_OIDC_CLIENT_ID is required}
     depends_on:
       api:
-        condition: service_started
+        condition: service_healthy
     ports:
-      - "3000:3000"
+      - "${LOREHUB_WEB_HOST_PORT:-3000}:3000"
     restart: unless-stopped
 
   runner:
@@ -115,18 +188,47 @@ services:
     user: root
     environment:
       DATABASE_URL: postgresql://lorehub:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/lorehub
-      DOCKER_HOST: unix:///var/run/docker.sock
-      LOREHUB_ENV: development
-      LOREHUB_LORE_IDENTITY: ${LOREHUB_LORE_IDENTITY:-}
-      LOREHUB_LORE_ACTIONS_RUNNER_SUBJECT: ${LOREHUB_LORE_ACTIONS_RUNNER_SUBJECT:-development-actions-runner}
-      LOREHUB_LORE_CREDENTIALS: ${LOREHUB_LORE_CREDENTIALS:-}
-      LOREHUB_LORE_ALLOW_DEVELOPMENT_FALLBACK: ${LOREHUB_LORE_ALLOW_DEVELOPMENT_FALLBACK:-false}
+      LOREHUB_ENV: ${LOREHUB_ENV:-development}
+      LOREHUB_AUTH_MODE: ${LOREHUB_RUNNER_AUTH_MODE:-disabled}
+      LOREHUB_OIDC_ISSUER: ${LOREHUB_OIDC_ISSUER:?LOREHUB_OIDC_ISSUER is required}
+      LOREHUB_OIDC_AUDIENCE: ${LOREHUB_OIDC_AUDIENCE:?LOREHUB_OIDC_AUDIENCE is required}
+      LOREHUB_LORE_ROOT_DOMAIN: ${LOREHUB_LORE_ROOT_DOMAIN:?LOREHUB_LORE_ROOT_DOMAIN is required}
+      LOREHUB_LORE_AUTH_ISSUER: ${LOREHUB_LORE_AUTH_ISSUER:?LOREHUB_LORE_AUTH_ISSUER is required}
+      LOREHUB_LORE_AUTH_AUDIENCE: ${LOREHUB_LORE_AUTH_AUDIENCE:?LOREHUB_LORE_AUTH_AUDIENCE is required}
+      LOREHUB_LORE_AUTHORITY: ${LOREHUB_LORE_AUTHORITY:?LOREHUB_LORE_AUTHORITY is required}
+      LOREHUB_LORE_AUTH_URL: ${LOREHUB_LORE_AUTH_URL:?LOREHUB_LORE_AUTH_URL is required}
+      LOREHUB_LORE_AUTH_LOGIN_URL: ${LOREHUB_LORE_AUTH_LOGIN_URL:?LOREHUB_LORE_AUTH_LOGIN_URL is required}
+      LOREHUB_LORE_AUTH_JWKS_URL: ${LOREHUB_LORE_AUTH_JWKS_URL:?LOREHUB_LORE_AUTH_JWKS_URL is required}
+      LOREHUB_LORE_POLICY_ENDPOINT: ${LOREHUB_LORE_POLICY_ENDPOINT:?LOREHUB_LORE_POLICY_ENDPOINT is required}
+      LOREHUB_LORE_OBSERVATION_ENDPOINT: ${LOREHUB_LORE_OBSERVATION_ENDPOINT:?required}
+      LOREHUB_LORE_PUBLIC_URL: ${LOREHUB_LORE_PUBLIC_URL:?LOREHUB_LORE_PUBLIC_URL is required}
+      LOREHUB_AUTH_SIGNING_KEY_PATH: ${LOREHUB_AUTH_SIGNING_KEY_PATH:-/var/lib/lorehub/keys/lore-auth.pem}
+      LOREHUB_AUTH_SIGNING_KEY_KID: ${LOREHUB_AUTH_SIGNING_KEY_KID:?LOREHUB_AUTH_SIGNING_KEY_KID is required}
+      LOREHUB_LORE_AUTH_TLS_CERT: ${LOREHUB_LORE_AUTH_TLS_CERT:-/var/lib/lorehub/tls/server.crt}
+      LOREHUB_LORE_AUTH_TLS_KEY: ${LOREHUB_LORE_AUTH_TLS_KEY:-/var/lib/lorehub/tls/server.key}
+      LOREHUB_POLICY_TLS_CERT: ${LOREHUB_POLICY_TLS_CERT:-/var/lib/lorehub/tls/server.crt}
+      LOREHUB_POLICY_TLS_KEY: ${LOREHUB_POLICY_TLS_KEY:-/var/lib/lorehub/tls/server.key}
+      LOREHUB_POLICY_TLS_CLIENT_CA: ${LOREHUB_POLICY_TLS_CLIENT_CA:-/var/lib/lorehub/tls/ca.crt}
+      LOREHUB_LORE_PUBLIC_READER_SUBJECT: ${LOREHUB_LORE_PUBLIC_READER_SUBJECT:?required}
+      LOREHUB_LORE_ACTIONS_RUNNER_SUBJECT: ${LOREHUB_LORE_ACTIONS_RUNNER_SUBJECT:?required}
+      LOREHUB_OBSERVER_SERVICE_PRINCIPAL: ${LOREHUB_OBSERVER_SERVICE_PRINCIPAL:?required}
+      LOREHUB_LORE_REPOSITORY_REGISTRATION_SUBJECT: ${LOREHUB_LORE_REPOSITORY_REGISTRATION_SUBJECT:?required}
     depends_on:
       postgres:
         condition: service_healthy
+      api:
+        condition: service_healthy
+      tls-init:
+        condition: service_completed_successfully
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
       - runner-data:/var/lib/lorehub
+      - auth-signing:/var/lib/lorehub/keys
+      - auth-tls:/var/lib/lorehub/tls:ro
+    extra_hosts:
+      - "${LOREHUB_LORE_ROOT_DOMAIN:?LOREHUB_LORE_ROOT_DOMAIN is required}:host-gateway"
+      - "auth.${LOREHUB_LORE_ROOT_DOMAIN:?LOREHUB_LORE_ROOT_DOMAIN is required}:host-gateway"
+      - "api.${LOREHUB_LORE_ROOT_DOMAIN:?LOREHUB_LORE_ROOT_DOMAIN is required}:host-gateway"
+      - "lore.${LOREHUB_LORE_ROOT_DOMAIN:?LOREHUB_LORE_ROOT_DOMAIN is required}:host-gateway"
 
   # Dedicated PostgreSQL for Keycloak. Deliberately separate from the LoreHub
   # application database above: Keycloak owns its own credentials, schema, and
@@ -239,6 +341,9 @@ services:
     restart: "no"
 
 volumes:
+  auth-ca-state:
+  auth-tls:
+  auth-signing:
   api-data:
   lore-data:
   postgres-data:

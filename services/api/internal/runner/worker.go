@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lorehub/lorehub/services/api/internal/lore"
 )
 
 type WorkerConfig struct {
@@ -23,6 +24,11 @@ type WorkerConfig struct {
 	ArtifactDir string
 	PollPeriod  time.Duration
 	JobTimeout  time.Duration
+	Lore        interface {
+		CloneWithCredential(context.Context, string, string, string, lore.Credential) error
+	}
+	Credentials      lore.CredentialProvider
+	ServicePrincipal string
 }
 
 type Worker struct {
@@ -120,20 +126,21 @@ func (worker *Worker) runJob(ctx context.Context, job Job) (string, []Artifact, 
 	defer func() { _ = logFile.Close() }()
 
 	repositoryPath := filepath.Join(workspace, "repository")
-	clone := exec.CommandContext(
-		ctx,
-		worker.config.LoreBinary,
-		"clone",
-		"--revision",
-		job.Revision,
-		job.LoreURL,
-		repositoryPath,
-	)
-	clone.Stdout = logFile
-	clone.Stderr = logFile
-	clone.Env = safeEnvironment()
-	if err := clone.Run(); err != nil {
-		return logKey, nil, fmt.Errorf("clone Lore revision: %w", err)
+	if worker.config.Lore == nil || worker.config.Credentials == nil || worker.config.ServicePrincipal == "" {
+		return logKey, nil, errors.New("CI runner requires scoped Lore credentials")
+	}
+	ref := lore.RepositoryRef{CacheKey: job.RepositoryID, URL: job.LoreURL,
+		LoreRepositoryID: job.LoreRepositoryID}
+	credential, err := worker.config.Credentials.ForRepository(ctx, lore.CredentialRequest{
+		Principal:  lore.ServicePrincipal(lore.ServicePurposeActionsRunner, worker.config.ServicePrincipal),
+		Repository: ref, Partition: job.LoreRepositoryID, Scope: lore.ScopeRead,
+	})
+	if err != nil {
+		return logKey, nil, errors.New("could not mint CI Lore credential")
+	}
+	if err := worker.config.Lore.CloneWithCredential(ctx, job.LoreURL, job.Revision, repositoryPath,
+		credential); err != nil {
+		return logKey, nil, errors.New("clone Lore revision was rejected")
 	}
 	if _, err := AdaptWorkflows(repositoryPath); err != nil {
 		return logKey, nil, err
@@ -235,7 +242,7 @@ func copyArtifact(sourcePath string, destinationPath string) (int64, error) {
 }
 
 func safeEnvironment() []string {
-	allowed := []string{"PATH", "HOME", "DOCKER_HOST", "DOCKER_CONFIG", "XDG_RUNTIME_DIR", "TMPDIR"}
+	allowed := []string{"PATH", "HOME", "DOCKER_CONFIG", "XDG_RUNTIME_DIR", "TMPDIR"}
 	environment := make([]string, 0, len(allowed))
 	for _, key := range allowed {
 		if value := os.Getenv(key); value != "" {

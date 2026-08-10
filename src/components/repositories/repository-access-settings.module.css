@@ -1,0 +1,148 @@
+.stack {
+  display: grid;
+  gap: 14px;
+}
+
+.form {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(140px, 0.5fr) auto;
+  gap: 9px;
+  align-items: end;
+}
+
+.field {
+  display: grid;
+  gap: 5px;
+}
+
+.field label,
+.check label {
+  color: var(--fg-muted);
+  font-size: 0.75rem;
+}
+
+.field input,
+.field select {
+  min-height: 34px;
+  padding: 6px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--fg-default);
+}
+
+.button {
+  min-height: 34px;
+  padding: 0 11px;
+  border: 1px solid var(--accent-border);
+  border-radius: 5px;
+  background: var(--accent-emphasis);
+  color: var(--fg-on-emphasis);
+  cursor: pointer;
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.secondaryButton {
+  min-height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--fg-default);
+  cursor: pointer;
+  font-size: 0.72rem;
+}
+
+.button:disabled,
+.secondaryButton:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+
+.table th,
+.table td {
+  padding: 9px 8px;
+  border-bottom: 1px solid var(--border-muted);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.table th {
+  color: var(--fg-muted);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.table td:last-child {
+  text-align: right;
+}
+
+.muted {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.error {
+  margin: 0;
+  color: var(--danger-fg);
+  font-size: 0.76rem;
+}
+
+.success {
+  margin: 0;
+  color: var(--success-fg, var(--accent-fg));
+  font-size: 0.76rem;
+}
+
+.checks {
+  display: grid;
+  gap: 9px;
+}
+
+.check {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.check input {
+  accent-color: var(--accent-emphasis);
+}
+
+.tag {
+  display: inline-flex;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--fg-muted);
+  font-size: 0.68rem;
+}
+
+@media (max-width: 680px) {
+  .fields {
+    grid-template-columns: 1fr;
+  }
+
+  .table {
+    display: block;
+    overflow-x: auto;
+  }
+}

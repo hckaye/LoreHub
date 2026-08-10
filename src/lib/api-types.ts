@@ -83,6 +83,11 @@ export type Notification = {
   createdAt: string;
 };
 
+export type NotificationPage = {
+  items: Notification[];
+  nextCursor: string | null;
+};
+
 export type NotificationPreferences = {
   inAppEnabled: boolean;
   emailEnabled: boolean;

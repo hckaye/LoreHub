@@ -22,9 +22,8 @@ const (
 )
 
 // Access describes the actor's relationship to a repository. Permission is the
-// effective level (max of repository role and organization-derived role).
-// OrgOwner and OrgMaintainer are reported separately because branch-rule
-// management explicitly grants organization maintainers in addition to admins.
+// effective level (max of repository role and visibility-derived read).
+// OrgOwner and OrgMaintainer are reported separately for organization settings.
 type Access struct {
 	Permission       Permission
 	RepositoryRole   string
@@ -39,9 +38,9 @@ func (a Access) AtLeast(level Permission) bool {
 }
 
 // CanManageBranchRules reports whether the actor may create or modify branch
-// protection rules: repository admin, organization maintainer or owner.
+// protection rules: an exact repository admin or organization owner.
 func (a Access) CanManageBranchRules() bool {
-	return a.Permission >= PermAdmin || a.OrgMaintainer || a.OrgOwner
+	return a.Permission >= PermAdmin || a.OrgOwner
 }
 
 // lookupRepository returns the repository if it is visible to the actor.
@@ -83,8 +82,6 @@ func lookupRepository(
 		      )
 		      OR EXISTS (
 		          SELECT 1 FROM repository_memberships rm
-		          JOIN organization_memberships rom
-		            ON rom.organization_id = o.id AND rom.user_id = $3 AND rom.active
 		          WHERE rm.repository_id = r.id AND rm.user_id = $3 AND rm.active
 		      )
 		      OR EXISTS (
@@ -152,7 +149,7 @@ func repositoryPermission(
 		    ON rm.repository_id = r.id AND rm.user_id = $3 AND rm.active
 		LEFT JOIN organization_memberships om
 		    ON om.organization_id = o.id AND om.user_id = $3 AND om.active
-		WHERE r.id = $1 AND o.id = $2
+		WHERE r.id = $1 AND o.id = $2 AND r.archived_at IS NULL AND r.lifecycle_state = 'active'
 	`, repo.ID, repo.OrganizationID, actor.ID).Scan(&repoRole, &orgRole)
 	if err != nil {
 		return Access{}, fmt.Errorf("compute repository permission: %w", err)
@@ -192,16 +189,19 @@ func repositoryPermission(
 	if teamRole != nil && (repoRole == nil || rolePermission(teamRole) > rolePermission(repoRole)) {
 		access.RepositoryRole = *teamRole
 	}
-	access.Permission = combineRoles(repoRole, orgRole)
+	access.Permission = combineRoles(repoRole, orgRole, repo.Visibility)
+	if repo.Visibility == "public" && access.Permission < PermRead {
+		access.Permission = PermRead
+	}
 	if team := rolePermission(teamRole); team > access.Permission {
 		access.Permission = team
 	}
 	return access, nil
 }
 
-func combineRoles(repoRole *string, orgRole *string) Permission {
+func combineRoles(repoRole *string, orgRole *string, visibility ...string) Permission {
 	repo := rolePermission(repoRole)
-	org := orgRolePermission(orgRole)
+	org := orgRolePermission(orgRole, visibility...)
 	if repo > org {
 		return repo
 	}
@@ -228,17 +228,22 @@ func rolePermission(role *string) Permission {
 	}
 }
 
-func orgRolePermission(role *string) Permission {
+func orgRolePermission(role *string, visibility ...string) Permission {
 	if role == nil {
 		return PermNone
 	}
 	switch *role {
 	case "owner":
 		return PermAdmin
-	case "maintainer":
-		return PermWrite
-	case "member":
-		return PermRead
+	case "maintainer", "member":
+		repositoryVisibility := "private"
+		if len(visibility) > 0 {
+			repositoryVisibility = visibility[0]
+		}
+		if repositoryVisibility == "internal" || repositoryVisibility == "public" {
+			return PermRead
+		}
+		return PermNone
 	default:
 		return PermNone
 	}

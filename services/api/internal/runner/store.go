@@ -13,10 +13,11 @@ import (
 )
 
 type Repository struct {
-	ID      string
-	Owner   string
-	Slug    string
-	LoreURL string
+	ID               string
+	Owner            string
+	Slug             string
+	LoreRepositoryID string
+	LoreURL          string
 }
 
 type ObservedBranch struct {
@@ -26,17 +27,18 @@ type ObservedBranch struct {
 }
 
 type Job struct {
-	ID           string
-	Attempt      int
-	RunID        string
-	RepositoryID string
-	Owner        string
-	Repository   string
-	LoreURL      string
-	Revision     string
-	Branch       string
-	EventName    string
-	EventPayload json.RawMessage
+	ID               string
+	Attempt          int
+	RunID            string
+	RepositoryID     string
+	Owner            string
+	Repository       string
+	LoreRepositoryID string
+	LoreURL          string
+	Revision         string
+	Branch           string
+	EventName        string
+	EventPayload     json.RawMessage
 }
 
 type Artifact struct {
@@ -55,10 +57,10 @@ func NewStore(pool *pgxpool.Pool) *Store {
 
 func (store *Store) Repositories(ctx context.Context) ([]Repository, error) {
 	rows, err := store.pool.Query(ctx, `
-		SELECT r.id, o.slug, r.slug, r.lore_url
+		SELECT r.id, o.slug, r.slug, r.lore_repository_id, r.lore_url
 		FROM repositories r
-		JOIN organizations o ON o.id = r.organization_id
-		WHERE r.archived_at IS NULL
+		JOIN organizations o ON o.id = r.organization_id AND o.active
+		WHERE r.archived_at IS NULL AND r.lifecycle_state = 'active'
 		ORDER BY r.id
 	`)
 	if err != nil {
@@ -68,7 +70,8 @@ func (store *Store) Repositories(ctx context.Context) ([]Repository, error) {
 	repositories := make([]Repository, 0)
 	for rows.Next() {
 		var repository Repository
-		if err := rows.Scan(&repository.ID, &repository.Owner, &repository.Slug, &repository.LoreURL); err != nil {
+		if err := rows.Scan(&repository.ID, &repository.Owner, &repository.Slug,
+			&repository.LoreRepositoryID, &repository.LoreURL); err != nil {
 			return nil, fmt.Errorf("scan repository for branch polling: %w", err)
 		}
 		repositories = append(repositories, repository)
@@ -77,6 +80,28 @@ func (store *Store) Repositories(ctx context.Context) ([]Repository, error) {
 		return nil, fmt.Errorf("iterate repositories for branch polling: %w", err)
 	}
 	return repositories, nil
+}
+
+func (store *Store) ReconcileBranchStates(
+	ctx context.Context,
+	repositoryID string,
+	observedBranchIDs []string,
+) error {
+	transaction, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin branch reconciliation: %w", err)
+	}
+	defer func() { _ = transaction.Rollback(context.WithoutCancel(ctx)) }()
+	if _, err := transaction.Exec(ctx, `
+		DELETE FROM repository_branch_states
+		WHERE repository_id = $1 AND branch_id <> ALL($2::text[])
+	`, repositoryID, observedBranchIDs); err != nil {
+		return fmt.Errorf("remove missed Lore branch observations: %w", err)
+	}
+	if err := transaction.Commit(ctx); err != nil {
+		return fmt.Errorf("commit branch reconciliation: %w", err)
+	}
+	return nil
 }
 
 func (store *Store) ObserveBranch(
@@ -230,7 +255,7 @@ func (store *Store) ClaimJob(ctx context.Context, workerID string, lease time.Du
 
 	var job Job
 	err = transaction.QueryRow(ctx, `
-		SELECT j.id, j.attempt, run.id, r.id, o.slug, r.slug, r.lore_url,
+		SELECT j.id, j.attempt, run.id, r.id, o.slug, r.slug, r.lore_repository_id, r.lore_url,
 		       run.revision, run.branch, run.event_name, run.event_payload
 		FROM ci_jobs j
 		JOIN ci_runs run ON run.id = j.run_id
@@ -244,6 +269,7 @@ func (store *Store) ClaimJob(ctx context.Context, workerID string, lease time.Du
 		&job.RepositoryID,
 		&job.Owner,
 		&job.Repository,
+		&job.LoreRepositoryID,
 		&job.LoreURL,
 		&job.Revision,
 		&job.Branch,

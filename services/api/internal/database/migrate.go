@@ -65,6 +65,39 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	return nil
 }
 
+// MigrationsReady verifies that every migration embedded in this binary has
+// been applied. It deliberately checks each version instead of only looking
+// at the highest version, so a partially restored database cannot pass health.
+func MigrationsReady(ctx context.Context, pool *pgxpool.Pool) error {
+	loaded, err := loadMigrations()
+	if err != nil {
+		return err
+	}
+	rows, err := pool.Query(ctx, "SELECT version FROM schema_migrations")
+	if err != nil {
+		return fmt.Errorf("read applied migrations: %w", err)
+	}
+	defer rows.Close()
+
+	applied := make(map[int64]struct{}, len(loaded))
+	for rows.Next() {
+		var version int64
+		if err := rows.Scan(&version); err != nil {
+			return fmt.Errorf("scan applied migration: %w", err)
+		}
+		applied[version] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("read applied migrations: %w", err)
+	}
+	for _, item := range loaded {
+		if _, ok := applied[item.version]; !ok {
+			return fmt.Errorf("migration %s has not been applied", item.name)
+		}
+	}
+	return nil
+}
+
 func loadMigrations() ([]migration, error) {
 	entries, err := fs.ReadDir(migrations.Files, ".")
 	if err != nil {
