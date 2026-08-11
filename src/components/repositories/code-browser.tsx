@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 
 import type { Dictionary } from "@/i18n";
 import type { Branch, LoreTree } from "@/lib/api-types";
-import { repositoryPath } from "@/lib/routes";
+import { repositoryBranchesPath, repositoryPath } from "@/lib/routes";
 
 import styles from "./code-browser.module.css";
 
@@ -55,6 +55,7 @@ export function CodeBrowser({
           </select>
         </div>
         <div className={styles.links}>
+          <Link href={repositoryBranchesPath(locale, owner, repository)}>{dictionary.common.branches}</Link>
           <Link href={commitsPath}>{dictionary.codeBrowser.history}</Link>
           {parentRevision && (
             <Link

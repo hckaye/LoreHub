@@ -1,19 +1,112 @@
 diff --git a/lore-server/src/grpc/handlers/branch_create.rs b/lore-server/src/grpc/handlers/branch_create.rs
+index eee6758..e24aef1 100644
 --- a/lore-server/src/grpc/handlers/branch_create.rs
 +++ b/lore-server/src/grpc/handlers/branch_create.rs
-@@ -102,4 +102,5 @@ async fn handle_local(
-                 .repository(repository_id)
-                 .user(user_id)
-                 .branch(branch)
+@@ -98 +98 @@ pub async fn handler(
+-                .correlation_id(correlation_id)
++                .correlation_id(correlation_id.clone())
+@@ -101 +101 @@ pub async fn handler(
+-                .user(user_id)
++                .user(user_id.clone())
+@@ -102,0 +103 @@ pub async fn handler(
 +                .metadata("branch_name", name.as_str())
-                 .build();
-
+@@ -134,2 +134,0 @@ pub async fn handler(
+-            hook_dispatcher.spawn_post(HookPoint::BranchCreate, hook_ctx);
+-
+@@ -138,0 +138,11 @@ pub async fn handler(
++            let post_hook_ctx = HookContext::builder()
++                .correlation_id(correlation_id)
++                .hook_point(HookPoint::BranchCreate)
++                .repository(repository_id)
++                .user(user_id)
++                .branch(branch)
++                .revision(revision)
++                .metadata("branch_name", name.as_str())
++                .build();
++
++            hook_dispatcher.spawn_post(HookPoint::BranchCreate, post_hook_ctx);
+diff --git a/lore-server/src/grpc/handlers/branch_delete.rs b/lore-server/src/grpc/handlers/branch_delete.rs
+index 8e2a782..dababb6 100644
+--- a/lore-server/src/grpc/handlers/branch_delete.rs
++++ b/lore-server/src/grpc/handlers/branch_delete.rs
+@@ -57 +57 @@ pub async fn handler(
+-                .correlation_id(correlation_id)
++                .correlation_id(correlation_id.clone())
+@@ -60 +60 @@ pub async fn handler(
+-                .user(user_id)
++                .user(user_id.clone())
+@@ -67,0 +68,10 @@ pub async fn handler(
++            let pre_metadata = branch::metadata(repository.clone(), branch)
++                .await
++                .map_err(|_err| Status::not_found(format!("Branch {branch} not found")))?;
++            let pre_branch_name = branch::name(&pre_metadata)
++                .map_err(|err| Status::internal(err.to_string()))?
++                .to_string();
++            let pre_revision = branch::load_latest(repository.clone(), branch)
++                .await
++                .map_err(|err| Status::internal(err.to_string()))?;
++
+@@ -78 +88,10 @@ pub async fn handler(
+-                    hook_dispatcher.spawn_post(HookPoint::BranchDelete, hook_ctx);
++                    let post_hook_ctx = HookContext::builder()
++                        .correlation_id(correlation_id)
++                        .hook_point(HookPoint::BranchDelete)
++                        .repository(repository_id)
++                        .user(user_id)
++                        .branch(branch)
++                        .revision(pre_revision)
++                        .metadata("branch_name", pre_branch_name)
++                        .build();
++                    hook_dispatcher.spawn_post(HookPoint::BranchDelete, post_hook_ctx);
 diff --git a/lore-server/src/grpc/revision/v1/branch_create.rs b/lore-server/src/grpc/revision/v1/branch_create.rs
+index ff6ec3f..0379c35 100644
 --- a/lore-server/src/grpc/revision/v1/branch_create.rs
 +++ b/lore-server/src/grpc/revision/v1/branch_create.rs
-@@ -155,4 +155,5 @@ async fn handle_local(
-                 .repository(context.repository_id)
-                 .user(&context.user_id)
-                 .branch(branch)
+@@ -156,0 +157 @@ pub async fn branch_create_implementation(
 +                .metadata("branch_name", name.as_str())
-                 .build();
+@@ -192 +193,14 @@ pub async fn branch_create_implementation(
+-            hook_dispatcher.spawn_post(HookPoint::BranchCreate, hook_ctx);
++            let revision = branch::load_latest(repository.clone(), branch_id)
++                .await
++                .warn_map_err(|err| Status::internal(err.to_string()))?;
++            let post_hook_ctx = HookContext::builder()
++                .correlation_id(&context.correlation_id)
++                .hook_point(HookPoint::BranchCreate)
++                .repository(context.repository_id)
++                .user(&context.user_id)
++                .branch(branch_id)
++                .revision(revision)
++                .metadata("branch_name", name.as_str())
++                .build();
++
++            hook_dispatcher.spawn_post(HookPoint::BranchCreate, post_hook_ctx);
+diff --git a/lore-server/src/grpc/revision/v1/branch_delete.rs b/lore-server/src/grpc/revision/v1/branch_delete.rs
+index 560435b..08c8627 100644
+--- a/lore-server/src/grpc/revision/v1/branch_delete.rs
++++ b/lore-server/src/grpc/revision/v1/branch_delete.rs
+@@ -114 +114 @@ pub async fn branch_delete_implementation(
+-                .correlation_id(correlation_id)
++                .correlation_id(correlation_id.clone())
+@@ -117 +117 @@ pub async fn branch_delete_implementation(
+-                .user(user_id)
++                .user(user_id.clone())
+@@ -130,0 +131,7 @@ pub async fn branch_delete_implementation(
++            let pre_branch_name = branch::name(&pre_metadata)
++                .map_err(|err| Status::internal(err.to_string()))?
++                .to_string();
++            let pre_revision = branch::load_latest(repository.clone(), branch_id)
++                .await
++                .warn_map_err(|err| Status::internal(err.to_string()))?;
++
+@@ -168 +175,10 @@ pub async fn branch_delete_implementation(
+-                hook_dispatcher.spawn_post(HookPoint::BranchDelete, hook_ctx);
++                let post_hook_ctx = HookContext::builder()
++                    .correlation_id(correlation_id)
++                    .hook_point(HookPoint::BranchDelete)
++                    .repository(repository_id)
++                    .user(user_id)
++                    .branch(branch_id)
++                    .revision(pre_revision)
++                    .metadata("branch_name", pre_branch_name)
++                    .build();
++                hook_dispatcher.spawn_post(HookPoint::BranchDelete, post_hook_ctx);

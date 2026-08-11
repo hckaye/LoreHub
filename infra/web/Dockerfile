@@ -1,10 +1,10 @@
-FROM node:24.18.0-trixie-slim AS dependencies
+FROM node:24.19.0-trixie-slim AS dependencies
 
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 
-FROM node:24.18.0-trixie-slim AS build
+FROM node:24.19.0-trixie-slim AS build
 
 ENV NEXT_TELEMETRY_DISABLED=1
 WORKDIR /app
@@ -12,7 +12,7 @@ COPY --from=dependencies /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
 
-FROM node:24.18.0-trixie-slim
+FROM node:24.19.0-trixie-slim
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1

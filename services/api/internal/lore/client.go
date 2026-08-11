@@ -9,6 +9,11 @@ import (
 
 var ErrNotFound = errors.New("Lore resource not found")
 
+var (
+	ErrBranchExists   = errors.New("Lore branch already exists at a different revision")
+	ErrBranchNotFound = errors.New("Lore branch was not found")
+)
+
 type Repository struct {
 	ID            string    `json:"id"`
 	Name          string    `json:"name"`
@@ -286,6 +291,23 @@ type MergeClient interface {
 
 type CredentialBranchClient interface {
 	BranchesWithCredential(ctx context.Context, repository RepositoryRef, credential Credential) ([]Branch, error)
+}
+
+type BranchMutationClient interface {
+	CreateBranch(
+		ctx context.Context,
+		repository RepositoryRef,
+		name string,
+		category string,
+		sourceRevision string,
+		credential Credential,
+	) (Branch, error)
+	ArchiveBranch(
+		ctx context.Context,
+		repository RepositoryRef,
+		branch Branch,
+		credential Credential,
+	) error
 }
 
 type RevisionClient interface {

@@ -3,31 +3,14 @@ package collab
 import (
 	"sort"
 	"strings"
+
+	"github.com/lorehub/lorehub/services/api/internal/authz"
 )
 
 // MatchBranchPattern is a deterministic full-match glob: '*' spans any
 // sequence of runes, '?' spans one rune, and every other rune is literal.
 func MatchBranchPattern(pattern, branch string) bool {
-	patternRunes := []rune(pattern)
-	branchRunes := []rune(branch)
-	previous := make([]bool, len(branchRunes)+1)
-	previous[0] = true
-	for _, patternRune := range patternRunes {
-		current := make([]bool, len(branchRunes)+1)
-		if patternRune == '*' {
-			current[0] = previous[0]
-			for index := 1; index <= len(branchRunes); index++ {
-				current[index] = previous[index] || current[index-1]
-			}
-		} else {
-			for index := 1; index <= len(branchRunes); index++ {
-				current[index] = previous[index-1] &&
-					(patternRune == '?' || patternRune == branchRunes[index-1])
-			}
-		}
-		previous = current
-	}
-	return previous[len(branchRunes)]
+	return authz.MatchBranchPattern(pattern, branch)
 }
 
 func MatchingBranchRules(rules []BranchRule, branch string) []BranchRule {

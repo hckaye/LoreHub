@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/lorehub/lorehub/services/api/internal/auth"
 	"github.com/lorehub/lorehub/services/api/internal/authz"
+	branchesapi "github.com/lorehub/lorehub/services/api/internal/branches"
 	codeapi "github.com/lorehub/lorehub/services/api/internal/code"
 	"github.com/lorehub/lorehub/services/api/internal/collab"
 	loreclient "github.com/lorehub/lorehub/services/api/internal/lore"
@@ -170,6 +171,7 @@ type API struct {
 	loreAuth                *loreauth.Service
 	logger                  *slog.Logger
 	collabStore             collab.Store
+	branchObservations      branchesapi.ObservationStore
 	projectsStore           projectsapi.Store
 	loginProvider           auth.LoginProvider
 	loginStore              auth.LoginTransactionStore
@@ -297,6 +299,13 @@ func New(
 		api.listCodeScanningAlerts)
 	if api.collabStore != nil {
 		collab.Register(mux, api.collabStore, api, logger)
+		branchClient, branchClientOK := api.lore.(branchesapi.LoreClient)
+		if branchClientOK && api.branchObservations != nil {
+			branchesapi.Register(
+				mux, api.collabStore, api.branchObservations, api,
+				branchClient, api.loreCredentials, logger,
+			)
+		}
 		if api.projectsStore != nil {
 			projectsapi.Register(mux, api.projectsStore, api.collabStore, api, logger)
 		}
@@ -324,6 +333,12 @@ func New(
 func WithCollaboration(store collab.Store) Option {
 	return func(api *API) {
 		api.collabStore = store
+	}
+}
+
+func WithBranchObservations(store branchesapi.ObservationStore) Option {
+	return func(api *API) {
+		api.branchObservations = store
 	}
 }
 
@@ -505,27 +520,6 @@ func (api *API) publicRepository(writer http.ResponseWriter, request *http.Reque
 		return
 	}
 	writeJSON(writer, http.StatusOK, repository)
-}
-
-func (api *API) repositoryBranches(writer http.ResponseWriter, request *http.Request) {
-	repository, actor, ok := api.repositoryForRead(writer, request)
-	if !ok {
-		return
-	}
-	var branches []loreclient.Branch
-	var err error
-	if actor == nil {
-		branches, err = api.listPublicLoreBranches(request.Context(), repository)
-	} else {
-		branches, err = api.listLoreBranches(request.Context(), *actor, repository)
-	}
-	if err != nil {
-		api.logger.Error("list Lore branches", "error", err,
-			"method", request.Method, "path", request.URL.Path)
-		writeProblem(writer, http.StatusBadGateway, "lore_unavailable", "Lore branches could not be read")
-		return
-	}
-	writeJSON(writer, http.StatusOK, map[string]any{"branches": branches})
 }
 
 func (api *API) createOrganization(writer http.ResponseWriter, request *http.Request) {

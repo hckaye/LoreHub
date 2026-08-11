@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path"
 	"strconv"
 	"strings"
 
@@ -456,7 +455,7 @@ func (store *Store) branchBlocksDirectPush(
 		if err := rows.Scan(&pattern, &blockDirectPush); err != nil {
 			return false, fmt.Errorf("scan branch policy: %w", err)
 		}
-		if blockDirectPush && branchMatches(pattern, branchName) {
+		if blockDirectPush && authz.MatchBranchPattern(pattern, branchName) {
 			return true, nil
 		}
 	}
@@ -485,14 +484,6 @@ func (store *Store) resolveBranchPolicyInput(
 		return "", "", "", fmt.Errorf("resolve branch policy state: %w", err)
 	}
 	return branchID, branchName, currentRevision, nil
-}
-
-func branchMatches(pattern string, branchName string) bool {
-	if branchName == "" {
-		return false
-	}
-	matched, err := path.Match(pattern, branchName)
-	return err == nil && matched
 }
 
 func (store *Store) organizationAccess(

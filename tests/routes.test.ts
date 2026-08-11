@@ -6,6 +6,7 @@ import {
   localePathFrom,
   loginUrl,
   providerLoginUrl,
+  repositoryBranchesPath,
   repositoryPath,
   safeReturnTo,
 } from "../src/lib/routes";
@@ -13,6 +14,7 @@ import {
 test("repository routes keep the locale and encode path segments", () => {
   assert.equal(repositoryPath("ja", "Epic Games", "Lore Hub", "pulls"), "/ja/Epic%20Games/Lore%20Hub/pulls");
   assert.equal(repositoryPath("en", "owner", "repository"), "/en/owner/repository");
+  assert.equal(repositoryBranchesPath("ja", "Epic Games", "Lore Hub"), "/ja/Epic%20Games/Lore%20Hub/branches");
 });
 
 test("return paths accept only same-origin relative paths", () => {

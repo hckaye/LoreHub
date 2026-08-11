@@ -168,6 +168,23 @@ export type Branch = {
   archived: boolean;
 };
 
+export type BranchOverview = {
+  branches: Branch[];
+  viewerCanPush: boolean;
+  viewerCanManageRules: boolean;
+};
+
+export type BranchRule = {
+  id: string;
+  repositoryId: string;
+  pattern: string;
+  requiredApprovals: number;
+  requireCiSuccess: boolean;
+  blockDirectPush: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type Issue = {
   id: string;
   number: number;

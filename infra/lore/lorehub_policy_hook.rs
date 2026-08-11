@@ -56,6 +56,8 @@ struct ObservationRequest {
     operation: String,
     #[serde(rename = "branchId")]
     branch_id: String,
+    #[serde(rename = "branchName")]
+    branch_name: Option<String>,
     revision: Option<String>,
 }
 
@@ -203,6 +205,7 @@ impl LoreHubPolicyHook {
     async fn post_request(&self, context: &HookContext) -> Result<(), HookError> {
         let operation = match context.hook_point() {
             HookPoint::BranchPush => "branch_push",
+            HookPoint::BranchCreate => "branch_create",
             HookPoint::BranchDelete => "branch_delete",
             _ => return Ok(()),
         };
@@ -217,6 +220,7 @@ impl LoreHubPolicyHook {
             resource_id: format!("urc-{}", context.repository()),
             operation: operation.to_string(),
             branch_id,
+            branch_name: context.get_metadata("branch_name").map(ToString::to_string),
             revision: context.revision().map(|revision| revision.to_string()),
         };
         let body = serde_json::to_vec(&request)
@@ -660,6 +664,60 @@ mod tests {
         assert!(request.contains("branchId"));
         assert!(request.contains("revision"));
         assert!(request.contains("branch_push"));
+    }
+
+    #[test]
+    fn successful_create_post_handler_sends_branch_name_and_revision() {
+        let (endpoint, received) = response_server("204 No Content", "", Duration::ZERO);
+        let policy_hook = hook("http://127.0.0.1:1/policy".to_string(), endpoint);
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("build post-handler test runtime");
+        let context = HookContext::builder()
+            .correlation_id("branch-create-test")
+            .hook_point(HookPoint::BranchCreate)
+            .repository(RepositoryId::default())
+            .user("user-test")
+            .branch(BranchId::default())
+            .revision(Hash::default())
+            .metadata("branch_name", "feature/branch-management")
+            .build();
+        runtime
+            .block_on(policy_hook.post_handler(&context))
+            .expect("post observation succeeds");
+        let request = received.recv().expect("receive observation request");
+        let request = String::from_utf8_lossy(&request);
+        assert!(request.contains("branch_create"));
+        assert!(request.contains("feature/branch-management"));
+        assert!(request.contains("revision"));
+    }
+
+    #[test]
+    fn successful_delete_post_handler_sends_branch_snapshot() {
+        let (endpoint, received) = response_server("204 No Content", "", Duration::ZERO);
+        let policy_hook = hook("http://127.0.0.1:1/policy".to_string(), endpoint);
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("build post-handler test runtime");
+        let context = HookContext::builder()
+            .correlation_id("branch-delete-test")
+            .hook_point(HookPoint::BranchDelete)
+            .repository(RepositoryId::default())
+            .user("user-test")
+            .branch(BranchId::default())
+            .revision(Hash::default())
+            .metadata("branch_name", "feature/archived")
+            .build();
+        runtime
+            .block_on(policy_hook.post_handler(&context))
+            .expect("post observation succeeds");
+        let request = received.recv().expect("receive observation request");
+        let request = String::from_utf8_lossy(&request);
+        assert!(request.contains("branch_delete"));
+        assert!(request.contains("feature/archived"));
+        assert!(request.contains("revision"));
     }
 
     #[test]

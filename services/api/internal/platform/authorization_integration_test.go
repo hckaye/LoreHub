@@ -776,6 +776,80 @@ func TestAuthorizationIntegrationProvisioningPrincipalsAndObservation(t *testing
 	`, fixture.repositoryA).Scan(&branchCount); err != nil || branchCount != 0 {
 		t.Fatalf("deleted branch state count = %d, err %v", branchCount, err)
 	}
+	observedBranchID := "feature-observed-" + fixture.repositoryA
+	preparedBranchID := "prepared-branch-" + fixture.repositoryA
+	if err := fixture.store.RecordLoreBranchCreation(
+		ctx, fixture.alice.ID, fixture.loreA, observedBranchID, "feature/observed", "created-revision",
+	); err != nil {
+		t.Fatalf("record branch creation: %v", err)
+	}
+	if err := fixture.store.PrepareLoreBranchCreation(
+		ctx, fixture.alice.ID, fixture.loreA, preparedBranchID, "feature/prepared",
+	); err != nil {
+		t.Fatalf("prepare branch creation: %v", err)
+	}
+	preparedDecision, err := fixture.store.CheckPolicy(ctx, authz.PolicyCheck{
+		UserID: fixture.alice.ID, ResourceID: "urc-" + fixture.loreA,
+		Operation: authz.OperationBranchPush, BranchID: preparedBranchID, ProposedRevision: "first-push",
+	})
+	if err != nil || !preparedDecision.Allowed {
+		t.Fatalf("prepared first branch push decision = %+v, err %v", preparedDecision, err)
+	}
+	if err := fixture.store.RecordLoreBranchPush(
+		ctx, fixture.alice.ID, fixture.loreA, observedBranchID, "pushed-revision",
+	); err != nil {
+		t.Fatalf("record branch push: %v", err)
+	}
+	if err := fixture.store.RecordLoreBranchPush(
+		ctx, fixture.alice.ID, fixture.loreA, observedBranchID, "pushed-revision",
+	); err != nil {
+		t.Fatalf("repeat branch push observation: %v", err)
+	}
+	if err := fixture.store.RecordLoreBranchCreation(
+		ctx, fixture.alice.ID, fixture.loreA, observedBranchID, "feature/observed", "created-revision",
+	); err != nil {
+		t.Fatalf("repeat branch creation observation: %v", err)
+	}
+	if err := fixture.pool.QueryRow(ctx, `
+		SELECT latest_revision FROM repository_branch_states
+		WHERE repository_id = $1 AND branch_id = $2
+	`, fixture.repositoryA, observedBranchID).Scan(&currentRevision); err != nil || currentRevision != "pushed-revision" {
+		t.Fatalf("recorded branch revision = %q, err %v", currentRevision, err)
+	}
+	if err := fixture.store.RecordLoreBranchDeletion(
+		ctx, fixture.alice.ID, fixture.loreA, observedBranchID, "feature/observed", "pushed-revision",
+	); err != nil {
+		t.Fatalf("record branch deletion: %v", err)
+	}
+	if err := fixture.store.RecordLoreBranchDeletion(
+		ctx, fixture.alice.ID, fixture.loreA, observedBranchID, "feature/observed", "pushed-revision",
+	); err != nil {
+		t.Fatalf("repeat branch deletion: %v", err)
+	}
+	if err := fixture.store.RecordLoreBranchCreation(
+		ctx, fixture.alice.ID, fixture.loreA, observedBranchID, "feature/observed", "created-revision",
+	); err != nil {
+		t.Fatalf("late branch creation observation: %v", err)
+	}
+	if err := fixture.pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM repository_branch_states
+		WHERE repository_id = $1 AND branch_id = $2
+	`, fixture.repositoryA, observedBranchID).Scan(&branchCount); err != nil || branchCount != 0 {
+		t.Fatalf("late creation restored branch state count = %d, err %v", branchCount, err)
+	}
+	eventKeys := map[string]string{
+		"branch.created": observedBranchID,
+		"branch.pushed":  observedBranchID + ":pushed-revision",
+		"branch.deleted": observedBranchID,
+	}
+	for topic, eventKey := range eventKeys {
+		var count int
+		if err := fixture.pool.QueryRow(ctx, `
+			SELECT COUNT(*) FROM outbox_events WHERE topic = $1 AND event_key = $2
+		`, topic, eventKey).Scan(&count); err != nil || count != 1 {
+			t.Fatalf("%s outbox count = %d, err %v", topic, count, err)
+		}
+	}
 
 	var auditCount, outboxCount int
 	if err := fixture.pool.QueryRow(ctx, `

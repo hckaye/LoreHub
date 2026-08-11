@@ -5,6 +5,8 @@ import { cookies } from "next/headers";
 import type {
   APIResult,
   Branch,
+  BranchOverview,
+  BranchRule,
   CIRun,
   CIRunDetail,
   CIRunPage,
@@ -107,10 +109,17 @@ export function getPublicRepository(owner: string, repository: string): Promise<
 }
 
 export async function getBranches(owner: string, repository: string): Promise<APIResult<Branch[]>> {
-  const result = await request<{ branches: Branch[] }>(
-    `/api/v1/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/branches`,
-  );
+  const result = await getBranchOverview(owner, repository);
   return result.ok ? { ok: true, data: result.data.branches } : result;
+}
+
+export function getBranchOverview(owner: string, repository: string): Promise<APIResult<BranchOverview>> {
+  return request(`/api/v1/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/branches`);
+}
+
+export async function getBranchRules(owner: string, repository: string): Promise<APIResult<BranchRule[]>> {
+  const result = await request<{ items: BranchRule[] }>(repositoryPath(owner, repository, "/branch-rules"));
+  return result.ok ? { ok: true, data: result.data.items } : result;
 }
 
 export async function getOpenIssues(owner: string, repository: string): Promise<APIResult<Issue[]>> {

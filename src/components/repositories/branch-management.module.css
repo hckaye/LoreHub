@@ -1,0 +1,245 @@
+.stack {
+  display: grid;
+  gap: 18px;
+}
+
+.panel {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+  border-bottom: 1px solid var(--border-muted);
+  background: var(--canvas-subtle);
+}
+
+.heading h2,
+.heading p {
+  margin: 0;
+}
+
+.heading h2 {
+  color: var(--fg-default);
+  font-size: 1rem;
+}
+
+.heading p,
+.muted {
+  margin-top: 4px;
+  color: var(--fg-muted);
+  font-size: 0.8rem;
+}
+
+.createForm {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.5fr) minmax(150px, 1fr) minmax(130px, 0.7fr) auto;
+  align-items: end;
+  gap: 12px;
+  padding: 16px;
+}
+
+.field,
+.ruleFields label {
+  display: grid;
+  gap: 6px;
+}
+
+.field label,
+.ruleFields span {
+  color: var(--fg-default);
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.field input,
+.field select,
+.ruleFields input {
+  min-height: 34px;
+  padding: 6px 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--fg-default);
+  font: inherit;
+  font-size: 0.82rem;
+}
+
+.primaryButton,
+.secondaryButton,
+.dangerButton {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--fg-default);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.primaryButton {
+  border-color: var(--success-border);
+  background: var(--success-border);
+  color: white;
+}
+
+.dangerButton {
+  color: var(--danger-fg);
+}
+
+.primaryButton:disabled,
+.secondaryButton:disabled,
+.dangerButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.branchList {
+  display: grid;
+}
+
+.branchRow {
+  display: flex;
+  min-height: 72px;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-muted);
+  color: var(--fg-muted);
+}
+
+.branchRow:last-child {
+  border-bottom: 0;
+}
+
+.branchDetails {
+  min-width: 0;
+  flex: 1;
+}
+
+.branchName,
+.branchDetails p {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+}
+
+.branchName a {
+  color: var(--accent-fg);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.branchDetails p {
+  margin-top: 6px;
+  color: var(--fg-subtle);
+  font-size: 0.74rem;
+}
+
+.branchDetails code {
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+}
+
+.notice,
+.success,
+.error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 12px 16px;
+  font-size: 0.8rem;
+}
+
+.notice {
+  color: var(--fg-muted);
+}
+
+.success {
+  border: 1px solid var(--success-border);
+  border-radius: 6px;
+  color: var(--success-fg);
+}
+
+.error {
+  border: 1px solid var(--danger-border);
+  border-radius: 6px;
+  color: var(--danger-fg);
+}
+
+.rules {
+  display: grid;
+}
+
+.rules > .muted {
+  margin: 0;
+  padding: 16px;
+}
+
+.ruleForm {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-muted);
+}
+
+.ruleForm:last-child {
+  border-bottom: 0;
+}
+
+.ruleFields {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  grid-template-columns: minmax(160px, 1fr) 90px auto auto;
+  align-items: end;
+  gap: 12px;
+}
+
+.ruleFields .checkbox {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 7px;
+}
+
+.ruleFields .checkbox input {
+  min-height: auto;
+}
+
+.ruleActions {
+  display: flex;
+  gap: 8px;
+}
+
+@media (max-width: 760px) {
+  .createForm,
+  .ruleFields {
+    grid-template-columns: 1fr;
+  }
+
+  .ruleForm {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .branchRow {
+    align-items: flex-start;
+  }
+}

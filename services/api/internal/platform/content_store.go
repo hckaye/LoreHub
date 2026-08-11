@@ -2,9 +2,65 @@ package platform
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
+
+type loreBranchEvent struct {
+	ActorID        string `json:"actorId"`
+	RepositoryID   string `json:"repositoryId"`
+	LoreRepository string `json:"loreRepositoryId"`
+	BranchID       string `json:"branchId"`
+	BranchName     string `json:"branchName"`
+	LatestRevision string `json:"latestRevision,omitempty"`
+}
+
+func (store *Store) PrepareLoreBranchCreation(
+	ctx context.Context,
+	actorID string,
+	loreRepositoryID string,
+	branchID string,
+	branchName string,
+) error {
+	if actorID == "" || loreRepositoryID == "" || branchID == "" || branchName == "" {
+		return errors.New("the Lore branch creation preparation is incomplete")
+	}
+	command, err := store.pool.Exec(ctx, `
+		INSERT INTO repository_branch_states (
+			repository_id, branch_id, branch_name, latest_revision, observed_at
+		)
+		SELECT repositories.id, $3, $4, repeat('0', 64), now()
+		FROM repositories
+		JOIN organizations ON organizations.id = repositories.organization_id AND organizations.active
+		JOIN users ON users.id = $2 AND users.status = 'active'
+		WHERE repositories.lore_repository_id = $1
+		  AND repositories.lifecycle_state = 'active'
+		  AND repositories.archived_at IS NULL
+		ON CONFLICT (repository_id, branch_id) DO NOTHING
+	`, loreRepositoryID, actorID, branchID, branchName)
+	if err != nil {
+		return fmt.Errorf("prepare Lore branch creation: %w", err)
+	}
+	if command.RowsAffected() == 1 {
+		return nil
+	}
+	var existingName string
+	err = store.pool.QueryRow(ctx, `
+		SELECT states.branch_name
+		FROM repository_branch_states states
+		JOIN repositories ON repositories.id = states.repository_id
+		WHERE repositories.lore_repository_id = $1 AND states.branch_id = $2
+	`, loreRepositoryID, branchID).Scan(&existingName)
+	if err != nil || existingName != branchName {
+		return errors.New("the Lore branch creation preparation conflicts with existing state")
+	}
+	return nil
+}
 
 func (store *Store) ObserveBranchState(
 	ctx context.Context,
@@ -77,6 +133,229 @@ func (store *Store) DeleteLoreBranchState(
 		return fmt.Errorf("remove Lore branch state: %w", err)
 	}
 	return nil
+}
+
+func (store *Store) RecordLoreBranchCreation(
+	ctx context.Context,
+	actorID string,
+	loreRepositoryID string,
+	branchID string,
+	branchName string,
+	revision string,
+) error {
+	if actorID == "" || loreRepositoryID == "" || branchID == "" || branchName == "" || revision == "" {
+		return errors.New("the Lore branch creation observation is incomplete")
+	}
+	tx, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin Lore branch creation observation: %w", err)
+	}
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+	repositoryID, organizationID, err := loreObservationRepository(ctx, tx, actorID, loreRepositoryID)
+	if err != nil {
+		return err
+	}
+	var deleted bool
+	if err := tx.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM outbox_events
+			WHERE topic = 'branch.deleted' AND event_key = $1
+		)
+	`, branchID).Scan(&deleted); err != nil {
+		return fmt.Errorf("check Lore branch deletion observation: %w", err)
+	}
+	if deleted {
+		return nil
+	}
+	event := loreBranchEvent{
+		ActorID: actorID, RepositoryID: repositoryID, LoreRepository: loreRepositoryID,
+		BranchID: branchID, BranchName: branchName, LatestRevision: revision,
+	}
+	inserted, err := insertLoreObservationOutbox(ctx, tx, "branch.created", branchID, event)
+	if err != nil {
+		return err
+	}
+	if !inserted {
+		return nil
+	}
+	_, err = tx.Exec(ctx, `
+		INSERT INTO repository_branch_states (
+			repository_id, branch_id, branch_name, latest_revision, observed_at
+		) VALUES ($1, $2, $3, $4, now())
+		ON CONFLICT (repository_id, branch_id) DO UPDATE SET
+			branch_name = EXCLUDED.branch_name,
+			latest_revision = EXCLUDED.latest_revision,
+			observed_at = EXCLUDED.observed_at
+		WHERE repository_branch_states.latest_revision = repeat('0', 64)
+	`, repositoryID, branchID, branchName, revision)
+	if err != nil {
+		return fmt.Errorf("record Lore branch creation: %w", err)
+	}
+	if err := insertAudit(ctx, tx, actorID, organizationID, repositoryID,
+		"branch.create", "lore_branch", branchID); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit Lore branch creation observation: %w", err)
+	}
+	return nil
+}
+
+func (store *Store) RecordLoreBranchPush(
+	ctx context.Context,
+	actorID string,
+	loreRepositoryID string,
+	branchID string,
+	revision string,
+) error {
+	if actorID == "" || loreRepositoryID == "" || branchID == "" || revision == "" {
+		return errors.New("the Lore branch push observation is incomplete")
+	}
+	tx, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin Lore branch push observation: %w", err)
+	}
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+	repositoryID, organizationID, err := loreObservationRepository(ctx, tx, actorID, loreRepositoryID)
+	if err != nil {
+		return err
+	}
+	var branchName string
+	err = tx.QueryRow(ctx, `
+		UPDATE repository_branch_states
+		SET latest_revision = $3, observed_at = now()
+		WHERE repository_id = $1 AND branch_id = $2
+		RETURNING branch_name
+	`, repositoryID, branchID, revision).Scan(&branchName)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return errors.New("the Lore branch is not observed in the control plane")
+	}
+	if err != nil {
+		return fmt.Errorf("record Lore branch push: %w", err)
+	}
+	event := loreBranchEvent{
+		ActorID: actorID, RepositoryID: repositoryID, LoreRepository: loreRepositoryID,
+		BranchID: branchID, BranchName: branchName, LatestRevision: revision,
+	}
+	eventKey := branchID + ":" + revision
+	inserted, err := insertLoreObservationOutbox(ctx, tx, "branch.pushed", eventKey, event)
+	if err != nil {
+		return err
+	}
+	if inserted {
+		if err := insertAudit(ctx, tx, actorID, organizationID, repositoryID,
+			"branch.push", "lore_branch", branchID); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit Lore branch push observation: %w", err)
+	}
+	return nil
+}
+
+func (store *Store) RecordLoreBranchDeletion(
+	ctx context.Context,
+	actorID string,
+	loreRepositoryID string,
+	branchID string,
+	branchName string,
+	revision string,
+) error {
+	if actorID == "" || loreRepositoryID == "" || branchID == "" || branchName == "" || revision == "" {
+		return errors.New("the Lore branch deletion observation is incomplete")
+	}
+	tx, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin Lore branch deletion observation: %w", err)
+	}
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+	repositoryID, organizationID, err := loreObservationRepository(ctx, tx, actorID, loreRepositoryID)
+	if err != nil {
+		return err
+	}
+	var storedName, storedRevision string
+	err = tx.QueryRow(ctx, `
+		DELETE FROM repository_branch_states
+		WHERE repository_id = $1 AND branch_id = $2
+		RETURNING branch_name, latest_revision
+	`, repositoryID, branchID).Scan(&storedName, &storedRevision)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("record Lore branch deletion: %w", err)
+	}
+	if err == nil && (storedName != branchName || storedRevision != revision) {
+		return errors.New("the Lore branch deletion observation conflicts with existing state")
+	}
+	event := loreBranchEvent{
+		ActorID: actorID, RepositoryID: repositoryID, LoreRepository: loreRepositoryID,
+		BranchID: branchID, BranchName: branchName, LatestRevision: revision,
+	}
+	inserted, err := insertLoreObservationOutbox(ctx, tx, "branch.deleted", branchID, event)
+	if err != nil {
+		return err
+	}
+	if inserted {
+		if err := insertAudit(ctx, tx, actorID, organizationID, repositoryID,
+			"branch.delete", "lore_branch", branchID); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit Lore branch deletion observation: %w", err)
+	}
+	return nil
+}
+
+func loreObservationRepository(
+	ctx context.Context,
+	tx pgx.Tx,
+	actorID string,
+	loreRepositoryID string,
+) (string, string, error) {
+	var repositoryID, organizationID string
+	err := tx.QueryRow(ctx, `
+		SELECT repositories.id, repositories.organization_id
+		FROM repositories
+		JOIN organizations ON organizations.id = repositories.organization_id AND organizations.active
+		JOIN users ON users.id = $2 AND users.status = 'active'
+		WHERE repositories.lore_repository_id = $1
+		  AND repositories.lifecycle_state = 'active'
+		  AND repositories.archived_at IS NULL
+	`, loreRepositoryID, actorID).Scan(&repositoryID, &organizationID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", "", ErrForbidden
+	}
+	if err != nil {
+		return "", "", fmt.Errorf("resolve Lore observation repository: %w", err)
+	}
+	return repositoryID, organizationID, nil
+}
+
+func insertLoreObservationOutbox(
+	ctx context.Context,
+	tx pgx.Tx,
+	topic string,
+	eventKey string,
+	payload loreBranchEvent,
+) (bool, error) {
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return false, fmt.Errorf("encode Lore branch observation: %w", err)
+	}
+	var insertedID string
+	err = tx.QueryRow(ctx, `
+		INSERT INTO outbox_events (id, topic, event_key, payload)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (topic, event_key) DO NOTHING
+		RETURNING id
+	`, uuid.New(), topic, strings.TrimSpace(eventKey), encoded).Scan(&insertedID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("record Lore branch outbox event: %w", err)
+	}
+	return true, nil
 }
 
 func (store *Store) ListIssuesForRead(

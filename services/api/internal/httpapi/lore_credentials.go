@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/lorehub/lorehub/services/api/internal/authz"
+	"github.com/lorehub/lorehub/services/api/internal/collab"
 	loreclient "github.com/lorehub/lorehub/services/api/internal/lore"
 	"github.com/lorehub/lorehub/services/api/internal/loreauth"
 	"github.com/lorehub/lorehub/services/api/internal/platform"
@@ -169,6 +170,49 @@ func (api *API) observeBranchStates(
 		}
 	}
 	return nil
+}
+
+func (api *API) branchCapabilities(
+	ctx context.Context,
+	actor *platform.User,
+	repository platform.Repository,
+) (bool, bool) {
+	if actor == nil || api.collabStore == nil {
+		return false, false
+	}
+	collabRepository, err := api.collabStore.LookupRepository(ctx, actor, repository.Owner, repository.Slug)
+	if err != nil {
+		return false, false
+	}
+	access, err := api.collabStore.RepositoryPermission(ctx, *actor, collabRepository)
+	if err != nil {
+		return false, false
+	}
+	return access.AtLeast(collab.PermWrite), access.CanManageBranchRules()
+}
+
+func (api *API) repositoryBranches(writer http.ResponseWriter, request *http.Request) {
+	repository, actor, ok := api.repositoryForRead(writer, request)
+	if !ok {
+		return
+	}
+	var branches []loreclient.Branch
+	var err error
+	if actor == nil {
+		branches, err = api.listPublicLoreBranches(request.Context(), repository)
+	} else {
+		branches, err = api.listLoreBranches(request.Context(), *actor, repository)
+	}
+	if err != nil {
+		api.logger.Error("list Lore branches", "error", err,
+			"method", request.Method, "path", request.URL.Path)
+		writeProblem(writer, http.StatusBadGateway, "lore_unavailable", "Lore branches could not be read")
+		return
+	}
+	viewerCanPush, viewerCanManageRules := api.branchCapabilities(request.Context(), actor, repository)
+	writeJSON(writer, http.StatusOK, map[string]any{
+		"branches": branches, "viewerCanPush": viewerCanPush, "viewerCanManageRules": viewerCanManageRules,
+	})
 }
 
 func (api *API) repositoryInfoForRegistration(

@@ -191,6 +191,7 @@ func run(logger *slog.Logger) error {
 		httpapi.WithIdentityStore(store),
 		httpapi.WithConfiguredLoginProviders(settings.IdentityProviders),
 		httpapi.WithCollaboration(collaborationStore),
+		httpapi.WithBranchObservations(store),
 		httpapi.WithProjects(projects.NewStore(pool)),
 		httpapi.WithAuthorization(store),
 		httpapi.WithLoreAuth(loreAuth),

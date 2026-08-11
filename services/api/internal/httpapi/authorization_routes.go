@@ -432,8 +432,17 @@ type policyRequest struct {
 }
 
 type loreObservationStore interface {
-	ObserveLoreBranchRevision(ctx context.Context, loreRepositoryID, branchID, revision string) error
-	DeleteLoreBranchState(ctx context.Context, loreRepositoryID, branchID string) error
+	RecordLoreBranchCreation(
+		ctx context.Context, actorID, loreRepositoryID, branchID, branchName, revision string,
+	) error
+	RecordLoreBranchPush(ctx context.Context, actorID, loreRepositoryID, branchID, revision string) error
+	RecordLoreBranchDeletion(
+		ctx context.Context, actorID, loreRepositoryID, branchID, branchName, revision string,
+	) error
+}
+
+type loreBranchCreationPreparer interface {
+	PrepareLoreBranchCreation(ctx context.Context, actorID, loreRepositoryID, branchID, branchName string) error
 }
 
 type loreObservationRequest struct {
@@ -441,6 +450,7 @@ type loreObservationRequest struct {
 	ResourceID string  `json:"resourceId"`
 	Operation  string  `json:"operation"`
 	BranchID   string  `json:"branchId"`
+	BranchName string  `json:"branchName"`
 	Revision   *string `json:"revision"`
 }
 
@@ -472,6 +482,18 @@ func (api *API) InternalPolicyHandler() http.Handler {
 			api.logLorePolicyDecision(input, false, nil)
 			writeProblem(writer, http.StatusForbidden, "policy_denied", "The Lore operation is not authorized")
 			return
+		}
+		if input.Operation == authz.OperationBranchCreate {
+			preparer, ok := api.authorization.(loreBranchCreationPreparer)
+			if !ok || input.BranchID == "" || input.BranchName == "" ||
+				preparer.PrepareLoreBranchCreation(
+					request.Context(), input.UserID, strings.TrimPrefix(input.ResourceID, "urc-"),
+					input.BranchID, input.BranchName,
+				) != nil {
+				api.logLorePolicyDecision(input, false, errors.New("branch creation preparation failed"))
+				writeProblem(writer, http.StatusForbidden, "policy_denied", "The Lore operation is not authorized")
+				return
+			}
 		}
 		api.logLorePolicyDecision(input, true, nil)
 		writeJSON(writer, http.StatusOK, map[string]bool{"allowed": true})
@@ -528,19 +550,42 @@ func (api *API) internalLoreObservation(writer http.ResponseWriter, request *htt
 	}
 	loreRepositoryID := strings.TrimPrefix(input.ResourceID, "urc-")
 	switch input.Operation {
+	case authz.OperationBranchCreate:
+		if strings.TrimSpace(input.BranchName) == "" || input.Revision == nil ||
+			strings.TrimSpace(*input.Revision) == "" {
+			writeProblem(writer, http.StatusBadRequest, "invalid_input",
+				"A successful branch creation must include its name and revision")
+			return
+		}
+		if err := observer.RecordLoreBranchCreation(
+			request.Context(), input.UserID, loreRepositoryID, input.BranchID,
+			strings.TrimSpace(input.BranchName), strings.TrimSpace(*input.Revision),
+		); err != nil {
+			writeProblem(writer, http.StatusConflict, "observation_rejected", "The Lore branch state was not observed")
+			return
+		}
 	case authz.OperationBranchPush:
 		if input.Revision == nil || strings.TrimSpace(*input.Revision) == "" {
 			writeProblem(writer, http.StatusBadRequest, "invalid_input", "A successful push must include its revision")
 			return
 		}
-		if err := observer.ObserveLoreBranchRevision(
-			request.Context(), loreRepositoryID, input.BranchID, strings.TrimSpace(*input.Revision),
+		if err := observer.RecordLoreBranchPush(
+			request.Context(), input.UserID, loreRepositoryID, input.BranchID, strings.TrimSpace(*input.Revision),
 		); err != nil {
 			writeProblem(writer, http.StatusConflict, "observation_rejected", "The Lore branch state was not observed")
 			return
 		}
 	case authz.OperationBranchDelete:
-		if err := observer.DeleteLoreBranchState(request.Context(), loreRepositoryID, input.BranchID); err != nil {
+		if strings.TrimSpace(input.BranchName) == "" || input.Revision == nil ||
+			strings.TrimSpace(*input.Revision) == "" {
+			writeProblem(writer, http.StatusBadRequest, "invalid_input",
+				"A successful branch deletion must include its name and revision")
+			return
+		}
+		if err := observer.RecordLoreBranchDeletion(
+			request.Context(), input.UserID, loreRepositoryID, input.BranchID,
+			strings.TrimSpace(input.BranchName), strings.TrimSpace(*input.Revision),
+		); err != nil {
 			writeProblem(writer, http.StatusConflict, "observation_rejected", "The Lore branch state was not observed")
 			return
 		}
