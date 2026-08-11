@@ -14,6 +14,11 @@ import (
 
 const maxCredentialLifetime = 15 * time.Minute
 
+// AuthenticationTokenType selects LoreHub's signed base-token exchange in
+// the UCS authentication API. Resource tokens are never sent through this
+// external-token boundary.
+const AuthenticationTokenType = "lorehub"
+
 type Scope string
 
 const (
@@ -106,8 +111,8 @@ type Credential struct {
 	Identity        string   `json:"-"`
 	// Token is the exact resource-scoped Lore JWT used after exchange.
 	Token string `json:"-"`
-	// AuthenticationToken is a zero-resource JWT used only by stock Lore to
-	// perform the subsequent resource exchange.
+	// AuthenticationToken is a zero-resource JWT that the SDK exchanges through
+	// the Lore UCS auth service before each repository operation.
 	AuthenticationToken     string    `json:"-"`
 	AuthURL                 string    `json:"-"`
 	ExpiresAt               time.Time `json:"expiresAt,omitempty"`
@@ -200,10 +205,19 @@ func NewCredentialProviderWithIssuer(
 		}
 		clean[partition] = material
 	}
+	developmentIdentity = strings.TrimSpace(developmentIdentity)
+	if issuer != nil && len(clean) == 0 && !(allowDevelopmentFallback && developmentIdentity != "") {
+		if err := validateAuthAuthority(expectedAuthHost); err != nil {
+			return nil, err
+		}
+		return configuredCredentialProvider{
+			environment: environment, issuer: issuer, expectedAuthHost: expectedAuthHost,
+		}, nil
+	}
 	return configuredCredentialProvider{
 		environment:         environment,
 		materials:           clean,
-		developmentIdentity: strings.TrimSpace(developmentIdentity),
+		developmentIdentity: developmentIdentity,
 		allowDevelopment:    allowDevelopmentFallback,
 	}, nil
 }
@@ -239,7 +253,7 @@ func (provider configuredCredentialProvider) ForRepository(
 	if provider.issuer != nil {
 		issued, issueErr := provider.issuer.IssueCredential(ctx, request)
 		if issueErr != nil {
-			return Credential{}, fmt.Errorf("%w: issue request", ErrCredentialUnavailable)
+			return Credential{}, fmt.Errorf("%w: issue request: %w", ErrCredentialUnavailable, issueErr)
 		}
 		if err := ctx.Err(); err != nil {
 			return Credential{}, err
@@ -301,7 +315,7 @@ func ValidateCredential(repository RepositoryRef, credential Credential, scope S
 	if scope != ScopeRead && scope != ScopeWrite {
 		return errors.New("unsupported Lore credential scope")
 	}
-	if credential.Scope != scope {
+	if credential.Scope != scope && !(credential.Scope == ScopeWrite && scope == ScopeRead) {
 		return fmt.Errorf("Lore credential scope %q does not permit %q", credential.Scope, scope)
 	}
 	if !credential.Principal.valid() {

@@ -593,7 +593,7 @@ func (worker *Worker) cloneRevision(ctx context.Context, job Job, destination st
 			return errors.New("configured Lore revision client does not accept scoped credentials")
 		}
 		if err != nil {
-			return errors.New("clone Lore revision was rejected")
+			return fmt.Errorf("clone Lore revision was rejected: %w", err)
 		}
 		return nil
 	}

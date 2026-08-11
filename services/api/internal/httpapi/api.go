@@ -509,6 +509,8 @@ func (api *API) repositoryBranches(writer http.ResponseWriter, request *http.Req
 		branches, err = api.listLoreBranches(request.Context(), *actor, repository)
 	}
 	if err != nil {
+		api.logger.Error("list Lore branches", "error", err,
+			"method", request.Method, "path", request.URL.Path)
 		writeProblem(writer, http.StatusBadGateway, "lore_unavailable", "Lore branches could not be read")
 		return
 	}
@@ -582,6 +584,8 @@ func (api *API) registerRepository(writer http.ResponseWriter, request *http.Req
 		return
 	}
 	if err := api.provisionManagedRepository(request, actor, repository, provisioner); err != nil {
+		api.logger.Error("provision managed Lore repository", "error", err,
+			"repository_id", repository.ID, "lore_repository_id", repository.LoreRepositoryID)
 		writeProblem(writer, http.StatusBadGateway, "lore_unavailable", "Lore repository provisioning failed")
 		return
 	}

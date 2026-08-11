@@ -14,6 +14,7 @@ environment=${LOREHUB_ENV:-development}
 case "$environment" in
   production)
     root_domain=${LOREHUB_LORE_ROOT_DOMAIN:?LOREHUB_LORE_ROOT_DOMAIN is required}
+    internal_root_domain=${LOREHUB_LORE_INTERNAL_DOMAIN:?LOREHUB_LORE_INTERNAL_DOMAIN is required}
     auth_issuer=${LOREHUB_LORE_AUTH_ISSUER:?LOREHUB_LORE_AUTH_ISSUER is required}
     auth_audience=${LOREHUB_LORE_AUTH_AUDIENCE:?LOREHUB_LORE_AUTH_AUDIENCE is required}
     jwks_endpoint=${LOREHUB_LORE_AUTH_JWKS_URL:?LOREHUB_LORE_AUTH_JWKS_URL is required}
@@ -37,6 +38,7 @@ case "$environment" in
     ;;
   development|local-insecure)
     root_domain=${LOREHUB_LORE_ROOT_DOMAIN:-lorehub.localhost}
+    internal_root_domain=${LOREHUB_LORE_INTERNAL_DOMAIN:-lorehub.internal}
     auth_issuer=${LOREHUB_LORE_AUTH_ISSUER:-auth.${root_domain}}
     auth_audience=${LOREHUB_LORE_AUTH_AUDIENCE:-$root_domain}
     jwks_endpoint=${LOREHUB_LORE_AUTH_JWKS_URL:-http://${root_domain}:8080/.well-known/jwks.json}
@@ -44,8 +46,10 @@ case "$environment" in
     internal_endpoint_base=https://${root_domain}:8444/internal/lore
     policy_endpoint=${LOREHUB_LORE_POLICY_ENDPOINT:-$internal_endpoint_base/policy}
     observation_endpoint=${LOREHUB_LORE_OBSERVATION_ENDPOINT:-$internal_endpoint_base/observation}
-    internal_jwks_endpoint=${LOREHUB_LORE_INTERNAL_AUTH_JWKS_URL:-http://${root_domain}:8080/.well-known/jwks.json}
-    internal_auth_url=${LOREHUB_LORE_INTERNAL_AUTH_URL:-https://api.${root_domain}:8443}
+    internal_endpoint_base=https://api.${internal_root_domain}:8444/internal/lore
+    internal_jwks_base=http://api.${internal_root_domain}:8080
+    internal_jwks_endpoint=${LOREHUB_LORE_INTERNAL_AUTH_JWKS_URL:-${internal_jwks_base}/.well-known/jwks.json}
+    internal_auth_url=${LOREHUB_LORE_INTERNAL_AUTH_URL:-https://api.${internal_root_domain}:8443}
     internal_policy_endpoint=${LOREHUB_LORE_INTERNAL_POLICY_ENDPOINT:-$internal_endpoint_base/policy}
     internal_observation_endpoint=${LOREHUB_LORE_INTERNAL_OBSERVATION_ENDPOINT:-$internal_endpoint_base/observation}
     lore_environment=$environment
@@ -60,6 +64,9 @@ esac
 test -s "$config"
 case "$root_domain" in
   *[!A-Za-z0-9.-]*) echo "Lore root domain contains invalid characters" >&2; exit 1 ;;
+esac
+case "$internal_root_domain" in
+  *[!A-Za-z0-9.-]*) echo "Lore internal domain contains invalid characters" >&2; exit 1 ;;
 esac
 case "$auth_issuer" in
   *[!A-Za-z0-9.-]*) echo "Lore issuer contains invalid characters" >&2; exit 1 ;;
@@ -78,6 +85,7 @@ esac
 endpoint_authority() {
   endpoint_name=$1
   endpoint_value=$2
+  endpoint_root=$3
   endpoint_authority_value=$endpoint_value
   case "$endpoint_authority_value" in
     *:*) endpoint_authority_value=${endpoint_authority_value%:*} ;;
@@ -87,7 +95,7 @@ endpoint_authority() {
     exit 1
   }
   case "$endpoint_authority_value" in
-    "$root_domain"|*."$root_domain") ;;
+    "$endpoint_root"|*."$endpoint_root") ;;
     *) echo "$endpoint_name must use the configured root domain" >&2; exit 1 ;;
   esac
 }
@@ -122,7 +130,7 @@ validate_ucs_endpoint() {
       ;;
     *) endpoint_host=$endpoint_rest ;;
   esac
-  endpoint_authority "$endpoint_name" "$endpoint_host"
+  endpoint_authority "$endpoint_name" "$endpoint_host" "$root_domain"
 }
 
 validate_internal_auth_endpoint() {
@@ -143,13 +151,14 @@ validate_internal_auth_endpoint() {
       ;;
     *) endpoint_host=$endpoint_rest ;;
   esac
-  endpoint_authority "$endpoint_name" "$endpoint_host"
+  endpoint_authority "$endpoint_name" "$endpoint_host" "$internal_root_domain"
 }
 
 validate_http_endpoint() {
   endpoint_name=$1
   endpoint_value=$2
   expected_path=$3
+  endpoint_root=$4
   case "$endpoint_value" in
     https://*) endpoint_rest=${endpoint_value#https://} ;;
     http://*)
@@ -176,72 +185,23 @@ validate_http_endpoint() {
     echo "$endpoint_name must use the fixed path $expected_path" >&2
     exit 1
   }
-  endpoint_authority "$endpoint_name" "$endpoint_host"
+  endpoint_authority "$endpoint_name" "$endpoint_host" "$endpoint_root"
 }
 
 validate_http_endpoint LOREHUB_LORE_AUTH_JWKS_URL "$jwks_endpoint" \
-  "/.well-known/jwks.json"
+  "/.well-known/jwks.json" "$root_domain"
 validate_http_endpoint LOREHUB_LORE_POLICY_ENDPOINT "$policy_endpoint" \
-  "/internal/lore/policy"
+  "/internal/lore/policy" "$root_domain"
 validate_http_endpoint LOREHUB_LORE_OBSERVATION_ENDPOINT "$observation_endpoint" \
-  "/internal/lore/observation"
+  "/internal/lore/observation" "$root_domain"
 validate_http_endpoint LOREHUB_LORE_INTERNAL_AUTH_JWKS_URL "$internal_jwks_endpoint" \
-  "/.well-known/jwks.json"
+  "/.well-known/jwks.json" "$internal_root_domain"
 validate_http_endpoint LOREHUB_LORE_INTERNAL_POLICY_ENDPOINT "$internal_policy_endpoint" \
-  "/internal/lore/policy"
+  "/internal/lore/policy" "$internal_root_domain"
 validate_http_endpoint LOREHUB_LORE_INTERNAL_OBSERVATION_ENDPOINT "$internal_observation_endpoint" \
-  "/internal/lore/observation"
+  "/internal/lore/observation" "$internal_root_domain"
 validate_ucs_endpoint LOREHUB_LORE_AUTH_URL "$auth_url"
 validate_internal_auth_endpoint LOREHUB_LORE_INTERNAL_AUTH_URL "$internal_auth_url"
-
-case "$auth_url" in
-  ucs-auth://*) auth_authority=${auth_url#ucs-auth://} ;;
-  *) echo "LOREHUB_LORE_AUTH_URL must use ucs-auth://" >&2; exit 1 ;;
-esac
-case "$auth_authority" in
-  *:*) auth_proxy_port=${auth_authority##*:} ;;
-  *) auth_proxy_port=443 ;;
-esac
-case "$auth_proxy_port" in
-  ''|*[!0-9]*) echo "LOREHUB_LORE_AUTH_URL has an invalid port" >&2; exit 1 ;;
-esac
-validate_port LOREHUB_LORE_AUTH_URL "$auth_proxy_port"
-case "$internal_auth_url" in
-  https://*) internal_auth_authority=${internal_auth_url#https://} ;;
-  *) echo "LOREHUB_LORE_INTERNAL_AUTH_URL must use HTTPS" >&2; exit 1 ;;
-esac
-case "$internal_auth_authority" in
-  *:*)
-    internal_auth_host=${internal_auth_authority%:*}
-    internal_auth_port=${internal_auth_authority##*:}
-    ;;
-  *)
-    internal_auth_host=$internal_auth_authority
-    internal_auth_port=443
-    ;;
-esac
-command -v socat >/dev/null 2>&1 || {
-  echo "socat is required for the Lore internal UCS TLS bridge" >&2
-  exit 1
-}
-
-# Lore 0.8.6's server-side UCS helper constructs a plaintext tonic endpoint
-# from environment.endpoint.auth_url, while stock clients convert ucs-auth://
-# to HTTPS. Keep the public URL and token-store key unchanged and bridge only
-# the server-local connection to the configured internal HTTPS authority.
-auth_host=${auth_authority%:*}
-if [ "$auth_host" = "$auth_authority" ]; then
-  auth_proxy_port=443
-fi
-if ! grep -Eq "^[[:space:]]*127\\.0\\.0\\.1[[:space:]].*([[:space:]]|^)${auth_host}([[:space:]]|$)" /etc/hosts; then
-  printf '127.0.0.1 %s\n' "$auth_host" >> /etc/hosts
-fi
-openssl_target="OPENSSL:${internal_auth_host}:${internal_auth_port}"
-openssl_options="cafile=/etc/lore/auth-tls/ca.crt,verify=1,commonname=${internal_auth_host}"
-socat "TCP-LISTEN:${auth_proxy_port},bind=127.0.0.1,reuseaddr,fork" \
-  "${openssl_target},${openssl_options}" &
-auth_proxy_pid=$!
-trap 'kill "$auth_proxy_pid" 2>/dev/null || true' EXIT INT TERM
 
 # Lore 0.8.6 layers environment and local files after default.toml. Rendering a
 # single selected file keeps local values from ever leaking into production.
@@ -249,6 +209,7 @@ config_dir=/run/lore-config
 mkdir -p "$config_dir"
 sed \
   -e "s|@ROOT_DOMAIN@|$root_domain|g" \
+  -e "s|@INTERNAL_ROOT_DOMAIN@|$internal_root_domain|g" \
   -e "s|@AUTH_ISSUER@|$auth_issuer|g" \
   -e "s|@AUTH_AUDIENCE@|$auth_audience|g" \
   -e "s|@PUBLIC_JWKS_ENDPOINT@|$jwks_endpoint|g" \
@@ -293,8 +254,10 @@ require_setting '^[[:space:]]*observation_endpoint[[:space:]]*=[[:space:]]*"http
   'hooks.lorehub_policy.observation_endpoint'
 require_setting '^[[:space:]]*auth_url[[:space:]]*=[[:space:]]*"ucs-auth://[^"[:space:]]+"' \
   'environment.endpoint.auth_url'
+require_setting '^[[:space:]]*auth_backend_url[[:space:]]*=[[:space:]]*"https://[^"[:space:]]+"' \
+  'environment.endpoint.auth_backend_url'
 
 loreserver --config "$config_dir" --env "$lore_environment" &
 lore_pid=$!
-trap 'kill "$lore_pid" "$auth_proxy_pid" 2>/dev/null || true' EXIT INT TERM
+trap 'kill "$lore_pid" 2>/dev/null || true' EXIT INT TERM
 wait "$lore_pid"

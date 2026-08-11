@@ -1,0 +1,127 @@
+diff --git a/lore-server/src/grpc/forwarded_repository/v1/service.rs b/lore-server/src/grpc/forwarded_repository/v1/service.rs
+index 6a037a7..e781521 100644
+--- a/lore-server/src/grpc/forwarded_repository/v1/service.rs
++++ b/lore-server/src/grpc/forwarded_repository/v1/service.rs
+@@ -59,7 +59,9 @@ impl LoreForwardedRepositoryV1Service {
+     fn auth_url(&self) -> Option<String> {
+-        self.environment
+-            .endpoint
+-            .as_ref()
+-            .and_then(|endpoint| endpoint.auth_url.clone())
++        self.environment.endpoint.as_ref().and_then(|endpoint| {
++            endpoint
++                .auth_backend_url
++                .clone()
++                .or_else(|| endpoint.auth_url.clone())
++        })
+     }
+ }
+diff --git a/lore-server/src/grpc/repository/v1/service.rs b/lore-server/src/grpc/repository/v1/service.rs
+index f8afdbd..c8df423 100644
+--- a/lore-server/src/grpc/repository/v1/service.rs
++++ b/lore-server/src/grpc/repository/v1/service.rs
+@@ -87,8 +87,10 @@ impl LoreRepositoryV1Service {
+     /// Auth-service URL extracted from the environment, if configured.
+     fn auth_url(&self) -> Option<String> {
+-        self.environment
+-            .endpoint
+-            .clone()
+-            .and_then(|endpoint| endpoint.auth_url)
++        self.environment.endpoint.as_ref().and_then(|endpoint| {
++            endpoint
++                .auth_backend_url
++                .clone()
++                .or_else(|| endpoint.auth_url.clone())
++        })
+     }
+ }
+diff --git a/lore-server/src/grpc/repository_service.rs b/lore-server/src/grpc/repository_service.rs
+index 811dc32..f75ccc4 100644
+--- a/lore-server/src/grpc/repository_service.rs
++++ b/lore-server/src/grpc/repository_service.rs
+@@ -50,4 +50,13 @@ impl LoreRepositoryService {
+             rpc_timeout,
+         }
+     }
++
++    fn auth_url(&self) -> Option<String> {
++        self.environment.endpoint.as_ref().and_then(|endpoint| {
++            endpoint
++                .auth_backend_url
++                .clone()
++                .or_else(|| endpoint.auth_url.clone())
++        })
++    }
+ }
+@@ -62,10 +71,7 @@ impl RepositoryService for LoreRepositoryService {
+             self.rpc_timeout,
+             repository_create::handler(
+                 request,
+-                self.environment
+-                    .endpoint
+-                    .clone()
+-                    .and_then(|endpoint| endpoint.auth_url),
++                self.auth_url(),
+                 self.immutable_store.clone(),
+                 self.mutable_store.clone(),
+                 &self.hook_dispatcher,
+@@ -83,10 +89,7 @@ impl RepositoryService for LoreRepositoryService {
+             self.rpc_timeout,
+             repository_delete::handler(
+                 request,
+-                self.environment
+-                    .endpoint
+-                    .clone()
+-                    .and_then(|endpoint| endpoint.auth_url),
++                self.auth_url(),
+                 self.immutable_store.clone(),
+                 self.mutable_store.clone(),
+                 self,
+@@ -103,10 +106,7 @@ impl RepositoryService for LoreRepositoryService {
+             self.rpc_timeout,
+             repository_query::handler(
+                 request,
+-                self.environment
+-                    .endpoint
+-                    .clone()
+-                    .and_then(|endpoint| endpoint.auth_url),
++                self.auth_url(),
+                 self.immutable_store.clone(),
+                 self.mutable_store.clone(),
+             ),
+@@ -122,10 +122,7 @@ impl RepositoryService for LoreRepositoryService {
+             self.rpc_timeout,
+             repository_list::handler(
+                 request,
+-                self.environment
+-                    .endpoint
+-                    .clone()
+-                    .and_then(|endpoint| endpoint.auth_url),
++                self.auth_url(),
+                 self.immutable_store.clone(),
+                 self.mutable_store.clone(),
+             ),
+diff --git a/lore-transport/src/grpc/environment_client.rs b/lore-transport/src/grpc/environment_client.rs
+index fa6729c..c5f23c4 100644
+--- a/lore-transport/src/grpc/environment_client.rs
++++ b/lore-transport/src/grpc/environment_client.rs
+@@ -20,6 +20,7 @@ impl From<lore_proto::lore::environment::v1::Environment> for EnvironmentConfig
+     fn from(value: lore_proto::lore::environment::v1::Environment) -> Self {
+         EnvironmentConfig {
+             endpoint: value.endpoint.map(|endpoint| Endpoint {
++                auth_backend_url: None,
+                 auth_url: if !endpoint.auth_url.is_empty() {
+                     Some(endpoint.auth_url.clone())
+                 } else {
+diff --git a/lore-transport/src/types.rs b/lore-transport/src/types.rs
+index 78b8600..e481093 100644
+--- a/lore-transport/src/types.rs
++++ b/lore-transport/src/types.rs
+@@ -78,6 +78,7 @@ fn service_url_or<'a>(override_url: Option<&'a str>, fallback: &'a str) -> &'a s
+ #[serde(bound(deserialize = "'de: 'static"))]
+ pub struct Endpoint {
+     pub auth_url: Option<String>,
++    pub auth_backend_url: Option<String>,
+     pub repository_url: Option<String>,
+     pub storage_url: Option<String>,
+     pub revision_url: Option<String>,

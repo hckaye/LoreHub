@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -113,7 +114,7 @@ func (api *API) listLoreBranches(
 		CacheKey: repository.ID, URL: repository.LoreURL, LoreRepositoryID: repository.LoreRepositoryID,
 	}, credential)
 	if err != nil {
-		return nil, errors.New("Lore branch lookup failed")
+		return nil, fmt.Errorf("look up Lore branches: %w", err)
 	}
 	if err := api.observeBranchStates(ctx, repository, branches); err != nil {
 		return nil, err
@@ -141,7 +142,7 @@ func (api *API) listPublicLoreBranches(
 		CacheKey: repository.ID, URL: repository.LoreURL, LoreRepositoryID: repository.LoreRepositoryID,
 	}, credential)
 	if err != nil {
-		return nil, errors.New("Lore branch lookup failed")
+		return nil, fmt.Errorf("look up public Lore branches: %w", err)
 	}
 	if err := api.observeBranchStates(ctx, repository, branches); err != nil {
 		return nil, err

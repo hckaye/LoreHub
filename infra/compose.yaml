@@ -13,6 +13,8 @@ services:
     environment:
       LOREHUB_ENV: ${LOREHUB_ENV:-development}
       LOREHUB_LORE_ROOT_DOMAIN: ${LOREHUB_LORE_ROOT_DOMAIN:?LOREHUB_LORE_ROOT_DOMAIN is required}
+      LOREHUB_LORE_INTERNAL_DOMAIN: >-
+        ${LOREHUB_LORE_INTERNAL_DOMAIN:?LOREHUB_LORE_INTERNAL_DOMAIN is required}
       LOREHUB_TLS_SERVER_NAMES: ${LOREHUB_TLS_SERVER_NAMES:?LOREHUB_TLS_SERVER_NAMES is required}
     restart: "no"
 
@@ -74,14 +76,14 @@ services:
         condition: service_healthy
       tls-init:
         condition: service_completed_successfully
-    extra_hosts:
-      - "auth.${LOREHUB_LORE_ROOT_DOMAIN:?LOREHUB_LORE_ROOT_DOMAIN is required}:127.0.0.1"
     networks:
       default:
         aliases:
           - "lore.${LOREHUB_LORE_ROOT_DOMAIN:?LOREHUB_LORE_ROOT_DOMAIN is required}"
       runner-data:
-        ipv4_address: 172.28.239.3
+        ipv4_address: 172.28.239.4
+        aliases:
+          - "lore.${LOREHUB_LORE_ROOT_DOMAIN:?LOREHUB_LORE_ROOT_DOMAIN is required}"
     restart: unless-stopped
 
   api:
@@ -110,7 +112,10 @@ services:
       LOREHUB_LORE_OBSERVATION_ENDPOINT: ${LOREHUB_LORE_OBSERVATION_ENDPOINT:?required}
       LOREHUB_LORE_AUTH_LOGIN_URL: ${LOREHUB_LORE_AUTH_LOGIN_URL:?LOREHUB_LORE_AUTH_LOGIN_URL is required}
       LOREHUB_LORE_PUBLIC_URL: ${LOREHUB_LORE_PUBLIC_URL:?LOREHUB_LORE_PUBLIC_URL is required}
+      LOREHUB_LORE_INTERNAL_URL: >-
+        lores://lore.${LOREHUB_LORE_ROOT_DOMAIN:?LOREHUB_LORE_ROOT_DOMAIN is required}:41337
       LOREHUB_LORE_AUTH_ADDRESS: :8443
+      LOREHUB_LORE_AUTH_COMPAT_ADDRESS: :${LOREHUB_AUTH_HOST_PORT:-8443}
       LOREHUB_LORE_AUTH_TLS_CERT: /var/lib/lorehub/tls/server.crt
       LOREHUB_LORE_AUTH_TLS_KEY: /var/lib/lorehub/tls/server.key
       LOREHUB_AUTH_SIGNING_KEY_PATH: /var/lib/lorehub/keys/lore-auth.pem
@@ -176,11 +181,13 @@ services:
           - "${LOREHUB_LORE_ROOT_DOMAIN:?LOREHUB_LORE_ROOT_DOMAIN is required}"
           - "api.${LOREHUB_LORE_ROOT_DOMAIN:?LOREHUB_LORE_ROOT_DOMAIN is required}"
           - "auth.${LOREHUB_LORE_ROOT_DOMAIN:?LOREHUB_LORE_ROOT_DOMAIN is required}"
+          - "api.${LOREHUB_LORE_INTERNAL_DOMAIN:?LOREHUB_LORE_INTERNAL_DOMAIN is required}"
       runner-data:
         aliases:
           - "${LOREHUB_LORE_ROOT_DOMAIN:?LOREHUB_LORE_ROOT_DOMAIN is required}"
           - "api.${LOREHUB_LORE_ROOT_DOMAIN:?LOREHUB_LORE_ROOT_DOMAIN is required}"
           - "auth.${LOREHUB_LORE_ROOT_DOMAIN:?LOREHUB_LORE_ROOT_DOMAIN is required}"
+          - "api.${LOREHUB_LORE_INTERNAL_DOMAIN:?LOREHUB_LORE_INTERNAL_DOMAIN is required}"
     ports:
       - "${LOREHUB_HOST_PORT:-8080}:8080"
       - "${LOREHUB_AUTH_HOST_PORT:-8443}:8443"
@@ -210,6 +217,7 @@ services:
   runner:
     profiles: ["runner"]
     platform: linux/amd64
+    user: "lorehub:lorehub"
     build:
       context: ..
       dockerfile: infra/api/Dockerfile
@@ -219,6 +227,7 @@ services:
       DOCKER_HOST: tcp://runner-engine:2376
       DOCKER_TLS_VERIFY: "1"
       DOCKER_CERT_PATH: /etc/lorehub/docker-client
+      SSL_CERT_FILE: /var/lib/lorehub/tls/ca.crt
       LOREHUB_ENV: ${LOREHUB_ENV:-development}
       LOREHUB_AUTH_MODE: ${LOREHUB_RUNNER_AUTH_MODE:-disabled}
       LOREHUB_OIDC_ISSUER: ${LOREHUB_OIDC_ISSUER:?LOREHUB_OIDC_ISSUER is required}
@@ -233,6 +242,8 @@ services:
       LOREHUB_LORE_POLICY_ENDPOINT: ${LOREHUB_LORE_POLICY_ENDPOINT:?LOREHUB_LORE_POLICY_ENDPOINT is required}
       LOREHUB_LORE_OBSERVATION_ENDPOINT: ${LOREHUB_LORE_OBSERVATION_ENDPOINT:?required}
       LOREHUB_LORE_PUBLIC_URL: ${LOREHUB_LORE_PUBLIC_URL:?LOREHUB_LORE_PUBLIC_URL is required}
+      LOREHUB_LORE_INTERNAL_URL: >-
+        lores://lore.${LOREHUB_LORE_ROOT_DOMAIN:?LOREHUB_LORE_ROOT_DOMAIN is required}:41337
       LOREHUB_AUTH_SIGNING_KEY_PATH: ${LOREHUB_AUTH_SIGNING_KEY_PATH:-/var/lib/lorehub/keys/lore-auth.pem}
       LOREHUB_AUTH_SIGNING_KEY_KID: ${LOREHUB_AUTH_SIGNING_KEY_KID:?LOREHUB_AUTH_SIGNING_KEY_KID is required}
       LOREHUB_ACTIONS_SECRET_KEY_ID: ${LOREHUB_ACTIONS_SECRET_KEY_ID:?LOREHUB_ACTIONS_SECRET_KEY_ID is required}

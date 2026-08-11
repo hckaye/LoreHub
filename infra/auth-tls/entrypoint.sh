@@ -5,7 +5,37 @@ umask 077
 mkdir -p /state /tls
 
 environment=${LOREHUB_ENV:-development}
-root_domain=${LOREHUB_LORE_ROOT_DOMAIN:-lorehub.localhost}
+server_names=${LOREHUB_TLS_SERVER_NAMES:?LOREHUB_TLS_SERVER_NAMES is required}
+
+validate_server_names() {
+  old_ifs=$IFS
+  IFS=,
+  for server_name in $server_names; do
+    case "$server_name" in
+      ""|*[!A-Za-z0-9.-]*)
+        echo "LOREHUB_TLS_SERVER_NAMES contains an invalid DNS name" >&2
+        IFS=$old_ifs
+        return 1
+        ;;
+    esac
+  done
+  IFS=$old_ifs
+}
+
+certificate_covers_server_names() {
+  openssl verify -CAfile /tls/ca.crt /tls/server.crt >/dev/null || return 1
+  old_ifs=$IFS
+  IFS=,
+  for server_name in $server_names; do
+    if ! openssl x509 -in /tls/server.crt -checkhost "$server_name" -noout >/dev/null; then
+      IFS=$old_ifs
+      return 1
+    fi
+  done
+  IFS=$old_ifs
+}
+
+validate_server_names
 
 if [ "$environment" = production ]; then
   rm -f /tls/ca.key /tls/ca.srl
@@ -14,14 +44,7 @@ if [ "$environment" = production ]; then
     cp "/input/${required}" "/tls/${required}"
   done
   openssl verify -CAfile /tls/ca.crt /tls/server.crt /tls/lore-client.crt >/dev/null
-  server_names=${LOREHUB_TLS_SERVER_NAMES:?LOREHUB_TLS_SERVER_NAMES is required in production}
-  old_ifs=$IFS
-  IFS=,
-  for server_name in $server_names; do
-    test -n "$server_name"
-    openssl x509 -in /tls/server.crt -checkhost "$server_name" -noout >/dev/null
-  done
-  IFS=$old_ifs
+  certificate_covers_server_names
   chmod 0600 /tls/*.key
   chmod 0644 /tls/*.crt
   chown 0:999 /tls/server.key /tls/lore-client.key
@@ -33,7 +56,7 @@ if [ "$environment" = production ]; then
   exit 0
 fi
 
-if [ -e /tls/ca.crt ] && [ -e /state/ca.key ]; then
+if [ -e /tls/ca.crt ] && [ -e /state/ca.key ] && certificate_covers_server_names; then
   for required in server.key server.crt lore-client.key lore-client.crt; do
     test -s "/tls/${required}"
   done
@@ -62,13 +85,16 @@ openssl req -x509 -newkey rsa:3072 -nodes \
   -addext "basicConstraints=critical,CA:TRUE,pathlen:1" \
   -addext "keyUsage=critical,keyCertSign,cRLSign"
 
-case "$root_domain" in
-  *[!A-Za-z0-9.-]*) echo "LOREHUB_LORE_ROOT_DOMAIN contains invalid characters" >&2; exit 1 ;;
-esac
-server_san="DNS:${root_domain}"
-server_san="${server_san},DNS:auth.${root_domain}"
-server_san="${server_san},DNS:api.${root_domain}"
-server_san="${server_san},DNS:lore.${root_domain}"
+server_san=""
+old_ifs=$IFS
+IFS=,
+for server_name in $server_names; do
+  if [ -n "$server_san" ]; then
+    server_san="${server_san},"
+  fi
+  server_san="${server_san}DNS:${server_name}"
+done
+IFS=$old_ifs
 server_san="${server_san},DNS:localhost,IP:127.0.0.1"
 cat >/tmp/server.ext <<EOF
 basicConstraints=CA:FALSE

@@ -769,7 +769,12 @@ func (client *SDKClient) prepareReadRepository(
 	if err := client.authenticate(ctx, cachePath, repository.URL, credential); err != nil {
 		return "", err
 	}
-	if err := client.ensureBareClone(repository.URL, cachePath, credential.Identity); err != nil {
+	if err := client.ensureBareClone(
+		repository.URL,
+		cachePath,
+		credential.Identity,
+		credential.Partition,
+	); err != nil {
 		return "", err
 	}
 	return cachePath, nil

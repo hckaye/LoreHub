@@ -76,7 +76,9 @@ type Config struct {
 	LoreAuthLoginURL                  string
 	LoreAuthURL                       string
 	LorePublicURL                     string
+	LoreInternalURL                   string
 	LoreAuthAddress                   string
+	LoreAuthCompatAddress             string
 	LoreAuthTLSCert                   string
 	LoreAuthTLSKey                    string
 	AuthSigningKeyPath                string
@@ -139,6 +141,7 @@ func LoadFor(command string) (Config, error) {
 	loreRootDomain := os.Getenv("LOREHUB_LORE_ROOT_DOMAIN")
 	loreAuthJWKSURL := os.Getenv("LOREHUB_LORE_AUTH_JWKS_URL")
 	lorePublicURL := os.Getenv("LOREHUB_LORE_PUBLIC_URL")
+	loreInternalURL := os.Getenv("LOREHUB_LORE_INTERNAL_URL")
 	lorePolicyEndpoint := os.Getenv("LOREHUB_LORE_POLICY_ENDPOINT")
 	loreObservationEndpoint := os.Getenv("LOREHUB_LORE_OBSERVATION_ENDPOINT")
 	loreAuthAuthority := os.Getenv("LOREHUB_LORE_AUTHORITY")
@@ -195,6 +198,7 @@ func LoadFor(command string) (Config, error) {
 		policyTLSCA = defaultIfEmpty(policyTLSCA, "/var/lib/lorehub/tls/ca.crt")
 		signingKeyKID = defaultIfEmpty(signingKeyKID, "local-current")
 	}
+	loreInternalURL = defaultIfEmpty(loreInternalURL, lorePublicURL)
 	oidcIssuer := os.Getenv("LOREHUB_OIDC_ISSUER")
 	oidcAudience := os.Getenv("LOREHUB_OIDC_AUDIENCE")
 	oidcClientID := os.Getenv("LOREHUB_OIDC_CLIENT_ID")
@@ -322,7 +326,9 @@ func LoadFor(command string) (Config, error) {
 		LoreAuthLoginURL:                  loreAuthLoginURL,
 		LoreAuthURL:                       loreAuthURL,
 		LorePublicURL:                     lorePublicURL,
+		LoreInternalURL:                   loreInternalURL,
 		LoreAuthAddress:                   envOrDefault("LOREHUB_LORE_AUTH_ADDRESS", ":8443"),
+		LoreAuthCompatAddress:             os.Getenv("LOREHUB_LORE_AUTH_COMPAT_ADDRESS"),
 		LoreAuthTLSCert:                   loreAuthTLSCert,
 		LoreAuthTLSKey:                    loreAuthTLSKey,
 		AuthSigningKeyPath:                signingKeyPath,
@@ -646,6 +652,12 @@ func validate(config Config, command string) error {
 		publicURL.User != nil || publicURL.Path != "" || publicURL.RawQuery != "" || publicURL.Fragment != "" ||
 		!hostWithinRoot(publicURL.Hostname(), config.LoreRootDomain) {
 		return errors.New("LOREHUB_LORE_PUBLIC_URL must be a fixed managed lores:// endpoint")
+	}
+	internalURL, internalURLErr := url.Parse(config.LoreInternalURL)
+	if internalURLErr != nil || internalURL.Scheme != "lores" || internalURL.Host == "" ||
+		internalURL.User != nil || internalURL.Path != "" || internalURL.RawQuery != "" ||
+		internalURL.Fragment != "" || !hostWithinRoot(internalURL.Hostname(), config.LoreRootDomain) {
+		return errors.New("LOREHUB_LORE_INTERNAL_URL must be a fixed managed lores:// endpoint")
 	}
 	if config.LoreAuthTokenTTL < 5*time.Minute || config.LoreAuthTokenTTL > 10*time.Minute {
 		return errors.New("LOREHUB_LORE_AUTH_TOKEN_TTL must be between 5m and 10m")

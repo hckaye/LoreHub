@@ -85,10 +85,15 @@ Lore:     lores://lorehub.example:41337
 ローカルは`lorehub.localhost`をrootにし、HTTPの認証endpoint、JWKS、確認画面を使えます。JWT issuerはURLではなく、
 stock clientがremoteの許可ドメインとして扱う`auth.lorehub.localhost`です。LoreのUCS gRPC endpointは
 `ucs-auth://auth.lorehub.localhost:8443`で、Lore 0.8.6のclientがHTTPSへ変換します。`lore`、`api`、Docker内部名を
-public URLやaudienceには設定しません。hostのLore CLIが解決できるpublic AuthURLを広告し、Lore container内だけAuthURLの
-名前をローカルbridgeへ向けます。bridgeは`LOREHUB_LORE_INTERNAL_AUTH_URL`のHTTPS authorityへCAとSANを検証して接続し、
-公開AuthURLとtoken-storeのキーは書き換えません。productionでは、コンテナ内でAuthURLの名前をbridgeのloopbackへ解決
-できるようにしてください。
+public URLやaudienceには設定しません。hostのLore CLIが解決できるpublic AuthURLを広告し、Lore Serverの
+バックエンド接続に`LOREHUB_LORE_INTERNAL_AUTH_URL`を使います。この接続はHTTPSのCAとSANを検証し、公開AuthURLと
+token storeのキーは書き換えません。policy、JWKS、認証APIの接続先には
+`LOREHUB_LORE_INTERNAL_DOMAIN`を使います。ローカルの既定値は`lorehub.internal`です。`.localhost`はHTTPクライアントが
+loopbackへ固定して解決するため、コンテナ間通信には使いません。productionでは内部DNSでこの名前をAPIへ解決します。
+
+CI runnerは`LOREHUB_LORE_INTERNAL_URL`を使い、公開Lore URLのpartitionを保ったまま内部authorityへ接続します。
+`runner-data`では`lore.<root-domain>`をLore Serverへ解決します。Loreが広告する公開UCS AuthURLのポートは、APIの
+`LOREHUB_LORE_AUTH_COMPAT_ADDRESS`でも同じTLSサービスを待ち受けます。DBに保存する公開URLは内部URLへ変更しません。
 
 本番で認証endpoint、JWKS、確認画面がHTTPSでない、署名鍵、kid、TLS設定、JWT検証設定がない場合、APIは起動しません。ローカル
 のHTTP設定は開発用profileだけに限定されます。
@@ -105,22 +110,25 @@ JWKSの公開鍵、kid、期限、resource、permissionを検証します。欠�
 read tokenによるwriteは拒否します。
 
 ローカルComposeの`tls-init`は、CA、Lore/API用サーバー証明書、hook用client証明書を実際に作ります。証明書のSANには
-`lorehub.localhost`、`auth.lorehub.localhost`、`api.lorehub.localhost`、`lore.lorehub.localhost`を含めます。hostのLore
-CLIで接続するときは、`infra/.local-tls/lorehub-local-ca.crt`をTLS trust storeへ追加してください。これはローカル用で、
-本番のCAや秘密鍵として使いません。
+`lorehub.localhost`、`auth.lorehub.localhost`、`api.lorehub.localhost`、`lore.lorehub.localhost`、
+`api.lorehub.internal`を含めます。hostのLore CLIで接続するときは、
+`infra/.local-tls/lorehub-local-ca.crt`をTLS trust storeへ追加してください。これはローカル用で、本番のCAや秘密鍵として
+使いません。
 
 hookからLoreHubのpolicy endpointへは、設定したmanaged root配下の
-`https://<policy-host>:8444/internal/lore/policy`を使い、相互TLSと約150msのtimeoutを適用します。観測endpointも同じ
-root配下の固定パスにします。hookのclient証明書は専用の`lore-policy-hook` identityとclientAuth用途を持たなければ
-なりません。接続失敗、証明書不正、SAN不一致、形式不正、拒否応答はすべて拒否にします。本番ではendpoint、root、JWKS、
+`https://<policy-host>:8444/internal/lore/policy`を使い、相互TLSと1秒のtimeoutを適用します。timeoutは100msから5秒の
+範囲に制限します。観測endpointも同じroot配下の固定パスにします。hookのclient証明書は専用の`lore-policy-hook`
+identityとclientAuth用途を持たなければなりません。接続失敗、証明書不正、SAN不一致、形式不正、拒否応答はすべて
+拒否にします。本番ではendpoint、root、JWKS、
 AuthURL、TLS CA、client証明書、client鍵を省略できず、サービス証明書とhook証明書を共有しません。
 
 ## protected branchとmerge
 
 Loreイメージは公式v0.8.6を浅くcloneしてビルドし、公式hook registryへLoreHubのhook moduleを登録します。Lore 0.8.6は
-BranchCreateのhook contextへbranch名を渡さないため、二つのBranchCreate handlerだけにbranch名metadataを追加する小さな
-patchもビルド時に適用します。Loreのソース全体をこのリポジトリへコピーせず、forkも保守しません。更新時は公式tagの変更で
-`HookContext`、JWT検証、UCS client、environment広告、hook registryを確認し、patchの必要性も再評価します。
+BranchCreateのhook contextへbranch名を渡さないため、二つのhandlerへbranch名metadataを追加します。また、利用者へ広告する
+AuthURLとLore Serverが接続するAuthURLを分ける設定を追加します。変更は二つのpatchに限定し、Loreのソース全体をこの
+リポジトリへコピーしません。更新時は公式tagの変更で`HookContext`、JWT検証、UCS client、environment広告、hook registryを
+確認し、patchの必要性を再評価します。
 
 hookが使う`HookContext`はrepository、user、branch ID、branch名、proposed revision、client_ip metadataです。現在の
 revisionはbranch IDをキーにPostgreSQLの観測状態から解決します。観測がない、2分より古い、または状態が不足するpushと

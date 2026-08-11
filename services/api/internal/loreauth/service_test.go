@@ -491,10 +491,71 @@ func TestExchangeCannotWidenResourceScope(t *testing.T) {
 		}}); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("cross-resource exchange error = %v", err)
 	}
-	if _, err := service.ExchangeExternalTokenForUserToken(
-		context.Background(), &ExchangeExternalTokenForUserTokenRequest{},
-	); status.Code(err) != codes.Unimplemented {
-		t.Fatalf("external token exchange error = %v", err)
+	external, err := service.ExchangeExternalTokenForUserToken(context.Background(),
+		&ExchangeExternalTokenForUserTokenRequest{
+			ExternalToken: raw,
+			TokenType:     loreclient.AuthenticationTokenType,
+		})
+	if err != nil || external.UserToken == nil || external.UserToken.UserToken != raw ||
+		external.UserToken.UserId != "alice" || external.UserToken.ExpiresAt < 1_000_000_000_000 {
+		t.Fatalf("external base-token exchange failed: response=%#v error=%v", external, err)
+	}
+	resourceToken := response.Token.UserToken
+	if _, err := service.ExchangeExternalTokenForUserToken(context.Background(),
+		&ExchangeExternalTokenForUserTokenRequest{
+			ExternalToken: resourceToken,
+			TokenType:     loreclient.AuthenticationTokenType,
+		}); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("resource token external exchange error = %v", err)
+	}
+	if _, err := service.ExchangeExternalTokenForUserToken(context.Background(),
+		&ExchangeExternalTokenForUserTokenRequest{
+			ExternalToken: raw,
+			TokenType:     "lore",
+		}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("unsupported external token type error = %v", err)
+	}
+}
+
+func TestAuthenticationTokenDiscoversOnlyCurrentRepositories(t *testing.T) {
+	policy := testPolicy()
+	service, tokens := newTestService(t, policy, &fakeSessions{sessions: make(map[string]*fakeSession)})
+	baseToken, _, err := tokens.MintAuthenticationToken(policy.users["alice"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	permissions, err := service.CheckUserPermission(
+		bearerContext(baseToken),
+		&CheckUserPermissionRequest{ResourceId: []string{testResource}},
+	)
+	if err != nil || len(permissions.AllowedResourcePermission) != 1 ||
+		len(permissions.DeniedResourcePermission) != 0 {
+		t.Fatalf("repository lookup permission failed: response=%#v error=%v", permissions, err)
+	}
+	pageSize := int32(50)
+	listed, err := service.LookupUserPermissions(
+		bearerContext(baseToken),
+		&LookupUserPermissionsRequest{ResourceFilter: "urc", PageSize: &pageSize},
+	)
+	if err != nil || len(listed.ResourcePermission) != 1 ||
+		listed.ResourcePermission[0].ResourceId != testResource {
+		t.Fatalf("repository list permission failed: response=%#v error=%v", listed, err)
+	}
+	if _, err := service.GetUserId(bearerContext(baseToken), &GetUserIdRequest{
+		ResourceId: testResource, UserDisplayName: "Alice",
+	}); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("authentication token reached repository data lookup: %v", err)
+	}
+	policy.mu.Lock()
+	delete(policy.resources["alice"], testResource)
+	policy.mu.Unlock()
+	permissions, err = service.CheckUserPermission(
+		bearerContext(baseToken),
+		&CheckUserPermissionRequest{ResourceId: []string{testResource}},
+	)
+	if err != nil || len(permissions.AllowedResourcePermission) != 0 ||
+		len(permissions.DeniedResourcePermission) != 1 {
+		t.Fatalf("revoked repository permission was accepted: response=%#v error=%v", permissions, err)
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	loreclient "github.com/lorehub/lorehub/services/api/internal/lore"
@@ -116,6 +117,20 @@ func (poller *Poller) poll(ctx context.Context) error {
 				continue
 			}
 			observedBranchIDs = append(observedBranchIDs, branch.ID)
+			if isZeroLoreRevision(branch.LatestRevision) {
+				if _, err := poller.store.ObserveBranch(ctx, repository, ObservedBranch{
+					ID: branch.ID, Name: branch.Name, LatestRevision: branch.LatestRevision,
+				}); err != nil {
+					return fmt.Errorf(
+						"observe empty %s/%s branch %s: %w",
+						repository.Owner,
+						repository.Slug,
+						branch.Name,
+						err,
+					)
+				}
+				continue
+			}
 			var workflows []WorkflowDefinition
 			workspace, err := os.MkdirTemp("", "lorehub-workflow-")
 			if err != nil {
@@ -179,4 +194,8 @@ func (poller *Poller) poll(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func isZeroLoreRevision(revision string) bool {
+	return len(revision) == 64 && strings.Trim(revision, "0") == ""
 }

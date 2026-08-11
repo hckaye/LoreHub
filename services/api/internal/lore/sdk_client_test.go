@@ -91,3 +91,26 @@ func TestProductionSDKRejectsInsecureDevelopmentCredential(t *testing.T) {
 		t.Fatal("production SDK accepted an insecure development credential")
 	}
 }
+
+func TestSDKClientRewritesOnlyTheDataPlaneAuthority(t *testing.T) {
+	client, err := NewSDKClientWithEndpoints(
+		t.TempDir(),
+		"auth.lorehub.example:8443",
+		"lores://lore.lorehub.example:41337",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transportURL, err := client.transportRepositoryURL(
+		"lores://lorehub.example:41341/0123456789abcdef0123456789abcdef",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if transportURL != "lores://lore.lorehub.example:41337/0123456789abcdef0123456789abcdef" {
+		t.Fatalf("unexpected Lore transport URL: %q", transportURL)
+	}
+	if _, err := NewSDKClientWithEndpoints(t.TempDir(), "auth.lorehub.example:8443", "https://lore"); err == nil {
+		t.Fatal("non-Lore data-plane origin was accepted")
+	}
+}

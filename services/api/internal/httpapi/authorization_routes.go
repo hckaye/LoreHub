@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"html"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -463,13 +464,16 @@ func (api *API) InternalPolicyHandler() http.Handler {
 			ProposedRevision: input.ProposedRevision,
 		})
 		if err != nil {
+			api.logLorePolicyDecision(input, false, err)
 			writeProblem(writer, http.StatusForbidden, "policy_denied", "The Lore operation is not authorized")
 			return
 		}
 		if !decision.Allowed {
+			api.logLorePolicyDecision(input, false, nil)
 			writeProblem(writer, http.StatusForbidden, "policy_denied", "The Lore operation is not authorized")
 			return
 		}
+		api.logLorePolicyDecision(input, true, nil)
 		writeJSON(writer, http.StatusOK, map[string]bool{"allowed": true})
 	})
 	mux := http.NewServeMux()
@@ -478,8 +482,30 @@ func (api *API) InternalPolicyHandler() http.Handler {
 	return mux
 }
 
-func NewInternalPolicyHandler(store AuthorizationStore) http.Handler {
-	return (&API{authorization: store}).InternalPolicyHandler()
+func (api *API) logLorePolicyDecision(input policyRequest, allowed bool, err error) {
+	if api.logger == nil {
+		return
+	}
+	attributes := []any{
+		"user_id", input.UserID,
+		"resource_id", input.ResourceID,
+		"operation", input.Operation,
+		"allowed", allowed,
+	}
+	if err != nil {
+		attributes = append(attributes, "error", err)
+		api.logger.Warn("evaluate Lore policy", attributes...)
+		return
+	}
+	api.logger.Info("evaluate Lore policy", attributes...)
+}
+
+func NewInternalPolicyHandler(store AuthorizationStore, loggers ...*slog.Logger) http.Handler {
+	var logger *slog.Logger
+	if len(loggers) > 0 {
+		logger = loggers[0]
+	}
+	return (&API{authorization: store, logger: logger}).InternalPolicyHandler()
 }
 
 func (api *API) internalLoreObservation(writer http.ResponseWriter, request *http.Request) {

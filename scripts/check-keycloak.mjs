@@ -27,6 +27,10 @@ function expect(condition, message) {
 
 // --- compose.yaml (targeted structural checks, no YAML dependency) -----------
 const compose = read("infra/compose.yaml");
+const staticIPv4Addresses = [...compose.matchAll(/ipv4_address:\s*([0-9.]+)/g)].map((match) => match[1]);
+const duplicateStaticIPv4Addresses = staticIPv4Addresses.filter(
+  (address, index) => staticIPv4Addresses.indexOf(address) !== index,
+);
 
 expect(/image: quay\.io\/keycloak\/keycloak:26\.7\.1\b/.test(compose), "Keycloak image must be pinned to 26.7.1");
 expect(/image: postgres:18\.4-alpine\b/.test(compose), "Postgres image must be pinned to 18.4-alpine");
@@ -92,10 +96,31 @@ expect(
 );
 expect(/restart: unless-stopped/.test(compose), "Keycloak services must have a restart policy");
 expect(/healthcheck:/.test(compose), "Keycloak must define a healthcheck");
+expect(duplicateStaticIPv4Addresses.length === 0, "compose services must not reuse a static IPv4 address");
+expect(
+  compose.includes('          - "api.${LOREHUB_LORE_INTERNAL_DOMAIN:'),
+  "API must expose a non-localhost internal DNS alias",
+);
 
 const authTLS = read("infra/auth-tls/entrypoint.sh");
 expect(/-keyout \/state\/ca\.key/.test(authTLS), "the development CA key must stay in private init state");
 expect(!/-keyout \/tls\/ca\.key/.test(authTLS), "the shared TLS volume must not receive the CA private key");
+
+const loreDockerfile = read("infra/lore/Dockerfile");
+const loreEntrypoint = read("infra/lore/entrypoint.sh");
+const loreLocalConfig = read("infra/lore/local.toml");
+const loreProductionConfig = read("infra/lore/production.toml");
+expect(loreDockerfile.includes("auth-backend-url.patch"), "Lore must separate advertised and backend auth URLs");
+expect(!loreDockerfile.includes("socat"), "Lore auth must not use a TLS bridge without HTTP/2 ALPN");
+expect(
+  loreLocalConfig.includes('auth_backend_url = "@INTERNAL_AUTH_URL@"') &&
+    loreProductionConfig.includes('auth_backend_url = "@INTERNAL_AUTH_URL@"'),
+  "Lore configs must use the internal HTTPS auth backend",
+);
+expect(
+  loreEntrypoint.includes("environment.endpoint.auth_backend_url"),
+  "Lore startup must require the internal auth backend setting",
+);
 
 // --- Dockerfile (build-time db vendor + health for --optimized) ------------
 const dockerfile = read("infra/keycloak/Dockerfile");
@@ -227,10 +252,24 @@ expect(!/echo .*SECRET/.test(bootstrap), "bootstrap must not echo secret values"
 
 // --- .env.example -----------------------------------------------------------
 const envExample = read(".env.example");
+expect(/LOREHUB_LORE_INTERNAL_DOMAIN=lorehub\.internal/.test(envExample), "Lore internal DNS domain must be explicit");
+expect(
+  /LOREHUB_LORE_INTERNAL_AUTH_URL=https:\/\/api\.lorehub\.internal:8443/.test(envExample),
+  "Lore internal auth must not use the reserved .localhost domain",
+);
+expect(
+  /LOREHUB_LORE_INTERNAL_POLICY_ENDPOINT=https:\/\/api\.lorehub\.internal:8444\//.test(envExample),
+  "Lore internal policy must not use the reserved .localhost domain",
+);
+expect(
+  /LOREHUB_TLS_SERVER_NAMES=.*api\.lorehub\.internal/.test(envExample),
+  "the API certificate must cover its internal DNS alias",
+);
 const requiredEnvVars = [
   "POSTGRES_PASSWORD",
   "LOREHUB_ENV",
   "LOREHUB_AUTH_MODE",
+  "LOREHUB_LORE_INTERNAL_DOMAIN",
   "LOREHUB_OIDC_ISSUER",
   "LOREHUB_OIDC_AUDIENCE",
   "LOREHUB_OIDC_CLIENT_ID",

@@ -65,6 +65,13 @@ func TestActionsLifecyclePostgres(t *testing.T) {
 	if runCount != 0 || workflowCount != 2 {
 		t.Fatalf("unexpected initial sync counts: runs=%d workflows=%d", runCount, workflowCount)
 	}
+	if _, err := pool.Exec(ctx, `
+		UPDATE repository_branch_states
+		SET latest_revision = 'rev-2', observed_at = now()
+		WHERE repository_id = $1 AND branch_id = 'branch-main'
+	`, fixture.repositoryID); err != nil {
+		t.Fatal(err)
+	}
 
 	changed := []WorkflowDefinition{
 		workflowDefinition(".github/workflows/checks.yml", "Checks", []string{"main"}, false),

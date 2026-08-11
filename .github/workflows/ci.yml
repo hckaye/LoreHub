@@ -53,3 +53,16 @@ jobs:
       - run: npm run api:build
       - run: npm run security
       - run: npm run db:migrate
+
+  lore-policy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: docker/setup-buildx-action@v4.2.0
+      - uses: docker/build-push-action@v7.3.0
+        with:
+          context: .
+          file: infra/lore/Dockerfile
+          target: lore-tests
+          outputs: type=cacheonly

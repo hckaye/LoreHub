@@ -17,14 +17,19 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
         --package lore-client --bin lore
 
 COPY infra/lore/branch-name-hook-context.patch /tmp/branch-name-hook-context.patch
+COPY infra/lore/auth-backend-url.patch /tmp/auth-backend-url.patch
 RUN git apply --check /tmp/branch-name-hook-context.patch \
-    && git apply /tmp/branch-name-hook-context.patch
+    && git apply /tmp/branch-name-hook-context.patch \
+    && git apply --check /tmp/auth-backend-url.patch \
+    && git apply /tmp/auth-backend-url.patch
 COPY infra/lore/lorehub_policy_hook.rs /src/lore/lore-server/src/hooks/lorehub_policy.rs
+COPY infra/lore/lorehub_policy_tls_test_support.rs \
+    /src/lore/lore-server/src/hooks/lorehub_policy/tls_test_support.rs
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     cargo build --locked --release --package lore-server --bin loreserver \
-        --package lore-client --bin lore \
+    && cargo build --locked --release --package lore-client --bin lore \
     && install -Dm755 target/release/loreserver /out/loreserver \
     && install -Dm755 target/release/lore /out/lore
 
@@ -32,12 +37,16 @@ FROM lore-build AS lore-tests
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
-    cargo test --locked --package lore-server lorehub_policy
+    cargo test --locked --package lore-server lorehub_policy --no-run
+
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    cargo test --locked --package lore-server lorehub_policy -- --test-threads=1
 
 FROM debian:trixie-slim
 
 RUN apt-get update \
-    && apt-get install --yes --no-install-recommends ca-certificates curl socat \
+    && apt-get install --yes --no-install-recommends ca-certificates curl \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=lore-build /out/loreserver /usr/local/bin/loreserver

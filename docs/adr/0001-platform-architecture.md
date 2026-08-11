@@ -60,6 +60,9 @@ outboxへ記録し、workerが再送する。重複通知は外部イベントID
 3. GitHub Actions互換のイベントJSON、環境変数、短命な権限トークンを作る。
 4. `act`を非特権の隔離環境で実行し、状態、ログ、成果物を保存する。
 
+Lore hookが記録する最新revisionと、workflow catalogを読み取ったrevisionは別々に保存する。通知がpollingより先に
+到着しても、workflow検出とpush runの登録を省略しない。
+
 organization、repository、environmentのActions variableとsecretはPostgreSQLで管理する。secretは専用鍵による
 AES-256-GCMで暗号化し、runnerが有効なCI service principalとrepository grantを確認した実行時だけ復号する。
 GITHUB_TOKENはjob、run、attempt、repository、有効leaseに限定した短命RS256 JWTとし、SARIF uploadなどの内部APIでも

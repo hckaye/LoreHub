@@ -19,28 +19,53 @@ type SDKClient struct {
 	cacheDirectory           string
 	allowInsecureDevelopment bool
 	expectedAuthHost         string
+	dataPlaneOrigin          string
 	authLock                 sync.Mutex
 	locks                    sync.Map
 }
 
 func NewSDKClient(cacheDirectory string) (*SDKClient, error) {
-	return newSDKClient(cacheDirectory, false, "")
+	return newSDKClient(cacheDirectory, false, "", "")
 }
 
 func NewSDKClientWithAuthAuthority(cacheDirectory string, authority string) (*SDKClient, error) {
+	return NewSDKClientWithEndpoints(cacheDirectory, authority, "")
+}
+
+func NewSDKClientWithEndpoints(
+	cacheDirectory string,
+	authority string,
+	dataPlaneOrigin string,
+) (*SDKClient, error) {
 	if err := validateAuthAuthority(authority); err != nil {
 		return nil, err
 	}
-	return newSDKClient(cacheDirectory, false, authority)
+	return newSDKClient(cacheDirectory, false, authority, dataPlaneOrigin)
 }
 
 func NewDevelopmentSDKClient(cacheDirectory string) (*SDKClient, error) {
-	return newSDKClient(cacheDirectory, true, "")
+	return newSDKClient(cacheDirectory, true, "", "")
 }
 
-func newSDKClient(cacheDirectory string, allowInsecureDevelopment bool, expectedAuthHost string) (*SDKClient, error) {
+func NewDevelopmentSDKClientWithEndpoint(
+	cacheDirectory string,
+	dataPlaneOrigin string,
+) (*SDKClient, error) {
+	return newSDKClient(cacheDirectory, true, "", dataPlaneOrigin)
+}
+
+func newSDKClient(
+	cacheDirectory string,
+	allowInsecureDevelopment bool,
+	expectedAuthHost string,
+	dataPlaneOrigin string,
+) (*SDKClient, error) {
 	if cacheDirectory == "" {
 		return nil, errors.New("Lore cache directory is required")
+	}
+	normalizedOrigin, err := normalizeDataPlaneOrigin(dataPlaneOrigin, allowInsecureDevelopment)
+	if err != nil {
+		return nil, err
 	}
 	if err := os.MkdirAll(cacheDirectory, 0o750); err != nil {
 		return nil, fmt.Errorf("create Lore cache directory: %w", err)
@@ -49,7 +74,34 @@ func newSDKClient(cacheDirectory string, allowInsecureDevelopment bool, expected
 		cacheDirectory:           cacheDirectory,
 		allowInsecureDevelopment: allowInsecureDevelopment,
 		expectedAuthHost:         expectedAuthHost,
+		dataPlaneOrigin:          normalizedOrigin,
 	}, nil
+}
+
+func normalizeDataPlaneOrigin(value string, allowPlain bool) (string, error) {
+	if value == "" {
+		return "", nil
+	}
+	if strings.HasSuffix(value, "/") {
+		return "", errors.New("Lore data-plane origin must not end with a slash")
+	}
+	const validationPartition = "00000000000000000000000000000000"
+	parsed, err := parseRepositoryURL(value+"/"+validationPartition, allowPlain)
+	if err != nil || parsed.Partition != validationPartition {
+		return "", errors.New("Lore data-plane origin must be a fixed Lore authority")
+	}
+	return parsed.Scheme + "://" + parsed.Authority, nil
+}
+
+func (client *SDKClient) transportRepositoryURL(repositoryURL string) (string, error) {
+	parsed, err := client.validateRepositoryURL(repositoryURL)
+	if err != nil {
+		return "", err
+	}
+	if client.dataPlaneOrigin == "" {
+		return repositoryURL, nil
+	}
+	return client.dataPlaneOrigin + "/" + parsed.Partition, nil
 }
 
 func (client *SDKClient) RepositoryInfo(
@@ -67,13 +119,19 @@ func (client *SDKClient) RepositoryInfo(
 	if err := ValidateCredential(repositoryRef, credential, ScopeRead); err != nil {
 		return Repository{}, err
 	}
-	if err := client.authenticate(ctx, "", repositoryURL, credential); err != nil {
+	workspace, err := os.MkdirTemp(client.cacheDirectory, "info-"+credential.Partition+"-")
+	if err != nil {
+		return Repository{}, fmt.Errorf("create Lore information workspace: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(workspace) }()
+	if err := client.authenticate(ctx, workspace, repositoryURL, credential); err != nil {
 		return Repository{}, err
 	}
 	globals, cleanupGlobals := types.NewLoreGlobalArgs(types.LoreGlobalArgs{
-		Identity: credential.Identity,
-		Remote:   true,
-		InMemory: true,
+		RepositoryPath: workspace,
+		Identity:       credential.Identity,
+		Remote:         true,
+		InMemory:       true,
 	})
 	defer cleanupGlobals()
 	args, cleanupArgs := types.NewLoreRepositoryInfoArgs(types.LoreRepositoryInfoArgs{
@@ -131,7 +189,12 @@ func (client *SDKClient) Branches(
 	if err := client.authenticate(ctx, cachePath, repository.URL, credential); err != nil {
 		return nil, err
 	}
-	if err := client.ensureBareClone(repository.URL, cachePath, credential.Identity); err != nil {
+	if err := client.ensureBareClone(
+		repository.URL,
+		cachePath,
+		credential.Identity,
+		credential.Partition,
+	); err != nil {
 		return nil, err
 	}
 
@@ -230,10 +293,14 @@ func (client *SDKClient) CloneWithCredential(
 	if err := ValidateCredential(ref, credential, ScopeRead); err != nil {
 		return err
 	}
+	transportURL, err := client.transportRepositoryURL(repositoryURL)
+	if err != nil {
+		return err
+	}
 	if strings.TrimSpace(destination) == "" || strings.ContainsAny(destination, "\x00\r\n") {
 		return errors.New("Lore clone destination is invalid")
 	}
-	if err := client.authenticate(ctx, destination, repositoryURL, credential); err != nil {
+	if err := client.authenticate(ctx, destination, transportURL, credential); err != nil {
 		return err
 	}
 	globals, cleanupGlobals := types.NewLoreGlobalArgs(types.LoreGlobalArgs{
@@ -241,7 +308,7 @@ func (client *SDKClient) CloneWithCredential(
 	})
 	defer cleanupGlobals()
 	args, cleanupArgs := types.NewLoreRepositoryCloneArgs(types.LoreRepositoryCloneArgs{
-		RepositoryUrl: repositoryURL, Revision: revision,
+		RepositoryUrl: transportURL, Revision: revision,
 	})
 	defer cleanupArgs()
 	if _, err := loresdk.RepositoryClone(&globals, &args).Wait(); err != nil {
@@ -288,11 +355,16 @@ func (client *SDKClient) CreateRepositoryWithCredential(
 		ScopeWrite); err != nil {
 		return err
 	}
-	if err := client.authenticate(ctx, "", repositoryURL, credential); err != nil {
+	workspace, err := os.MkdirTemp(client.cacheDirectory, "provision-"+repositoryID+"-")
+	if err != nil {
+		return fmt.Errorf("create Lore provisioning workspace: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(workspace) }()
+	if err := client.authenticateResourceToken(ctx, workspace, repositoryURL, credential); err != nil {
 		return err
 	}
 	globals, cleanupGlobals := types.NewLoreGlobalArgs(types.LoreGlobalArgs{
-		Identity: credential.Identity, Remote: true, InMemory: true,
+		RepositoryPath: workspace, Identity: credential.Identity, Remote: true, InMemory: true,
 	})
 	defer cleanupGlobals()
 	args, cleanupArgs := types.NewLoreRepositoryCreateArgs(types.LoreRepositoryCreateArgs{
@@ -305,7 +377,12 @@ func (client *SDKClient) CreateRepositoryWithCredential(
 	return nil
 }
 
-func (client *SDKClient) ensureBareClone(repositoryURL string, cachePath string, identity string) error {
+func (client *SDKClient) ensureBareClone(
+	repositoryURL string,
+	cachePath string,
+	identity string,
+	repositoryID string,
+) error {
 	if _, err := os.Stat(filepath.Join(cachePath, ".lore", "config.toml")); err == nil {
 		return nil
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -326,8 +403,57 @@ func (client *SDKClient) ensureBareClone(repositoryURL string, cachePath string,
 		Bare:          true,
 	})
 	defer cleanupArgs()
-	if _, err := loresdk.RepositoryClone(&globals, &args).Wait(); err != nil {
-		return fmt.Errorf("create bare Lore repository cache: %w", err)
+	if _, cloneErr := loresdk.RepositoryClone(&globals, &args).Wait(); cloneErr != nil {
+		if !isEmptyRemoteCloneError(cloneErr) {
+			return fmt.Errorf("create bare Lore repository cache: %w", cloneErr)
+		}
+		if initErr := initializeEmptyRepositoryCache(
+			repositoryURL,
+			cachePath,
+			identity,
+			repositoryID,
+		); initErr != nil {
+			return errors.Join(fmt.Errorf("clone empty Lore repository: %w", cloneErr), initErr)
+		}
+	}
+	return nil
+}
+
+func isEmptyRemoteCloneError(err error) bool {
+	var loreErr *loresdk.LoreError
+	if !errors.As(err, &loreErr) || loreErr.ReturnCode != 13 {
+		return false
+	}
+	for _, message := range loreErr.Messages {
+		if strings.TrimSpace(message) == "Not found" {
+			return true
+		}
+	}
+	return false
+}
+
+func initializeEmptyRepositoryCache(
+	repositoryURL string,
+	cachePath string,
+	identity string,
+	repositoryID string,
+) error {
+	if len(repositoryID) != 32 {
+		return errors.New("empty Lore repository cache requires the exact repository ID")
+	}
+	globals, cleanupGlobals := types.NewLoreGlobalArgs(types.LoreGlobalArgs{
+		RepositoryPath: cachePath,
+		Identity:       identity,
+		Offline:        true,
+	})
+	defer cleanupGlobals()
+	args, cleanupArgs := types.NewLoreRepositoryCreateArgs(types.LoreRepositoryCreateArgs{
+		RepositoryUrl: repositoryURL,
+		Id:            repositoryID,
+	})
+	defer cleanupArgs()
+	if _, err := loresdk.RepositoryCreate(&globals, &args).Wait(); err != nil {
+		return fmt.Errorf("initialize empty Lore repository cache: %w", err)
 	}
 	return nil
 }
@@ -371,6 +497,30 @@ func (client *SDKClient) authenticate(
 	remoteURL string,
 	credential Credential,
 ) error {
+	return client.authenticateWithToken(ctx, repositoryPath, remoteURL, credential,
+		credential.AuthenticationToken, AuthenticationTokenType)
+}
+
+// Repository creation connects before the partition exists, so Lore cannot
+// perform its normal base-token exchange yet. The already-scoped token is used
+// only for this genesis operation and is still verified by Lore Server.
+func (client *SDKClient) authenticateResourceToken(
+	ctx context.Context,
+	repositoryPath string,
+	remoteURL string,
+	credential Credential,
+) error {
+	return client.authenticateWithToken(ctx, repositoryPath, remoteURL, credential, credential.Token, "lore")
+}
+
+func (client *SDKClient) authenticateWithToken(
+	ctx context.Context,
+	repositoryPath string,
+	remoteURL string,
+	credential Credential,
+	token string,
+	tokenType string,
+) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -410,8 +560,8 @@ func (client *SDKClient) authenticate(
 	defer cleanupGlobals()
 	args, cleanupArgs := types.NewLoreAuthLoginWithTokenArgs(types.LoreAuthLoginWithTokenArgs{
 		RemoteUrl: remoteURL,
-		Token:     credential.AuthenticationToken,
-		TokenType: "lore",
+		Token:     token,
+		TokenType: tokenType,
 		AuthUrl:   credential.AuthURL,
 	})
 	defer cleanupArgs()

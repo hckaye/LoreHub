@@ -79,6 +79,8 @@ func (api *API) retryRepositoryProvisioning(writer http.ResponseWriter, request 
 		return
 	}
 	if err := api.provisionManagedRepository(request, actor, repository, provisioner); err != nil {
+		api.logger.Error("retry managed Lore repository provisioning", "error", err,
+			"repository_id", repository.ID, "lore_repository_id", repository.LoreRepositoryID)
 		writeProblem(writer, http.StatusBadGateway, "lore_unavailable", "Lore repository provisioning failed")
 		return
 	}
@@ -99,25 +101,36 @@ func (api *API) provisionManagedRepository(
 	if err != nil {
 		return errors.New("could not issue the exact actor provisioning credential")
 	}
-	if err := api.managedLoreClient.CreateRepositoryWithCredential(request.Context(), repository.LoreURL,
-		repository.LoreRepositoryID, repository.DisplayName, repository.Description, credential); err == nil {
+	creationErr := api.managedLoreClient.CreateRepositoryWithCredential(request.Context(), repository.LoreURL,
+		repository.LoreRepositoryID, repository.DisplayName, repository.Description, credential)
+	info, verificationErr := api.lore.RepositoryInfo(request.Context(), repository.LoreURL, credential)
+	if verificationErr == nil && info.ID == repository.LoreRepositoryID {
 		return provisioner.MarkRepositoryProvisioned(request.Context(), actor, repository.ID)
+	}
+	if verificationErr == nil {
+		verificationErr = errors.New("Lore returned a different repository ID")
 	}
 	if api.serviceSubjects.RepositoryRegistration == "" {
 		return errors.New("repository provisioning service principal is not configured")
 	}
-	serviceCredential, serviceErr := api.loreAuth.IssueServiceResourceToken(request.Context(),
+	serviceCredential, serviceCredentialErr := api.loreAuth.IssueServiceResourceToken(request.Context(),
 		loreclient.ServicePrincipal(loreclient.ServicePurposeRepositoryRegistration,
 			api.serviceSubjects.RepositoryRegistration), resourceID, []string{authz.PermissionAdmin})
-	if serviceErr == nil {
+	if serviceCredentialErr == nil {
 		info, infoErr := api.lore.RepositoryInfo(request.Context(), repository.LoreURL, serviceCredential)
 		if infoErr == nil && info.ID == repository.LoreRepositoryID {
 			return provisioner.MarkRepositoryProvisioned(request.Context(), actor, repository.ID)
+		}
+		if infoErr != nil {
+			serviceCredentialErr = infoErr
+		} else {
+			serviceCredentialErr = errors.New("Lore returned a different repository ID")
 		}
 	}
 	if failErr := provisioner.MarkRepositoryProvisioningFailed(request.Context(), actor, repository.ID,
 		"Lore repository creation was rejected"); failErr != nil {
 		return errors.New("Lore repository provisioning failed")
 	}
-	return errors.New("Lore repository creation was rejected")
+	return errors.Join(errors.New("Lore repository creation was rejected"), creationErr, verificationErr,
+		serviceCredentialErr)
 }

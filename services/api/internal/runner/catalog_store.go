@@ -69,18 +69,24 @@ func (store *Store) ObserveBranch(
 	defer func() { _ = transaction.Rollback(context.WithoutCancel(ctx)) }()
 
 	var previous string
+	var workflowRevision *string
 	err = transaction.QueryRow(ctx, `
-		SELECT latest_revision
+		SELECT latest_revision, workflow_observed_revision
 		FROM repository_branch_states
 		WHERE repository_id = $1 AND branch_id = $2
 		FOR UPDATE
-	`, repository.ID, branch.ID).Scan(&previous)
+	`, repository.ID, branch.ID).Scan(&previous, &workflowRevision)
 	if errors.Is(err, pgx.ErrNoRows) {
+		var observedWorkflowRevision *string
+		if workflows != nil || isZeroLoreRevision(branch.LatestRevision) {
+			observedWorkflowRevision = &branch.LatestRevision
+		}
 		_, err = transaction.Exec(ctx, `
 			INSERT INTO repository_branch_states (
-				repository_id, branch_id, branch_name, latest_revision, observed_at
-			) VALUES ($1, $2, $3, $4, now())
-		`, repository.ID, branch.ID, branch.Name, branch.LatestRevision)
+				repository_id, branch_id, branch_name, latest_revision,
+				workflow_observed_revision, observed_at
+			) VALUES ($1, $2, $3, $4, $5, now())
+		`, repository.ID, branch.ID, branch.Name, branch.LatestRevision, observedWorkflowRevision)
 		if err != nil {
 			return false, fmt.Errorf("record initial branch state: %w", err)
 		}
@@ -103,7 +109,8 @@ func (store *Store) ObserveBranch(
 	if err != nil {
 		return false, fmt.Errorf("read previous branch state: %w", err)
 	}
-	if previous == branch.LatestRevision {
+	catalogChanged := workflowRevision == nil || *workflowRevision != branch.LatestRevision
+	if previous == branch.LatestRevision && !catalogChanged {
 		_, err = transaction.Exec(ctx, `
 			UPDATE repository_branch_states
 			SET branch_name = $3, observed_at = now()
@@ -118,15 +125,32 @@ func (store *Store) ObserveBranch(
 		return false, nil
 	}
 
+	if workflows == nil && !isZeroLoreRevision(branch.LatestRevision) {
+		_, err = transaction.Exec(ctx, `
+			UPDATE repository_branch_states
+			SET branch_name = $3, latest_revision = $4, observed_at = now()
+			WHERE repository_id = $1 AND branch_id = $2
+		`, repository.ID, branch.ID, branch.Name, branch.LatestRevision)
+		if err != nil {
+			return false, fmt.Errorf("update branch state without workflow catalog: %w", err)
+		}
+		if err := transaction.Commit(ctx); err != nil {
+			return false, fmt.Errorf("commit branch state without workflow catalog: %w", err)
+		}
+		return false, nil
+	}
+
 	_, err = transaction.Exec(ctx, `
 		UPDATE repository_branch_states
-		SET branch_name = $3, latest_revision = $4, observed_at = now()
+		SET branch_name = $3, latest_revision = $4,
+			workflow_observed_revision = $4, observed_at = now()
 		WHERE repository_id = $1 AND branch_id = $2
 	`, repository.ID, branch.ID, branch.Name, branch.LatestRevision)
 	if err != nil {
 		return false, fmt.Errorf("update branch state: %w", err)
 	}
-	if workflows != nil {
+	queued := false
+	if workflows != nil && catalogChanged {
 		var revisionWorkflowIDs map[string]uuid.UUID
 		if canonical {
 			if err := store.syncWorkflows(ctx, transaction, repository, branch.LatestRevision, workflows); err != nil {
@@ -140,16 +164,20 @@ func (store *Store) ObserveBranch(
 				return false, err
 			}
 		}
-		if err := store.enqueuePushes(
-			ctx, transaction, repository, branch, previous, workflows, canonical, revisionWorkflowIDs,
-		); err != nil {
-			return false, err
+		if workflowRevision != nil {
+			if err := store.enqueuePushes(
+				ctx, transaction, repository, branch, *workflowRevision, workflows,
+				canonical, revisionWorkflowIDs,
+			); err != nil {
+				return false, err
+			}
+			queued = true
 		}
 	}
 	if err := transaction.Commit(ctx); err != nil {
 		return false, fmt.Errorf("commit branch observation: %w", err)
 	}
-	return true, nil
+	return queued, nil
 }
 
 func (store *Store) syncWorkflowRevisions(

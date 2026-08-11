@@ -380,10 +380,24 @@ func (service *Service) VerifyUser(
 }
 
 func (service *Service) ExchangeExternalTokenForUserToken(
-	context.Context,
-	*ExchangeExternalTokenForUserTokenRequest,
+	_ context.Context,
+	request *ExchangeExternalTokenForUserTokenRequest,
 ) (*ExchangeExternalTokenForUserTokenResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "external token exchange is not configured")
+	if request == nil || request.GetTokenType() != loreclient.AuthenticationTokenType ||
+		strings.TrimSpace(request.GetExternalToken()) == "" {
+		return nil, status.Error(codes.InvalidArgument, "external token type is not supported")
+	}
+	verified, err := service.tokens.VerifyAuthenticationToken(strings.TrimSpace(request.GetExternalToken()))
+	if err != nil {
+		return nil, status.Error(codes.Unauthenticated, "external token is invalid")
+	}
+	claims := verified.Claims
+	return &ExchangeExternalTokenForUserTokenResponse{UserToken: &UserToken{
+		UserToken: request.GetExternalToken(),
+		ExpiresAt: claims.Expiry.Time().UnixMilli(),
+		UserId:    claims.Subject,
+		UserName:  claims.Name,
+	}}, nil
 }
 
 func (service *Service) ExchangeAPIKeyForUserToken(
@@ -481,7 +495,7 @@ func (service *Service) CheckUserPermission(
 	ctx context.Context,
 	request *CheckUserPermissionRequest,
 ) (*CheckUserPermissionResponse, error) {
-	claims, err := service.authenticateResource(ctx)
+	claims, resourceScoped, err := service.authenticatePermissionCaller(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -491,6 +505,9 @@ func (service *Service) CheckUserPermission(
 	targetID, err := service.targetUserID(request.GetTargetUser(), claims)
 	if err != nil {
 		return nil, err
+	}
+	if !resourceScoped {
+		return service.checkAuthenticationPermissions(ctx, claims, request.GetResourceId(), targetID), nil
 	}
 	response := &CheckUserPermissionResponse{}
 	for _, resourceID := range request.GetResourceId() {
@@ -512,6 +529,30 @@ func (service *Service) CheckUserPermission(
 	return response, nil
 }
 
+func (service *Service) checkAuthenticationPermissions(
+	ctx context.Context,
+	claims LoreClaims,
+	resourceIDs []string,
+	targetID string,
+) *CheckUserPermissionResponse {
+	response := &CheckUserPermissionResponse{}
+	for _, resourceID := range resourceIDs {
+		denied := &ResourcePermission{ResourceId: resourceID}
+		if !authz.ValidResourceID(resourceID) || targetID != claims.Subject {
+			response.DeniedResourcePermission = append(response.DeniedResourcePermission, denied)
+			continue
+		}
+		permissions, ok := service.authenticationPermissions(ctx, claims, resourceID)
+		if !ok {
+			response.DeniedResourcePermission = append(response.DeniedResourcePermission, denied)
+			continue
+		}
+		response.AllowedResourcePermission = append(response.AllowedResourcePermission,
+			&ResourcePermission{ResourceId: resourceID, Permission: permissions})
+	}
+	return response
+}
+
 func (service *Service) LookupUserPermissions(
 	ctx context.Context,
 	request *LookupUserPermissionsRequest,
@@ -519,7 +560,7 @@ func (service *Service) LookupUserPermissions(
 	if request == nil {
 		return nil, status.Error(codes.InvalidArgument, "permission lookup request is required")
 	}
-	claims, err := service.authenticateResource(ctx)
+	claims, resourceScoped, err := service.authenticatePermissionCaller(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -531,10 +572,21 @@ func (service *Service) LookupUserPermissions(
 	if filter != "" && filter != "urc" && filter != "urc-*" && !authz.ValidResourceID(filter) {
 		return nil, status.Error(codes.InvalidArgument, "permission lookup filter is invalid")
 	}
-	if authz.ValidResourceID(filter) && !service.hasCurrentPermission(ctx, claims, filter, authz.PermissionRead) {
+	if resourceScoped && authz.ValidResourceID(filter) &&
+		!service.hasCurrentPermission(ctx, claims, filter, authz.PermissionRead) {
 		return nil, status.Error(codes.PermissionDenied, "current resource access is not authorized")
 	}
-	resources, next, err := service.lookupScopedPermissions(ctx, claims, filter, pageSize, request.GetPageToken())
+	var resources []authz.ResourcePermissions
+	var next string
+	if resourceScoped {
+		resources, next, err = service.lookupScopedPermissions(
+			ctx, claims, filter, pageSize, request.GetPageToken(),
+		)
+	} else {
+		resources, next, err = service.lookupAuthenticationPermissions(
+			ctx, claims, filter, pageSize, request.GetPageToken(),
+		)
+	}
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "permission lookup filter is invalid")
 	}
@@ -639,6 +691,47 @@ func (service *Service) authenticateResource(ctx context.Context) (LoreClaims, e
 		return LoreClaims{}, status.Error(codes.PermissionDenied, "the user is no longer active")
 	}
 	return claims, nil
+}
+
+func (service *Service) authenticatePermissionCaller(
+	ctx context.Context,
+) (LoreClaims, bool, error) {
+	values := metadata.ValueFromIncomingContext(ctx, "authorization")
+	if len(values) == 0 {
+		return LoreClaims{}, false, status.Error(codes.Unauthenticated, "authorization is required")
+	}
+	parts := strings.SplitN(strings.TrimSpace(values[0]), " ", 2)
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "bearer") || strings.TrimSpace(parts[1]) == "" {
+		return LoreClaims{}, false, status.Error(codes.Unauthenticated, "authorization is required")
+	}
+	raw := strings.TrimSpace(parts[1])
+	if verified, err := service.tokens.VerifyResourceToken(raw); err == nil {
+		if err := service.ensureActivePermissionCaller(ctx, verified.Claims); err != nil {
+			return LoreClaims{}, false, err
+		}
+		return verified.Claims, true, nil
+	}
+	verified, err := service.tokens.VerifyAuthenticationToken(raw)
+	if err != nil {
+		return LoreClaims{}, false, status.Error(codes.Unauthenticated, "authorization is invalid")
+	}
+	if err := service.ensureActivePermissionCaller(ctx, verified.Claims); err != nil {
+		return LoreClaims{}, false, err
+	}
+	return verified.Claims, false, nil
+}
+
+func (service *Service) ensureActivePermissionCaller(ctx context.Context, claims LoreClaims) error {
+	if claims.IsServiceAccount {
+		if claims.Subject == "" || claims.PreferredUsername == "" {
+			return status.Error(codes.PermissionDenied, "service principal is unavailable")
+		}
+		return nil
+	}
+	if _, err := service.policy.UserInfo(ctx, claims.Subject); err != nil {
+		return status.Error(codes.PermissionDenied, "the user is no longer active")
+	}
+	return nil
 }
 
 func (service *Service) authenticateWith(
@@ -807,6 +900,58 @@ func (service *Service) lookupScopedPermissions(
 		next = strconv.Itoa(end)
 	}
 	return result, next, nil
+}
+
+func (service *Service) lookupAuthenticationPermissions(
+	ctx context.Context,
+	claims LoreClaims,
+	filter string,
+	pageSize int,
+	pageToken string,
+) ([]authz.ResourcePermissions, string, error) {
+	if claims.IsServiceAccount {
+		if !authz.ValidResourceID(filter) || pageToken != "" {
+			return nil, "", errors.New("service principal repository enumeration is unavailable")
+		}
+		permissions, ok := service.authenticationPermissions(ctx, claims, filter)
+		if !ok {
+			return nil, "", nil
+		}
+		return []authz.ResourcePermissions{{ResourceID: filter, Permissions: permissions}}, "", nil
+	}
+	return service.policy.ListResourcePermissions(ctx, claims.Subject, filter, pageSize, pageToken)
+}
+
+func (service *Service) authenticationPermissions(
+	ctx context.Context,
+	claims LoreClaims,
+	resourceID string,
+) ([]string, bool) {
+	var permissions []string
+	if claims.IsServiceAccount {
+		policy, ok := service.policy.(servicePrincipalPolicy)
+		if !ok {
+			return nil, false
+		}
+		principal, granted, err := policy.ServicePrincipalResource(
+			ctx, claims.PreferredUsername, resourceID,
+		)
+		if err != nil || principal.ID != claims.Subject {
+			return nil, false
+		}
+		permissions = granted
+	} else {
+		current, err := service.policy.EffectivePermissions(ctx, claims.Subject, resourceID)
+		if err != nil {
+			return nil, false
+		}
+		permissions = current.Permissions
+	}
+	available := authz.ExpandPermissions(permissionMap(permissions))
+	if !available[authz.PermissionRead] {
+		return nil, false
+	}
+	return authz.PermissionList(available), true
 }
 
 func base64Raw(value []byte) string {

@@ -72,7 +72,20 @@ func run(logger *slog.Logger) error {
 	}
 	var lore *loreclient.SDKClient
 	if settings.Environment == "local-insecure" {
-		lore, err = loreclient.NewDevelopmentSDKClient(settings.LoreCacheDir)
+		if command == "runner" {
+			lore, err = loreclient.NewDevelopmentSDKClientWithEndpoint(
+				settings.LoreCacheDir,
+				settings.LoreInternalURL,
+			)
+		} else {
+			lore, err = loreclient.NewDevelopmentSDKClient(settings.LoreCacheDir)
+		}
+	} else if command == "runner" {
+		lore, err = loreclient.NewSDKClientWithEndpoints(
+			settings.LoreCacheDir,
+			settings.LoreAuthAuthority,
+			settings.LoreInternalURL,
+		)
 	} else {
 		lore, err = loreclient.NewSDKClientWithAuthAuthority(settings.LoreCacheDir, settings.LoreAuthAuthority)
 	}
@@ -207,7 +220,7 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	policyHandler := httpapi.NewInternalPolicyHandler(store)
+	policyHandler := httpapi.NewInternalPolicyHandler(store, logger)
 	policyServer := &http.Server{
 		Addr: settings.PolicyAddress, Handler: policyHandler, TLSConfig: policyTLS,
 		ReadHeaderTimeout: 2 * time.Second, ReadTimeout: 2 * time.Second, WriteTimeout: 2 * time.Second,
@@ -216,32 +229,55 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("listen Lore auth gRPC: %w", err)
 	}
+	authListeners := []net.Listener{authListener}
+	if settings.LoreAuthCompatAddress != "" && settings.LoreAuthCompatAddress != settings.LoreAuthAddress {
+		compatListener, listenErr := net.Listen("tcp", settings.LoreAuthCompatAddress)
+		if listenErr != nil {
+			_ = authListener.Close()
+			return fmt.Errorf("listen Lore auth compatibility endpoint: %w", listenErr)
+		}
+		authListeners = append(authListeners, compatListener)
+	}
 	authGRPC := grpc.NewServer(grpc.Creds(credentials.NewTLS(authTLS)))
 	epic_urc.RegisterUrcAuthApiServer(authGRPC, loreAuth)
 	rebac, err := loreauth.NewRebacService(loreAuth)
 	if err != nil {
-		_ = authListener.Close()
+		closeListeners(authListeners)
 		return err
 	}
 	epic_urc.RegisterRebacApiServer(authGRPC, rebac)
 	policyListener, err := net.Listen("tcp", settings.PolicyAddress)
 	if err != nil {
-		_ = authListener.Close()
+		closeListeners(authListeners)
 		return fmt.Errorf("listen Lore policy endpoint: %w", err)
 	}
 	tlsPolicyListener := tls.NewListener(policyListener, policyTLS)
-	serverErrors := make(chan error, 3)
+	branchPoller := runner.NewPoller(
+		actionsStore,
+		lore,
+		loreCredentials,
+		settings.LoreObserverSubject,
+		settings.BranchPollPeriod,
+		logger,
+		settings.RunnerPlatformImages,
+	)
+	serverErrors := make(chan error, 3+len(authListeners))
 	go func() {
 		logger.Info("LoreHub API listening", "address", settings.HTTPAddress)
 		serverErrors <- server.ListenAndServe()
 	}()
-	go func() {
-		logger.Info("LoreHub UCS auth listening", "address", settings.LoreAuthAddress)
-		serverErrors <- authGRPC.Serve(authListener)
-	}()
+	for _, listener := range authListeners {
+		go func(listener net.Listener) {
+			logger.Info("LoreHub UCS auth listening", "address", listener.Addr().String())
+			serverErrors <- authGRPC.Serve(listener)
+		}(listener)
+	}
 	go func() {
 		logger.Info("LoreHub policy endpoint listening", "address", settings.PolicyAddress)
 		serverErrors <- policyServer.Serve(tlsPolicyListener)
+	}()
+	go func() {
+		serverErrors <- branchPoller.Run(rootContext)
 	}()
 
 	select {
@@ -264,6 +300,12 @@ func run(logger *slog.Logger) error {
 			return nil
 		}
 		return fmt.Errorf("serve HTTP: %w", err)
+	}
+}
+
+func closeListeners(listeners []net.Listener) {
+	for _, listener := range listeners {
+		_ = listener.Close()
 	}
 }
 
@@ -379,12 +421,7 @@ func runRunner(
 	if err != nil {
 		return err
 	}
-	poller := runner.NewPoller(store, lore, credentials, settings.LoreObserverSubject,
-		settings.BranchPollPeriod, logger, settings.RunnerPlatformImages)
-	errorsChannel := make(chan error, 2)
-	go func() { errorsChannel <- poller.Run(ctx) }()
-	go func() { errorsChannel <- worker.Run(ctx) }()
-	err = <-errorsChannel
+	err = worker.Run(ctx)
 	if errors.Is(err, context.Canceled) {
 		return nil
 	}

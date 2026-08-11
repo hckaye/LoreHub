@@ -18,7 +18,10 @@ use crate::hooks::{
 };
 
 const HOOK_NAME: &str = "lorehub_policy";
-const REQUEST_TIMEOUT: Duration = Duration::from_millis(150);
+const MIN_REQUEST_TIMEOUT_MILLIS: i64 = 100;
+const MAX_REQUEST_TIMEOUT_MILLIS: i64 = 5_000;
+#[cfg(test)]
+const TEST_REQUEST_TIMEOUT: Duration = Duration::from_millis(150);
 const HOOK_POINTS: &[HookPoint] = &[
     HookPoint::BranchPush,
     HookPoint::BranchCreate,
@@ -100,7 +103,7 @@ impl HookRuntime {
         })
     }
 
-    fn block_on<F>(&self, future: F) -> Result<F::Output, String>
+    fn block_on<F>(&self, future: F, timeout: Duration) -> Result<F::Output, String>
     where
         F: Future + Send + 'static,
         F::Output: Send + 'static,
@@ -114,16 +117,12 @@ impl HookRuntime {
             .ok_or_else(|| "policy runtime is unavailable".to_string())?
             .try_send(job)
             .map_err(|_| "policy runtime queue is full".to_string())?;
-        receiver
-            .recv_timeout(REQUEST_TIMEOUT)
-            .map_err(|error| match error {
-                std::sync::mpsc::RecvTimeoutError::Timeout => {
-                    "policy runtime timed out".to_string()
-                }
-                std::sync::mpsc::RecvTimeoutError::Disconnected => {
-                    "policy runtime stopped unexpectedly".to_string()
-                }
-            })
+        receiver.recv_timeout(timeout).map_err(|error| match error {
+            std::sync::mpsc::RecvTimeoutError::Timeout => "policy runtime timed out".to_string(),
+            std::sync::mpsc::RecvTimeoutError::Disconnected => {
+                "policy runtime stopped unexpectedly".to_string()
+            }
+        })
     }
 }
 
@@ -139,6 +138,7 @@ impl Drop for HookRuntime {
 struct LoreHubPolicyHook {
     client: Client,
     runtime: HookRuntime,
+    request_timeout: Duration,
     policy_endpoint: String,
     observation_endpoint: String,
 }
@@ -172,28 +172,31 @@ impl LoreHubPolicyHook {
         let client = self.client.clone();
         let endpoint = self.policy_endpoint.clone();
         self.runtime
-            .block_on(async move {
-                let response = client
-                    .post(endpoint)
-                    .header(reqwest::header::CONTENT_TYPE, "application/json")
-                    .body(body)
-                    .send()
-                    .await
-                    .map_err(|_| "policy endpoint unavailable".to_string())?;
-                if !response.status().is_success() {
-                    return Err("policy denied the Lore operation".to_string());
-                }
-                let body = response
-                    .bytes()
-                    .await
-                    .map_err(|_| "policy response was invalid".to_string())?;
-                let decision: PolicyResponse = serde_json::from_slice(&body)
-                    .map_err(|_| "policy response was invalid".to_string())?;
-                if !decision.allowed {
-                    return Err("policy denied the Lore operation".to_string());
-                }
-                Ok(())
-            })
+            .block_on(
+                async move {
+                    let response = client
+                        .post(endpoint)
+                        .header(reqwest::header::CONTENT_TYPE, "application/json")
+                        .body(body)
+                        .send()
+                        .await
+                        .map_err(|_| "policy endpoint unavailable".to_string())?;
+                    if !response.status().is_success() {
+                        return Err("policy denied the Lore operation".to_string());
+                    }
+                    let body = response
+                        .bytes()
+                        .await
+                        .map_err(|_| "policy response was invalid".to_string())?;
+                    let decision: PolicyResponse = serde_json::from_slice(&body)
+                        .map_err(|_| "policy response was invalid".to_string())?;
+                    if !decision.allowed {
+                        return Err("policy denied the Lore operation".to_string());
+                    }
+                    Ok(())
+                },
+                self.request_timeout,
+            )
             .and_then(|result| result)
     }
 
@@ -282,6 +285,7 @@ impl HookFactory for LoreHubPolicyFactory {
             required_config_string(self.name(), config, "observation_endpoint")?;
         let auth_endpoint = required_config_string(self.name(), config, "auth_endpoint")?;
         let jwks_endpoint = required_config_string(self.name(), config, "jwks_endpoint")?;
+        let request_timeout = required_request_timeout(self.name(), config)?;
 
         validate_root_domain(&root_domain, &environment)
             .map_err(|message| HookError::config_error(self.name(), message))?;
@@ -332,7 +336,7 @@ impl HookFactory for LoreHubPolicyFactory {
         let client = Client::builder()
             .add_root_certificate(ca)
             .identity(identity)
-            .timeout(REQUEST_TIMEOUT)
+            .timeout(request_timeout)
             .build()
             .map_err(|_| HookError::init_error(self.name(), "could not build policy client"))?;
         let runtime = HookRuntime::new()
@@ -340,6 +344,7 @@ impl HookFactory for LoreHubPolicyFactory {
         Ok(Box::new(LoreHubPolicyHook {
             client,
             runtime,
+            request_timeout,
             policy_endpoint,
             observation_endpoint,
         }))
@@ -358,6 +363,23 @@ fn required_config_string(
         .filter(|value| !value.is_empty())
         .map(ToString::to_string)
         .ok_or_else(|| HookError::config_error(hook_name, format!("{key} is required")))
+}
+
+fn required_request_timeout(hook_name: &str, config: &toml::Value) -> Result<Duration, HookError> {
+    let millis = config
+        .get("timeout_millis")
+        .and_then(toml::Value::as_integer)
+        .filter(|value| (MIN_REQUEST_TIMEOUT_MILLIS..=MAX_REQUEST_TIMEOUT_MILLIS).contains(value))
+        .ok_or_else(|| {
+            HookError::config_error(
+                hook_name,
+                format!(
+                    "timeout_millis must be between {MIN_REQUEST_TIMEOUT_MILLIS} and \
+                     {MAX_REQUEST_TIMEOUT_MILLIS}"
+                ),
+            )
+        })?;
+    Ok(Duration::from_millis(millis as u64))
 }
 
 fn validate_root_domain(root_domain: &str, environment: &str) -> Result<(), String> {
@@ -468,11 +490,13 @@ pub fn register(registry: &mut HookRegistry, _context: &HookRegistrationContext)
 }
 
 #[cfg(test)]
+#[path = "lorehub_policy/tls_test_support.rs"]
+mod tls_test_support;
+
+#[cfg(test)]
 mod tests {
     use std::io::{Read, Write};
     use std::net::TcpListener;
-    use std::path::Path;
-    use std::process::{Child, Command, Stdio};
     use std::sync::mpsc;
     use std::thread;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -480,6 +504,7 @@ mod tests {
     use lore_base::types::Hash;
     use lore_revision::lore::{BranchId, RepositoryId};
 
+    use super::tls_test_support::{create_ca, create_request, issue_certificate, tls_get};
     use super::*;
 
     fn context(point: HookPoint) -> HookContext {
@@ -526,10 +551,11 @@ mod tests {
     fn hook(policy_endpoint: String, observation_endpoint: String) -> LoreHubPolicyHook {
         LoreHubPolicyHook {
             client: Client::builder()
-                .timeout(REQUEST_TIMEOUT)
+                .timeout(TEST_REQUEST_TIMEOUT)
                 .build()
                 .expect("build test policy client"),
             runtime: HookRuntime::new().expect("build test policy runtime"),
+            request_timeout: TEST_REQUEST_TIMEOUT,
             policy_endpoint,
             observation_endpoint,
         }
@@ -544,6 +570,7 @@ mod tests {
                 "observation_endpoint = \"{}\"\n",
                 "auth_endpoint = \"https://api.control.test:8443\"\n",
                 "jwks_endpoint = \"https://api.control.test/.well-known/jwks.json\"\n",
+                "timeout_millis = 1000\n",
                 "ca_certificate = \"/missing/ca.crt\"\n",
                 "client_certificate = \"/missing/client.crt\"\n",
                 "client_key = \"/missing/client.key\"\n"
@@ -599,6 +626,21 @@ mod tests {
             policy_hook
                 .pre_handler(&context(HookPoint::BranchPush))
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn policy_timeout_must_be_bounded() {
+        for value in [99, 5_001] {
+            let config = toml::from_str(&format!("timeout_millis = {value}"))
+                .expect("parse timeout configuration");
+            assert!(required_request_timeout(HOOK_NAME, &config).is_err());
+        }
+        let config =
+            toml::from_str("timeout_millis = 1000").expect("parse valid timeout configuration");
+        assert_eq!(
+            required_request_timeout(HOOK_NAME, &config).expect("valid timeout"),
+            Duration::from_secs(1)
         );
     }
 
@@ -806,173 +848,6 @@ mod tests {
         );
         let _ = fs::remove_dir_all(directory);
     }
-    fn path(value: &Path) -> &str {
-        value.to_str().expect("test path is UTF-8")
-    }
-    fn run_openssl_owned(arguments: &[String]) {
-        let status = Command::new("openssl")
-            .args(arguments)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .expect("run openssl test command");
-        assert!(status.success(), "openssl command failed: {arguments:?}");
-    }
-    fn create_ca(key: &Path, certificate: &Path, subject: &str) {
-        run_openssl_owned(&[
-            "req".to_string(),
-            "-x509".to_string(),
-            "-newkey".to_string(),
-            "rsa:2048".to_string(),
-            "-nodes".to_string(),
-            "-keyout".to_string(),
-            path(key).to_string(),
-            "-out".to_string(),
-            path(certificate).to_string(),
-            "-subj".to_string(),
-            subject.to_string(),
-            "-days".to_string(),
-            "1".to_string(),
-            "-addext".to_string(),
-            "basicConstraints=critical,CA:TRUE".to_string(),
-            "-addext".to_string(),
-            "keyUsage=critical,keyCertSign,cRLSign".to_string(),
-        ]);
-    }
-
-    fn create_request(key: &Path, request: &Path, subject: &str) {
-        run_openssl_owned(&[
-            "req".to_string(),
-            "-newkey".to_string(),
-            "rsa:2048".to_string(),
-            "-nodes".to_string(),
-            "-keyout".to_string(),
-            path(key).to_string(),
-            "-out".to_string(),
-            path(request).to_string(),
-            "-subj".to_string(),
-            subject.to_string(),
-        ]);
-    }
-
-    fn issue_certificate(
-        request: &Path,
-        ca: &Path,
-        ca_key: &Path,
-        certificate: &Path,
-        extensions: &Path,
-        serial: &Path,
-        create_serial: bool,
-    ) {
-        let mut arguments = vec![
-            "x509".to_string(),
-            "-req".to_string(),
-            "-in".to_string(),
-            path(request).to_string(),
-            "-CA".to_string(),
-            path(ca).to_string(),
-            "-CAkey".to_string(),
-            path(ca_key).to_string(),
-        ];
-        if create_serial {
-            arguments.push("-CAcreateserial".to_string());
-        } else {
-            arguments.extend(["-CAserial".to_string(), path(serial).to_string()]);
-        }
-        arguments.extend([
-            "-out".to_string(),
-            path(certificate).to_string(),
-            "-days".to_string(),
-            "1".to_string(),
-            "-extfile".to_string(),
-            path(extensions).to_string(),
-        ]);
-        run_openssl_owned(&arguments);
-    }
-
-    fn free_port() -> u16 {
-        TcpListener::bind("127.0.0.1:0")
-            .expect("bind free test port")
-            .local_addr()
-            .expect("read free test port")
-            .port()
-    }
-
-    fn tls_get(
-        directory: &Path,
-        server_certificate: &Path,
-        server_key: &Path,
-        ca_certificate: &Path,
-        client_identity: Option<(&Path, &Path)>,
-    ) -> Result<reqwest::StatusCode, String> {
-        let (mut server, port) =
-            start_tls_server(directory, server_certificate, server_key, ca_certificate);
-        let result = (|| {
-            let ca = fs::read(ca_certificate).map_err(|error| error.to_string())?;
-            let ca = Certificate::from_pem(&ca).map_err(|error| error.to_string())?;
-            let mut builder = Client::builder()
-                .add_root_certificate(ca)
-                .timeout(REQUEST_TIMEOUT);
-            if let Some((certificate_path, key_path)) = client_identity {
-                let mut identity = fs::read(certificate_path).map_err(|error| error.to_string())?;
-                identity.extend_from_slice(&fs::read(key_path).map_err(|error| error.to_string())?);
-                let identity = Identity::from_pem(&identity).map_err(|error| error.to_string())?;
-                builder = builder.identity(identity);
-            }
-            let client = builder.build().map_err(|error| error.to_string())?;
-            let runtime = Runtime::new().map_err(|error| error.to_string())?;
-            runtime.block_on(async move {
-                client
-                    .get(format!("https://localhost:{port}/"))
-                    .send()
-                    .await
-                    .map(|response| response.status())
-                    .map_err(|error| error.to_string())
-            })
-        })();
-        stop_server(&mut server);
-        result
-    }
-
-    fn start_tls_server(
-        directory: &Path,
-        server_certificate: &Path,
-        server_key: &Path,
-        ca_certificate: &Path,
-    ) -> (Child, u16) {
-        let port = free_port();
-        let port_argument = port.to_string();
-        let server = Command::new("openssl")
-            .current_dir(directory)
-            .args([
-                "s_server",
-                "-accept",
-                &port_argument,
-                "-cert",
-                path(server_certificate),
-                "-key",
-                path(server_key),
-                "-Verify",
-                "1",
-                "-verifyCAfile",
-                path(ca_certificate),
-                "-verify_return_error",
-                "-www",
-                "-quiet",
-                "-naccept",
-                "1",
-            ])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("start mTLS test server");
-        thread::sleep(Duration::from_millis(150));
-        (server, port)
-    }
-    fn stop_server(server: &mut Child) {
-        let _ = server.kill();
-        let _ = server.wait();
-    }
     #[test]
     fn hook_runtime_drops_safely_inside_lore_async_shutdown() {
         let lore_runtime = Runtime::new().expect("build Lore test runtime");
@@ -992,7 +867,7 @@ mod tests {
             .join()
             .expect("hook runtime worker exits cleanly");
 
-        let result = hook_runtime.block_on(async { () });
+        let result = hook_runtime.block_on(async { () }, TEST_REQUEST_TIMEOUT);
         assert!(result.is_err(), "a stopped worker must fail closed");
     }
 }

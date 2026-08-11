@@ -38,7 +38,8 @@ func TestLocalLoreDefaultsFollowTheConfiguredRootDomain(t *testing.T) {
 	if settings.LoreAuthIssuer != "auth.control.local" ||
 		settings.LoreAuthURL != "ucs-auth://auth.control.local:8443" ||
 		settings.LoreAuthJWKSURL != "http://control.local:8080/.well-known/jwks.json" ||
-		settings.LorePublicURL != "lores://control.local:41337" {
+		settings.LorePublicURL != "lores://control.local:41337" ||
+		settings.LoreInternalURL != "lores://control.local:41337" {
 		t.Fatalf("local Lore defaults did not follow the configured root: %#v", settings)
 	}
 }

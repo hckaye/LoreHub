@@ -49,6 +49,7 @@ ENV LOREHUB_LORE_CACHE_DIR=/var/lib/lorehub/repositories
 ENV LOREHUB_RUNNER_LOG_DIR=/var/lib/lorehub/runner-logs
 ENV LOREHUB_RUNNER_ARTIFACT_DIR=/var/lib/lorehub/runner-artifacts
 ENV LOREHUB_RUNNER_WORK_DIR=/var/lib/lorehub/runner-work
+WORKDIR /var/lib/lorehub
 EXPOSE 8080
 ENTRYPOINT ["lorehub-entrypoint"]
 CMD ["serve"]

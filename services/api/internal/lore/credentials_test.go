@@ -332,6 +332,15 @@ func TestValidateCredentialRejectsScopeWideningAndIdentityOnly(t *testing.T) {
 	if err := ValidateCredential(ref, read, ScopeWrite); err == nil {
 		t.Fatal("read credential was widened to write scope")
 	}
+	write := productionCredential(CredentialRequest{
+		Principal:  UserPrincipal("user-a"),
+		Repository: ref,
+		Partition:  "repo-a",
+		Scope:      ScopeWrite,
+	}, "token")
+	if err := ValidateCredential(ref, write, ScopeRead); err != nil {
+		t.Fatalf("write credential did not include read access: %v", err)
+	}
 	identityOnly := read
 	identityOnly.Token = ""
 	identityOnly.AuthURL = ""
@@ -360,6 +369,34 @@ func TestDevelopmentCredentialIsExplicitlyInsecure(t *testing.T) {
 	}
 	if err := ValidateCredential(RepositoryRef{LoreRepositoryID: "repo-a"}, credential, ScopeWrite); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestDevelopmentCredentialUsesIssuerWithoutExplicitFallback(t *testing.T) {
+	issuer := &recordingCredentialIssuer{issue: func(request CredentialRequest) Credential {
+		return productionCredential(request, "development-issued-token")
+	}}
+	provider, err := NewCredentialProviderWithIssuer(
+		"development",
+		issuer,
+		"auth.example.com",
+		nil,
+		"",
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	credential, err := provider.ForRepository(context.Background(), CredentialRequest{
+		Principal:  ServicePrincipal(ServicePurposeObserver, "observer-subject"),
+		Repository: RepositoryRef{LoreRepositoryID: "repo-a"},
+		Scope:      ScopeRead,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if credential.InsecureDevelopment || credential.Token != "development-issued-token" {
+		t.Fatalf("development issuer was not used: %+v", credential)
 	}
 }
 

@@ -50,12 +50,16 @@ to verify that stronger layer.
 
 ## Lore credentials
 
-The runner and poller request a short-lived Lore credential with a dedicated service principal, the exact repository
-partition, and the `read` scope. The Control Plane resolves the active PostgreSQL grant and signs a resource-scoped JWT.
-The Lore SDK client uses that credential for branch observation and exact-revision checkout. Repository URLs and their
+The control-plane process observes Lore branches with the observer service principal. The runner uses a separate CI
+service principal when it clones an exact revision. Both requests include the exact repository partition and `read`
+scope. The Control Plane checks the active PostgreSQL grant before signing a resource-scoped JWT. Repository URLs and
 partition IDs are validated together before a token is issued or used. Production has no file or shared-identity
-fallback. The only static identity adapter is an explicit development/local test fallback and is rejected in
-production.
+fallback. The static identity adapter is limited to explicit development and local test settings.
+
+The database retains the public Lore URL. A runner connection replaces only its authority with
+`LOREHUB_LORE_INTERNAL_URL`, preserving the partition path. The Compose `runner-data` network resolves this internal
+authority directly to Lore Server. The advertised UCS authority resolves to the API compatibility listener on the same
+network, so the isolated runner does not connect through a host-published port.
 
 The runner also resolves an `actions:execute` context using the service subject, repository and organization partitions,
 and the literal job environment. Repository, organization, and environment variables/secrets are merged with
@@ -95,10 +99,11 @@ those inputs disable the workflow with an explicit error.
 
 ## Workflow catalog and branches
 
-The default branch is the canonical Actions catalog. Its initial observation records the branch and synchronizes
-workflow records without inventing a push. Every later default-branch revision synchronizes the catalog and queues one
-run per matching supported workflow. Missing workflows become disabled; invalid or unsupported workflows are retained
-with an error state and are never treated as successful.
+The default branch is the canonical Actions catalog. A Lore hook records the latest branch revision for push policy.
+The branch poller records the revision whose workflows it has inspected separately. This prevents an earlier hook
+notification from making the poller skip workflow discovery. Initial discovery synchronizes workflow records without
+inventing a push. Each later inspected revision queues one run per matching supported workflow. Missing workflows
+become disabled. Invalid or unsupported workflows remain visible in an error state and do not run.
 
 Feature branches never update, remove, or disable the catalog. Their exact revision workflow definitions are stored in a
 revision table and can enqueue push runs for that revision only. They cannot become a dispatch target until their
