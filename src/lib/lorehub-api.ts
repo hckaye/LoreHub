@@ -101,8 +101,10 @@ export async function getFileLocks(
   return page ? { ok: true, data: page } : { ok: false, reason: "unavailable" };
 }
 
-export function getSearchResults(query: string): Promise<APIResult<SearchResults>> {
-  const params = new URLSearchParams({ q: query.trim(), limit: "50" });
+export type SearchType = "all" | "organizations" | "repositories" | "users";
+
+export function getSearchResults(query: string, type: SearchType = "all"): Promise<APIResult<SearchResults>> {
+  const params = new URLSearchParams({ q: query.trim(), type, limit: "50" });
   return request(`/api/v1/search?${params.toString()}`);
 }
 

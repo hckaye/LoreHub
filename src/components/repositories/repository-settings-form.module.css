@@ -36,6 +36,13 @@
   resize: vertical;
 }
 
+.form small {
+  color: var(--fg-muted);
+  font-size: 0.72rem;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
 .actions {
   display: flex;
   flex-wrap: wrap;

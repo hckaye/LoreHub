@@ -75,6 +75,10 @@
   line-height: 1.55;
 }
 
+.topics {
+  margin: -8px 0 16px;
+}
+
 .meta {
   display: flex;
   align-items: center;

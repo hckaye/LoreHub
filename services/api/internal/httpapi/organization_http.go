@@ -275,10 +275,11 @@ func (api *API) updateRepositorySettings(writer http.ResponseWriter, request *ht
 		return
 	}
 	var input struct {
-		DisplayName *string `json:"displayName"`
-		Description *string `json:"description"`
-		Visibility  *string `json:"visibility"`
-		HomepageURL *string `json:"homepageUrl"`
+		DisplayName *string   `json:"displayName"`
+		Description *string   `json:"description"`
+		Visibility  *string   `json:"visibility"`
+		HomepageURL *string   `json:"homepageUrl"`
+		Topics      *[]string `json:"topics"`
 	}
 	if !decodeJSON(writer, request, &input) {
 		return
@@ -295,7 +296,7 @@ func (api *API) updateRepositorySettings(writer http.ResponseWriter, request *ht
 	repository, err := api.identityStore.UpdateRepositorySettings(request.Context(), actor,
 		request.PathValue("owner"), request.PathValue("repository"), platform.UpdateRepositorySettingsInput{
 			DisplayName: input.DisplayName, Description: input.Description,
-			Visibility: input.Visibility, HomepageURL: input.HomepageURL,
+			Visibility: input.Visibility, HomepageURL: input.HomepageURL, Topics: input.Topics,
 		})
 	if err != nil {
 		api.platformError(writer, request, "update repository settings", err)

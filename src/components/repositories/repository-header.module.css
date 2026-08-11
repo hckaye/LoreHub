@@ -122,6 +122,10 @@
   line-height: 1.5;
 }
 
+.topics {
+  margin-top: 9px;
+}
+
 .navigation {
   display: flex;
   width: min(1180px, calc(100% - 32px));

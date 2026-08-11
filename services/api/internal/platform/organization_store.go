@@ -387,6 +387,11 @@ func (store *Store) UpdateRepositorySettings(
 	slug string,
 	input UpdateRepositorySettingsInput,
 ) (Repository, error) {
+	topics, err := normalizeRepositoryTopics(input.Topics)
+	if err != nil {
+		return Repository{}, err
+	}
+	input.Topics = topics
 	repository, organizationID, err := store.repositoryManager(ctx, actor.ID, owner, slug)
 	if err != nil {
 		return Repository{}, err
@@ -444,6 +449,11 @@ func (store *Store) UpdateRepositorySettings(
 	}
 	if updateTag.RowsAffected() == 0 {
 		return Repository{}, ErrForbidden
+	}
+	if input.Topics != nil {
+		if err := replaceRepositoryTopics(ctx, transaction, repository.ID, actor.ID, *input.Topics); err != nil {
+			return Repository{}, err
+		}
 	}
 	if err := insertAudit(ctx, transaction, actor.ID, organizationID, repository.ID, "repository.settings_update",
 		"repository", repository.ID); err != nil {

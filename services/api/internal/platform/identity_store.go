@@ -271,6 +271,11 @@ func (store *Store) searchRepositories(
 		          @@ plainto_tsquery('simple', $1)
 		      OR lower(concat_ws(' ', o.slug, r.slug, r.display_name, r.description))
 		          LIKE '%' || lower($1) || '%'
+		      OR EXISTS (
+		          SELECT 1 FROM repository_topics topic
+		          WHERE topic.repository_id = r.id
+		            AND topic.topic LIKE '%' || lower($1) || '%'
+		      )
 		  )
 		  AND `+repositoryAccessClause("r", "$2")+`
 		GROUP BY r.id, o.slug

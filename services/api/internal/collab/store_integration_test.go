@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -116,9 +117,20 @@ func TestIntegrationLookupRepositoryVisibility(t *testing.T) {
 	ctx := context.Background()
 	pub := setupFixture(t, pool, "public", "")
 	priv := setupFixture(t, pool, "private", "read")
+	mustExec(t, ctx, pool, `
+		INSERT INTO repository_topics (repository_id, topic, created_by) VALUES ($1, 'game-development', $2)
+	`, pub.repoID, pub.alice.ID)
 
-	if _, err := s.LookupRepository(ctx, nil, pub.ownerSlug, pub.repoSlug); err != nil {
+	publicRepository, err := s.LookupRepository(ctx, nil, pub.ownerSlug, pub.repoSlug)
+	if err != nil {
 		t.Fatalf("anonymous public lookup: %v", err)
+	}
+	if !slices.Equal(publicRepository.Topics, []string{"game-development"}) {
+		t.Fatalf("anonymous public topics = %v", publicRepository.Topics)
+	}
+	memberRepository, err := s.LookupRepository(ctx, &pub.bob, pub.ownerSlug, pub.repoSlug)
+	if err != nil || !slices.Equal(memberRepository.Topics, publicRepository.Topics) {
+		t.Fatalf("authenticated public topics = %v, err=%v", memberRepository.Topics, err)
 	}
 	if _, err := s.LookupRepository(ctx, nil, priv.ownerSlug, priv.repoSlug); err == nil {
 		t.Fatal("anonymous private lookup should fail")

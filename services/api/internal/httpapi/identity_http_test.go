@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -129,6 +130,7 @@ type repositorySettingsHTTPIdentityStore struct {
 	err         error
 	repository  platform.Repository
 	calledActor platform.User
+	input       platform.UpdateRepositorySettingsInput
 }
 
 func (store *repositorySettingsHTTPIdentityStore) RepositoryForSettings(
@@ -149,9 +151,10 @@ func (store *repositorySettingsHTTPIdentityStore) UpdateRepositorySettings(
 	actor platform.User,
 	_ string,
 	_ string,
-	_ platform.UpdateRepositorySettingsInput,
+	input platform.UpdateRepositorySettingsInput,
 ) (platform.Repository, error) {
 	store.calledActor = actor
+	store.input = input
 	if store.err != nil {
 		return platform.Repository{}, store.err
 	}
@@ -181,7 +184,7 @@ func TestRepositorySettingsHTTPPreservesRBACDenialAndSuccess(t *testing.T) {
 			WithIdentityStore(identityStore),
 		)
 	}
-	requestBody := `{"displayName":"Updated repository"}`
+	requestBody := `{"displayName":"Updated repository","topics":["lore","ci-runner"]}`
 	requestFor := func(handler http.Handler) *httptest.ResponseRecorder {
 		cookie, csrf := prepareSessionCookie(t, authenticationStore, codec)
 		request := httptest.NewRequest(http.MethodPatch,
@@ -211,6 +214,14 @@ func TestRepositorySettingsHTTPPreservesRBACDenialAndSuccess(t *testing.T) {
 	}
 	if allowedStore.calledActor.ID != "user-1" {
 		t.Fatalf("settings update actor = %q, want authenticated actor", allowedStore.calledActor.ID)
+	}
+	if allowedStore.input.Topics == nil || !slices.Equal(*allowedStore.input.Topics, []string{"lore", "ci-runner"}) {
+		t.Fatalf("settings topics = %v", allowedStore.input.Topics)
+	}
+	invalidStore := &repositorySettingsHTTPIdentityStore{err: platform.ErrInvalidInput}
+	response = requestFor(newHandler(invalidStore))
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "invalid_input") {
+		t.Fatalf("invalid topic response = %d %s", response.Code, response.Body.String())
 	}
 	cookie, csrf := prepareSessionCookie(t, authenticationStore, codec)
 	request := httptest.NewRequest(http.MethodPatch, "/api/v1/repositories/acme/lore/settings",

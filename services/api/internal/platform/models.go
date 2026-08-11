@@ -62,6 +62,7 @@ type Repository struct {
 	HomepageURL        string    `json:"homepageUrl"`
 	AllowIssues        bool      `json:"allowIssues"`
 	AllowMergeRequests bool      `json:"allowMergeRequests"`
+	Topics             []string  `json:"topics"`
 	IssueCount         int64     `json:"issueCount"`
 	MergeRequestCount  int64     `json:"mergeRequestCount"`
 	LifecycleState     string    `json:"lifecycleState,omitempty"`

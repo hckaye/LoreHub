@@ -2,6 +2,7 @@ package collab
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -60,6 +61,10 @@ func lookupRepository(
 	row := pool.QueryRow(ctx, `
 		SELECT r.id, r.organization_id, o.slug, r.slug, r.display_name, r.description,
 		       r.visibility, r.lore_repository_id, r.lore_url, r.default_branch,
+		       COALESCE((
+		           SELECT jsonb_agg(topic.topic ORDER BY topic.topic)
+		           FROM repository_topics topic WHERE topic.repository_id = r.id
+		       ), '[]'::jsonb),
 		       (SELECT COUNT(*) FROM issues i WHERE i.repository_id = r.id),
 		       (SELECT COUNT(*) FROM merge_requests mr WHERE mr.repository_id = r.id),
 		       (
@@ -132,6 +137,10 @@ func lookupPublicRepository(
 	row := pool.QueryRow(ctx, `
 		SELECT r.id, r.organization_id, o.slug, r.slug, r.display_name, r.description,
 		       r.visibility, r.lore_repository_id, r.lore_url, r.default_branch,
+		       COALESCE((
+		           SELECT jsonb_agg(topic.topic ORDER BY topic.topic)
+		           FROM repository_topics topic WHERE topic.repository_id = r.id
+		       ), '[]'::jsonb),
 		       (SELECT COUNT(*) FROM issues i WHERE i.repository_id = r.id),
 		       (SELECT COUNT(*) FROM merge_requests mr WHERE mr.repository_id = r.id),
 		       (
@@ -281,6 +290,7 @@ func orgRolePermission(role *string, visibility ...string) Permission {
 
 func scanRepositoryRow(row pgx.Row) (Repository, error) {
 	var repo Repository
+	var topicsJSON []byte
 	err := row.Scan(
 		&repo.ID,
 		&repo.OrganizationID,
@@ -292,6 +302,7 @@ func scanRepositoryRow(row pgx.Row) (Repository, error) {
 		&repo.LoreRepositoryID,
 		&repo.LoreURL,
 		&repo.DefaultBranch,
+		&topicsJSON,
 		&repo.IssueCount,
 		&repo.MergeRequestCount,
 		&repo.StarCount,
@@ -300,5 +311,8 @@ func scanRepositoryRow(row pgx.Row) (Repository, error) {
 		&repo.ViewerIsWatching,
 		&repo.UpdatedAt,
 	)
+	if err == nil {
+		err = json.Unmarshal(topicsJSON, &repo.Topics)
+	}
 	return repo, err
 }

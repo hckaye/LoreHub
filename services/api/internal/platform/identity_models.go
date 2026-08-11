@@ -112,6 +112,7 @@ type UpdateRepositorySettingsInput struct {
 	Description *string
 	Visibility  *string
 	HomepageURL *string
+	Topics      *[]string
 }
 
 type NotificationPage struct {

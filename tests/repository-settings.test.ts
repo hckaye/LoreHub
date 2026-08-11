@@ -19,6 +19,7 @@ test("repository settings encode paths and preserve CSRF", async () => {
         displayName: "Lore Hub",
         description: "Lore collaboration",
         homepageUrl: "https://example.test/lore",
+        topics: ["game-development", "lore"],
         visibility: "private",
       },
       "csrf-token",
@@ -35,16 +36,22 @@ test("repository settings encode paths and preserve CSRF", async () => {
     displayName: "Lore Hub",
     description: "Lore collaboration",
     homepageUrl: "https://example.test/lore",
+    topics: ["game-development", "lore"],
     visibility: "private",
   });
 });
 
 test("repository settings use effective admin access and the production form", async () => {
-  const [store, handler, page, form, english, japanese] = await Promise.all([
+  const [store, handler, page, home, search, form, card, header, topicList, english, japanese] = await Promise.all([
     readFile("services/api/internal/platform/organization_store.go", "utf8"),
     readFile("services/api/internal/httpapi/organization_http.go", "utf8"),
     readFile("src/app/[locale]/[owner]/[repository]/settings/page.tsx", "utf8"),
+    readFile("src/app/[locale]/page.tsx", "utf8"),
+    readFile("src/app/[locale]/search/page.tsx", "utf8"),
     readFile("src/components/repositories/repository-settings-form.tsx", "utf8"),
+    readFile("src/components/repositories/repository-card.tsx", "utf8"),
+    readFile("src/components/repositories/repository-header.tsx", "utf8"),
+    readFile("src/components/repositories/repository-topic-list.tsx", "utf8"),
     readFile("src/i18n/dictionaries/en.ts", "utf8"),
     readFile("src/i18n/dictionaries/ja.ts", "utf8"),
   ]);
@@ -57,6 +64,12 @@ test("repository settings use effective admin access and the production form", a
   assert.match(page, /<RepositorySettingsForm/);
   assert.match(form, /updateRepositorySettings/);
   assert.match(form, /maxLength=\{10_000\}/);
+  assert.match(form, /topicsInvalid/);
+  assert.match(home, /\.\.\.repository\.topics/);
+  assert.match(search, /getSearchResults\(q, searchType\)/);
+  assert.match(card, /limit=\{5\}/);
+  assert.match(header, /<RepositoryTopicList/);
+  assert.match(topicList, /type=repositories/);
   assert.doesNotMatch(page, /readOnly|canonicalNote/);
   assert.doesNotMatch(english, /Lore data remains read-only here/);
   assert.doesNotMatch(japanese, /Loreのデータはここでは読み取り専用です/);

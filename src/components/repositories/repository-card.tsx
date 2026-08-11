@@ -7,6 +7,7 @@ import type { Repository } from "@/lib/api-types";
 import { repositoryPath } from "@/lib/routes";
 
 import styles from "./repository-card.module.css";
+import { RepositoryTopicList } from "./repository-topic-list";
 
 type RepositoryCardProps = {
   repository: Repository;
@@ -34,6 +35,13 @@ export function RepositoryCard({ repository, locale, dictionary }: RepositoryCar
         </span>
       </div>
       <p className={styles.description}>{repository.description || dictionary.common.noDescription}</p>
+      <RepositoryTopicList
+        className={styles.topics}
+        label={dictionary.settingsPage.topics}
+        limit={5}
+        locale={locale}
+        topics={repository.topics}
+      />
       <div className={styles.meta}>
         <span>
           <CircleDot aria-hidden="true" size={15} />

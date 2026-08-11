@@ -23,6 +23,7 @@ type Repository struct {
 	LoreRepositoryID  string    `json:"loreRepositoryId"`
 	LoreURL           string    `json:"loreUrl"`
 	DefaultBranch     string    `json:"defaultBranch"`
+	Topics            []string  `json:"topics"`
 	IssueCount        int64     `json:"issueCount"`
 	MergeRequestCount int64     `json:"mergeRequestCount"`
 	StarCount         int64     `json:"starCount"`

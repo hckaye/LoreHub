@@ -820,6 +820,8 @@ func (api *API) platformError(writer http.ResponseWriter, request *http.Request,
 		writeProblem(writer, http.StatusForbidden, "forbidden", "This operation is not permitted")
 	case errors.Is(err, platform.ErrConflict):
 		writeProblem(writer, http.StatusConflict, "conflict", "The resource already exists")
+	case errors.Is(err, platform.ErrInvalidInput):
+		writeProblem(writer, http.StatusBadRequest, "invalid_input", "The request contains invalid values")
 	default:
 		api.internalError(writer, request, operation, err)
 	}

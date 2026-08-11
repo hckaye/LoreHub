@@ -53,7 +53,7 @@ function filterRepositories(repositories: Repository[], query: string): Reposito
     return repositories;
   }
   return repositories.filter((repository) =>
-    [repository.owner, repository.slug, repository.displayName, repository.description]
+    [repository.owner, repository.slug, repository.displayName, repository.description, ...repository.topics]
       .join(" ")
       .toLocaleLowerCase()
       .includes(normalized),

@@ -21,6 +21,7 @@ export function RepositorySettingsForm({ dictionary, repository, session }: Repo
   const [displayName, setDisplayName] = useState(repository.displayName);
   const [description, setDescription] = useState(repository.description);
   const [homepageUrl, setHomepageUrl] = useState(repository.homepageUrl);
+  const [topics, setTopics] = useState(repository.topics.join(", "));
   const [visibility, setVisibility] = useState(repository.visibility);
   const [status, setStatus] = useState<"idle" | "saved" | "error">("idle");
   const [pending, setPending] = useState(false);
@@ -28,13 +29,29 @@ export function RepositorySettingsForm({ dictionary, repository, session }: Repo
 
   async function save(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const normalizedTopics = Array.from(
+      new Set(
+        topics
+          .split(",")
+          .map((topic) => topic.trim().toLowerCase())
+          .filter(Boolean),
+      ),
+    ).sort();
+    if (
+      normalizedTopics.length > 20 ||
+      normalizedTopics.some((topic) => topic.length > 50 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(topic))
+    ) {
+      setStatus("error");
+      setErrorMessage(dictionary.settingsPage.topicsInvalid);
+      return;
+    }
     setPending(true);
     setStatus("idle");
     setErrorMessage("");
     const result = await updateRepositorySettings(
       repository.owner,
       repository.slug,
-      { displayName, description, homepageUrl, visibility },
+      { displayName, description, homepageUrl, topics: normalizedTopics, visibility },
       session.csrfToken,
     );
     setPending(false);
@@ -70,6 +87,16 @@ export function RepositorySettingsForm({ dictionary, repository, session }: Repo
           type="url"
           value={homepageUrl}
         />
+      </label>
+      <label>
+        <span>{dictionary.settingsPage.topics}</span>
+        <input
+          maxLength={1_200}
+          onChange={(event) => setTopics(event.target.value)}
+          placeholder={dictionary.settingsPage.topicsPlaceholder}
+          value={topics}
+        />
+        <small>{dictionary.settingsPage.topicsHelp}</small>
       </label>
       <label>
         <span>{dictionary.settingsPage.visibility}</span>

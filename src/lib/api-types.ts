@@ -12,6 +12,7 @@ export type Repository = {
   homepageUrl: string;
   allowIssues: boolean;
   allowMergeRequests: boolean;
+  topics: string[];
   issueCount: number;
   mergeRequestCount: number;
   starCount?: number;

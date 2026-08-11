@@ -3,7 +3,10 @@
 import type { Repository } from "./api-types";
 import { patchJson } from "./auth-client";
 
-export type RepositorySettingsInput = Pick<Repository, "displayName" | "description" | "homepageUrl" | "visibility">;
+export type RepositorySettingsInput = Pick<
+  Repository,
+  "displayName" | "description" | "homepageUrl" | "topics" | "visibility"
+>;
 
 export function updateRepositorySettings(
   owner: string,

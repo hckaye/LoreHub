@@ -27,6 +27,7 @@ import { mutationFailureMessage } from "@/lib/mutation-messages";
 import { brandedAuthUrl, repositoryPath } from "@/lib/routes";
 
 import styles from "./repository-header.module.css";
+import { RepositoryTopicList } from "./repository-topic-list";
 
 type RepositoryHeaderProps = {
   repository: Repository;
@@ -96,6 +97,12 @@ export function RepositoryHeader({ repository, locale, dictionary, session }: Re
             </span>
           </div>
           <p>{repository.description || dictionary.common.noDescription}</p>
+          <RepositoryTopicList
+            className={styles.topics}
+            label={dictionary.settingsPage.topics}
+            locale={locale}
+            topics={repository.topics}
+          />
         </div>
         <RepositoryEngagementActions
           basePath={basePath}

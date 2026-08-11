@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -622,10 +623,25 @@ func TestRepositorySettingsRequireExplicitAdminOrOrganizationOwner(t *testing.T)
 		t.Fatalf("revoked team admin update error = %v, want not found", err)
 	}
 	ownerName := "Organization owner update"
+	topic := "Asset-Pipeline-" + suffix
+	topics := []string{"lore", topic, "lore"}
 	updated, err = store.UpdateRepositorySettings(ctx, owner, orgSlug, repositorySlug,
-		UpdateRepositorySettingsInput{DisplayName: &ownerName})
+		UpdateRepositorySettingsInput{DisplayName: &ownerName, Topics: &topics})
 	if err != nil || updated.DisplayName != ownerName {
 		t.Fatalf("organization owner update = %+v, err=%v", updated, err)
+	}
+	wantTopics := []string{strings.ToLower(topic), "lore"}
+	if !slices.Equal(updated.Topics, wantTopics) {
+		t.Fatalf("repository topics = %v, want %v", updated.Topics, wantTopics)
+	}
+	search, err := store.Search(ctx, &owner, topic, "repositories", 20)
+	if err != nil || len(search.Repositories) != 1 || search.Repositories[0].ID != repositoryID {
+		t.Fatalf("topic search = %+v, err=%v", search.Repositories, err)
+	}
+	invalidTopics := []string{"not_valid"}
+	if _, err := store.UpdateRepositorySettings(ctx, owner, orgSlug, repositorySlug,
+		UpdateRepositorySettingsInput{Topics: &invalidTopics}); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("invalid repository topics error = %v", err)
 	}
 	var auditCount, outboxCount int
 	if err := pool.QueryRow(ctx, `
