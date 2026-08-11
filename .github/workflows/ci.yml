@@ -70,8 +70,8 @@ jobs:
           file: infra/lore/Dockerfile
           target: lore-tests
           outputs: type=cacheonly
-          cache-from: type=gha,scope=lore-policy-tests
-          cache-to: type=gha,mode=max,scope=lore-policy-tests,ignore-error=true,timeout=20m
+          cache-from: type=gha,scope=lore-policy
+          cache-to: type=gha,mode=max,scope=lore-policy,ignore-error=true,timeout=20m
       - name: Build Lore Server integration image
         uses: docker/build-push-action@v7.3.0
         with:
