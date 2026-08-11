@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
 import type { Issue } from "@/lib/api-types";
-import { repositoryPath } from "@/lib/routes";
+import { repositoryMilestonesPath, repositoryPath } from "@/lib/routes";
 
 import { EmptyState } from "../ui/empty-state";
 import styles from "./issue-list.module.css";
@@ -39,6 +39,12 @@ export function IssueList({ issues, dictionary, locale, owner, repository }: Iss
             </h3>
             <p>
               #{issue.number} · {issue.author} · {formatDate(issue.updatedAt, locale)}
+              {issue.milestone && (
+                <>
+                  {" · "}
+                  <Link href={repositoryMilestonesPath(locale, owner, repository)}>{issue.milestone.title}</Link>
+                </>
+              )}
             </p>
           </div>
           {issue.commentCount > 0 && <span className={styles.comments}>{issue.commentCount}</span>}

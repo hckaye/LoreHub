@@ -6,8 +6,9 @@ import { useState } from "react";
 
 import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
-import type { AuthSession, Issue, IssueComment, Label } from "@/lib/api-types";
+import type { AuthSession, Issue, IssueComment, Label, Milestone } from "@/lib/api-types";
 import { deleteJson, patchJson, postJson, putJson } from "@/lib/auth-client";
+import { assignIssueMilestone, removeIssueMilestone } from "@/lib/milestone-client";
 import { mutationFailureMessage } from "@/lib/mutation-messages";
 import { repositoryPath } from "@/lib/routes";
 
@@ -23,6 +24,8 @@ type IssueDetailProps = {
   issue: Issue;
   labels: Label[];
   labelsAvailable: boolean;
+  milestones: Milestone[];
+  milestonesAvailable: boolean;
   locale: Locale;
   owner: string;
   repository: string;
@@ -115,6 +118,22 @@ export function IssueDetail(props: IssueDetailProps) {
     router.refresh();
   }
 
+  async function setMilestone(milestoneNumber: number | null): Promise<void> {
+    if (!csrfToken) return;
+    setBusyAction("milestone");
+    setMessage(null);
+    const result =
+      milestoneNumber === null
+        ? await removeIssueMilestone(props.owner, props.repository, issue.number, csrfToken)
+        : await assignIssueMilestone(props.owner, props.repository, issue.number, milestoneNumber, csrfToken);
+    setBusyAction(null);
+    if (!result.ok) {
+      setMessage(mutationFailureMessage(result.kind, dictionary));
+      return;
+    }
+    router.refresh();
+  }
+
   const openedText = formatActivity(
     issue.state === "closed" && issue.closedBy && issue.closedAt
       ? dictionary.issueDetail.closedBy
@@ -165,6 +184,9 @@ export function IssueDetail(props: IssueDetailProps) {
           issue={issue}
           labels={labels}
           labelsAvailable={labelsAvailable}
+          milestones={props.milestones}
+          milestonesAvailable={props.milestonesAvailable}
+          onSetMilestone={setMilestone}
           onUpdateState={(state) => updateIssue({ state })}
           onToggleLabel={toggleLabel}
         />

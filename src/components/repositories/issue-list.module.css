@@ -46,6 +46,15 @@
   font-size: 0.76rem;
 }
 
+.row p a {
+  color: var(--accent-fg);
+  text-decoration: none;
+}
+
+.row p a:hover {
+  text-decoration: underline;
+}
+
 .comments {
   margin-left: auto;
   color: var(--fg-muted);

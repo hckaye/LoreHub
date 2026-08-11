@@ -20,6 +20,7 @@ import (
 	loreclient "github.com/lorehub/lorehub/services/api/internal/lore"
 	"github.com/lorehub/lorehub/services/api/internal/loreauth"
 	mergeapi "github.com/lorehub/lorehub/services/api/internal/merge"
+	milestonesapi "github.com/lorehub/lorehub/services/api/internal/milestones"
 	"github.com/lorehub/lorehub/services/api/internal/platform"
 	projectsapi "github.com/lorehub/lorehub/services/api/internal/projects"
 	releasesapi "github.com/lorehub/lorehub/services/api/internal/releases"
@@ -175,6 +176,7 @@ type API struct {
 	branchObservations      branchesapi.ObservationStore
 	projectsStore           projectsapi.Store
 	releasesStore           releasesapi.Store
+	milestonesStore         milestonesapi.Store
 	loginProvider           auth.LoginProvider
 	loginStore              auth.LoginTransactionStore
 	sessionStore            auth.SessionStore
@@ -316,6 +318,9 @@ func New(
 				mux, api.releasesStore, api.collabStore, api,
 				api.lore, api.loreCredentials, logger,
 			)
+		}
+		if api.milestonesStore != nil {
+			milestonesapi.Register(mux, api.milestonesStore, api.collabStore, api, logger)
 		}
 		if codeClient, ok := api.lore.(loreclient.CodeClient); ok {
 			codeapi.Register(mux, api.collabStore, api.lore, codeClient, api, api.loreCredentials,

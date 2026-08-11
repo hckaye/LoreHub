@@ -234,6 +234,61 @@
   z-index: 2;
 }
 
+.milestoneMenu {
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 0.45rem;
+  box-shadow: var(--shadow-popover);
+  display: grid;
+  max-height: 18rem;
+  min-width: 15rem;
+  overflow: auto;
+  padding: 0.35rem;
+  position: absolute;
+  right: 0;
+  top: 1.8rem;
+  z-index: 2;
+}
+
+.milestoneMenu button {
+  background: transparent;
+  border: 0;
+  border-radius: 0.3rem;
+  color: var(--fg-default);
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  gap: 0.5rem;
+  justify-content: space-between;
+  padding: 0.45rem 0.55rem;
+  text-align: left;
+}
+
+.milestoneMenu button:hover,
+.milestoneMenu button[aria-pressed="true"] {
+  background: var(--canvas-subtle);
+}
+
+.milestoneMenu button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.milestoneMenu small {
+  color: var(--fg-muted);
+}
+
+.milestoneValue {
+  display: grid;
+  font-size: 0.8rem;
+  gap: 0.25rem;
+}
+
+.milestoneValue span {
+  color: var(--fg-muted);
+  font-size: 0.75rem;
+}
+
 .labelMenu label {
   align-items: center;
   cursor: pointer;

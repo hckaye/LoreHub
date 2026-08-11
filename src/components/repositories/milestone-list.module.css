@@ -1,0 +1,220 @@
+.page,
+.list {
+  display: grid;
+  gap: 16px;
+}
+
+.createArea {
+  display: grid;
+  gap: 12px;
+  justify-items: end;
+}
+
+.primaryButton,
+.secondaryButton,
+.cardActions button {
+  align-items: center;
+  border: 1px solid;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  gap: 6px;
+  justify-content: center;
+  min-height: 32px;
+  padding: 5px 12px;
+}
+
+.primaryButton {
+  background: var(--success-fg);
+  border-color: var(--success-border);
+  color: var(--fg-on-emphasis);
+}
+
+.secondaryButton,
+.cardActions button {
+  background: var(--surface);
+  border-color: var(--border-strong);
+  color: var(--fg-default);
+}
+
+.primaryButton:disabled,
+.secondaryButton:disabled,
+.cardActions button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.form {
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: var(--shadow-popover);
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  width: min(100%, 720px);
+}
+
+.form h2,
+.card h2 {
+  margin: 0;
+}
+
+.form h2,
+.card h2 {
+  font-size: 20px;
+}
+
+.form label,
+.editForm label {
+  display: grid;
+  font-size: 14px;
+  font-weight: 600;
+  gap: 6px;
+}
+
+.form input,
+.form textarea,
+.editForm input,
+.editForm textarea {
+  background: var(--canvas-default);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  color: var(--fg-default);
+  font: inherit;
+  min-width: 0;
+  padding: 8px 10px;
+}
+
+.form textarea,
+.editForm textarea {
+  min-height: 110px;
+  resize: vertical;
+}
+
+.formActions,
+.cardActions,
+.pagination {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.formActions,
+.cardActions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+}
+
+.cardHeader {
+  align-items: flex-start;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.cardHeader > div:first-child {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.meta {
+  align-items: center;
+  color: var(--fg-muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 12px;
+  gap: 3px;
+  margin: 0;
+}
+
+.cardActions .dangerButton {
+  color: var(--danger-fg);
+}
+
+.description {
+  line-height: 1.55;
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.editForm {
+  display: grid;
+  gap: 10px;
+}
+
+.progress {
+  display: grid;
+  gap: 7px;
+}
+
+.progress > div {
+  background: var(--border-muted);
+  border-radius: 6px;
+  height: 10px;
+  overflow: hidden;
+}
+
+.progress > div span {
+  background: var(--success-fg);
+  display: block;
+  height: 100%;
+}
+
+.progress p {
+  color: var(--fg-muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 12px;
+  gap: 14px;
+  margin: 0;
+}
+
+.progress strong {
+  color: var(--fg-default);
+}
+
+.pagination {
+  justify-content: center;
+}
+
+.pagination a {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--accent-fg);
+  padding: 6px 12px;
+  text-decoration: none;
+}
+
+.pagination span {
+  color: var(--fg-muted);
+  font-size: 13px;
+}
+
+@media (max-width: 720px) {
+  .createArea {
+    justify-items: stretch;
+  }
+
+  .cardHeader {
+    display: grid;
+  }
+
+  .cardActions {
+    justify-content: flex-start;
+  }
+}

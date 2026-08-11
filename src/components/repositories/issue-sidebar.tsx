@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 
 import type { Dictionary } from "@/i18n";
-import type { Issue, Label } from "@/lib/api-types";
+import type { Issue, Label, Milestone } from "@/lib/api-types";
 
 import styles from "./issue-detail.module.css";
 
@@ -11,6 +11,9 @@ type IssueSidebarProps = {
   issue: Issue;
   labels: Label[];
   labelsAvailable: boolean;
+  milestones: Milestone[];
+  milestonesAvailable: boolean;
+  onSetMilestone: (number: number | null) => Promise<void>;
   onToggleLabel: (label: Label, selected: boolean) => Promise<void>;
   onUpdateState: (state: "open" | "closed") => Promise<boolean>;
 };
@@ -51,6 +54,48 @@ export function IssueSidebar(props: IssueSidebarProps) {
           <p>{props.dictionary.issueDetail.noLabels}</p>
         )}
         {!props.labelsAvailable && <p>{props.dictionary.issueDetail.labelsUnavailable}</p>}
+      </section>
+      <section>
+        <div className={styles.sidebarHeading}>
+          <h2>{props.dictionary.milestonesPage.assignTitle}</h2>
+          {props.issue.viewerCanManageMilestone && props.milestonesAvailable && (
+            <details>
+              <summary>{props.dictionary.milestonesPage.manageAssignment}</summary>
+              <div className={styles.milestoneMenu}>
+                <button
+                  disabled={props.busyAction === "milestone"}
+                  onClick={() => props.onSetMilestone(null)}
+                  type="button"
+                >
+                  {props.dictionary.milestonesPage.removeAssignment}
+                </button>
+                {props.milestones.map((milestone) => (
+                  <button
+                    aria-pressed={props.issue.milestone?.id === milestone.id}
+                    disabled={props.busyAction === "milestone"}
+                    key={milestone.id}
+                    onClick={() => props.onSetMilestone(milestone.number)}
+                    type="button"
+                  >
+                    <span>{milestone.title}</span>
+                    <small>
+                      {milestone.state === "open" ? props.dictionary.common.open : props.dictionary.common.closed}
+                    </small>
+                  </button>
+                ))}
+              </div>
+            </details>
+          )}
+        </div>
+        {props.issue.milestone ? (
+          <div className={styles.milestoneValue}>
+            <strong>{props.issue.milestone.title}</strong>
+            {props.issue.milestone.dueOn && <span>{props.issue.milestone.dueOn}</span>}
+          </div>
+        ) : (
+          <p>{props.dictionary.milestonesPage.noAssignment}</p>
+        )}
+        {!props.milestonesAvailable && <p>{props.dictionary.milestonesPage.assignmentUnavailable}</p>}
       </section>
       {props.issue.viewerCanUpdate && (
         <button

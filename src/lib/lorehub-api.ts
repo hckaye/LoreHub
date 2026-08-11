@@ -25,6 +25,7 @@ import type {
   MergeReadiness,
   MergeRequest,
   MergeRequestComment,
+  MilestonePage,
   Notification,
   NotificationPage,
   NotificationPreferences,
@@ -246,6 +247,17 @@ export function getProject(owner: string, repository: string, number: number): P
 export function getReleases(owner: string, repository: string, page: number): Promise<APIResult<ReleasePage>> {
   const query = new URLSearchParams({ page: String(page), perPage: "20" });
   return request(repositoryPath(owner, repository, `/releases?${query.toString()}`));
+}
+
+export function getMilestones(
+  owner: string,
+  repository: string,
+  state: "open" | "closed" | "all",
+  page = 1,
+  perPage = 20,
+): Promise<APIResult<MilestonePage>> {
+  const query = new URLSearchParams({ state, page: String(page), perPage: String(perPage) });
+  return request(repositoryPath(owner, repository, `/milestones?${query.toString()}`));
 }
 
 export function getReviews(owner: string, repository: string, number: number): Promise<APIResult<ReviewSummary>> {

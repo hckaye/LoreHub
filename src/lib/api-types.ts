@@ -185,6 +185,14 @@ export type BranchRule = {
   updatedAt: string;
 };
 
+export type MilestoneSummary = {
+  id: string;
+  number: number;
+  title: string;
+  state: "open" | "closed";
+  dueOn: string | null;
+};
+
 export type Issue = {
   id: string;
   number: number;
@@ -194,6 +202,7 @@ export type Issue = {
   author: string;
   assignee: string | null;
   labels: Label[];
+  milestone: MilestoneSummary | null;
   labelCount: number;
   commentCount: number;
   createdAt: string;
@@ -202,6 +211,7 @@ export type Issue = {
   closedAt: string | null;
   viewerCanUpdate: boolean;
   viewerCanManageLabels: boolean;
+  viewerCanManageMilestone: boolean;
 };
 
 export type IssueComment = {
@@ -329,6 +339,27 @@ export type Release = {
 
 export type ReleasePage = {
   releases: Release[];
+  page: number;
+  perPage: number;
+  hasNext: boolean;
+  viewerCanWrite: boolean;
+};
+
+export type Milestone = MilestoneSummary & {
+  description: string;
+  createdBy: string;
+  closedBy: string | null;
+  closedAt: string | null;
+  openIssueCount: number;
+  closedIssueCount: number;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+  viewerCanWrite: boolean;
+};
+
+export type MilestonePage = {
+  milestones: Milestone[];
   page: number;
   perPage: number;
   hasNext: boolean;

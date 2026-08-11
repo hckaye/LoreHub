@@ -1,3 +1,4 @@
+import { milestones } from "./milestones";
 import { releases } from "./releases";
 
 const concat = (...parts: string[]) => parts.join("");
@@ -588,6 +589,7 @@ const ja = {
     },
   },
   releasesPage: releases.ja,
+  milestonesPage: milestones.ja,
   securityPage: {
     title: "セキュリティ",
     // prettier-ignore

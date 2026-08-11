@@ -23,6 +23,7 @@ import (
 	loreclient "github.com/lorehub/lorehub/services/api/internal/lore"
 	"github.com/lorehub/lorehub/services/api/internal/loreauth"
 	epic_urc "github.com/lorehub/lorehub/services/api/internal/loreauth/epic_urc"
+	"github.com/lorehub/lorehub/services/api/internal/milestones"
 	"github.com/lorehub/lorehub/services/api/internal/platform"
 	"github.com/lorehub/lorehub/services/api/internal/projects"
 	"github.com/lorehub/lorehub/services/api/internal/releases"
@@ -195,6 +196,7 @@ func run(logger *slog.Logger) error {
 		httpapi.WithBranchObservations(store),
 		httpapi.WithProjects(projects.NewStore(pool)),
 		httpapi.WithReleases(releases.NewStore(pool)),
+		httpapi.WithMilestones(milestones.NewStore(pool)),
 		httpapi.WithAuthorization(store),
 		httpapi.WithLoreAuth(loreAuth),
 		httpapi.WithLorePublicURL(settings.LorePublicURL),

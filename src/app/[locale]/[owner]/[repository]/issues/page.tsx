@@ -9,7 +9,7 @@ import { FlashNotice } from "@/components/ui/flash-notice";
 import { getDictionary } from "@/i18n";
 import { isLocale } from "@/i18n/config";
 import { getIssues, type IssueFilter } from "@/lib/lorehub-api";
-import { repositoryPath } from "@/lib/routes";
+import { repositoryMilestonesPath, repositoryPath } from "@/lib/routes";
 
 import styles from "@/components/repositories/repository-section.module.css";
 
@@ -29,9 +29,14 @@ export default async function IssuesPage({ params, searchParams }: IssuesPagePro
   return (
     <RepositorySection
       actions={
-        <Link className={styles.primaryButton} href={`${repositoryPath(locale, owner, repository, "issues")}/new`}>
-          {dictionary.issuesPage.newIssue}
-        </Link>
+        <div className={styles.panelActions}>
+          <Link className={styles.secondaryButton} href={repositoryMilestonesPath(locale, owner, repository)}>
+            {dictionary.milestonesPage.milestonesLink}
+          </Link>
+          <Link className={styles.primaryButton} href={`${repositoryPath(locale, owner, repository, "issues")}/new`}>
+            {dictionary.issuesPage.newIssue}
+          </Link>
+        </div>
       }
       description={dictionary.issuesPage.description}
       title={dictionary.issuesPage.title}
