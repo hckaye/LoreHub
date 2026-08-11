@@ -1,8 +1,10 @@
 import { assignees } from "./assignees";
+import { auditLog } from "./audit-log";
 import { milestones } from "./milestones";
 import { releases } from "./releases";
 
 const en = {
+  auditLog: auditLog.en,
   metadata: {
     title: "LoreHub · Collaboration for Lore repositories",
     description: "Review, issues, permissions, and GitHub Actions-compatible CI for Lore.",

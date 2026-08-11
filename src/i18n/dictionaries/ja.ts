@@ -1,10 +1,12 @@
 import { assignees } from "./assignees";
+import { auditLog } from "./audit-log";
 import { milestones } from "./milestones";
 import { releases } from "./releases";
 
 const concat = (...parts: string[]) => parts.join("");
 
 const ja = {
+  auditLog: auditLog.ja,
   metadata: {
     title: "LoreHub · Loreリポジトリの共同開発基盤",
     description: "Loreにレビュー、Issue、権限管理、GitHub Actions互換CIを追加します。",

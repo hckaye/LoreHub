@@ -47,6 +47,35 @@ export type OrganizationView = Organization & {
   teamCount: number;
 };
 
+export type AuditActor = {
+  id: string;
+  username: string;
+  displayName: string;
+};
+
+export type AuditRepository = {
+  id: string;
+  owner: string;
+  slug: string;
+};
+
+export type AuditEvent = {
+  id: string;
+  action: string;
+  targetType: string;
+  targetId: string | null;
+  actor: AuditActor | null;
+  repository: AuditRepository | null;
+  remoteAddress: string | null;
+  details: Record<string, unknown>;
+  occurredAt: string;
+};
+
+export type AuditLogPage = {
+  items: AuditEvent[];
+  nextCursor: string | null;
+};
+
 export type UserProfile = {
   id: string;
   username: string;

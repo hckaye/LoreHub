@@ -5,6 +5,7 @@ import { cookies } from "next/headers";
 import type {
   APIResult,
   AssigneePage,
+  AuditLogPage,
   Branch,
   BranchOverview,
   BranchRule,
@@ -78,6 +79,11 @@ export function getNotificationPreferences(): Promise<APIResult<NotificationPref
 
 export function getOrganization(slug: string): Promise<APIResult<OrganizationView>> {
   return request(`/api/v1/organizations/${encodeURIComponent(slug)}`);
+}
+
+export function getOrganizationAuditLog(slug: string, query: string, before: string): Promise<APIResult<AuditLogPage>> {
+  const search = queryString({ query: query.trim(), before, perPage: "50" });
+  return request(`/api/v1/organizations/${encodeURIComponent(slug)}/audit-log?${search}`);
 }
 
 export async function getOrganizationRepositories(slug: string): Promise<APIResult<Repository[]>> {

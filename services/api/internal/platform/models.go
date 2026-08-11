@@ -10,6 +10,35 @@ type User struct {
 	Locale      string
 }
 
+type AuditActor struct {
+	ID          string `json:"id"`
+	Username    string `json:"username"`
+	DisplayName string `json:"displayName"`
+}
+
+type AuditRepository struct {
+	ID    string `json:"id"`
+	Owner string `json:"owner"`
+	Slug  string `json:"slug"`
+}
+
+type AuditEvent struct {
+	ID            string           `json:"id"`
+	Action        string           `json:"action"`
+	TargetType    string           `json:"targetType"`
+	TargetID      *string          `json:"targetId"`
+	Actor         *AuditActor      `json:"actor"`
+	Repository    *AuditRepository `json:"repository"`
+	RemoteAddress *string          `json:"remoteAddress"`
+	Details       map[string]any   `json:"details"`
+	OccurredAt    time.Time        `json:"occurredAt"`
+}
+
+type AuditLogPage struct {
+	Items      []AuditEvent `json:"items"`
+	NextCursor *string      `json:"nextCursor"`
+}
+
 type Organization struct {
 	ID          string    `json:"id"`
 	Slug        string    `json:"slug"`
