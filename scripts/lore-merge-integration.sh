@@ -10,6 +10,7 @@ repository_id=$(openssl rand -hex 16)
 export LORE_TEST_REPOSITORY_URL="lore://lore:41337/${repository_id}"
 LORE_TEST_TLS_DIR=$(mktemp -d)
 export LORE_TEST_TLS_DIR
+build_option=--build
 
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
     -keyout "$LORE_TEST_TLS_DIR/server.key" \
@@ -24,5 +25,16 @@ cleanup() {
 }
 
 trap cleanup EXIT INT TERM
+if [ -n "${LORE_TEST_SERVER_IMAGE:-}" ] || [ -n "${LORE_TEST_CLIENT_IMAGE:-}" ]; then
+    if [ -z "${LORE_TEST_SERVER_IMAGE:-}" ] || [ -z "${LORE_TEST_CLIENT_IMAGE:-}" ]; then
+        echo "both LORE_TEST_SERVER_IMAGE and LORE_TEST_CLIENT_IMAGE are required" >&2
+        exit 1
+    fi
+    docker image inspect "$LORE_TEST_SERVER_IMAGE" >/dev/null
+    docker image inspect "$LORE_TEST_CLIENT_IMAGE" >/dev/null
+    docker tag "$LORE_TEST_SERVER_IMAGE" "${project}-lore:latest"
+    docker tag "$LORE_TEST_CLIENT_IMAGE" "${project}-lore-test:latest"
+    build_option=--no-build
+fi
 docker compose -p "$project" -f "$compose_file" up \
-    --build --abort-on-container-exit --exit-code-from lore-test
+    "$build_option" --abort-on-container-exit --exit-code-from lore-test

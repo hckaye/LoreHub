@@ -60,7 +60,7 @@ jobs:
 
   lore-policy:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: docker/setup-buildx-action@v4.2.0
@@ -70,7 +70,28 @@ jobs:
           file: infra/lore/Dockerfile
           target: lore-tests
           outputs: type=cacheonly
-          cache-from: type=gha,scope=lore-policy
-          cache-to: type=gha,mode=max,scope=lore-policy
+          cache-from: type=gha,scope=lore-policy-tests
+          cache-to: type=gha,mode=max,scope=lore-policy-tests,ignore-error=true,timeout=20m
+      - name: Build Lore Server integration image
+        uses: docker/build-push-action@v7.3.0
+        with:
+          context: .
+          file: infra/lore/Dockerfile
+          load: true
+          tags: lorehub/lore-integration-server:ci
+          cache-from: type=gha,scope=lore-policy-server
+          cache-to: type=gha,mode=max,scope=lore-policy-server,ignore-error=true,timeout=20m
+      - name: Build Lore client integration image
+        uses: docker/build-push-action@v7.3.0
+        with:
+          context: .
+          file: infra/lore/test.Dockerfile
+          load: true
+          tags: lorehub/lore-integration-client:ci
+          cache-from: type=gha,scope=lore-policy-client
+          cache-to: type=gha,mode=max,scope=lore-policy-client,ignore-error=true,timeout=20m
       - name: Test Lore Server integration
+        env:
+          LORE_TEST_SERVER_IMAGE: lorehub/lore-integration-server:ci
+          LORE_TEST_CLIENT_IMAGE: lorehub/lore-integration-client:ci
         run: scripts/lore-merge-integration.sh
