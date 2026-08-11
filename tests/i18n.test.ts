@@ -34,6 +34,7 @@ test("Japanese dictionary does not silently reuse English copy", () => {
     "actionsPage.title",
     "forms.loreUrl",
     "forms.loreUrlPlaceholder",
+    "projectsPage.board.issue",
     "repository.actionsTitle",
     "settingsPage.loreUrl",
   ]);

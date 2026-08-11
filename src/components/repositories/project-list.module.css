@@ -1,0 +1,165 @@
+.page {
+  display: grid;
+  gap: 16px;
+}
+
+.createArea {
+  display: grid;
+  justify-items: end;
+  gap: 12px;
+}
+
+.primaryButton,
+.secondaryButton {
+  align-items: center;
+  border: 1px solid;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  gap: 6px;
+  justify-content: center;
+  min-height: 32px;
+  padding: 5px 12px;
+}
+
+.primaryButton {
+  background: #1f883d;
+  border-color: rgba(31, 35, 40, 0.15);
+  color: #fff;
+}
+
+.primaryButton:hover {
+  background: #1a7f37;
+}
+
+.primaryButton:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.secondaryButton {
+  background: #f6f8fa;
+  border-color: #d0d7de;
+  color: #24292f;
+}
+
+.createForm {
+  background: #fff;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(140, 149, 159, 0.2);
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  width: min(100%, 520px);
+}
+
+.createForm h2,
+.group h2 {
+  font-size: 16px;
+  margin: 0;
+}
+
+.createForm label {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.createForm input,
+.createForm textarea {
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  color: #1f2328;
+  font: inherit;
+  padding: 8px 10px;
+}
+
+.createForm input:focus,
+.createForm textarea:focus {
+  border-color: #0969da;
+  box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.15);
+  outline: none;
+}
+
+.createForm textarea {
+  min-height: 90px;
+  resize: vertical;
+}
+
+.formActions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.groups,
+.group {
+  display: grid;
+  gap: 12px;
+}
+
+.list {
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.project {
+  align-items: flex-start;
+  background: #fff;
+  color: #1f2328;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: auto 1fr auto;
+  padding: 14px 16px;
+  text-decoration: none;
+}
+
+.project + .project {
+  border-top: 1px solid #d8dee4;
+}
+
+.project:hover {
+  background: #f6f8fa;
+}
+
+.projectBody {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.projectBody strong {
+  color: #0969da;
+}
+
+.projectBody span,
+.projectBody small,
+.number {
+  color: #636c76;
+  font-size: 12px;
+}
+
+.projectBody span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .createArea {
+    justify-items: stretch;
+  }
+
+  .project {
+    grid-template-columns: auto 1fr;
+  }
+
+  .number {
+    display: none;
+  }
+}

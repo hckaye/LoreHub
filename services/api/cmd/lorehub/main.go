@@ -24,6 +24,7 @@ import (
 	"github.com/lorehub/lorehub/services/api/internal/loreauth"
 	epic_urc "github.com/lorehub/lorehub/services/api/internal/loreauth/epic_urc"
 	"github.com/lorehub/lorehub/services/api/internal/platform"
+	"github.com/lorehub/lorehub/services/api/internal/projects"
 	"github.com/lorehub/lorehub/services/api/internal/runner"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -159,6 +160,7 @@ func run(logger *slog.Logger) error {
 	default:
 		return fmt.Errorf("unsupported authentication mode %q", settings.AuthMode)
 	}
+	collaborationStore := collab.NewStore(pool)
 	handler := httpapi.New(
 		store,
 		lore,
@@ -188,7 +190,8 @@ func run(logger *slog.Logger) error {
 		httpapi.WithActionsExecutionContext(actionsContext),
 		httpapi.WithIdentityStore(store),
 		httpapi.WithConfiguredLoginProviders(settings.IdentityProviders),
-		httpapi.WithCollaboration(collab.NewStore(pool)),
+		httpapi.WithCollaboration(collaborationStore),
+		httpapi.WithProjects(projects.NewStore(pool)),
 		httpapi.WithAuthorization(store),
 		httpapi.WithLoreAuth(loreAuth),
 		httpapi.WithLorePublicURL(settings.LorePublicURL),

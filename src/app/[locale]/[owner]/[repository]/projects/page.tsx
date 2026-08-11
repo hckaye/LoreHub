@@ -1,11 +1,12 @@
-import { KanbanSquare, ServerOff } from "lucide-react";
+import { LockKeyhole, ServerOff } from "lucide-react";
 
-import { RepositoryFacts } from "@/components/repositories/repository-facts";
+import { ProjectList } from "@/components/repositories/project-list";
 import { RepositoryPanel, RepositorySection } from "@/components/repositories/repository-section";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getDictionary } from "@/i18n";
 import { isLocale } from "@/i18n/config";
-import { getPublicRepository } from "@/lib/lorehub-api";
+import { getAuthSession } from "@/lib/auth-api";
+import { getProjects } from "@/lib/lorehub-api";
 
 type ProjectsPageProps = {
   params: Promise<{ locale: string; owner: string; repository: string }>;
@@ -16,30 +17,40 @@ export const dynamic = "force-dynamic";
 export default async function ProjectsPage({ params }: ProjectsPageProps) {
   const { locale: value, owner, repository } = await params;
   const locale = isLocale(value) ? value : "en";
-  const [dictionary, repositoryResult] = await Promise.all([
+  const [dictionary, projects, session] = await Promise.all([
     getDictionary(locale),
-    getPublicRepository(owner, repository),
+    getProjects(owner, repository),
+    getAuthSession(),
   ]);
-  if (!repositoryResult.ok) {
-    return (
-      <EmptyState
-        body={dictionary.home.apiUnavailableBody}
-        icon={<ServerOff aria-hidden="true" />}
-        title={dictionary.repository.unavailable}
-        tone="warning"
-      />
-    );
-  }
+  const labels = dictionary.projectsPage;
   return (
-    <RepositorySection description={dictionary.projectsPage.description} title={dictionary.projectsPage.title}>
-      <RepositoryPanel description={dictionary.projectsPage.summaryBody} title={dictionary.projectsPage.summaryTitle}>
-        <RepositoryFacts dictionary={dictionary} repository={repositoryResult.data} />
+    <RepositorySection description={labels.description} title={labels.title}>
+      <RepositoryPanel description={labels.description} title={labels.title}>
+        {projects.ok ? (
+          <ProjectList
+            data={projects.data}
+            dictionary={dictionary}
+            locale={locale}
+            owner={owner}
+            repository={repository}
+            session={session}
+          />
+        ) : projects.reason === "forbidden" || projects.reason === "not-found" ? (
+          <EmptyState
+            body={labels.forbiddenBody}
+            icon={<LockKeyhole aria-hidden="true" />}
+            title={labels.forbiddenTitle}
+            tone="warning"
+          />
+        ) : (
+          <EmptyState
+            body={labels.unavailableBody}
+            icon={<ServerOff aria-hidden="true" />}
+            title={labels.unavailableTitle}
+            tone="warning"
+          />
+        )}
       </RepositoryPanel>
-      <EmptyState
-        body={dictionary.projectsPage.emptyBody}
-        icon={<KanbanSquare aria-hidden="true" />}
-        title={dictionary.projectsPage.emptyTitle}
-      />
     </RepositorySection>
   );
 }

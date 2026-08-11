@@ -1,0 +1,426 @@
+.page {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.header {
+  align-items: flex-start;
+  border-bottom: 1px solid #d8dee4;
+  display: flex;
+  gap: 20px;
+  justify-content: space-between;
+  padding-bottom: 16px;
+}
+
+.titleArea {
+  min-width: 0;
+}
+
+.titleArea h1 {
+  font-size: 24px;
+  font-weight: 400;
+  line-height: 1.25;
+  margin: 8px 0 4px;
+  overflow-wrap: anywhere;
+}
+
+.titleArea p {
+  color: #636c76;
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.stateLine,
+.headerActions,
+.formActions,
+.columnHeader,
+.cardHeading {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.stateLine {
+  color: #636c76;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+
+.state {
+  align-items: center;
+  border-radius: 2em;
+  color: #fff;
+  display: inline-flex;
+  font-weight: 600;
+  gap: 5px;
+  padding: 3px 9px;
+}
+
+.state[data-state="open"] {
+  background: #1f883d;
+}
+
+.state[data-state="closed"] {
+  background: #8250df;
+}
+
+.headerActions {
+  flex: 0 0 auto;
+}
+
+.primaryButton,
+.secondaryButton,
+.dangerButton,
+.iconButton,
+.addColumnButton,
+.addCardButton {
+  align-items: center;
+  border: 1px solid;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  gap: 6px;
+  justify-content: center;
+  min-height: 30px;
+  padding: 4px 10px;
+}
+
+.primaryButton {
+  background: #1f883d;
+  border-color: rgba(31, 35, 40, 0.15);
+  color: #fff;
+}
+
+.primaryButton:hover {
+  background: #1a7f37;
+}
+
+.secondaryButton,
+.dangerButton,
+.iconButton {
+  background: #f6f8fa;
+  border-color: #d0d7de;
+  color: #24292f;
+}
+
+.dangerButton {
+  color: #cf222e;
+}
+
+.dangerButton:hover {
+  background: #cf222e;
+  border-color: #cf222e;
+  color: #fff;
+}
+
+.iconButton {
+  background: transparent;
+  border-color: transparent;
+  font-weight: 400;
+  padding: 3px 6px;
+}
+
+.secondaryButton:hover,
+.iconButton:hover {
+  background: #f3f4f6;
+  border-color: rgba(31, 35, 40, 0.15);
+}
+
+.primaryButton:disabled,
+.secondaryButton:disabled,
+.dangerButton:disabled,
+.iconButton:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.projectForm {
+  background: #f6f8fa;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  display: grid;
+  gap: 8px;
+  max-width: 720px;
+  padding: 16px;
+}
+
+.projectForm label,
+.inlineForm label,
+.cardForm label,
+.addColumn label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.projectForm input,
+.projectForm textarea,
+.inlineForm input,
+.inlineForm textarea,
+.cardForm input,
+.cardForm select,
+.cardForm textarea,
+.addColumn input,
+.moveControl select {
+  background: #fff;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  color: #1f2328;
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 8px;
+}
+
+.projectForm input:focus,
+.projectForm textarea:focus,
+.inlineForm input:focus,
+.inlineForm textarea:focus,
+.cardForm input:focus,
+.cardForm select:focus,
+.cardForm textarea:focus,
+.addColumn input:focus,
+.moveControl select:focus {
+  border-color: #0969da;
+  box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.15);
+  outline: none;
+}
+
+.projectForm textarea,
+.inlineForm textarea,
+.cardForm textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.board {
+  align-items: flex-start;
+  display: flex;
+  gap: 12px;
+  min-height: 420px;
+  overflow-x: auto;
+  padding: 4px 2px 18px;
+  scrollbar-color: #afb8c1 transparent;
+}
+
+.column,
+.addColumn {
+  background: #f6f8fa;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  flex: 0 0 310px;
+  min-width: 0;
+}
+
+.column {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+}
+
+.columnHeader {
+  min-height: 30px;
+  padding: 0 4px;
+}
+
+.columnHeader h2 {
+  font-size: 14px;
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.columnHeader > span {
+  background: #afb8c1;
+  border-radius: 2em;
+  color: #24292f;
+  font-size: 11px;
+  line-height: 18px;
+  min-width: 20px;
+  padding: 0 6px;
+  text-align: center;
+}
+
+.columnMenu {
+  margin-left: auto;
+  position: relative;
+}
+
+.menu {
+  background: #fff;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(140, 149, 159, 0.2);
+  display: grid;
+  min-width: 150px;
+  padding: 4px 0;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 3px);
+  z-index: 5;
+}
+
+.menu button {
+  background: transparent;
+  border: 0;
+  color: #24292f;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  padding: 7px 12px;
+  text-align: left;
+}
+
+.menu button:hover {
+  background: #0969da;
+  color: #fff;
+}
+
+.menu .dangerAction {
+  color: #cf222e;
+}
+
+.cards {
+  display: grid;
+  gap: 8px;
+}
+
+.noCards {
+  color: #636c76;
+  font-size: 12px;
+  margin: 12px 4px;
+  text-align: center;
+}
+
+.card {
+  background: #fff;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  box-shadow: 0 1px 0 rgba(31, 35, 40, 0.04);
+  display: grid;
+  gap: 7px;
+  padding: 10px;
+}
+
+.cardHeading {
+  justify-content: space-between;
+}
+
+.cardKind {
+  align-items: center;
+  color: #636c76;
+  display: inline-flex;
+  font-size: 11px;
+  gap: 5px;
+}
+
+.cardKind[data-kind="issue"] svg {
+  color: #1a7f37;
+}
+
+.cardKind[data-kind="merge_request"] svg {
+  color: #8250df;
+}
+
+.cardTitle {
+  color: #1f2328;
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+
+a.cardTitle:hover {
+  color: #0969da;
+  text-decoration: underline;
+}
+
+.cardBody {
+  color: #636c76;
+  font-size: 12px;
+  margin: 0;
+  max-height: 7em;
+  overflow: hidden;
+  white-space: pre-wrap;
+}
+
+.card small {
+  color: #636c76;
+  font-size: 11px;
+}
+
+.inlineForm,
+.cardForm,
+.addColumn form {
+  display: grid;
+  gap: 6px;
+}
+
+.inlineForm,
+.cardForm {
+  background: #fff;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  padding: 10px;
+}
+
+.addCardButton,
+.addColumnButton {
+  background: transparent;
+  border-color: transparent;
+  color: #636c76;
+  justify-content: flex-start;
+  width: 100%;
+}
+
+.addCardButton:hover,
+.addColumnButton:hover {
+  background: #eaeef2;
+  color: #24292f;
+}
+
+.addColumn {
+  padding: 8px;
+}
+
+.addColumn form {
+  padding: 4px;
+}
+
+.moveControl {
+  align-items: center;
+  border-top: 1px solid #d8dee4;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  padding-top: 8px;
+}
+
+.moveControl span {
+  color: #636c76;
+  font-size: 11px;
+}
+
+.moveControl select {
+  max-width: 180px;
+  min-width: 0;
+}
+
+@media (max-width: 720px) {
+  .header {
+    display: grid;
+  }
+
+  .headerActions {
+    flex-wrap: wrap;
+  }
+
+  .column,
+  .addColumn {
+    flex-basis: min(88vw, 310px);
+  }
+}

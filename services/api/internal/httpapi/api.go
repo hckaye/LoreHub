@@ -20,6 +20,7 @@ import (
 	"github.com/lorehub/lorehub/services/api/internal/loreauth"
 	mergeapi "github.com/lorehub/lorehub/services/api/internal/merge"
 	"github.com/lorehub/lorehub/services/api/internal/platform"
+	projectsapi "github.com/lorehub/lorehub/services/api/internal/projects"
 	"github.com/lorehub/lorehub/services/api/internal/runner"
 )
 
@@ -169,6 +170,7 @@ type API struct {
 	loreAuth                *loreauth.Service
 	logger                  *slog.Logger
 	collabStore             collab.Store
+	projectsStore           projectsapi.Store
 	loginProvider           auth.LoginProvider
 	loginStore              auth.LoginTransactionStore
 	sessionStore            auth.SessionStore
@@ -295,6 +297,9 @@ func New(
 		api.listCodeScanningAlerts)
 	if api.collabStore != nil {
 		collab.Register(mux, api.collabStore, api, logger)
+		if api.projectsStore != nil {
+			projectsapi.Register(mux, api.projectsStore, api.collabStore, api, logger)
+		}
 		if codeClient, ok := api.lore.(loreclient.CodeClient); ok {
 			codeapi.Register(mux, api.collabStore, api.lore, codeClient, api, api.loreCredentials,
 				api.serviceSubjects.PublicReader, logger)
@@ -319,6 +324,12 @@ func New(
 func WithCollaboration(store collab.Store) Option {
 	return func(api *API) {
 		api.collabStore = store
+	}
+}
+
+func WithProjects(store projectsapi.Store) Option {
+	return func(api *API) {
+		api.projectsStore = store
 	}
 }
 

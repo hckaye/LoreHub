@@ -26,6 +26,8 @@ import type {
   NotificationPage,
   NotificationPreferences,
   OrganizationView,
+  Project,
+  ProjectList,
   Repository,
   ReviewSummary,
   RevisionHistoryEntry,
@@ -209,6 +211,14 @@ export async function getMergeRequests(
 
 export function getMergeRequest(owner: string, repository: string, number: number): Promise<APIResult<MergeRequest>> {
   return request(repositoryPath(owner, repository, `/merge-requests/${number}`));
+}
+
+export function getProjects(owner: string, repository: string): Promise<APIResult<ProjectList>> {
+  return request(repositoryPath(owner, repository, "/projects"));
+}
+
+export function getProject(owner: string, repository: string, number: number): Promise<APIResult<Project>> {
+  return request(repositoryPath(owner, repository, `/projects/${number}`));
 }
 
 export function getReviews(owner: string, repository: string, number: number): Promise<APIResult<ReviewSummary>> {

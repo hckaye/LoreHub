@@ -214,6 +214,52 @@ export type MergeRequest = {
   updatedAt: string;
 };
 
+export type ProjectSummary = {
+  id: string;
+  number: number;
+  title: string;
+  description: string;
+  state: "open" | "closed";
+  createdBy: string;
+  columnCount: number;
+  itemCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ProjectItem = {
+  id: string;
+  columnId: string;
+  kind: "issue" | "merge_request" | "draft";
+  number: number | null;
+  title: string;
+  body: string;
+  state: "open" | "closed" | "merged" | "draft";
+  author: string;
+  position: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ProjectColumn = {
+  id: string;
+  name: string;
+  position: number;
+  items: ProjectItem[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type Project = ProjectSummary & {
+  columns: ProjectColumn[];
+  viewerCanWrite: boolean;
+};
+
+export type ProjectList = {
+  projects: ProjectSummary[];
+  viewerCanWrite: boolean;
+};
+
 export type TreeEntry = {
   name: string;
   path: string;
