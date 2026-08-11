@@ -76,6 +76,46 @@ export type AuditLogPage = {
   nextCursor: string | null;
 };
 
+export type RepositoryInsightCurrent = {
+  openIssues: number;
+  openPullRequests: number;
+  branches: number;
+  publishedReleases: number;
+};
+
+export type RepositoryInsightPeriod = {
+  issuesOpened: number;
+  issuesClosed: number;
+  pullRequestsOpened: number;
+  pullRequestsMerged: number;
+  workflowRunsCompleted: number;
+  workflowRunsSucceeded: number;
+  releasesPublished: number;
+  branchPushes: number;
+};
+
+export type RepositoryInsightDay = Omit<RepositoryInsightPeriod, "workflowRunsSucceeded"> & {
+  date: string;
+};
+
+export type RepositoryInsightContributor = {
+  id: string;
+  username: string;
+  displayName: string;
+  activityCount: number;
+  lastActiveAt: string;
+};
+
+export type RepositoryInsights = {
+  periodDays: 7 | 30 | 90;
+  periodStart: string;
+  periodEnd: string;
+  current: RepositoryInsightCurrent;
+  period: RepositoryInsightPeriod;
+  activity: RepositoryInsightDay[];
+  contributors: RepositoryInsightContributor[];
+};
+
 export type UserProfile = {
   id: string;
   username: string;

@@ -1,5 +1,6 @@
 import { assignees } from "./assignees";
 import { auditLog } from "./audit-log";
+import { insights } from "./insights";
 import { milestones } from "./milestones";
 import { releases } from "./releases";
 
@@ -7,6 +8,7 @@ const concat = (...parts: string[]) => parts.join("");
 
 const ja = {
   auditLog: auditLog.ja,
+  insightsPage: insights.ja,
   metadata: {
     title: "LoreHub · Loreリポジトリの共同開発基盤",
     description: "Loreにレビュー、Issue、権限管理、GitHub Actions互換CIを追加します。",
@@ -636,18 +638,6 @@ const ja = {
       note: "注意",
       none: "重要度なし",
     },
-  },
-  insightsPage: {
-    title: "分析",
-    description: "LoreHubが現在観測できるリポジトリ情報だけを使った概要です。",
-    overviewTitle: "概要",
-    openIssues: "オープンなIssue",
-    openPullRequests: "オープンなプルリクエスト",
-    actionsRuns: "Actionsの実行",
-    lastUpdated: "リポジトリの更新",
-    emptyTitle: "追加の分析情報はありません",
-    emptyBody: "このリポジトリで利用できる貢献者・トラフィック情報はありません。",
-    metricUnavailable: "取得できません",
   },
   settingsPage: {
     title: "設定",

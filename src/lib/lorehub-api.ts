@@ -37,6 +37,7 @@ import type {
   ProjectList,
   ReleasePage,
   Repository,
+  RepositoryInsights,
   ReviewSummary,
   RevisionHistoryEntry,
   SARIFUploadMetadata,
@@ -84,6 +85,17 @@ export function getOrganization(slug: string): Promise<APIResult<OrganizationVie
 export function getOrganizationAuditLog(slug: string, query: string, before: string): Promise<APIResult<AuditLogPage>> {
   const search = queryString({ query: query.trim(), before, perPage: "50" });
   return request(`/api/v1/organizations/${encodeURIComponent(slug)}/audit-log?${search}`);
+}
+
+export function getRepositoryInsights(
+  owner: string,
+  repository: string,
+  days: string,
+): Promise<APIResult<RepositoryInsights>> {
+  const search = new URLSearchParams({ days });
+  return request(
+    `/api/v1/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/insights?${search}`,
+  );
 }
 
 export async function getOrganizationRepositories(slug: string): Promise<APIResult<Repository[]>> {

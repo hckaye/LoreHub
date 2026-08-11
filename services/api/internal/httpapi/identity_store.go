@@ -27,6 +27,9 @@ type IdentityStore interface {
 	OrganizationAuditLog(
 		context.Context, platform.User, string, string, string, int,
 	) (platform.AuditLogPage, error)
+	RepositoryInsights(
+		context.Context, *platform.User, string, string, int,
+	) (platform.RepositoryInsights, error)
 	UpdateOrganization(
 		context.Context, platform.User, string, platform.UpdateOrganizationInput,
 	) (platform.OrganizationView, error)

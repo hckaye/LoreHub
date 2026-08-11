@@ -232,6 +232,7 @@ func New(
 	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}", api.publicRepository)
 	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/settings", api.repositorySettings)
 	mux.HandleFunc("PATCH /api/v1/repositories/{owner}/{repository}/settings", api.updateRepositorySettings)
+	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/insights", api.repositoryInsights)
 	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/branches", api.repositoryBranches)
 	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/issues", api.listIssues)
 	mux.HandleFunc("POST /api/v1/repositories/{owner}/{repository}/issues", api.createIssue)

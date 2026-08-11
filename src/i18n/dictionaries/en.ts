@@ -1,10 +1,12 @@
 import { assignees } from "./assignees";
 import { auditLog } from "./audit-log";
+import { insights } from "./insights";
 import { milestones } from "./milestones";
 import { releases } from "./releases";
 
 const en = {
   auditLog: auditLog.en,
+  insightsPage: insights.en,
   metadata: {
     title: "LoreHub · Collaboration for Lore repositories",
     description: "Review, issues, permissions, and GitHub Actions-compatible CI for Lore.",
@@ -566,18 +568,6 @@ const en = {
       note: "Note",
       none: "No severity",
     },
-  },
-  insightsPage: {
-    title: "Insights",
-    description: "A small, honest summary of the repository data LoreHub can currently observe.",
-    overviewTitle: "Overview",
-    openIssues: "Open issues",
-    openPullRequests: "Open pull requests",
-    actionsRuns: "Actions runs",
-    lastUpdated: "Repository updated",
-    emptyTitle: "No additional insights are available",
-    emptyBody: "No contributor or traffic data is available for this repository.",
-    metricUnavailable: "Unavailable",
   },
   settingsPage: {
     title: "Settings",
