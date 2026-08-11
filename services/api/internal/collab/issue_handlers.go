@@ -38,6 +38,7 @@ func (api *API) getIssue(writer http.ResponseWriter, request *http.Request) {
 		}
 		issue.ViewerCanUpdate = issue.AuthorID == actor.ID || access.AtLeast(PermTriage)
 		issue.ViewerCanManageLabels = access.AtLeast(PermTriage)
+		issue.ViewerCanManageMilestone = access.AtLeast(PermTriage)
 	}
 	writeJSON(writer, http.StatusOK, issue)
 }
@@ -76,6 +77,7 @@ func (api *API) patchIssue(writer http.ResponseWriter, request *http.Request) {
 	}
 	issue.ViewerCanUpdate = true
 	issue.ViewerCanManageLabels = access.AtLeast(PermTriage)
+	issue.ViewerCanManageMilestone = access.AtLeast(PermTriage)
 	writeJSON(writer, http.StatusOK, issue)
 }
 

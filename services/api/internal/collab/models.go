@@ -41,23 +41,33 @@ type RepositoryEngagement struct {
 
 // Issue is a single issue record returned by the detail endpoint.
 type Issue struct {
-	ID                    string     `json:"id"`
-	Number                int64      `json:"number"`
-	Title                 string     `json:"title"`
-	Body                  string     `json:"body"`
-	State                 string     `json:"state"`
-	Author                string     `json:"author"`
-	AuthorID              string     `json:"-"`
-	Assignee              *string    `json:"assignee"`
-	Labels                []Label    `json:"labels"`
-	LabelCount            int64      `json:"labelCount"`
-	CommentCount          int64      `json:"commentCount"`
-	CreatedAt             time.Time  `json:"createdAt"`
-	UpdatedAt             time.Time  `json:"updatedAt"`
-	ClosedBy              *string    `json:"closedBy"`
-	ClosedAt              *time.Time `json:"closedAt"`
-	ViewerCanUpdate       bool       `json:"viewerCanUpdate"`
-	ViewerCanManageLabels bool       `json:"viewerCanManageLabels"`
+	ID                       string            `json:"id"`
+	Number                   int64             `json:"number"`
+	Title                    string            `json:"title"`
+	Body                     string            `json:"body"`
+	State                    string            `json:"state"`
+	Author                   string            `json:"author"`
+	AuthorID                 string            `json:"-"`
+	Assignee                 *string           `json:"assignee"`
+	Labels                   []Label           `json:"labels"`
+	Milestone                *MilestoneSummary `json:"milestone"`
+	LabelCount               int64             `json:"labelCount"`
+	CommentCount             int64             `json:"commentCount"`
+	CreatedAt                time.Time         `json:"createdAt"`
+	UpdatedAt                time.Time         `json:"updatedAt"`
+	ClosedBy                 *string           `json:"closedBy"`
+	ClosedAt                 *time.Time        `json:"closedAt"`
+	ViewerCanUpdate          bool              `json:"viewerCanUpdate"`
+	ViewerCanManageLabels    bool              `json:"viewerCanManageLabels"`
+	ViewerCanManageMilestone bool              `json:"viewerCanManageMilestone"`
+}
+
+type MilestoneSummary struct {
+	ID     string  `json:"id"`
+	Number int64   `json:"number"`
+	Title  string  `json:"title"`
+	State  string  `json:"state"`
+	DueOn  *string `json:"dueOn"`
 }
 
 // UpdateIssueInput captures the mutable fields of an issue. Pointer fields are

@@ -15,6 +15,8 @@ const issueDetailQuery = `
 	SELECT i.id, i.number, i.title, i.body, i.state,
 	       author.username, i.author_id,
 	       assignee.username,
+	       milestone.id, milestone.number, milestone.title, milestone.state,
+	       to_char(milestone.due_on, 'YYYY-MM-DD'),
 	       COALESCE((
 	           SELECT jsonb_agg(jsonb_build_object(
 	               'id', label.id,
@@ -33,6 +35,7 @@ const issueDetailQuery = `
 	FROM issues i
 	JOIN users author ON author.id = i.author_id
 	LEFT JOIN users assignee ON assignee.id = i.assignee_id
+	LEFT JOIN repository_milestones milestone ON milestone.id = i.milestone_id
 	LEFT JOIN users closed_by ON closed_by.id = i.closed_by
 	WHERE i.repository_id = $1 AND i.number = $2
 `
@@ -54,6 +57,8 @@ func (s *store) GetIssue(ctx context.Context, repoID string, number int64) (Issu
 func scanIssue(row pgx.Row) (Issue, error) {
 	var issue Issue
 	var labels json.RawMessage
+	var milestoneID, milestoneTitle, milestoneState, milestoneDueOn *string
+	var milestoneNumber *int64
 	err := row.Scan(
 		&issue.ID,
 		&issue.Number,
@@ -63,6 +68,11 @@ func scanIssue(row pgx.Row) (Issue, error) {
 		&issue.Author,
 		&issue.AuthorID,
 		&issue.Assignee,
+		&milestoneID,
+		&milestoneNumber,
+		&milestoneTitle,
+		&milestoneState,
+		&milestoneDueOn,
 		&labels,
 		&issue.CommentCount,
 		&issue.CreatedAt,
@@ -77,6 +87,12 @@ func scanIssue(row pgx.Row) (Issue, error) {
 		return Issue{}, fmt.Errorf("decode issue labels: %w", err)
 	}
 	issue.LabelCount = int64(len(issue.Labels))
+	if milestoneID != nil && milestoneNumber != nil && milestoneTitle != nil && milestoneState != nil {
+		issue.Milestone = &MilestoneSummary{
+			ID: *milestoneID, Number: *milestoneNumber, Title: *milestoneTitle,
+			State: *milestoneState, DueOn: milestoneDueOn,
+		}
+	}
 	return issue, nil
 }
 
