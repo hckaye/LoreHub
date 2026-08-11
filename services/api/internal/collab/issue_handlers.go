@@ -31,11 +31,23 @@ func (api *API) getIssue(writer http.ResponseWriter, request *http.Request) {
 		storeError(writer, request, "get issue", err, api.logger)
 		return
 	}
+	if actor != nil {
+		access, ok := api.permission(writer, request, *actor, repo)
+		if !ok {
+			return
+		}
+		issue.ViewerCanUpdate = issue.AuthorID == actor.ID || access.AtLeast(PermTriage)
+		issue.ViewerCanManageLabels = access.AtLeast(PermTriage)
+	}
 	writeJSON(writer, http.StatusOK, issue)
 }
 
 func (api *API) patchIssue(writer http.ResponseWriter, request *http.Request) {
 	actor, repo, ok := api.requireMutationActor(writer, request)
+	if !ok {
+		return
+	}
+	access, ok := api.permission(writer, request, actor, repo)
 	if !ok {
 		return
 	}
@@ -62,6 +74,8 @@ func (api *API) patchIssue(writer http.ResponseWriter, request *http.Request) {
 		storeError(writer, request, "update issue", err, api.logger)
 		return
 	}
+	issue.ViewerCanUpdate = true
+	issue.ViewerCanManageLabels = access.AtLeast(PermTriage)
 	writeJSON(writer, http.StatusOK, issue)
 }
 

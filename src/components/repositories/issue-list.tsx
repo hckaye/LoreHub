@@ -1,7 +1,10 @@
 import { CircleDot } from "lucide-react";
+import Link from "next/link";
 
 import type { Dictionary } from "@/i18n";
+import type { Locale } from "@/i18n/config";
 import type { Issue } from "@/lib/api-types";
+import { repositoryPath } from "@/lib/routes";
 
 import { EmptyState } from "../ui/empty-state";
 import styles from "./issue-list.module.css";
@@ -9,10 +12,12 @@ import styles from "./issue-list.module.css";
 type IssueListProps = {
   issues: Issue[];
   dictionary: Dictionary;
-  locale: string;
+  locale: Locale;
+  owner: string;
+  repository: string;
 };
 
-export function IssueList({ issues, dictionary, locale }: IssueListProps) {
+export function IssueList({ issues, dictionary, locale, owner, repository }: IssueListProps) {
   if (issues.length === 0) {
     return (
       <EmptyState
@@ -29,7 +34,9 @@ export function IssueList({ issues, dictionary, locale }: IssueListProps) {
         <article className={styles.row} key={issue.id}>
           <CircleDot aria-hidden="true" className={styles.stateIcon} size={18} />
           <div>
-            <h3>{issue.title}</h3>
+            <h3>
+              <Link href={`${repositoryPath(locale, owner, repository, "issues")}/${issue.number}`}>{issue.title}</Link>
+            </h3>
             <p>
               #{issue.number} · {issue.author} · {formatDate(issue.updatedAt, locale)}
             </p>

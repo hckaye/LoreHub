@@ -1,0 +1,297 @@
+.page {
+  display: grid;
+  gap: 1rem;
+}
+
+.heading {
+  border-bottom: 1px solid var(--border);
+  display: grid;
+  gap: 0.75rem;
+  padding-bottom: 1rem;
+}
+
+.heading h1 {
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  font-weight: 500;
+  margin: 0;
+}
+
+.heading h1 span {
+  color: var(--fg-muted);
+  font-weight: 300;
+}
+
+.statusLine {
+  align-items: center;
+  color: var(--fg-muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 0.88rem;
+  gap: 0.6rem;
+}
+
+.state {
+  align-items: center;
+  background: var(--success-fg);
+  border-radius: 2rem;
+  color: var(--fg-on-emphasis);
+  display: inline-flex;
+  font-weight: 650;
+  gap: 0.35rem;
+  padding: 0.35rem 0.75rem;
+}
+
+.state[data-state="closed"] {
+  background: var(--accent-emphasis);
+}
+
+.state svg {
+  height: 1rem;
+  width: 1rem;
+}
+
+.columns {
+  align-items: start;
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: minmax(0, 1fr) 15rem;
+}
+
+.conversation {
+  display: grid;
+  gap: 1rem;
+}
+
+.card,
+.editor {
+  border: 1px solid var(--border);
+  border-radius: 0.45rem;
+  overflow: hidden;
+}
+
+.card header {
+  align-items: center;
+  background: var(--canvas-subtle);
+  border-bottom: 1px solid var(--border);
+  color: var(--fg-muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 0.82rem;
+  gap: 0.5rem;
+  min-height: 2.6rem;
+  padding: 0.6rem 0.85rem;
+}
+
+.card header strong {
+  color: var(--fg-default);
+}
+
+.body {
+  min-height: 4rem;
+  overflow-wrap: anywhere;
+  padding: 1rem;
+  white-space: pre-wrap;
+}
+
+.cardActions {
+  display: flex;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+.textButton {
+  background: transparent;
+  border: 0;
+  color: var(--fg-muted);
+  cursor: pointer;
+  font: inherit;
+  margin-left: auto;
+  padding: 0.15rem;
+}
+
+.cardActions .textButton {
+  margin-left: 0;
+}
+
+.textButton:hover {
+  color: var(--accent-fg);
+  text-decoration: underline;
+}
+
+.editor,
+.commentEditor {
+  display: grid;
+  gap: 0.65rem;
+  padding: 1rem;
+}
+
+.editor label {
+  font-size: 0.86rem;
+  font-weight: 650;
+}
+
+.editor input,
+.editor textarea,
+.commentEditor textarea {
+  background: var(--canvas-default);
+  border: 1px solid var(--border-strong);
+  border-radius: 0.4rem;
+  color: var(--fg-default);
+  font: inherit;
+  padding: 0.6rem 0.7rem;
+  width: 100%;
+}
+
+.editor textarea,
+.commentEditor textarea {
+  min-height: 8rem;
+  resize: vertical;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.actions button,
+.stateButton {
+  background: var(--success-fg);
+  border: 1px solid var(--success-border);
+  border-radius: 0.4rem;
+  color: var(--fg-on-emphasis);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 650;
+  padding: 0.48rem 0.8rem;
+}
+
+.actions button:disabled,
+.stateButton:disabled,
+.textButton:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.actions .secondaryButton {
+  background: var(--surface);
+  border-color: var(--border-strong);
+  color: var(--fg-default);
+}
+
+.sidebar {
+  display: grid;
+  gap: 1rem;
+}
+
+.sidebar section {
+  border-bottom: 1px solid var(--border);
+  display: grid;
+  gap: 0.7rem;
+  padding-bottom: 1rem;
+}
+
+.sidebar h2,
+.sidebar p {
+  font-size: 0.8rem;
+  margin: 0;
+}
+
+.sidebar p {
+  color: var(--fg-muted);
+}
+
+.sidebarHeading {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  position: relative;
+}
+
+.sidebarHeading summary {
+  color: var(--fg-muted);
+  cursor: pointer;
+  font-size: 0.75rem;
+  list-style: none;
+}
+
+.labelMenu {
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 0.45rem;
+  box-shadow: var(--shadow-popover);
+  display: grid;
+  gap: 0.35rem;
+  max-height: 18rem;
+  min-width: 14rem;
+  overflow: auto;
+  padding: 0.6rem;
+  position: absolute;
+  right: 0;
+  top: 1.8rem;
+  z-index: 2;
+}
+
+.labelMenu label {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.label {
+  align-items: center;
+  border: 1px solid var(--label-color);
+  border-radius: 2rem;
+  display: inline-flex;
+  font-size: 0.72rem;
+  font-weight: 650;
+  gap: 0.3rem;
+  padding: 0.15rem 0.5rem;
+}
+
+.label::before {
+  background: var(--label-color);
+  border-radius: 50%;
+  content: "";
+  height: 0.5rem;
+  width: 0.5rem;
+}
+
+.stateButton {
+  background: var(--surface);
+  border-color: var(--border-strong);
+  color: var(--fg-default);
+  width: 100%;
+}
+
+.stateButton[data-state="open"] {
+  color: var(--danger-fg);
+}
+
+.notice {
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
+  border-radius: 0.4rem;
+  color: var(--danger-fg);
+  margin: 0;
+  padding: 0.65rem 0.8rem;
+}
+
+@media (max-width: 760px) {
+  .columns {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    order: -1;
+  }
+}

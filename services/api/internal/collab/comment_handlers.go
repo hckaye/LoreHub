@@ -32,6 +32,16 @@ func (api *API) listIssueComments(writer http.ResponseWriter, request *http.Requ
 		storeError(writer, request, "list issue comments", err, api.logger)
 		return
 	}
+	if actor != nil {
+		access, ok := api.permission(writer, request, *actor, repo)
+		if !ok {
+			return
+		}
+		for index := range result.Items {
+			result.Items[index].ViewerCanUpdate = result.Items[index].AuthorID == actor.ID ||
+				access.AtLeast(PermTriage)
+		}
+	}
 	writeJSON(writer, http.StatusOK, result)
 }
 
@@ -58,6 +68,7 @@ func (api *API) createIssueComment(writer http.ResponseWriter, request *http.Req
 		storeError(writer, request, "create issue comment", err, api.logger)
 		return
 	}
+	comment.ViewerCanUpdate = true
 	writeLocation(writer, request, comment.ID)
 	writeJSON(writer, http.StatusCreated, comment)
 }
@@ -92,6 +103,7 @@ func (api *API) patchIssueComment(writer http.ResponseWriter, request *http.Requ
 		storeError(writer, request, "update issue comment", err, api.logger)
 		return
 	}
+	updated.ViewerCanUpdate = true
 	writeJSON(writer, http.StatusOK, updated)
 }
 

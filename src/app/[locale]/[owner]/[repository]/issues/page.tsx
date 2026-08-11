@@ -66,7 +66,13 @@ export default async function IssuesPage({ params, searchParams }: IssuesPagePro
       />
       <RepositoryPanel description={dictionary.issuesPage.description} title={dictionary.repository.issuesTitle}>
         {issues.ok ? (
-          <IssueList dictionary={dictionary} issues={issues.data} locale={locale} />
+          <IssueList
+            dictionary={dictionary}
+            issues={issues.data}
+            locale={locale}
+            owner={owner}
+            repository={repository}
+          />
         ) : (
           <EmptyState
             body={dictionary.home.apiUnavailableBody}

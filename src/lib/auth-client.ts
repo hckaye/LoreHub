@@ -30,8 +30,17 @@ export async function postJson<T>(
   }
 }
 
-export async function patchJson<T>(path: string, input: unknown, csrfToken: string): Promise<MutationResult<T>> {
-  return jsonMutation("PATCH", path, input, csrfToken);
+export async function patchJson<T>(
+  path: string,
+  input: unknown,
+  csrfToken: string,
+  extraHeaders: Record<string, string> = {},
+): Promise<MutationResult<T>> {
+  return jsonMutation("PATCH", path, input, csrfToken, extraHeaders);
+}
+
+export async function putJson<T>(path: string, input: unknown, csrfToken: string): Promise<MutationResult<T>> {
+  return jsonMutation("PUT", path, input, csrfToken);
 }
 
 export async function deleteJson<T>(path: string, csrfToken: string): Promise<MutationResult<T>> {
@@ -64,7 +73,7 @@ export function classifyMutationStatus(status: number): MutationFailureKind {
   if (status === 403) {
     return "forbidden";
   }
-  if (status === 409) {
+  if (status === 409 || status === 412) {
     return "conflict";
   }
   if (status >= 400 && status < 500) {
@@ -84,21 +93,26 @@ export function apiResultToMutation<T>(result: APIResult<T>): MutationResult<T> 
 
 async function readMutationResponse<T>(response: Response): Promise<MutationResult<T>> {
   if (response.ok) {
+    if (response.status === 204) {
+      return { ok: true, data: null as T };
+    }
     return { ok: true, data: (await response.json()) as T };
   }
   return { ok: false, kind: classifyMutationStatus(response.status), code: await readProblemCode(response) };
 }
 
 async function jsonMutation<T>(
-  method: "PATCH" | "DELETE",
+  method: "PATCH" | "PUT" | "DELETE",
   path: string,
   input: unknown,
   csrfToken: string,
+  extraHeaders: Record<string, string> = {},
 ): Promise<MutationResult<T>> {
   try {
     const headers: Record<string, string> = {
       Accept: "application/json",
       "X-CSRF-Token": csrfToken,
+      ...extraHeaders,
     };
     if (input !== undefined) {
       headers["Content-Type"] = "application/json";

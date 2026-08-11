@@ -13,6 +13,8 @@ import type {
   DashboardData,
   FileHistoryEntry,
   Issue,
+  IssueComment,
+  Label,
   LoreDiff,
   LoreFile,
   LoreRevision,
@@ -162,6 +164,26 @@ export async function getIssues(owner: string, repository: string, state: IssueF
   }
   const result = await request<{ issues: Issue[] }>(repositoryPath(owner, repository, `/issues?state=${state}`));
   return result.ok ? { ok: true, data: result.data.issues } : result;
+}
+
+export function getIssue(owner: string, repository: string, number: number): Promise<APIResult<Issue>> {
+  return request(repositoryPath(owner, repository, `/issues/${number}`));
+}
+
+export async function getIssueComments(
+  owner: string,
+  repository: string,
+  number: number,
+): Promise<APIResult<IssueComment[]>> {
+  const result = await request<{ items: IssueComment[] }>(
+    repositoryPath(owner, repository, `/issues/${number}/comments?limit=100`),
+  );
+  return result.ok ? { ok: true, data: result.data.items } : result;
+}
+
+export async function getLabels(owner: string, repository: string): Promise<APIResult<Label[]>> {
+  const result = await request<{ items: Label[] }>(repositoryPath(owner, repository, "/labels?limit=100"));
+  return result.ok ? { ok: true, data: result.data.items } : result;
 }
 
 export async function getMergeRequests(

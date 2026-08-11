@@ -2,6 +2,7 @@ package collab
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -10,24 +11,36 @@ import (
 	"github.com/lorehub/lorehub/services/api/internal/platform"
 )
 
+const issueDetailQuery = `
+	SELECT i.id, i.number, i.title, i.body, i.state,
+	       author.username, i.author_id,
+	       assignee.username,
+	       COALESCE((
+	           SELECT jsonb_agg(jsonb_build_object(
+	               'id', label.id,
+	               'repositoryId', label.repository_id,
+	               'name', label.name,
+	               'description', label.description,
+	               'color', label.color,
+	               'createdAt', label.created_at
+	           ) ORDER BY label.name, label.id)
+	           FROM issue_labels issue_label
+	           JOIN labels label ON label.id = issue_label.label_id
+	           WHERE issue_label.issue_id = i.id
+	       ), '[]'::jsonb),
+	       (SELECT COUNT(*) FROM issue_comments issue_comment WHERE issue_comment.issue_id = i.id),
+	       i.created_at, i.updated_at, closed_by.username, i.closed_at
+	FROM issues i
+	JOIN users author ON author.id = i.author_id
+	LEFT JOIN users assignee ON assignee.id = i.assignee_id
+	LEFT JOIN users closed_by ON closed_by.id = i.closed_by
+	WHERE i.repository_id = $1 AND i.number = $2
+`
+
 // GetIssue loads an issue by repository and number. It does not perform any
 // visibility check; callers must have already resolved a visible repository.
 func (s *store) GetIssue(ctx context.Context, repoID string, number int64) (Issue, error) {
-	row := s.pool.QueryRow(ctx, `
-		SELECT i.id, i.number, i.title, i.body, i.state,
-		       author.username, i.author_id,
-		       assignee.username,
-		       COUNT(DISTINCT il.label_id), COUNT(DISTINCT c.id),
-		       i.created_at, i.updated_at, closed_by.username, i.closed_at
-		FROM issues i
-		JOIN users author ON author.id = i.author_id
-		LEFT JOIN users assignee ON assignee.id = i.assignee_id
-		LEFT JOIN users closed_by ON closed_by.id = i.closed_by
-		LEFT JOIN issue_labels il ON il.issue_id = i.id
-		LEFT JOIN issue_comments c ON c.issue_id = i.id
-		WHERE i.repository_id = $1 AND i.number = $2
-		GROUP BY i.id, author.username, assignee.username, closed_by.username
-	`, repoID, number)
+	row := s.pool.QueryRow(ctx, issueDetailQuery, repoID, number)
 	issue, err := scanIssue(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Issue{}, platform.ErrNotFound
@@ -40,6 +53,7 @@ func (s *store) GetIssue(ctx context.Context, repoID string, number int64) (Issu
 
 func scanIssue(row pgx.Row) (Issue, error) {
 	var issue Issue
+	var labels json.RawMessage
 	err := row.Scan(
 		&issue.ID,
 		&issue.Number,
@@ -49,20 +63,27 @@ func scanIssue(row pgx.Row) (Issue, error) {
 		&issue.Author,
 		&issue.AuthorID,
 		&issue.Assignee,
-		&issue.LabelCount,
+		&labels,
 		&issue.CommentCount,
 		&issue.CreatedAt,
 		&issue.UpdatedAt,
 		&issue.ClosedBy,
 		&issue.ClosedAt,
 	)
-	return issue, err
+	if err != nil {
+		return Issue{}, err
+	}
+	if err := json.Unmarshal(labels, &issue.Labels); err != nil {
+		return Issue{}, fmt.Errorf("decode issue labels: %w", err)
+	}
+	issue.LabelCount = int64(len(issue.Labels))
+	return issue, nil
 }
 
 // UpdateIssue applies a partial update to an issue. When IfMatch is set, the
 // update is conditional on the stored updated_at matching, providing optimistic
-// concurrency; a mismatch returns ErrPreconditionFailed. A triage+ actor may
-// update; insufficient permission returns ErrForbidden.
+// concurrency; a mismatch returns ErrPreconditionFailed. The author or a
+// triage+ actor may update; insufficient permission returns ErrForbidden.
 func (s *store) UpdateIssue(
 	ctx context.Context,
 	actor platform.User,
@@ -128,26 +149,29 @@ func (s *store) UpdateIssue(
 	return issue, nil
 }
 
-// checkIssueMutation reports whether the actor has triage+ permission on the
-// issue's repository and returns the organization id.
+// checkIssueMutation permits the issue author or an actor with triage+ access
+// and returns the organization id.
 func (s *store) checkIssueMutation(
 	ctx context.Context,
 	actor platform.User,
 	repoID string,
 	number int64,
 ) (bool, string, error) {
-	var orgID string
+	var orgID, authorID string
 	err := s.pool.QueryRow(ctx, `
-		SELECT r.organization_id
+		SELECT r.organization_id, i.author_id
 		FROM issues i
 		JOIN repositories r ON r.id = i.repository_id
 		WHERE i.repository_id = $1 AND i.number = $2
-	`, repoID, number).Scan(&orgID)
+	`, repoID, number).Scan(&orgID, &authorID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, "", platform.ErrNotFound
 	}
 	if err != nil {
 		return false, "", fmt.Errorf("find issue for mutation: %w", err)
+	}
+	if actor.ID == authorID {
+		return true, orgID, nil
 	}
 	repo := Repository{ID: repoID, OrganizationID: orgID}
 	access, err := s.RepositoryPermission(ctx, actor, repo)
@@ -214,21 +238,7 @@ func buildIssueUpdateQuery(
 }
 
 func scanIssueByTx(ctx context.Context, tx pgx.Tx, repoID string, number int64) (Issue, error) {
-	row := tx.QueryRow(ctx, `
-		SELECT i.id, i.number, i.title, i.body, i.state,
-		       author.username, i.author_id,
-		       assignee.username,
-		       COUNT(DISTINCT il.label_id), COUNT(DISTINCT c.id),
-		       i.created_at, i.updated_at, closed_by.username, i.closed_at
-		FROM issues i
-		JOIN users author ON author.id = i.author_id
-		LEFT JOIN users assignee ON assignee.id = i.assignee_id
-		LEFT JOIN users closed_by ON closed_by.id = i.closed_by
-		LEFT JOIN issue_labels il ON il.issue_id = i.id
-		LEFT JOIN issue_comments c ON c.issue_id = i.id
-		WHERE i.repository_id = $1 AND i.number = $2
-		GROUP BY i.id, author.username, assignee.username, closed_by.username
-	`, repoID, number)
+	row := tx.QueryRow(ctx, issueDetailQuery, repoID, number)
 	return scanIssue(row)
 }
 

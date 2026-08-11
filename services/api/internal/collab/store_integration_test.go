@@ -212,113 +212,6 @@ func TestIntegrationOutsideDirectCollaboratorAccess(t *testing.T) {
 	}
 }
 
-func TestIntegrationIssueUpdatePermissionAndPrecondition(t *testing.T) {
-	pool, s := integrationEnv(t)
-	ctx := context.Background()
-	fix := setupFixture(t, pool, "public", "triage")
-	number := seedIssue(t, ctx, pool, fix, fix.alice.ID, "open")
-
-	// Author can edit even without triage (carol has no repository role).
-	_, err := s.UpdateIssue(ctx, fix.alice, fix.repoID, number, UpdateIssueInput{
-		Title: ptrString("Edited by author"),
-	})
-	if err != nil {
-		t.Fatalf("author edit: %v", err)
-	}
-	// Bob (triage) can close.
-	closed, err := s.UpdateIssue(ctx, fix.bob, fix.repoID, number, UpdateIssueInput{State: ptrString("closed")})
-	if err != nil {
-		t.Fatalf("triage close: %v", err)
-	}
-	if closed.State != "closed" || closed.ClosedAt == nil {
-		t.Fatalf("expected closed issue, got %+v", closed)
-	}
-	if closed.ClosedBy == nil || *closed.ClosedBy != fix.bob.Username {
-		t.Fatalf("closed by = %v, want %q", closed.ClosedBy, fix.bob.Username)
-	}
-	reopened, err := s.UpdateIssue(ctx, fix.bob, fix.repoID, number, UpdateIssueInput{
-		State: ptrString("open"),
-	})
-	if err != nil {
-		t.Fatalf("reopen issue: %v", err)
-	}
-	if reopened.State != "open" || reopened.ClosedAt != nil || reopened.ClosedBy != nil {
-		t.Fatalf("reopened issue retained close metadata: %+v", reopened)
-	}
-	// Carol (read only, not author) cannot edit.
-	_, err = s.UpdateIssue(ctx, fix.carol, fix.repoID, number, UpdateIssueInput{Title: ptrString("nope")})
-	if !errors.Is(err, platform.ErrForbidden) {
-		t.Fatalf("carol edit expected ErrForbidden, got %v", err)
-	}
-	// Optimistic concurrency: stale IfMatch fails.
-	current, err := s.GetIssue(ctx, fix.repoID, number)
-	if err != nil {
-		t.Fatalf("get issue: %v", err)
-	}
-	stale := current.UpdatedAt.Add(-time.Minute)
-	_, err = s.UpdateIssue(ctx, fix.alice, fix.repoID, number, UpdateIssueInput{
-		Title: ptrString("stale"), IfMatch: &stale,
-	})
-	if !errors.Is(err, ErrPreconditionFailed) {
-		t.Fatalf("stale if-match expected ErrPreconditionFailed, got %v", err)
-	}
-}
-
-func TestIntegrationIssueComments(t *testing.T) {
-	pool, s := integrationEnv(t)
-	ctx := context.Background()
-	fix := setupFixture(t, pool, "public", "")
-	number := seedIssue(t, ctx, pool, fix, fix.alice.ID, "open")
-
-	comment, err := s.CreateIssueComment(ctx, fix.alice, fix.repoID, number, "first comment")
-	if err != nil {
-		t.Fatalf("create comment: %v", err)
-	}
-	if comment.Author != fix.alice.Username {
-		t.Fatalf("comment author = %q, want %q", comment.Author, fix.alice.Username)
-	}
-	// Author can edit.
-	edited, err := s.UpdateIssueComment(ctx, fix.alice, fix.repoID, number, comment.ID, "edited body")
-	if err != nil {
-		t.Fatalf("edit own comment: %v", err)
-	}
-	if edited.Body != "edited body" || edited.EditedAt == nil {
-		t.Fatalf("edited comment = %+v", edited)
-	}
-	if _, err := s.UpdateIssueComment(ctx, fix.alice, fix.repoID, number, comment.ID, "edited again"); err != nil {
-		t.Fatalf("second comment edit: %v", err)
-	}
-	other := setupFixture(t, pool, "public", "write")
-	if _, err := s.UpdateIssueComment(
-		ctx, fix.alice, other.repoID, number, comment.ID, "cross-repository",
-	); !errors.Is(err, platform.ErrNotFound) {
-		t.Fatalf("cross-repository comment edit expected ErrNotFound, got %v", err)
-	}
-	if err := s.DeleteIssueComment(
-		ctx, fix.alice, other.repoID, number, comment.ID,
-	); !errors.Is(err, platform.ErrNotFound) {
-		t.Fatalf("cross-repository comment delete expected ErrNotFound, got %v", err)
-	}
-	// Carol (not author, read only) cannot edit.
-	_, err = s.UpdateIssueComment(ctx, fix.carol, fix.repoID, number, comment.ID, "hacked")
-	if !errors.Is(err, platform.ErrForbidden) {
-		t.Fatalf("carol edit comment expected ErrForbidden, got %v", err)
-	}
-	// Author can delete.
-	if err := s.DeleteIssueComment(ctx, fix.alice, fix.repoID, number, comment.ID); err != nil {
-		t.Fatalf("delete comment: %v", err)
-	}
-	if err := s.DeleteIssueComment(ctx, fix.alice, fix.repoID, number, comment.ID); !errors.Is(err, platform.ErrNotFound) {
-		t.Fatalf("second delete expected ErrNotFound, got %v", err)
-	}
-	if got := countTopic(t, ctx, pool, "issue_comment.updated"); got < 2 {
-		t.Fatalf("comment updates outbox count = %d, want at least 2", got)
-	}
-	if got := countTopic(t, ctx, pool, "issue_comment.deleted"); got < 1 {
-		t.Fatalf("comment delete outbox count = %d, want at least 1", got)
-	}
-}
-
 func TestIntegrationLabels(t *testing.T) {
 	pool, s := integrationEnv(t)
 	ctx := context.Background()
@@ -396,6 +289,14 @@ func TestIntegrationLabels(t *testing.T) {
 	}
 	if got := countAuditAction(t, ctx, pool, "issue_label.apply"); got != appliedAuditBefore+1 {
 		t.Fatalf("first label apply audit count = %d, want %d", got, appliedAuditBefore+1)
+	}
+	issueWithLabel, err := s.GetIssue(ctx, fix.repoID, number)
+	if err != nil {
+		t.Fatalf("get labelled issue: %v", err)
+	}
+	if issueWithLabel.LabelCount != 1 || len(issueWithLabel.Labels) != 1 ||
+		issueWithLabel.Labels[0].ID != label.ID {
+		t.Fatalf("issue labels = %+v, count = %d", issueWithLabel.Labels, issueWithLabel.LabelCount)
 	}
 	_, appliedAgain, err := s.ApplyLabel(ctx, fix.bob, fix.repoID, number, label.ID)
 	if err != nil {

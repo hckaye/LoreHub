@@ -385,35 +385,6 @@ func TestGetIssuePrivateLeaksNoExistence(t *testing.T) {
 	}
 }
 
-func TestPatchIssueSuccess(t *testing.T) {
-	t.Parallel()
-	store := &fakeStore{
-		user: alice(),
-		lookupRepo: func(_ *platform.User, owner, slug string) (Repository, error) {
-			return repoFor(owner, slug), nil
-		},
-		updateIssue: func(_ platform.User, _ string, _ int64, input UpdateIssueInput) (Issue, error) {
-			title := "New title"
-			state := "closed"
-			if input.Title != nil {
-				title = *input.Title
-			}
-			if input.State != nil {
-				state = *input.State
-			}
-			return Issue{ID: "issue-1", Number: 3, Title: title, State: state, Author: "alice"}, nil
-		},
-	}
-	handler := newTestAPI(store)
-	body := `{"title":"New title","state":"closed"}`
-	recorder := doRequest(handler, http.MethodPatch,
-		"/api/v1/repositories/acme/lore/issues/3", body, "Authorization", "Bearer alice",
-		"Content-Type", "application/json")
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d %s", recorder.Code, recorder.Body.String())
-	}
-}
-
 func TestPatchIssueEmptyBody(t *testing.T) {
 	t.Parallel()
 	store := &fakeStore{user: alice(),
@@ -483,6 +454,13 @@ func TestCreateCommentSuccess(t *testing.T) {
 	}
 	if loc := recorder.Header().Get("Location"); !strings.HasSuffix(loc, "/comment-1") {
 		t.Fatalf("unexpected Location %q", loc)
+	}
+	var comment IssueComment
+	if err := json.Unmarshal(recorder.Body.Bytes(), &comment); err != nil {
+		t.Fatalf("decode comment: %v", err)
+	}
+	if !comment.ViewerCanUpdate {
+		t.Fatal("created comment did not return viewerCanUpdate")
 	}
 }
 

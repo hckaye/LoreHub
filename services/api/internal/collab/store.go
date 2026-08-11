@@ -132,7 +132,21 @@ func (s *store) permFromRef(
 	actor platform.User,
 	repoID, orgID string,
 ) (Access, error) {
-	return s.RepositoryPermission(ctx, actor, Repository{ID: repoID, OrganizationID: orgID})
+	var visibility string
+	err := s.pool.QueryRow(ctx, `
+		SELECT visibility
+		FROM repositories
+		WHERE id = $1 AND organization_id = $2
+	`, repoID, orgID).Scan(&visibility)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Access{}, platform.ErrNotFound
+	}
+	if err != nil {
+		return Access{}, fmt.Errorf("find repository for permission: %w", err)
+	}
+	return s.RepositoryPermission(ctx, actor, Repository{
+		ID: repoID, OrganizationID: orgID, Visibility: visibility,
+	})
 }
 
 // translateConstraintError maps PostgreSQL duplicate-key violations to

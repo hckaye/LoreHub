@@ -30,20 +30,23 @@ type Repository struct {
 
 // Issue is a single issue record returned by the detail endpoint.
 type Issue struct {
-	ID           string     `json:"id"`
-	Number       int64      `json:"number"`
-	Title        string     `json:"title"`
-	Body         string     `json:"body"`
-	State        string     `json:"state"`
-	Author       string     `json:"author"`
-	AuthorID     string     `json:"-"`
-	Assignee     *string    `json:"assignee"`
-	LabelCount   int64      `json:"labelCount"`
-	CommentCount int64      `json:"commentCount"`
-	CreatedAt    time.Time  `json:"createdAt"`
-	UpdatedAt    time.Time  `json:"updatedAt"`
-	ClosedBy     *string    `json:"closedBy"`
-	ClosedAt     *time.Time `json:"closedAt"`
+	ID                    string     `json:"id"`
+	Number                int64      `json:"number"`
+	Title                 string     `json:"title"`
+	Body                  string     `json:"body"`
+	State                 string     `json:"state"`
+	Author                string     `json:"author"`
+	AuthorID              string     `json:"-"`
+	Assignee              *string    `json:"assignee"`
+	Labels                []Label    `json:"labels"`
+	LabelCount            int64      `json:"labelCount"`
+	CommentCount          int64      `json:"commentCount"`
+	CreatedAt             time.Time  `json:"createdAt"`
+	UpdatedAt             time.Time  `json:"updatedAt"`
+	ClosedBy              *string    `json:"closedBy"`
+	ClosedAt              *time.Time `json:"closedAt"`
+	ViewerCanUpdate       bool       `json:"viewerCanUpdate"`
+	ViewerCanManageLabels bool       `json:"viewerCanManageLabels"`
 }
 
 // UpdateIssueInput captures the mutable fields of an issue. Pointer fields are
@@ -58,13 +61,14 @@ type UpdateIssueInput struct {
 // IssueComment is a comment on an issue. Author and CreatedAt are immutable;
 // EditedAt is non-nil once the comment body has been edited.
 type IssueComment struct {
-	ID        string     `json:"id"`
-	IssueID   string     `json:"issueId"`
-	Author    string     `json:"author"`
-	AuthorID  string     `json:"-"`
-	Body      string     `json:"body"`
-	CreatedAt time.Time  `json:"createdAt"`
-	EditedAt  *time.Time `json:"editedAt"`
+	ID              string     `json:"id"`
+	IssueID         string     `json:"issueId"`
+	Author          string     `json:"author"`
+	AuthorID        string     `json:"-"`
+	Body            string     `json:"body"`
+	CreatedAt       time.Time  `json:"createdAt"`
+	EditedAt        *time.Time `json:"editedAt"`
+	ViewerCanUpdate bool       `json:"viewerCanUpdate"`
 }
 
 // Label is a repository label definition.

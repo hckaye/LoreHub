@@ -165,9 +165,34 @@ export type Issue = {
   state: "open" | "closed";
   author: string;
   assignee: string | null;
+  labels: Label[];
+  labelCount: number;
   commentCount: number;
   createdAt: string;
   updatedAt: string;
+  closedBy: string | null;
+  closedAt: string | null;
+  viewerCanUpdate: boolean;
+  viewerCanManageLabels: boolean;
+};
+
+export type IssueComment = {
+  id: string;
+  issueId: string;
+  author: string;
+  body: string;
+  createdAt: string;
+  editedAt: string | null;
+  viewerCanUpdate: boolean;
+};
+
+export type Label = {
+  id: string;
+  repositoryId: string;
+  name: string;
+  description: string;
+  color: string;
+  createdAt: string;
 };
 
 export type MergeRequest = {

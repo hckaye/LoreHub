@@ -81,8 +81,8 @@ func scanComments(rows pgx.Rows) ([]IssueComment, error) {
 	return comments, nil
 }
 
-// CreateIssueComment appends a comment and transactionally bumps the issue's
-// updated_at, records audit and outbox events.
+// CreateIssueComment appends a comment for an actor who can read the repository
+// and transactionally records the issue timestamp, audit and outbox events.
 func (s *store) CreateIssueComment(
 	ctx context.Context,
 	actor platform.User,
@@ -98,7 +98,7 @@ func (s *store) CreateIssueComment(
 	if err != nil {
 		return IssueComment{}, err
 	}
-	if !access.AtLeast(PermTriage) {
+	if !access.AtLeast(PermRead) {
 		return IssueComment{}, platform.ErrForbidden
 	}
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
@@ -154,8 +154,8 @@ func (s *store) CreateIssueComment(
 	return comment, nil
 }
 
-// UpdateIssueComment edits a comment body. A triage+ actor is required; the
-// original author and created_at are preserved and edited_at is set.
+// UpdateIssueComment edits a comment body. The author or a triage+ actor may
+// edit it; the original author and created_at are preserved and edited_at is set.
 func (s *store) UpdateIssueComment(
 	ctx context.Context,
 	actor platform.User,
@@ -172,7 +172,7 @@ func (s *store) UpdateIssueComment(
 	if err != nil {
 		return IssueComment{}, err
 	}
-	if !access.AtLeast(PermTriage) {
+	if actor.ID != existing.AuthorID && !access.AtLeast(PermTriage) {
 		return IssueComment{}, platform.ErrForbidden
 	}
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
@@ -213,8 +213,8 @@ func (s *store) UpdateIssueComment(
 	return updated, nil
 }
 
-// DeleteIssueComment removes a comment. A triage+ actor is required; the
-// issue's updated_at is bumped transactionally.
+// DeleteIssueComment removes a comment. The author or a triage+ actor may
+// delete it; the issue's updated_at is bumped transactionally.
 func (s *store) DeleteIssueComment(
 	ctx context.Context,
 	actor platform.User,
@@ -230,7 +230,7 @@ func (s *store) DeleteIssueComment(
 	if err != nil {
 		return err
 	}
-	if !access.AtLeast(PermTriage) {
+	if actor.ID != existing.AuthorID && !access.AtLeast(PermTriage) {
 		return platform.ErrForbidden
 	}
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
