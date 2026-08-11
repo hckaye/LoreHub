@@ -10,6 +10,7 @@ import {
   getLoreDiff,
   getMergeReadiness,
   getMergeRequest,
+  getMergeRequestComments,
   getPublicRepository,
   getReviews,
   getRevisionHistory,
@@ -49,10 +50,11 @@ export default async function PullRequestDetailPage({ params }: PullRequestDetai
       />
     );
   }
-  const [session, readiness, reviews, diff, history] = await Promise.all([
+  const [session, readiness, reviews, comments, diff, history] = await Promise.all([
     getAuthSession(),
     getMergeReadiness(owner, slug, number),
     getReviews(owner, slug, number),
+    getMergeRequestComments(owner, slug, number),
     getLoreDiff(owner, slug, mergeRequest.data.sourceRevision, mergeRequest.data.targetRevision),
     getRevisionHistory(owner, slug, {
       branch: mergeRequest.data.sourceBranch,
@@ -62,6 +64,8 @@ export default async function PullRequestDetailPage({ params }: PullRequestDetai
   return (
     <PullRequestDetail
       commits={history.ok ? history.data.entries : []}
+      comments={comments.ok ? comments.data : []}
+      commentsAvailable={comments.ok}
       diff={diff.ok ? diff.data : null}
       dictionary={dictionary}
       locale={locale}

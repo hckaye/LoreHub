@@ -55,6 +55,10 @@ func Register(mux *http.ServeMux, store Store, actors ActorResolver, logger *slo
 
 	mux.HandleFunc("GET "+base+"/merge-requests/{number}", api.getMergeRequest)
 	mux.HandleFunc("PATCH "+base+"/merge-requests/{number}", api.patchMergeRequest)
+	mux.HandleFunc("GET "+base+"/merge-requests/{number}/comments", api.listMergeRequestComments)
+	mux.HandleFunc("POST "+base+"/merge-requests/{number}/comments", api.createMergeRequestComment)
+	mux.HandleFunc("PATCH "+base+"/merge-requests/{number}/comments/{commentID}", api.patchMergeRequestComment)
+	mux.HandleFunc("DELETE "+base+"/merge-requests/{number}/comments/{commentID}", api.deleteMergeRequestComment)
 	mux.HandleFunc("GET "+base+"/merge-requests/{number}/reviews", api.listReviews)
 	mux.HandleFunc("POST "+base+"/merge-requests/{number}/reviews", api.createReview)
 

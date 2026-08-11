@@ -48,7 +48,7 @@ func scanMergeRequest(row pgx.Row) (MergeRequest, error) {
 }
 
 // UpdateMergeRequest edits title/body or closes/reopens. The merged state is
-// terminal and not reachable here. A triage+ actor may update.
+// terminal and not reachable here. The author or a triage+ actor may update.
 func (s *store) UpdateMergeRequest(
 	ctx context.Context,
 	actor platform.User,
@@ -121,13 +121,13 @@ func (s *store) checkMergeRequestMutation(
 	repoID string,
 	number int64,
 ) (bool, string, string, error) {
-	var orgID, state string
+	var orgID, state, authorID string
 	err := s.pool.QueryRow(ctx, `
-		SELECT r.organization_id, mr.state
+		SELECT r.organization_id, mr.state, mr.author_id
 		FROM merge_requests mr
 		JOIN repositories r ON r.id = mr.repository_id
 		WHERE mr.repository_id = $1 AND mr.number = $2
-	`, repoID, number).Scan(&orgID, &state)
+	`, repoID, number).Scan(&orgID, &state, &authorID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, "", "", platform.ErrNotFound
 	}
@@ -138,7 +138,8 @@ func (s *store) checkMergeRequestMutation(
 	if err != nil {
 		return false, "", "", err
 	}
-	return access.AtLeast(PermTriage), orgID, state, nil
+	allowed := access.AtLeast(PermTriage) || actor.ID == authorID && access.AtLeast(PermRead)
+	return allowed, orgID, state, nil
 }
 
 func buildMergeRequestUpdateQuery(

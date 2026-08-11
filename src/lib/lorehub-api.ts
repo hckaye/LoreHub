@@ -22,6 +22,7 @@ import type {
   MergeOperation,
   MergeReadiness,
   MergeRequest,
+  MergeRequestComment,
   Notification,
   NotificationPage,
   NotificationPreferences,
@@ -211,6 +212,17 @@ export async function getMergeRequests(
 
 export function getMergeRequest(owner: string, repository: string, number: number): Promise<APIResult<MergeRequest>> {
   return request(repositoryPath(owner, repository, `/merge-requests/${number}`));
+}
+
+export async function getMergeRequestComments(
+  owner: string,
+  repository: string,
+  number: number,
+): Promise<APIResult<MergeRequestComment[]>> {
+  const result = await request<{ items: MergeRequestComment[] }>(
+    repositoryPath(owner, repository, `/merge-requests/${number}/comments?limit=100`),
+  );
+  return result.ok ? { ok: true, data: result.data.items } : result;
 }
 
 export function getProjects(owner: string, repository: string): Promise<APIResult<ProjectList>> {

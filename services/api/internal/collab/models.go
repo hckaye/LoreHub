@@ -90,24 +90,37 @@ type LabelInput struct {
 
 // MergeRequest is the collab projection of a merge_request (UI "pull request").
 type MergeRequest struct {
-	ID             string     `json:"id"`
-	Number         int64      `json:"number"`
-	Title          string     `json:"title"`
-	Body           string     `json:"body"`
-	State          string     `json:"state"`
-	SourceBranch   string     `json:"sourceBranch"`
-	TargetBranch   string     `json:"targetBranch"`
-	SourceRevision string     `json:"sourceRevision"`
-	TargetRevision string     `json:"targetRevision"`
-	Author         string     `json:"author"`
-	AuthorID       string     `json:"-"`
-	ApprovalCount  int64      `json:"approvalCount"`
-	MergedBy       *string    `json:"mergedBy"`
-	MergedRevision *string    `json:"mergedRevision"`
-	MergedAt       *time.Time `json:"mergedAt"`
-	CreatedAt      time.Time  `json:"createdAt"`
-	UpdatedAt      time.Time  `json:"updatedAt"`
-	ClosedAt       *time.Time `json:"closedAt"`
+	ID              string     `json:"id"`
+	Number          int64      `json:"number"`
+	Title           string     `json:"title"`
+	Body            string     `json:"body"`
+	State           string     `json:"state"`
+	SourceBranch    string     `json:"sourceBranch"`
+	TargetBranch    string     `json:"targetBranch"`
+	SourceRevision  string     `json:"sourceRevision"`
+	TargetRevision  string     `json:"targetRevision"`
+	Author          string     `json:"author"`
+	AuthorID        string     `json:"-"`
+	ApprovalCount   int64      `json:"approvalCount"`
+	MergedBy        *string    `json:"mergedBy"`
+	MergedRevision  *string    `json:"mergedRevision"`
+	MergedAt        *time.Time `json:"mergedAt"`
+	CreatedAt       time.Time  `json:"createdAt"`
+	UpdatedAt       time.Time  `json:"updatedAt"`
+	ClosedAt        *time.Time `json:"closedAt"`
+	ViewerCanUpdate bool       `json:"viewerCanUpdate"`
+	ViewerCanReview bool       `json:"viewerCanReview"`
+}
+
+type MergeRequestComment struct {
+	ID              string     `json:"id"`
+	MergeRequestID  string     `json:"mergeRequestId"`
+	Author          string     `json:"author"`
+	AuthorID        string     `json:"-"`
+	Body            string     `json:"body"`
+	CreatedAt       time.Time  `json:"createdAt"`
+	EditedAt        *time.Time `json:"editedAt"`
+	ViewerCanUpdate bool       `json:"viewerCanUpdate"`
 }
 
 // MergeOperation records durable progress through a Lore merge workspace.

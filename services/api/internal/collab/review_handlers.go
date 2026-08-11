@@ -34,6 +34,15 @@ func (api *API) getMergeRequest(writer http.ResponseWriter, request *http.Reques
 		storeError(writer, request, "get merge request", err, api.logger)
 		return
 	}
+	if actor != nil {
+		access, ok := api.permission(writer, request, *actor, repo)
+		if !ok {
+			return
+		}
+		mr.ViewerCanUpdate = mr.State != "merged" &&
+			(mr.AuthorID == actor.ID || access.AtLeast(PermTriage))
+		mr.ViewerCanReview = mr.AuthorID != actor.ID && access.AtLeast(PermRead) && mr.State == "open"
+	}
 	writeJSON(writer, http.StatusOK, mr)
 }
 
@@ -65,6 +74,8 @@ func (api *API) patchMergeRequest(writer http.ResponseWriter, request *http.Requ
 		storeError(writer, request, "update merge request", err, api.logger)
 		return
 	}
+	mr.ViewerCanUpdate = true
+	mr.ViewerCanReview = mr.AuthorID != actor.ID && mr.State == "open"
 	writeJSON(writer, http.StatusOK, mr)
 }
 

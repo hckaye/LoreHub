@@ -212,6 +212,19 @@ export type MergeRequest = {
   mergedAt?: string | null;
   createdAt: string;
   updatedAt: string;
+  closedAt?: string | null;
+  viewerCanUpdate?: boolean;
+  viewerCanReview?: boolean;
+};
+
+export type MergeRequestComment = {
+  id: string;
+  mergeRequestId: string;
+  author: string;
+  body: string;
+  createdAt: string;
+  editedAt: string | null;
+  viewerCanUpdate: boolean;
 };
 
 export type ProjectSummary = {

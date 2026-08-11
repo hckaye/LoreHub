@@ -1,0 +1,195 @@
+.conversation {
+  display: grid;
+  gap: 16px;
+}
+
+.conversation > h2,
+.reviews h3,
+.reviewForm h3 {
+  margin: 0;
+}
+
+.description,
+.comment,
+.commentForm,
+.reviewForm,
+.reviews {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  display: grid;
+  gap: 12px;
+}
+
+.description > header,
+.comment > header {
+  align-items: center;
+  background: var(--canvas-subtle);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 10px 12px;
+}
+
+.description > header span,
+.comment > header time,
+.comment > header span,
+.muted {
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.description > header button,
+.commentActions button {
+  background: transparent;
+  border: 0;
+  color: var(--accent-fg);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  margin-left: auto;
+  padding: 2px 4px;
+}
+
+.commentActions {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.commentActions button {
+  margin-left: 0;
+}
+
+.body {
+  margin: 0;
+  min-height: 52px;
+  overflow-wrap: anywhere;
+  padding: 4px 12px 12px;
+  white-space: pre-wrap;
+}
+
+.stateButton {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--fg-default);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  justify-self: end;
+  margin: 0 12px 12px;
+  padding: 6px 12px;
+}
+
+.timeline {
+  display: grid;
+  gap: 12px;
+}
+
+.editor,
+.commentForm,
+.reviewForm,
+.reviews {
+  padding: 12px;
+}
+
+.editor,
+.commentForm,
+.reviewForm {
+  display: grid;
+  gap: 8px;
+}
+
+.editor label,
+.commentForm label,
+.reviewForm label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.editor input,
+.editor textarea,
+.commentForm textarea,
+.reviewForm select,
+.reviewForm textarea {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--fg-default);
+  font: inherit;
+  padding: 8px;
+}
+
+.editor textarea,
+.commentForm textarea,
+.reviewForm textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+
+.editor input:focus,
+.editor textarea:focus,
+.commentForm textarea:focus,
+.reviewForm select:focus,
+.reviewForm textarea:focus {
+  border-color: var(--accent-emphasis);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-emphasis) 18%, transparent);
+  outline: none;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.actions button,
+.commentForm > button,
+.reviewForm > button {
+  background: var(--accent-emphasis);
+  border: 1px solid var(--accent-emphasis);
+  border-radius: 6px;
+  color: var(--fg-on-emphasis);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  justify-self: end;
+  padding: 6px 12px;
+}
+
+.actions button[data-tone="secondary"] {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--fg-default);
+}
+
+.actions button:disabled,
+.commentForm > button:disabled,
+.reviewForm > button:disabled,
+.stateButton:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.reviews > p,
+.reviews article p {
+  margin: 0;
+}
+
+.reviews article {
+  border-top: 1px solid var(--border-muted);
+  padding-top: 10px;
+}
+
+@media (max-width: 640px) {
+  .description > header span {
+    flex-basis: 100%;
+  }
+
+  .description > header button {
+    margin-left: 0;
+  }
+}

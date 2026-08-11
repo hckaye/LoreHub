@@ -5,17 +5,18 @@ import { useState } from "react";
 
 import { AuthRequired } from "@/components/auth/auth-required";
 import { DiffView } from "@/components/repositories/diff-view";
+import { PullRequestConversation } from "@/components/repositories/pull-request-conversation";
 import type {
   AuthSession,
   LoreDiff,
   MergeOperation,
   MergeReadiness,
   MergeRequest,
+  MergeRequestComment,
   ReviewSummary,
   RevisionHistoryEntry,
 } from "@/lib/api-types";
 import { postJson } from "@/lib/auth-client";
-import { loginUrl } from "@/lib/routes";
 
 import type { Dictionary } from "@/i18n";
 
@@ -30,6 +31,8 @@ type PullRequestDetailProps = {
   reviews: ReviewSummary | null;
   diff: LoreDiff | null;
   commits: RevisionHistoryEntry[];
+  comments: MergeRequestComment[];
+  commentsAvailable: boolean;
   session: AuthSession;
   dictionary: Dictionary;
 };
@@ -45,6 +48,8 @@ export function PullRequestDetail({
   reviews,
   diff,
   commits,
+  comments,
+  commentsAvailable,
   session,
   dictionary,
 }: PullRequestDetailProps) {
@@ -113,11 +118,17 @@ export function PullRequestDetail({
       </div>
       <PullRequestTab
         commits={commits}
+        comments={comments}
+        commentsAvailable={commentsAvailable}
         diff={diff}
         dictionary={dictionary}
         mergeRequest={mergeRequest}
         reviews={reviews}
+        session={session}
         tab={tab}
+        locale={locale}
+        owner={owner}
+        repository={repository}
       />
       {readiness && (
         <MergePanel
@@ -136,7 +147,7 @@ export function PullRequestDetail({
       {session.status !== "authenticated" && (
         <AuthRequired
           dictionary={dictionary}
-          returnTo={loginUrl(`/${locale}/${owner}/${repository}/pulls/${mergeRequest.number}`)}
+          returnTo={`/${locale}/${owner}/${repository}/pulls/${mergeRequest.number}`}
           session={session}
         />
       )}
@@ -148,24 +159,42 @@ function PullRequestTab({
   tab,
   mergeRequest,
   reviews,
+  comments,
+  commentsAvailable,
   commits,
   diff,
   dictionary,
+  session,
+  locale,
+  owner,
+  repository,
 }: {
   tab: Tab;
   mergeRequest: MergeRequest;
   reviews: ReviewSummary | null;
+  comments: MergeRequestComment[];
+  commentsAvailable: boolean;
   commits: RevisionHistoryEntry[];
   diff: LoreDiff | null;
   dictionary: Dictionary;
+  session: AuthSession;
+  locale: "en" | "ja";
+  owner: string;
+  repository: string;
 }) {
   if (tab === "conversation") {
     return (
-      <section aria-labelledby="conversation-title" className={styles.panel}>
-        <h2 id="conversation-title">{dictionary.pullRequestDetail.conversation}</h2>
-        <p>{mergeRequest.body || dictionary.common.noDescription}</p>
-        {reviews && <ReviewSummaryView dictionary={dictionary} reviews={reviews} />}
-      </section>
+      <PullRequestConversation
+        comments={comments}
+        commentsAvailable={commentsAvailable}
+        dictionary={dictionary}
+        locale={locale}
+        mergeRequest={mergeRequest}
+        owner={owner}
+        repository={repository}
+        reviews={reviews}
+        session={session}
+      />
     );
   }
   if (tab === "commits") {
@@ -232,28 +261,6 @@ function TabButton({ active, label, onClick }: { active: boolean; label: string;
     <button aria-selected={active} role="tab" type="button" onClick={onClick}>
       {label}
     </button>
-  );
-}
-
-function ReviewSummaryView({ reviews, dictionary }: { reviews: ReviewSummary; dictionary: Dictionary }) {
-  return (
-    <div className={styles.reviewList}>
-      <h3>{dictionary.pullRequestDetail.reviewSummary}</h3>
-      <p>
-        {reviews.approvals} {dictionary.pullRequestDetail.approvals} · {reviews.changeRequests}{" "}
-        {dictionary.pullRequestDetail.changesRequested}
-      </p>
-      {reviews.currentReviews.length === 0 ? (
-        <p className={styles.meta}>{dictionary.pullRequestDetail.noReviews}</p>
-      ) : (
-        reviews.currentReviews.map((review) => (
-          <article className={styles.review} key={review.id}>
-            <strong>{review.reviewer}</strong> · {decisionLabel(review.decision, dictionary)}
-            {review.body && <p>{review.body}</p>}
-          </article>
-        ))
-      )}
-    </div>
   );
 }
 
@@ -488,17 +495,6 @@ function MergeActions({
       ))}
     </div>
   );
-}
-
-function decisionLabel(decision: ReviewSummary["currentReviews"][number]["decision"], dictionary: Dictionary): string {
-  switch (decision) {
-    case "approved":
-      return dictionary.pullRequestDetail.approved;
-    case "changes_requested":
-      return dictionary.pullRequestDetail.changesRequestedLabel;
-    default:
-      return dictionary.pullRequestDetail.commented;
-  }
 }
 
 function operationStateLabel(state: MergeOperation["state"], dictionary: Dictionary): string {
