@@ -21,11 +21,15 @@ const RegistrationPrompt = "create"
 type Principal struct {
 	Issuer          string
 	Subject         string
+	InternalUserID  string
 	Username        string
 	Name            string
 	Email           string
 	PreferredLocale string
 	LoreAccessToken string
+	CredentialKind  string
+	CredentialID    string
+	Scopes          []string
 }
 
 type Authenticator interface {

@@ -26,6 +26,7 @@ type Service struct {
 	loginURL   string
 	authURL    string
 	sessionTTL time.Duration
+	apiKeys    APIKeyAuthenticator
 }
 
 func NewService(
@@ -36,6 +37,7 @@ func NewService(
 	authURL string,
 	sessionTTL time.Duration,
 	allowInsecureLoginURL bool,
+	options ...ServiceOption,
 ) (*Service, error) {
 	if policy == nil || sessions == nil || tokens == nil {
 		return nil, errors.New("Lore auth service dependencies are required")
@@ -54,9 +56,18 @@ func NewService(
 	if err := loreclient.ValidateAuthURL(authURL); err != nil {
 		return nil, errors.New("Lore auth URL must be a fixed ucs-auth endpoint")
 	}
-	return &Service{policy: policy, sessions: sessions, tokens: tokens, loginURL: strings.TrimRight(loginURL, "/"),
+	service := &Service{policy: policy, sessions: sessions, tokens: tokens,
+		loginURL:   strings.TrimRight(loginURL, "/"),
 		authURL:    authURL,
-		sessionTTL: sessionTTL}, nil
+		sessionTTL: sessionTTL}
+	for _, option := range options {
+		if option != nil {
+			if err := option(service); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return service, nil
 }
 
 func (service *Service) ConfirmSession(ctx context.Context, sessionCode string, userID string) error {
@@ -379,34 +390,6 @@ func (service *Service) VerifyUser(
 	return &VerifyUserResponse{UserInfo: &UserInfo{UserId: user.ID, DisplayName: user.DisplayName}}, nil
 }
 
-func (service *Service) ExchangeExternalTokenForUserToken(
-	_ context.Context,
-	request *ExchangeExternalTokenForUserTokenRequest,
-) (*ExchangeExternalTokenForUserTokenResponse, error) {
-	if request == nil || request.GetTokenType() != loreclient.AuthenticationTokenType ||
-		strings.TrimSpace(request.GetExternalToken()) == "" {
-		return nil, status.Error(codes.InvalidArgument, "external token type is not supported")
-	}
-	verified, err := service.tokens.VerifyAuthenticationToken(strings.TrimSpace(request.GetExternalToken()))
-	if err != nil {
-		return nil, status.Error(codes.Unauthenticated, "external token is invalid")
-	}
-	claims := verified.Claims
-	return &ExchangeExternalTokenForUserTokenResponse{UserToken: &UserToken{
-		UserToken: request.GetExternalToken(),
-		ExpiresAt: claims.Expiry.Time().UnixMilli(),
-		UserId:    claims.Subject,
-		UserName:  claims.Name,
-	}}, nil
-}
-
-func (service *Service) ExchangeAPIKeyForUserToken(
-	context.Context,
-	*ExchangeAPIKeyForUserTokenRequest,
-) (*ExchangeAPIKeyForUserTokenResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "API key exchange is not configured")
-}
-
 func (service *Service) ExchangeUserTokenForMultiresourceToken(
 	ctx context.Context,
 	request *ExchangeUserTokenForMultiresourceTokenRequest,
@@ -416,6 +399,9 @@ func (service *Service) ExchangeUserTokenForMultiresourceToken(
 	}
 	claims, err := service.authenticateBase(ctx)
 	if err != nil {
+		return nil, err
+	}
+	if err := service.validateAPIKeyCredential(ctx, claims); err != nil {
 		return nil, err
 	}
 	requested := request.GetResourceId()
@@ -454,6 +440,10 @@ func (service *Service) ExchangeUserTokenForMultiresourceToken(
 			permissions = current.Permissions
 		}
 		if len(permissions) == 0 {
+			return nil, status.Error(codes.PermissionDenied, "requested Lore resource is not authorized")
+		}
+		permissions, ok := permissionsForAuthenticationToken(claims, permissions)
+		if !ok {
 			return nil, status.Error(codes.PermissionDenied, "requested Lore resource is not authorized")
 		}
 		resources = append(resources, LoreResourcePermission{ResourceID: resourceID, Permission: permissions})
@@ -722,6 +712,9 @@ func (service *Service) authenticatePermissionCaller(
 }
 
 func (service *Service) ensureActivePermissionCaller(ctx context.Context, claims LoreClaims) error {
+	if err := service.validateAPIKeyCredential(ctx, claims); err != nil {
+		return err
+	}
 	if claims.IsServiceAccount {
 		if claims.Subject == "" || claims.PreferredUsername == "" {
 			return status.Error(codes.PermissionDenied, "service principal is unavailable")
@@ -919,7 +912,26 @@ func (service *Service) lookupAuthenticationPermissions(
 		}
 		return []authz.ResourcePermissions{{ResourceID: filter, Permissions: permissions}}, "", nil
 	}
-	return service.policy.ListResourcePermissions(ctx, claims.Subject, filter, pageSize, pageToken)
+	resources, next, err := service.policy.ListResourcePermissions(
+		ctx,
+		claims.Subject,
+		filter,
+		pageSize,
+		pageToken,
+	)
+	if err != nil {
+		return nil, "", err
+	}
+	filtered := resources[:0]
+	for _, resource := range resources {
+		permissions, ok := permissionsForAuthenticationToken(claims, resource.Permissions)
+		if !ok {
+			continue
+		}
+		resource.Permissions = permissions
+		filtered = append(filtered, resource)
+	}
+	return filtered, next, nil
 }
 
 func (service *Service) authenticationPermissions(
@@ -948,32 +960,15 @@ func (service *Service) authenticationPermissions(
 		permissions = current.Permissions
 	}
 	available := authz.ExpandPermissions(permissionMap(permissions))
+	if len(claims.TokenScopes) != 0 {
+		narrowed, ok := permissionsForAuthenticationToken(claims, authz.PermissionList(available))
+		if !ok {
+			return nil, false
+		}
+		available = authz.ExpandPermissions(permissionMap(narrowed))
+	}
 	if !available[authz.PermissionRead] {
 		return nil, false
 	}
 	return authz.PermissionList(available), true
-}
-
-func base64Raw(value []byte) string {
-	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
-	var builder strings.Builder
-	for index := 0; index < len(value); index += 3 {
-		chunk := uint(value[index]) << 16
-		remaining := len(value) - index
-		if remaining > 1 {
-			chunk |= uint(value[index+1]) << 8
-		}
-		if remaining > 2 {
-			chunk |= uint(value[index+2])
-		}
-		builder.WriteByte(alphabet[(chunk>>18)&63])
-		builder.WriteByte(alphabet[(chunk>>12)&63])
-		if remaining > 1 {
-			builder.WriteByte(alphabet[(chunk>>6)&63])
-		}
-		if remaining > 2 {
-			builder.WriteByte(alphabet[chunk&63])
-		}
-	}
-	return builder.String()
 }

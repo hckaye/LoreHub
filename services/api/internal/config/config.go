@@ -617,6 +617,14 @@ func validate(config Config, command string) error {
 			}
 		}
 	}
+	if command == "serve" && config.AuthMode != AuthModeDisabled {
+		if config.AuthSecret == "" {
+			return errors.New("LOREHUB_AUTH_SECRET is required when authentication is enabled")
+		}
+		if len(config.AuthSecret) < 32 {
+			return errors.New("LOREHUB_AUTH_SECRET must contain at least 32 characters")
+		}
+	}
 	if command != "serve" || config.AuthMode != AuthModeInteractive {
 		return validateRunner(config)
 	}
@@ -625,14 +633,10 @@ func validate(config Config, command string) error {
 		"LOREHUB_OIDC_CLIENT_SECRET": config.OIDCClientSecret,
 		"LOREHUB_OIDC_REDIRECT_URL":  config.OIDCRedirectURL,
 		"LOREHUB_PUBLIC_ORIGIN":      config.PublicOrigin,
-		"LOREHUB_AUTH_SECRET":        config.AuthSecret,
 	} {
 		if value == "" {
 			return fmt.Errorf("%s is required when interactive authentication is enabled", name)
 		}
-	}
-	if len(config.AuthSecret) < 32 {
-		return errors.New("LOREHUB_AUTH_SECRET must contain at least 32 characters")
 	}
 	if err := validateURL("LOREHUB_OIDC_REDIRECT_URL", config.OIDCRedirectURL, config.Environment, false); err != nil {
 		return err

@@ -20,6 +20,7 @@ var (
 	ErrNotFound      = errors.New("resource not found")
 	ErrForbidden     = errors.New("operation is not permitted")
 	ErrConflict      = errors.New("resource already exists")
+	ErrInvalidInput  = errors.New("input is invalid")
 	slugPattern      = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$`)
 	partitionPattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
 )

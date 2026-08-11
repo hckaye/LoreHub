@@ -124,6 +124,16 @@ type HealthChecker interface {
 	Ping(ctx context.Context) error
 }
 
+type PersonalAccessTokenStore interface {
+	ListPersonalAccessTokens(context.Context, platform.User) ([]platform.PersonalAccessToken, error)
+	CreatePersonalAccessToken(
+		context.Context,
+		platform.User,
+		platform.CreatePersonalAccessTokenInput,
+	) (platform.PersonalAccessToken, error)
+	RevokePersonalAccessToken(context.Context, platform.User, string) error
+}
+
 type API struct {
 	store                   Store
 	actions                 ActionsStore
@@ -161,6 +171,7 @@ type API struct {
 	identityStore           IdentityStore
 	loginProviders          []string
 	webhooksStore           webhooksManager
+	personalAccessTokens    PersonalAccessTokenStore
 }
 
 func New(
@@ -234,6 +245,15 @@ func WithActionsSecurity(store ActionsSecurityStore, verifier runner.JobTokenVer
 
 func WithActionsExecutionContext(store ActionsExecutionContextStore) Option {
 	return func(api *API) { api.actionsExecutionContext = store }
+}
+
+func WithPersonalAccessTokens(store PersonalAccessTokenStore, secrets *auth.SecretCodec) Option {
+	return func(api *API) {
+		api.personalAccessTokens = store
+		if api.secrets == nil {
+			api.secrets = secrets
+		}
+	}
 }
 
 func WithAuthorization(store AuthorizationStore) Option {
@@ -746,20 +766,36 @@ func (api *API) actor(writer http.ResponseWriter, request *http.Request) (platfo
 	}
 	principal, err := api.authenticator.Authenticate(request.Context(), authorization)
 	if err != nil {
-		if errors.Is(err, auth.ErrNotConfigured) {
+		if errors.Is(err, auth.ErrNotConfigured) || errors.Is(err, auth.ErrAuthenticationUnavailable) {
 			writeProblem(writer, http.StatusServiceUnavailable, "authentication_unavailable", err.Error())
 		} else {
 			writeProblem(writer, http.StatusUnauthorized, "authentication_required", "Authentication is required")
 		}
 		return platform.User{}, false
 	}
-	user, err := api.store.EnsureUser(request.Context(), principal)
+	if principal.CredentialKind == auth.CredentialPersonalAccessToken &&
+		!auth.PersonalAccessTokenAllowsAPI(principal.Scopes, stateChangingMethod(request.Method)) {
+		writer.Header().Set("WWW-Authenticate", `Bearer error="insufficient_scope"`)
+		writeProblem(writer, http.StatusForbidden, "insufficient_token_scope",
+			"The personal access token does not allow this operation")
+		return platform.User{}, false
+	}
+	var user platform.User
+	if principal.CredentialKind == auth.CredentialPersonalAccessToken {
+		if principal.InternalUserID == "" || principal.CredentialID == "" {
+			writeProblem(writer, http.StatusUnauthorized, "authentication_required", "Authentication is required")
+			return platform.User{}, false
+		}
+		user, err = api.store.ActiveUser(request.Context(), principal.InternalUserID)
+	} else {
+		user, err = api.store.EnsureUser(request.Context(), principal)
+	}
 	if err != nil {
 		if errors.Is(err, platform.ErrForbidden) {
 			writeProblem(writer, http.StatusForbidden, "forbidden", "This operation is not permitted")
 			return platform.User{}, false
 		}
-		api.internalError(writer, request, "provision authenticated user", err)
+		api.internalError(writer, request, "resolve authenticated user", err)
 		return platform.User{}, false
 	}
 	return user, true

@@ -58,8 +58,10 @@ Loreが要求するresourceを交換するときは、PostgreSQLの現在の直�
 要求できるのは、正確な`urc-{32桁ID}`のresourceだけです。`urc-*`、全resourceを含む利用者token、wildcard service
 identityは使いません。交換で発行されるtokenは5〜10分だけ有効です。
 
-外部token交換とAPI key交換は、検証済みの連携がないためprotocolの`Unimplemented`を返します。token、session code、
-認証URLの秘密値はlog、error、URL、監査内容、metric、traceへ出力しません。
+API key交換は、有効なPersonal access tokenに`read_repository`または`write_repository`がある場合だけ受け付けます。
+リポジトリ用tokenには、Personal access tokenとアカウントの現在のリポジトリ権限のうち、狭い方を適用します。
+外部token交換はLoreHubが発行したbase authentication tokenを受け付けます。token、session code、認証URLの秘密値は
+log、error、URL、監査内容、metric、traceへ出力しません。
 
 実Loreで境界を確認する場合は、二つのpartitionのURLと、read、base、期限切れ、issuer違い、audience違い、kid違いの
 tokenを環境変数へ渡し、PostgreSQLへ接続できる`DATABASE_URL`を設定して、リポジトリrootで
@@ -101,6 +103,10 @@ CI runnerは`LOREHUB_LORE_INTERNAL_URL`を使い、公開Lore URLのpartitionを
 公開し、次にkidと秘密鍵を切り替え、旧tokenの最大10分の期限を待ってから旧公開鍵を外します。秘密鍵はSecret、KMS、
 または権限を絞ったファイルで渡し、リポジトリへ保存しません。ローカルで秘密鍵がなければ専用volumeへ生成しますが、
 本番での自動生成は行いません。
+
+`LOREHUB_AUTH_SECRET`はブラウザセッションとPersonal access tokenを保護します。この値を変更すると、すべての
+ブラウザセッションが終了し、すべてのPersonal access tokenが無効になります。Secret managerへ保存し、復旧時も同じ値を
+設定してください。
 
 ## TLSとLore Server
 

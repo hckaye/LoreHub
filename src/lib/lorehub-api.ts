@@ -34,6 +34,7 @@ import type {
   NotificationPage,
   NotificationPreferences,
   OrganizationView,
+  PersonalAccessTokenPage,
   Project,
   ProjectList,
   ReleasePage,
@@ -53,6 +54,7 @@ import type {
   WikiPageList,
   WikiRevision,
 } from "./api-types";
+import { normalizePersonalAccessTokenPage } from "./personal-access-token";
 
 const apiOrigin = process.env.LOREHUB_API_URL ?? "http://127.0.0.1:8080";
 
@@ -83,6 +85,13 @@ export async function getNotifications(): Promise<APIResult<Notification[]>> {
 
 export function getNotificationPreferences(): Promise<APIResult<NotificationPreferences>> {
   return request("/api/v1/account/notification-preferences");
+}
+
+export async function getPersonalAccessTokens(): Promise<APIResult<PersonalAccessTokenPage>> {
+  const result = await request<unknown>("/api/v1/account/personal-access-tokens");
+  if (!result.ok) return result;
+  const page = normalizePersonalAccessTokenPage(result.data);
+  return page ? { ok: true, data: page } : { ok: false, reason: "unavailable" };
 }
 
 export function getOrganization(slug: string): Promise<APIResult<OrganizationView>> {

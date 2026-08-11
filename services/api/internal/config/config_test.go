@@ -77,6 +77,17 @@ func TestLoadRejectsInteractiveAuthenticationWithoutAudience(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsBearerAuthenticationWithoutCredentialSecret(t *testing.T) {
+	setProductionEnvironment(t)
+	t.Setenv("LOREHUB_AUTH_MODE", AuthModeBearer)
+	t.Setenv("LOREHUB_AUTH_SECRET", "")
+
+	_, err := LoadFor("serve")
+	if err == nil || !strings.Contains(err.Error(), "LOREHUB_AUTH_SECRET") {
+		t.Fatalf("expected a clear missing credential secret error, got %v", err)
+	}
+}
+
 func TestLoadInteractiveAuthenticationUsesSecureProductionCookie(t *testing.T) {
 	setProductionEnvironment(t)
 

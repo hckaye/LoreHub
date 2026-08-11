@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lorehub/lorehub/services/api/internal/auth"
 	"github.com/lorehub/lorehub/services/api/internal/authz"
 	loreclient "github.com/lorehub/lorehub/services/api/internal/lore"
 	"google.golang.org/grpc/codes"
@@ -157,6 +158,29 @@ type fakeSession struct {
 type fakeSessions struct {
 	mu       sync.Mutex
 	sessions map[string]*fakeSession
+}
+
+type fakeAPIKeyAuthenticator struct {
+	raw           string
+	principal     auth.Principal
+	err           error
+	validationErr error
+}
+
+func (authenticator *fakeAPIKeyAuthenticator) ValidateAPIKeyCredential(
+	context.Context,
+	string,
+	string,
+) error {
+	return authenticator.validationErr
+}
+
+func (authenticator *fakeAPIKeyAuthenticator) AuthenticateAPIKey(
+	_ context.Context,
+	raw string,
+) (auth.Principal, error) {
+	authenticator.raw = raw
+	return authenticator.principal, authenticator.err
 }
 
 func (sessions *fakeSessions) CreateLoreAuthSession(
@@ -514,6 +538,115 @@ func TestExchangeCannotWidenResourceScope(t *testing.T) {
 			TokenType:     "lore",
 		}); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("unsupported external token type error = %v", err)
+	}
+}
+
+func TestAPIKeyExchangeNarrowsLoreRepositoryPermissions(t *testing.T) {
+	policy := testPolicy()
+	sessions := &fakeSessions{sessions: make(map[string]*fakeSession)}
+	tokens, _ := newTestTokenService(t)
+	apiKeys := &fakeAPIKeyAuthenticator{principal: auth.Principal{
+		InternalUserID: "alice",
+		CredentialKind: auth.CredentialPersonalAccessToken,
+		CredentialID:   "00000000-0000-4000-8000-000000000001",
+		Scopes:         []string{auth.ScopeReadRepository},
+	}}
+	service, err := NewService(
+		policy,
+		sessions,
+		tokens,
+		"https://app.example/auth/lore/confirm",
+		"ucs-auth://auth.example:8443",
+		5*time.Minute,
+		false,
+		WithAPIKeyAuthenticator(apiKeys),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	exchanged, err := service.ExchangeAPIKeyForUserToken(
+		context.Background(),
+		&ExchangeAPIKeyForUserTokenRequest{ApiKey: "lhp_example"},
+	)
+	if err != nil || exchanged.UserToken == nil || apiKeys.raw != "lhp_example" {
+		t.Fatalf("API key exchange failed: response=%#v error=%v", exchanged, err)
+	}
+	base, err := tokens.VerifyAuthenticationToken(exchanged.UserToken.UserToken)
+	if err != nil || len(base.Claims.TokenScopes) != 1 ||
+		base.Claims.TokenScopes[0] != auth.ScopeReadRepository ||
+		base.Claims.CredentialID != apiKeys.principal.CredentialID {
+		t.Fatalf("API key scopes were not bound to the authentication token: claims=%#v error=%v",
+			base.Claims, err)
+	}
+	resource, err := service.ExchangeUserTokenForMultiresourceToken(
+		bearerContext(exchanged.UserToken.UserToken),
+		&ExchangeUserTokenForMultiresourceTokenRequest{ResourceId: []string{testResource}},
+	)
+	if err != nil || resource.Token == nil {
+		t.Fatalf("resource exchange failed: response=%#v error=%v", resource, err)
+	}
+	verified, err := tokens.VerifyResourceToken(resource.Token.UserToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	permissions, found := resourcePermissions(verified.Claims.Resources, testResource)
+	if !found || len(permissions) != 1 || permissions[0] != authz.PermissionRead {
+		t.Fatalf("read-only API key received broader Lore permissions: %v", permissions)
+	}
+	pageSize := int32(50)
+	listed, err := service.LookupUserPermissions(
+		bearerContext(exchanged.UserToken.UserToken),
+		&LookupUserPermissionsRequest{ResourceFilter: "urc", PageSize: &pageSize},
+	)
+	if err != nil || len(listed.ResourcePermission) != 1 ||
+		len(listed.ResourcePermission[0].Permission) != 1 ||
+		listed.ResourcePermission[0].Permission[0] != authz.PermissionRead {
+		t.Fatalf("permission lookup widened API key scope: response=%#v error=%v", listed, err)
+	}
+	apiKeys.validationErr = auth.ErrInvalidPersonalAccessToken
+	if _, err := service.ExchangeUserTokenForMultiresourceToken(
+		bearerContext(exchanged.UserToken.UserToken),
+		&ExchangeUserTokenForMultiresourceTokenRequest{ResourceId: []string{testResource}},
+	); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("revoked API key base token exchange error = %v", err)
+	}
+}
+
+func TestAPIKeyExchangeRequiresRepositoryScopeAndActiveUser(t *testing.T) {
+	policy := testPolicy()
+	sessions := &fakeSessions{sessions: make(map[string]*fakeSession)}
+	tokens, _ := newTestTokenService(t)
+	apiKeys := &fakeAPIKeyAuthenticator{principal: auth.Principal{
+		InternalUserID: "alice",
+		CredentialKind: auth.CredentialPersonalAccessToken,
+		CredentialID:   "00000000-0000-4000-8000-000000000001",
+		Scopes:         []string{auth.ScopeAPI},
+	}}
+	service, err := NewService(policy, sessions, tokens, "https://app.example/auth/lore/confirm",
+		"ucs-auth://auth.example:8443", 5*time.Minute, false, WithAPIKeyAuthenticator(apiKeys))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := &ExchangeAPIKeyForUserTokenRequest{ApiKey: "lhp_example"}
+	if _, err := service.ExchangeAPIKeyForUserToken(context.Background(), request); status.Code(err) !=
+		codes.PermissionDenied {
+		t.Fatalf("API-only key exchange error = %v", err)
+	}
+	apiKeys.principal.Scopes = []string{auth.ScopeWriteRepository}
+	delete(policy.users, "alice")
+	if _, err := service.ExchangeAPIKeyForUserToken(context.Background(), request); status.Code(err) !=
+		codes.PermissionDenied {
+		t.Fatalf("inactive user API key exchange error = %v", err)
+	}
+	apiKeys.err = auth.ErrInvalidPersonalAccessToken
+	if _, err := service.ExchangeAPIKeyForUserToken(context.Background(), request); status.Code(err) !=
+		codes.Unauthenticated {
+		t.Fatalf("invalid API key exchange error = %v", err)
+	}
+	apiKeys.err = auth.ErrAuthenticationUnavailable
+	if _, err := service.ExchangeAPIKeyForUserToken(context.Background(), request); status.Code(err) !=
+		codes.Unavailable {
+		t.Fatalf("unavailable API key exchange error = %v", err)
 	}
 }
 

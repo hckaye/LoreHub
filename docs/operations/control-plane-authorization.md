@@ -55,8 +55,10 @@ Resource exchange reads current direct roles, team roles, organization membershi
 Only an exact `urc-{32-character-id}` resource can be requested. User tokens do not support resource wildcards. Issued
 resource tokens expire after 5 to 10 minutes.
 
-External-token exchange and API-key exchange return the protocol `Unimplemented` result. Token values, session codes,
-and private authentication URLs are excluded from logs, errors, audit details, metrics, and traces.
+API-key exchange accepts active personal access tokens with `read_repository` or `write_repository`. Repository
+exchange applies the narrower of the token permission and the account's current repository permission. External-token
+exchange accepts LoreHub base authentication tokens. Token values, session codes, and private authentication URLs are
+excluded from logs, errors, audit details, metrics, and traces.
 
 To test the boundary against Lore, supply two partition URLs and read, base, expired, wrong-issuer, wrong-audience, and
 wrong-key tokens through environment variables. Set `DATABASE_URL`, then run:
@@ -101,6 +103,9 @@ configuration, and Lore JWT verification settings. Local HTTP is limited to deve
 JWTs use RSA asymmetric signing. JWKS publishes the current and previous public key during rotation. Publish the new
 public key first, switch the signing key and key ID, wait for the previous token lifetime of up to 10 minutes, then
 remove the old public key. Production signing keys come from a secret manager, KMS, or restricted file.
+
+`LOREHUB_AUTH_SECRET` protects browser sessions and personal access tokens. Changing it signs out every browser session
+and invalidates every personal access token. Keep it in a secret manager and restore the same value during recovery.
 
 ## TLS and Lore Server
 

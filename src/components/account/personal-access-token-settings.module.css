@@ -1,0 +1,276 @@
+.settings {
+  display: grid;
+  gap: 22px;
+}
+
+.settings h3,
+.settings p {
+  margin: 0;
+}
+
+.created {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--success-border);
+  border-radius: 6px;
+  background: var(--surface-muted);
+}
+
+.createdHeading {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.createdHeading p {
+  margin-top: 3px;
+  color: var(--fg-muted);
+  font-size: 0.84rem;
+}
+
+.secretRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.secretRow input {
+  min-width: min(100%, 420px);
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface-raised);
+  color: var(--fg-default);
+  font-family: var(--font-mono);
+}
+
+.secretRow button,
+.actions button,
+.revokeButton {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 13px;
+  border: 1px solid var(--accent-emphasis);
+  border-radius: 6px;
+  background: var(--accent-emphasis);
+  color: var(--fg-on-emphasis);
+  font-weight: 650;
+}
+
+.secretRow .secondaryButton {
+  border-color: var(--border-strong);
+  background: var(--surface-raised);
+  color: var(--fg-default);
+}
+
+.form {
+  display: grid;
+  gap: 16px;
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(160px, 1fr);
+  gap: 14px;
+}
+
+.formGrid label {
+  display: grid;
+  gap: 6px;
+  color: var(--fg-muted);
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.formGrid input,
+.formGrid select {
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface-raised);
+  color: var(--fg-default);
+}
+
+.form fieldset {
+  padding: 0;
+  border: 0;
+}
+
+.form legend {
+  margin-bottom: 8px;
+  color: var(--fg-muted);
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.scopeGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+}
+
+.scope {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  min-width: 0;
+  padding: 12px;
+  border-bottom: 1px solid var(--border-default);
+}
+
+.scope:nth-child(odd) {
+  border-right: 1px solid var(--border-default);
+}
+
+.scope:nth-last-child(-n + 2) {
+  border-bottom: 0;
+}
+
+.scope input {
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+}
+
+.scope span {
+  display: grid;
+  gap: 3px;
+}
+
+.scope code {
+  color: var(--fg-default);
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.scope small,
+.tokenDetails small,
+.empty {
+  color: var(--fg-muted);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.actions span[role="alert"] {
+  color: var(--danger-fg);
+  font-size: 0.82rem;
+}
+
+.listSection {
+  display: grid;
+  gap: 10px;
+}
+
+.tokenList {
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  margin: 0;
+  list-style: none;
+}
+
+.tokenList > li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px;
+  border-bottom: 1px solid var(--border-default);
+}
+
+.tokenList > li:last-child {
+  border-bottom: 0;
+}
+
+.tokenDetails {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.tokenHeading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.tokenHeading > span {
+  padding: 1px 7px;
+  border: 1px solid var(--border-default);
+  border-radius: 20px;
+  color: var(--fg-muted);
+  font-size: 0.7rem;
+  font-weight: 650;
+}
+
+.tokenHeading > span[data-status="active"] {
+  border-color: var(--success-border);
+  color: var(--success-fg);
+}
+
+.tokenHeading > span[data-status="revoked"] {
+  border-color: var(--danger-border);
+  color: var(--danger-fg);
+}
+
+.scopeList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.scopeList code {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--surface-muted);
+  color: var(--fg-muted);
+  font-size: 0.7rem;
+}
+
+.revokeButton {
+  flex: 0 0 auto;
+  border-color: var(--danger-border);
+  background: var(--surface-raised);
+  color: var(--danger-fg);
+}
+
+.actions button:disabled,
+.revokeButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+@media (max-width: 620px) {
+  .formGrid,
+  .scopeGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .scope:nth-child(odd) {
+    border-right: 0;
+  }
+
+  .scope:nth-last-child(2) {
+    border-bottom: 1px solid var(--border-default);
+  }
+
+  .tokenList > li {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

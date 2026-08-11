@@ -42,6 +42,7 @@ docker compose -f infra/compose.yaml down
 - 組織、team、リポジトリの公開範囲とアクセス権限の管理
 - Star、Watch、通知、検索
 - Email/Passwordまたは設定済みのソーシャルプロバイダーによるログイン
+- [Personal access token](docs/personal-access-tokens.ja.md)によるLore CLIとAPI clientの認証
 - 英語と日本語の画面
 - GitHub Actions互換workflow、log、artifact、variables、secrets、SARIF結果
 - [Webhook](docs/webhooks.ja.md)による外部サービスへのイベント通知と配信履歴

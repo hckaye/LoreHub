@@ -15,6 +15,8 @@ import (
 
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
+	"github.com/google/uuid"
+	"github.com/lorehub/lorehub/services/api/internal/auth"
 	"github.com/lorehub/lorehub/services/api/internal/authz"
 )
 
@@ -171,6 +173,8 @@ type LoreClaims struct {
 	Groups            []string                 `json:"groups,omitempty"`
 	IsServiceAccount  bool                     `json:"is_service_account"`
 	IDP               string                   `json:"idp"`
+	TokenScopes       []string                 `json:"token_scopes,omitempty"`
+	CredentialID      string                   `json:"credential_id,omitempty"`
 }
 
 type VerifiedToken struct {
@@ -229,36 +233,53 @@ func (service *TokenService) MintResourceToken(
 	user authz.UserInfo,
 	resources []LoreResourcePermission,
 ) (string, time.Time, error) {
-	return service.mintToken(tokenPrincipal{user: user}, resources, true)
+	return service.mintToken(tokenPrincipal{user: user}, resources, nil, true)
 }
 
 func (service *TokenService) MintServiceResourceToken(
 	principal authz.UserInfo,
 	resources []LoreResourcePermission,
 ) (string, time.Time, error) {
-	return service.mintToken(tokenPrincipal{user: principal, serviceAccount: true}, resources, true)
+	return service.mintToken(tokenPrincipal{user: principal, serviceAccount: true}, resources, nil, true)
 }
 
 func (service *TokenService) MintAuthenticationToken(
 	user authz.UserInfo,
 ) (string, time.Time, error) {
-	return service.mintToken(tokenPrincipal{user: user}, nil, false)
+	return service.mintToken(tokenPrincipal{user: user}, nil, nil, false)
+}
+
+func (service *TokenService) MintAuthenticationTokenWithScopes(
+	user authz.UserInfo,
+	scopes []string,
+	credentialID string,
+) (string, time.Time, error) {
+	if !auth.ValidPersonalAccessTokenScopes(scopes) {
+		return "", time.Time{}, errors.New("personal access token scopes are invalid")
+	}
+	if _, err := uuid.Parse(credentialID); err != nil {
+		return "", time.Time{}, errors.New("personal access token credential ID is invalid")
+	}
+	return service.mintToken(tokenPrincipal{user: user, credentialID: credentialID}, nil,
+		append([]string(nil), scopes...), false)
 }
 
 func (service *TokenService) MintServiceAuthenticationToken(
 	principal authz.UserInfo,
 ) (string, time.Time, error) {
-	return service.mintToken(tokenPrincipal{user: principal, serviceAccount: true}, nil, false)
+	return service.mintToken(tokenPrincipal{user: principal, serviceAccount: true}, nil, nil, false)
 }
 
 type tokenPrincipal struct {
 	user           authz.UserInfo
 	serviceAccount bool
+	credentialID   string
 }
 
 func (service *TokenService) mintToken(
 	principal tokenPrincipal,
 	resources []LoreResourcePermission,
+	tokenScopes []string,
 	resourceToken bool,
 ) (string, time.Time, error) {
 	if !resourceToken && len(resources) != 0 {
@@ -287,6 +308,8 @@ func (service *TokenService) mintToken(
 		Resources:         resources,
 		IsServiceAccount:  principal.serviceAccount,
 		IDP:               service.idp,
+		TokenScopes:       tokenScopes,
+		CredentialID:      principal.credentialID,
 	}
 	current := service.keys.Current()
 	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: current.Key},
@@ -359,6 +382,22 @@ func (service *TokenService) verify(raw string, resourceToken bool) (VerifiedTok
 	}
 	if !resourceToken && len(claims.Resources) != 0 {
 		return VerifiedToken{}, errors.New("Lore authentication token has an invalid scope")
+	}
+	if resourceToken && len(claims.TokenScopes) != 0 {
+		return VerifiedToken{}, errors.New("Lore resource token has invalid API key scopes")
+	}
+	if len(claims.TokenScopes) != 0 && !auth.ValidPersonalAccessTokenScopes(claims.TokenScopes) {
+		return VerifiedToken{}, errors.New("Lore authentication token has invalid API key scopes")
+	}
+	if resourceToken && claims.CredentialID != "" {
+		return VerifiedToken{}, errors.New("Lore resource token has an invalid credential ID")
+	}
+	if len(claims.TokenScopes) != 0 {
+		if _, err := uuid.Parse(claims.CredentialID); err != nil {
+			return VerifiedToken{}, errors.New("Lore authentication token has an invalid credential ID")
+		}
+	} else if claims.CredentialID != "" {
+		return VerifiedToken{}, errors.New("Lore authentication token has an invalid credential ID")
 	}
 	if len(claims.Resources) > 0 {
 		if err := validateResources(claims.Resources); err != nil {

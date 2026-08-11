@@ -803,6 +803,28 @@ export type CodeScanningAlert = {
   createdAt: string;
 };
 
+export type PersonalAccessTokenScope = "read_api" | "api" | "read_repository" | "write_repository";
+
+export type PersonalAccessToken = {
+  id: string;
+  name: string;
+  prefix: string;
+  scopes: PersonalAccessTokenScope[];
+  expiresAt: string;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+  createdAt: string;
+};
+
+export type PersonalAccessTokenPage = {
+  tokens: PersonalAccessToken[];
+};
+
+export type CreatedPersonalAccessToken = {
+  token: PersonalAccessToken;
+  value: string;
+};
+
 export type APIResult<T> =
   | { ok: true; data: T }
   | {

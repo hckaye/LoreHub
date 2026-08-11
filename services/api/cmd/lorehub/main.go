@@ -98,26 +98,23 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	loreAuth, err := newLoreAuthService(store, keyProvider, settings)
-	if err != nil {
-		return err
-	}
-	issuer, err := loreauth.NewCredentialIssuer(loreAuth)
-	if err != nil {
-		return err
-	}
-	loreCredentials, err := loreclient.NewCredentialProviderWithIssuer(settings.Environment, issuer,
-		settings.LoreAuthAuthority, settings.LoreCredentials, settings.LoreIdentity,
-		settings.LoreAllowDevelopmentFallback)
-	if err != nil {
-		return err
-	}
 	if command == "runner" {
+		loreAuth, err := newLoreAuthService(store, keyProvider, settings)
+		if err != nil {
+			return err
+		}
+		loreCredentials, err := newLoreCredentialProvider(loreAuth, settings)
+		if err != nil {
+			return err
+		}
 		return runRunner(rootContext, pool, lore, loreCredentials, keyProvider, settings, logger)
 	}
 
 	var authenticator auth.Authenticator
 	var loginProvider auth.LoginProvider
+	var loginStore auth.LoginTransactionStore
+	var sessionStore auth.SessionStore
+	var cleanupStore auth.CleanupStore
 	var secretCodec *auth.SecretCodec
 	actionsStore := runner.NewStoreWithFiles(pool, settings.RunnerLogDir, settings.RunnerArtifactDir)
 	actionsContext, err := runner.NewPostgresExecutionContextResolver(
@@ -176,12 +173,11 @@ func run(logger *slog.Logger) error {
 		if err != nil {
 			return err
 		}
-		secretCodec, err = auth.NewSecretCodec(settings.AuthSecret)
-		if err != nil {
-			return err
-		}
 		authenticator = provider
 		loginProvider = provider
+		loginStore = store
+		sessionStore = store
+		cleanupStore = store
 	case config.AuthModeBearer:
 		authenticator, err = auth.NewOIDC(rootContext, settings.OIDCIssuer, settings.OIDCAudience)
 		if err != nil {
@@ -191,6 +187,34 @@ func run(logger *slog.Logger) error {
 		authenticator = auth.DisabledAuthenticator{}
 	default:
 		return fmt.Errorf("unsupported authentication mode %q", settings.AuthMode)
+	}
+	var loreAuthOptions []loreauth.ServiceOption
+	if settings.AuthMode != config.AuthModeDisabled {
+		secretCodec, err = auth.NewSecretCodec(settings.AuthSecret)
+		if err != nil {
+			return err
+		}
+		personalAccessTokenAuthenticator, tokenErr := auth.NewPersonalAccessTokenAuthenticator(
+			authenticator,
+			store,
+			secretCodec,
+		)
+		if tokenErr != nil {
+			return tokenErr
+		}
+		authenticator = personalAccessTokenAuthenticator
+		loreAuthOptions = append(
+			loreAuthOptions,
+			loreauth.WithAPIKeyAuthenticator(personalAccessTokenAuthenticator),
+		)
+	}
+	loreAuth, err := newLoreAuthService(store, keyProvider, settings, loreAuthOptions...)
+	if err != nil {
+		return err
+	}
+	loreCredentials, err := newLoreCredentialProvider(loreAuth, settings)
+	if err != nil {
+		return err
 	}
 	collaborationStore := collab.NewStore(pool)
 	handler := httpapi.New(
@@ -202,9 +226,9 @@ func run(logger *slog.Logger) error {
 		logger,
 		httpapi.WithAuthentication(httpapi.AuthOptions{
 			LoginProvider:  loginProvider,
-			LoginStore:     store,
-			SessionStore:   store,
-			CleanupStore:   store,
+			LoginStore:     loginStore,
+			SessionStore:   sessionStore,
+			CleanupStore:   cleanupStore,
 			Secrets:        secretCodec,
 			PublicOrigin:   settings.PublicOrigin,
 			SessionTTL:     settings.SessionTTL,
@@ -221,6 +245,7 @@ func run(logger *slog.Logger) error {
 		httpapi.WithActionsSecurity(actionsStore, actionsJobTokens),
 		httpapi.WithActionsExecutionContext(actionsContext),
 		httpapi.WithIdentityStore(store),
+		httpapi.WithPersonalAccessTokens(store, secretCodec),
 		httpapi.WithConfiguredLoginProviders(settings.IdentityProviders),
 		httpapi.WithCollaboration(collaborationStore),
 		httpapi.WithReviewThreads(reviewthreads.NewStore(pool)),
@@ -400,6 +425,7 @@ func newLoreAuthService(
 	store *platform.Store,
 	keyProvider loreauth.SigningKeyProvider,
 	settings config.Config,
+	options ...loreauth.ServiceOption,
 ) (*loreauth.Service, error) {
 	tokenService, err := loreauth.NewTokenService(keyProvider, settings.LoreAuthIssuer,
 		settings.LoreAuthAudience, settings.LoreAuthEnvironment, settings.LoreAuthIDP,
@@ -408,7 +434,26 @@ func newLoreAuthService(
 		return nil, err
 	}
 	return loreauth.NewService(store, store, tokenService, settings.LoreAuthLoginURL, settings.LoreAuthURL,
-		settings.LoreAuthSessionTTL, settings.Environment == "development" || settings.Environment == "local-insecure")
+		settings.LoreAuthSessionTTL, settings.Environment == "development" || settings.Environment == "local-insecure",
+		options...)
+}
+
+func newLoreCredentialProvider(
+	service *loreauth.Service,
+	settings config.Config,
+) (loreclient.CredentialProvider, error) {
+	issuer, err := loreauth.NewCredentialIssuer(service)
+	if err != nil {
+		return nil, err
+	}
+	return loreclient.NewCredentialProviderWithIssuer(
+		settings.Environment,
+		issuer,
+		settings.LoreAuthAuthority,
+		settings.LoreCredentials,
+		settings.LoreIdentity,
+		settings.LoreAllowDevelopmentFallback,
+	)
 }
 
 func runRunner(

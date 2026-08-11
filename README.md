@@ -42,6 +42,7 @@ docker compose -f infra/compose.yaml down
 - Manage organizations, teams, repository visibility, and access
 - Star and watch repositories, receive notifications, and search
 - Sign in with email and password or configured social providers
+- Authenticate the Lore CLI and API clients with [personal access tokens](docs/personal-access-tokens.md)
 - Use the interface in English or Japanese
 - Run GitHub Actions-compatible workflows with logs, artifacts, variables, secrets, and SARIF results
 - Send repository events to external services with [webhooks](docs/webhooks.md) and delivery history
