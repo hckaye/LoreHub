@@ -7,12 +7,16 @@ import { AuthRequired } from "@/components/auth/auth-required";
 import { PullRequestConversation } from "@/components/repositories/pull-request-conversation";
 import { ReviewDiffView } from "@/components/repositories/review-diff-view";
 import type {
+  Assignee,
   AuthSession,
+  Label,
   LoreDiff,
   MergeOperation,
   MergeReadiness,
   MergeRequest,
   MergeRequestComment,
+  MergeRequestMetadata,
+  Milestone,
   ReviewCandidate,
   ReviewRequestSummary,
   ReviewSummary,
@@ -38,6 +42,13 @@ type PullRequestDetailProps = {
   commits: RevisionHistoryEntry[];
   comments: MergeRequestComment[];
   commentsAvailable: boolean;
+  assignees: Assignee[];
+  assigneesAvailable: boolean;
+  labels: Label[];
+  labelsAvailable: boolean;
+  metadata: MergeRequestMetadata | null;
+  milestones: Milestone[];
+  milestonesAvailable: boolean;
   reviewThreads: ReviewThread[];
   reviewThreadsAvailable: boolean;
   session: AuthSession;
@@ -59,6 +70,13 @@ export function PullRequestDetail({
   commits,
   comments,
   commentsAvailable,
+  assignees,
+  assigneesAvailable,
+  labels,
+  labelsAvailable,
+  metadata,
+  milestones,
+  milestonesAvailable,
   reviewThreads,
   reviewThreadsAvailable,
   session,
@@ -131,9 +149,16 @@ export function PullRequestDetail({
         commits={commits}
         comments={comments}
         commentsAvailable={commentsAvailable}
+        assignees={assignees}
+        assigneesAvailable={assigneesAvailable}
         diff={diff}
         dictionary={dictionary}
         mergeRequest={mergeRequest}
+        labels={labels}
+        labelsAvailable={labelsAvailable}
+        metadata={metadata}
+        milestones={milestones}
+        milestonesAvailable={milestonesAvailable}
         reviews={reviews}
         reviewCandidates={reviewCandidates}
         reviewRequests={reviewRequests}
@@ -178,6 +203,8 @@ function PullRequestTab({
   reviewRequests,
   comments,
   commentsAvailable,
+  assignees,
+  assigneesAvailable,
   reviewThreads,
   reviewThreadsAvailable,
   commits,
@@ -187,6 +214,11 @@ function PullRequestTab({
   locale,
   owner,
   repository,
+  labels,
+  labelsAvailable,
+  metadata,
+  milestones,
+  milestonesAvailable,
 }: {
   tab: Tab;
   mergeRequest: MergeRequest;
@@ -195,6 +227,13 @@ function PullRequestTab({
   reviewRequests: ReviewRequestSummary | null;
   comments: MergeRequestComment[];
   commentsAvailable: boolean;
+  assignees: Assignee[];
+  assigneesAvailable: boolean;
+  labels: Label[];
+  labelsAvailable: boolean;
+  metadata: MergeRequestMetadata | null;
+  milestones: Milestone[];
+  milestonesAvailable: boolean;
   reviewThreads: ReviewThread[];
   reviewThreadsAvailable: boolean;
   commits: RevisionHistoryEntry[];
@@ -208,11 +247,18 @@ function PullRequestTab({
   if (tab === "conversation") {
     return (
       <PullRequestConversation
+        assignees={assignees}
+        assigneesAvailable={assigneesAvailable}
         comments={comments}
         commentsAvailable={commentsAvailable}
         dictionary={dictionary}
         locale={locale}
         mergeRequest={mergeRequest}
+        labels={labels}
+        labelsAvailable={labelsAvailable}
+        metadata={metadata}
+        milestones={milestones}
+        milestonesAvailable={milestonesAvailable}
         owner={owner}
         repository={repository}
         reviews={reviews}

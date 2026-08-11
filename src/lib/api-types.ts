@@ -429,6 +429,15 @@ export type Project = ProjectSummary & {
   viewerCanWrite: boolean;
 };
 
+export type MergeRequestMetadata = {
+  labels: Label[];
+  assignees: Assignee[];
+  milestone: MilestoneSummary | null;
+  viewerCanManageLabels: boolean;
+  viewerCanManageAssignees: boolean;
+  viewerCanManageMilestone: boolean;
+};
+
 export type ProjectList = {
   projects: ProjectSummary[];
   viewerCanWrite: boolean;

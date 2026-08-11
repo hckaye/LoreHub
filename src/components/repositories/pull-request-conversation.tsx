@@ -7,9 +7,13 @@ import { FormEvent, useState } from "react";
 import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
 import type {
+  Assignee,
   AuthSession,
+  Label,
   MergeRequest,
   MergeRequestComment,
+  MergeRequestMetadata,
+  Milestone,
   Review,
   ReviewCandidate,
   ReviewRequestSummary,
@@ -20,14 +24,22 @@ import { mutationFailureMessage } from "@/lib/mutation-messages";
 
 import { FlashNotice } from "../ui/flash-notice";
 import styles from "./pull-request-conversation.module.css";
+import { PullRequestMetadata } from "./pull-request-metadata";
 import { PullRequestReviewers } from "./pull-request-reviewers";
 
 type PullRequestConversationProps = {
+  assignees: Assignee[];
+  assigneesAvailable: boolean;
   comments: MergeRequestComment[];
   commentsAvailable: boolean;
   dictionary: Dictionary;
   locale: Locale;
   mergeRequest: MergeRequest;
+  labels: Label[];
+  labelsAvailable: boolean;
+  metadata: MergeRequestMetadata | null;
+  milestones: Milestone[];
+  milestonesAvailable: boolean;
   owner: string;
   repository: string;
   reviews: ReviewSummary | null;
@@ -133,6 +145,20 @@ export function PullRequestConversation(props: PullRequestConversationProps) {
         owner={props.owner}
         repository={props.repository}
         summary={props.reviewRequests}
+      />
+      <PullRequestMetadata
+        assignees={props.assignees}
+        assigneesAvailable={props.assigneesAvailable}
+        csrfToken={csrfToken}
+        dictionary={props.dictionary}
+        labels={props.labels}
+        labelsAvailable={props.labelsAvailable}
+        metadata={props.metadata}
+        milestones={props.milestones}
+        milestonesAvailable={props.milestonesAvailable}
+        number={props.mergeRequest.number}
+        owner={props.owner}
+        repository={props.repository}
       />
       <div className={styles.timeline}>
         {!props.commentsAvailable ? (

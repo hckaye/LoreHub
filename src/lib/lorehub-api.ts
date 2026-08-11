@@ -28,6 +28,7 @@ import type {
   MergeReadiness,
   MergeRequest,
   MergeRequestComment,
+  MergeRequestMetadata,
   MilestonePage,
   Notification,
   NotificationPage,
@@ -336,6 +337,14 @@ export function getAssignableUsers(
 
 export function getReviews(owner: string, repository: string, number: number): Promise<APIResult<ReviewSummary>> {
   return request(repositoryPath(owner, repository, `/merge-requests/${number}/reviews`));
+}
+
+export function getMergeRequestMetadata(
+  owner: string,
+  repository: string,
+  number: number,
+): Promise<APIResult<MergeRequestMetadata>> {
+  return request(repositoryPath(owner, repository, `/merge-requests/${number}/metadata`));
 }
 
 export function getReviewRequests(

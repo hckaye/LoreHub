@@ -8,10 +8,14 @@ import { isLocale } from "@/i18n/config";
 import type { APIResult } from "@/lib/api-types";
 import { getAuthSession } from "@/lib/auth-api";
 import {
+  getAssignableUsers,
+  getLabels,
   getLoreDiff,
   getMergeReadiness,
   getMergeRequest,
   getMergeRequestComments,
+  getMergeRequestMetadata,
+  getMilestones,
   getPublicRepository,
   getReviewCandidates,
   getReviewRequests,
@@ -54,34 +58,58 @@ export default async function PullRequestDetailPage({ params }: PullRequestDetai
       />
     );
   }
-  const [session, readiness, reviews, reviewRequests, reviewCandidates, comments, reviewThreads, diff, history] =
-    await Promise.all([
-      getAuthSession(),
-      getMergeReadiness(owner, slug, number),
-      getReviews(owner, slug, number),
-      getReviewRequests(owner, slug, number),
-      getReviewCandidates(owner, slug, number),
-      getMergeRequestComments(owner, slug, number),
-      getReviewThreads(owner, slug, number),
-      getLoreDiff(owner, slug, mergeRequest.data.targetRevision, mergeRequest.data.sourceRevision),
-      getRevisionHistory(owner, slug, {
-        branch: mergeRequest.data.sourceBranch,
-        revision: mergeRequest.data.sourceRevision,
-      }),
-    ]);
+  const [
+    session,
+    readiness,
+    reviews,
+    reviewRequests,
+    reviewCandidates,
+    comments,
+    reviewThreads,
+    diff,
+    history,
+    metadata,
+    labels,
+    assignees,
+    milestones,
+  ] = await Promise.all([
+    getAuthSession(),
+    getMergeReadiness(owner, slug, number),
+    getReviews(owner, slug, number),
+    getReviewRequests(owner, slug, number),
+    getReviewCandidates(owner, slug, number),
+    getMergeRequestComments(owner, slug, number),
+    getReviewThreads(owner, slug, number),
+    getLoreDiff(owner, slug, mergeRequest.data.targetRevision, mergeRequest.data.sourceRevision),
+    getRevisionHistory(owner, slug, {
+      branch: mergeRequest.data.sourceBranch,
+      revision: mergeRequest.data.sourceRevision,
+    }),
+    getMergeRequestMetadata(owner, slug, number),
+    getLabels(owner, slug),
+    getAssignableUsers(owner, slug),
+    getMilestones(owner, slug, "all", 1, 100),
+  ]);
   return (
     <PullRequestDetail
-      commits={history.ok ? history.data.entries : []}
-      comments={comments.ok ? comments.data : []}
+      commits={historyEntries(history)}
+      comments={resultData(comments, [])}
       commentsAvailable={comments.ok}
-      diff={diff.ok ? diff.data : null}
+      assignees={assigneeItems(assignees)}
+      assigneesAvailable={assignees.ok}
+      diff={resultData(diff, null)}
       dictionary={dictionary}
+      labels={resultData(labels, [])}
+      labelsAvailable={labels.ok}
       locale={locale}
       mergeRequest={mergeRequest.data}
+      metadata={resultData(metadata, null)}
+      milestones={milestoneItems(milestones)}
+      milestonesAvailable={milestones.ok}
       owner={owner}
-      readiness={readiness.ok ? readiness.data : null}
+      readiness={resultData(readiness, null)}
       repository={slug}
-      reviews={reviews.ok ? reviews.data : null}
+      reviews={resultData(reviews, null)}
       reviewCandidates={resultData(reviewCandidates, [])}
       reviewRequests={resultData(reviewRequests, null)}
       reviewThreads={reviewThreadData(reviewThreads)}
@@ -93,6 +121,18 @@ export default async function PullRequestDetailPage({ params }: PullRequestDetai
 
 function reviewThreadData(result: Awaited<ReturnType<typeof getReviewThreads>>) {
   return result.ok ? result.data : [];
+}
+
+function assigneeItems(result: Awaited<ReturnType<typeof getAssignableUsers>>) {
+  return result.ok ? result.data.items : [];
+}
+
+function milestoneItems(result: Awaited<ReturnType<typeof getMilestones>>) {
+  return result.ok ? result.data.milestones : [];
+}
+
+function historyEntries(result: Awaited<ReturnType<typeof getRevisionHistory>>) {
+  return result.ok ? result.data.entries : [];
 }
 
 function resultData<T, F>(result: APIResult<T>, fallback: F): T | F {

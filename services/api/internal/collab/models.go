@@ -268,6 +268,15 @@ type ReviewCandidate struct {
 	AvatarURL   string `json:"avatarUrl,omitempty"`
 }
 
+type MergeRequestMetadata struct {
+	Labels                   []Label           `json:"labels"`
+	Assignees                []Assignee        `json:"assignees"`
+	Milestone                *MilestoneSummary `json:"milestone"`
+	ViewerCanManageLabels    bool              `json:"viewerCanManageLabels"`
+	ViewerCanManageAssignees bool              `json:"viewerCanManageAssignees"`
+	ViewerCanManageMilestone bool              `json:"viewerCanManageMilestone"`
+}
+
 // BranchRule is a branch protection rule enforced by the Lore merge workflow.
 type BranchRule struct {
 	ID                string    `json:"id"`

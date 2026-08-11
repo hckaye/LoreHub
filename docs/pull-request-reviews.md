@@ -34,3 +34,9 @@ to a changed line.
 
 Approvals and change requests apply to the current source revision. Submit them from the **Conversation** tab. When
 the source revision changes, requested reviewers return to **Review requested** until they review the new revision.
+
+## Organize a pull request
+
+Users with triage access can add labels, assign up to 10 repository users, and select a milestone from the
+**Conversation** tab. Removing a label, assignee, or milestone does not change the pull request state or its review
+history.

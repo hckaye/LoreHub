@@ -1,0 +1,174 @@
+.card {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  display: grid;
+  padding: 0 12px;
+}
+
+.card section {
+  border-bottom: 1px solid var(--border-muted);
+  display: grid;
+  gap: 8px;
+  padding: 12px 0;
+}
+
+.card section:last-child {
+  border-bottom: 0;
+}
+
+.card h3,
+.card p {
+  font-size: 13px;
+  margin: 0;
+}
+
+.card p {
+  color: var(--fg-muted);
+}
+
+.error {
+  color: var(--danger-fg) !important;
+  padding-top: 12px;
+}
+
+.heading {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  position: relative;
+}
+
+.heading summary {
+  color: var(--fg-muted);
+  cursor: pointer;
+  font-size: 12px;
+  list-style: none;
+}
+
+.menu,
+.milestoneMenu {
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: var(--shadow-popover);
+  display: grid;
+  gap: 4px;
+  max-height: 20rem;
+  min-width: 16rem;
+  overflow: auto;
+  padding: 6px;
+  position: absolute;
+  right: 0;
+  top: 24px;
+  z-index: 3;
+}
+
+.menu label {
+  align-items: center;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  gap: 8px;
+  padding: 5px;
+}
+
+.menu label:hover,
+.milestoneMenu button:hover,
+.milestoneMenu button[aria-pressed="true"] {
+  background: var(--canvas-subtle);
+}
+
+.assignees {
+  display: grid;
+  gap: 6px;
+}
+
+.assignee {
+  align-items: center;
+  display: flex;
+  font-size: 12px;
+  gap: 7px;
+  min-width: 0;
+}
+
+.assignee > span:last-child {
+  display: grid;
+  min-width: 0;
+}
+
+.assignee strong,
+.assignee small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assignee small {
+  color: var(--fg-muted);
+}
+
+.avatar {
+  align-items: center;
+  background: var(--canvas-subtle);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  display: inline-flex;
+  flex: 0 0 26px;
+  font-size: 11px;
+  font-weight: 650;
+  height: 26px;
+  justify-content: center;
+  width: 26px;
+}
+
+.labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.label {
+  background: color-mix(in srgb, var(--label-color) 18%, transparent);
+  border: 1px solid var(--label-color);
+  border-radius: 2em;
+  color: var(--fg-default);
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+}
+
+.milestoneMenu {
+  gap: 0;
+}
+
+.milestoneMenu button {
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  color: var(--fg-default);
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  gap: 8px;
+  justify-content: space-between;
+  padding: 7px 8px;
+  text-align: left;
+}
+
+.milestoneMenu button:disabled,
+.menu input:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.milestoneMenu small,
+.milestone span {
+  color: var(--fg-muted);
+}
+
+.milestone {
+  display: grid;
+  font-size: 13px;
+  gap: 2px;
+}

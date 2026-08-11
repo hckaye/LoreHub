@@ -78,6 +78,19 @@ func Register(mux *http.ServeMux, store Store, actors ActorResolver, logger *slo
 		api.putTeamReviewRequest)
 	mux.HandleFunc("DELETE "+base+"/merge-requests/{number}/review-requests/teams/{team}",
 		api.deleteTeamReviewRequest)
+	mux.HandleFunc("GET "+base+"/merge-requests/{number}/metadata", api.getMergeRequestMetadata)
+	mux.HandleFunc("PUT "+base+"/merge-requests/{number}/metadata/labels/{labelID}",
+		api.putMergeRequestLabel)
+	mux.HandleFunc("DELETE "+base+"/merge-requests/{number}/metadata/labels/{labelID}",
+		api.deleteMergeRequestLabel)
+	mux.HandleFunc("PUT "+base+"/merge-requests/{number}/metadata/assignees/{username}",
+		api.putMergeRequestAssignee)
+	mux.HandleFunc("DELETE "+base+"/merge-requests/{number}/metadata/assignees/{username}",
+		api.deleteMergeRequestAssignee)
+	mux.HandleFunc("PUT "+base+"/merge-requests/{number}/metadata/milestone/{milestoneNumber}",
+		api.putMergeRequestMilestone)
+	mux.HandleFunc("DELETE "+base+"/merge-requests/{number}/metadata/milestone",
+		api.deleteMergeRequestMilestone)
 
 	mux.HandleFunc("PUT "+base+"/star", api.putRepositoryStar)
 	mux.HandleFunc("DELETE "+base+"/star", api.deleteRepositoryStar)

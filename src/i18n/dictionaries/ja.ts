@@ -2,6 +2,7 @@ import { assignees } from "./assignees";
 import { auditLog } from "./audit-log";
 import { insights } from "./insights";
 import { milestones } from "./milestones";
+import { pullRequestMetadata } from "./pull-request-metadata";
 import { releases } from "./releases";
 import { webhooks } from "./webhooks";
 import { wiki } from "./wiki";
@@ -13,6 +14,7 @@ const ja = {
   insightsPage: insights.ja,
   webhookSettings: webhooks.ja,
   wikiPage: wiki.ja,
+  pullRequestMetadata: pullRequestMetadata.ja,
   metadata: {
     title: "LoreHub · Loreリポジトリの共同開発基盤",
     description: "Loreにレビュー、Issue、権限管理、GitHub Actions互換CIを追加します。",
