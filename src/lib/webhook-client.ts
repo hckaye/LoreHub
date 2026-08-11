@@ -10,7 +10,8 @@ export type WebhookEvent =
   | "pull_requests"
   | "releases"
   | "repository"
-  | "reviews";
+  | "reviews"
+  | "wiki";
 
 export type RepositoryWebhook = {
   id: string;
@@ -301,6 +302,7 @@ const webhookEvents = new Set<WebhookEvent>([
   "releases",
   "repository",
   "reviews",
+  "wiki",
 ]);
 
 const deliveryStatuses = new Set<WebhookDelivery["status"]>([

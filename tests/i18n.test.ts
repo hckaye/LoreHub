@@ -31,6 +31,7 @@ test("Japanese dictionary does not silently reuse English copy", () => {
     "common.issues",
     "common.localeJapanese",
     "common.productName",
+    "common.wiki",
     "actionsPage.title",
     "forms.loreUrl",
     "forms.loreUrlPlaceholder",
@@ -39,6 +40,8 @@ test("Japanese dictionary does not silently reuse English copy", () => {
     "settingsPage.loreUrl",
     "webhookSettings.eventLabels.actions",
     "webhookSettings.payloadUrlPlaceholder",
+    "webhookSettings.eventLabels.wiki",
+    "wikiPage.title",
   ]);
   for (const key of flattenKeys(en)) {
     if (!exceptions.has(key)) {

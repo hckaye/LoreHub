@@ -118,6 +118,8 @@ func eventRepositoryQuery(
 		return `SELECT repository_id FROM release_asset_links WHERE id = $1`, entityID
 	case strings.HasPrefix(topic, "release."):
 		return `SELECT repository_id FROM repository_releases WHERE id = $1`, entityID
+	case strings.HasPrefix(topic, "wiki."):
+		return `SELECT repository_id FROM repository_wiki_pages WHERE id = $1`, entityID
 	default:
 		return "", ""
 	}
@@ -155,6 +157,8 @@ func auditTargetType(topic string) string {
 		return "ci_run"
 	case strings.HasPrefix(topic, "branch."):
 		return "lore_branch"
+	case strings.HasPrefix(topic, "wiki."):
+		return "wiki_page"
 	default:
 		return ""
 	}

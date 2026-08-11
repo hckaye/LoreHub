@@ -23,6 +23,7 @@ import (
 	projectsapi "github.com/lorehub/lorehub/services/api/internal/projects"
 	releasesapi "github.com/lorehub/lorehub/services/api/internal/releases"
 	"github.com/lorehub/lorehub/services/api/internal/runner"
+	wikiapi "github.com/lorehub/lorehub/services/api/internal/wiki"
 )
 
 const maxRequestBody = 1 << 20
@@ -144,6 +145,7 @@ type API struct {
 	projectsStore           projectsapi.Store
 	releasesStore           releasesapi.Store
 	milestonesStore         milestonesapi.Store
+	wikiStore               wikiapi.Store
 	loginProvider           auth.LoginProvider
 	loginStore              auth.LoginTransactionStore
 	sessionStore            auth.SessionStore

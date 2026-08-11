@@ -35,6 +35,7 @@ docker compose -f infra/compose.yaml down
 
 - ファイル、branch、revision、履歴、差分の閲覧
 - Issue、label、comment、projectによるタスク管理
+- バージョン履歴付きの[Wiki](docs/wiki.ja.md)によるリポジトリ文書の管理
 - pull request、review、branch ruleによる変更管理
 - Lore branchのmerge、競合解決、結果のpush
 - releaseの公開と外部配布ファイルへのリンク

@@ -35,6 +35,7 @@ docker compose -f infra/compose.yaml down
 
 - Browse files, branches, revisions, history, and diffs
 - Track work with issues, labels, comments, and projects
+- Maintain repository documentation with a versioned [wiki](docs/wiki.md)
 - Review changes with pull requests, reviews, and branch rules
 - Merge Lore branches, resolve conflicts, and push the result
 - Publish releases and attach links to externally hosted files

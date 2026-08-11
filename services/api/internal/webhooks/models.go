@@ -28,6 +28,7 @@ var eventKinds = map[string]struct{}{
 	"releases":      {},
 	"repository":    {},
 	"reviews":       {},
+	"wiki":          {},
 }
 
 type Webhook struct {
@@ -144,6 +145,8 @@ func eventKind(topic string) (string, bool) {
 		return "pull_requests", true
 	case strings.HasPrefix(topic, "release."):
 		return "releases", true
+	case strings.HasPrefix(topic, "wiki."):
+		return "wiki", true
 	case strings.HasPrefix(topic, "repository."):
 		return "repository", true
 	default:

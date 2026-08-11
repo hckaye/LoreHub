@@ -12,6 +12,7 @@ import (
 	projectsapi "github.com/lorehub/lorehub/services/api/internal/projects"
 	releasesapi "github.com/lorehub/lorehub/services/api/internal/releases"
 	webhooksapi "github.com/lorehub/lorehub/services/api/internal/webhooks"
+	wikiapi "github.com/lorehub/lorehub/services/api/internal/wiki"
 )
 
 func (api *API) registerRoutes(mux *http.ServeMux) {
@@ -137,6 +138,9 @@ func (api *API) registerFeatureRoutes(mux *http.ServeMux) {
 		}
 		if api.milestonesStore != nil {
 			milestonesapi.Register(mux, api.milestonesStore, api.collabStore, api, api.logger)
+		}
+		if api.wikiStore != nil {
+			wikiapi.Register(mux, api.wikiStore, api.collabStore, api, api.logger)
 		}
 		if codeClient, ok := api.lore.(loreclient.CodeClient); ok {
 			codeapi.Register(mux, api.collabStore, api.lore, codeClient, api, api.loreCredentials,

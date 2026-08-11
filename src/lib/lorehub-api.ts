@@ -45,6 +45,9 @@ import type {
   Team,
   TeamMember,
   UserProfile,
+  WikiPage,
+  WikiPageList,
+  WikiRevision,
 } from "./api-types";
 
 const apiOrigin = process.env.LOREHUB_API_URL ?? "http://127.0.0.1:8080";
@@ -270,6 +273,35 @@ export function getProjects(owner: string, repository: string): Promise<APIResul
 
 export function getProject(owner: string, repository: string, number: number): Promise<APIResult<Project>> {
   return request(repositoryPath(owner, repository, `/projects/${number}`));
+}
+
+export function getWikiPages(owner: string, repository: string, query = ""): Promise<APIResult<WikiPageList>> {
+  const search = query.trim() ? `?${new URLSearchParams({ q: query.trim() }).toString()}` : "";
+  return request(repositoryPath(owner, repository, `/wiki${search}`));
+}
+
+export function getWikiPage(owner: string, repository: string, slug: string): Promise<APIResult<WikiPage>> {
+  return request(repositoryPath(owner, repository, `/wiki/${encodeURIComponent(slug)}`));
+}
+
+export async function getWikiHistory(
+  owner: string,
+  repository: string,
+  slug: string,
+): Promise<APIResult<WikiRevision[]>> {
+  const result = await request<{ revisions: WikiRevision[] }>(
+    repositoryPath(owner, repository, `/wiki/${encodeURIComponent(slug)}/history`),
+  );
+  return result.ok ? { ok: true, data: result.data.revisions } : result;
+}
+
+export function getWikiRevision(
+  owner: string,
+  repository: string,
+  slug: string,
+  version: number,
+): Promise<APIResult<WikiRevision>> {
+  return request(repositoryPath(owner, repository, `/wiki/${encodeURIComponent(slug)}/history/${version}`));
 }
 
 export function getReleases(owner: string, repository: string, page: number): Promise<APIResult<ReleasePage>> {

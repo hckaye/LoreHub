@@ -2,6 +2,7 @@
 
 import {
   BarChart3,
+  BookOpenText,
   Box,
   CircleDot,
   Eye,
@@ -40,6 +41,7 @@ const tabs = [
   ["pulls", GitPullRequest],
   ["actions", PlayCircle],
   ["projects", Workflow],
+  ["wiki", BookOpenText],
   ["releases", Tags],
   ["security", ShieldCheck],
   ["insights", BarChart3],

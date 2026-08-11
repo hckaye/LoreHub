@@ -29,6 +29,7 @@ import (
 	"github.com/lorehub/lorehub/services/api/internal/releases"
 	"github.com/lorehub/lorehub/services/api/internal/runner"
 	"github.com/lorehub/lorehub/services/api/internal/webhooks"
+	"github.com/lorehub/lorehub/services/api/internal/wiki"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 )
@@ -225,6 +226,7 @@ func run(logger *slog.Logger) error {
 		httpapi.WithProjects(projects.NewStore(pool)),
 		httpapi.WithReleases(releases.NewStore(pool)),
 		httpapi.WithMilestones(milestones.NewStore(pool)),
+		httpapi.WithWiki(wiki.NewStore(pool)),
 		httpapi.WithWebhooks(webhookStore),
 		httpapi.WithAuthorization(store),
 		httpapi.WithLoreAuth(loreAuth),

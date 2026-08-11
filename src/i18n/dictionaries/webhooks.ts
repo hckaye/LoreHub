@@ -57,6 +57,7 @@ export const webhooks = {
       releases: "Releases",
       repository: "Repository settings",
       reviews: "Reviews",
+      wiki: "Wiki",
     },
     statuses: {
       queued: "Queued",
@@ -124,6 +125,7 @@ export const webhooks = {
       releases: "リリース",
       repository: "リポジトリ設定",
       reviews: "レビュー",
+      wiki: "Wiki",
     },
     statuses: {
       queued: "待機中",

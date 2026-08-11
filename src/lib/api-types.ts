@@ -402,6 +402,37 @@ export type ProjectList = {
   viewerCanWrite: boolean;
 };
 
+export type WikiPageSummary = {
+  id: string;
+  slug: string;
+  title: string;
+  version: number;
+  createdBy: string;
+  updatedBy: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type WikiPage = WikiPageSummary & {
+  body: string;
+  viewerCanWrite: boolean;
+};
+
+export type WikiPageList = {
+  pages: WikiPageSummary[];
+  viewerCanWrite: boolean;
+};
+
+export type WikiRevision = {
+  version: number;
+  slug: string;
+  title: string;
+  body?: string;
+  editSummary: string;
+  editedBy: string;
+  createdAt: string;
+};
+
 export type ReleaseAsset = {
   id: string;
   name: string;
