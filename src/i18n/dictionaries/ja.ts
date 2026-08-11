@@ -67,19 +67,16 @@ const ja = {
     localeJapanese: "日本語",
   },
   home: {
-    eyebrow: "Loreのために設計",
-    title: "すべてのLoreリポジトリの共同開発ホーム。",
-    intro: concat(
-      "リポジトリデータを複製せず、コードレビュー、Issue、アクセス方針、自動化を",
-      "Loreのそばで管理します。",
-    ),
+    eyebrow: "Loreの共同開発",
+    title: "Loreリポジトリで共同開発する",
+    intro: "変更のレビュー、Issueの管理、アクセス権の設定、Actionsワークフローの実行ができます。",
     architecture: "アーキテクチャを読む",
     repositories: "公開リポジトリ",
     repositoriesDescription: "このLoreHubが誰でも閲覧できるようにしているリポジトリです。",
     searchResults: "検索結果",
     searchResultsDescription: "検索に一致した公開リポジトリです。",
     emptyTitle: "公開リポジトリはまだありません",
-    emptyBody: "組織の所有者はAPIから既存のLoreリポジトリを登録できます。",
+    emptyBody: "組織の所有者は「リポジトリを登録」画面からLoreリポジトリを登録できます。",
     searchEmptyTitle: "一致するリポジトリはありません",
     searchEmptyBody: "所有者名、リポジトリ名、説明を変えて試してください。",
     apiUnavailableTitle: "LoreHub APIを利用できません",
@@ -89,11 +86,7 @@ const ja = {
     ),
     dashboardTitle: "ダッシュボード",
     dashboardGreeting: "おかえりなさい、{name}さん",
-    // prettier-ignore
-    dashboardDescription: concat(
-      "このアカウントで利用できる",
-      concat("LoreHubのリポジトリと", "活動を確認します。"),
-    ),
+    dashboardDescription: "このアカウントで利用できるリポジトリと最近の活動です。",
     availablePublicRepositories: "利用可能な公開リポジトリ",
     // prettier-ignore
     availablePublicRepositoriesDescription: concat(
@@ -108,17 +101,10 @@ const ja = {
     ),
     activityTitle: "活動",
     activityEmptyTitle: "活動記録はありません",
-    activityEmptyBody: concat(
-      "このアカウントの活動フィードはAPIで提供されていないため、",
-      "推測した情報は表示していません。",
-    ),
+    activityEmptyBody: "このアカウントの活動はまだありません。",
     discoverTitle: "公開リポジトリを探す",
-    discoverDescription: "このLoreHubが公開している実際のリポジトリ情報を閲覧します。",
-    // prettier-ignore
-    publicDashboardNote: concat(
-      "非公開リポジトリや組織専用リポジトリは、",
-      "APIが提供する場合だけ表示されます。",
-    ),
+    discoverDescription: "公開されているLoreリポジトリを閲覧します。",
+    publicDashboardNote: "ログインすると、アクセスできる非公開リポジトリも表示されます。",
   },
   repository: {
     codeTitle: "コード",
@@ -330,7 +316,7 @@ const ja = {
   },
   issuesPage: {
     title: "Issue",
-    description: "Loreリポジトリを正本として保ちながら、作業を計画して議論します。",
+    description: "リポジトリの作業を計画し、議論します。",
     filterLabel: "Issueの状態",
     newIssue: "Issueを作成",
     emptyTitle: "この表示条件のIssueはありません",
@@ -941,7 +927,7 @@ const ja = {
     conflict: "そのリソースはすでに存在します。",
   },
   footer: {
-    sourceOfTruth: "リビジョン、ブランチ、ファイル、ロックの正本はLoreです。",
+    sourceOfTruth: "LoreHubはLoreバージョン管理システムに対応しています。",
   },
 } as const;
 

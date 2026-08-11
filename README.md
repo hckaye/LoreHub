@@ -114,6 +114,7 @@ vulnerabilities. [GitHub Actions](.github/workflows/ci.yml) runs the same checks
 - [Architecture decisions](docs/adr/0001-platform-architecture.md)
 - [Web, API, and Lore Server responsibilities](docs/architecture/components.md)
 - [Sign-in and identity management](docs/architecture/identity.md)
+- [Frontend authentication](docs/frontend-auth.md)
 - [Repository access control](docs/operations/control-plane-authorization.md)
 - [Keycloak, social sign-in, email, and backups](docs/operations/keycloak.md)
 - [GitHub Actions compatibility and runner operations](docs/runner-actions.md)

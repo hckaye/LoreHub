@@ -1,219 +1,212 @@
-# Keycloak 運用ガイド
+# Keycloak operations
 
-LoreHubの認証・ID管理は自己ホストのKeycloakに委譲します。LoreHub本体はユーザーのパスワードを保存せず、
-Keycloakがローカル認証とソーシャルIDプロバイダーのブローカーを担当します。この文書はローカル起動から
-本番運用までの手順と注意点をまとめます。
+[English](keycloak.md) | [日本語](keycloak.ja.md)
 
-## 構成の概要
+Keycloak handles email and password sign-in, social identity providers, and account management.
 
-- Keycloakは専用のPostgreSQL（`keycloak-postgres`）を使います。LoreHubアプリケーションのPostgreSQLとは
-  完全に分離されており、認証情報、スキーマ、バックアップは独立しています。
-- Keycloakは本番モード（`start`、`start-dev` ではない）で起動します。ローカルはHTTPを明示的に有効化し、
-  `hostname` を固定してトークンのissuerを安定させます。
-- レルム `lorehub` とクライアントは `infra/keycloak/realm-lorehub.json` から初回起動時に取り込まれます。
-  ソーシャルIDプロバイダーは `infra/keycloak/bootstrap.sh` が資格情報の有無に応じて条件付きでプロビジョニング
-  します。資格情報のないプロバイダーはログイン画面に壊れたボタンとして表示されません。
+## Services
 
-## 初回セットアップ
+- Keycloak uses the dedicated `keycloak-postgres` service. Its credentials, schema, and backups are separate from the
+  LoreHub application database.
+- Keycloak starts with the production `start` command. Local Compose explicitly enables HTTP and fixes the hostname so
+  the token issuer remains stable.
+- The `lorehub` realm and its clients are imported from `infra/keycloak/realm-lorehub.json` on first startup.
+  `infra/keycloak/bootstrap.sh` configures each social provider when its credentials are present.
 
-Docker Composeは永続化すべきシークレットを安全に自動生成できないため、専用スクリプトで生成します。
-生成された値はgit管理外の `.env` に書き込まれ、ログには一切出力されません。
+## Initial setup
+
+Generate persistent local secrets before starting Compose:
 
 ```bash
 scripts/setup-keycloak-secrets.sh
 docker compose -f infra/compose.yaml up --build
 ```
 
-起動後のエンドポイント:
+Local endpoints:
 
-- Keycloak管理コンソール: <http://keycloak.localhost:8280/admin/master/console>
-  （ユーザー名 `admin`、パスワードは `.env` の `KEYCLOAK_ADMIN_PASSWORD`）
-- LoreHubレルム: <http://keycloak.localhost:8280/realms/lorehub>
+- Administration console: <http://keycloak.localhost:8280/admin/master/console>
+  The username is `admin`; the password is `KEYCLOAK_ADMIN_PASSWORD` in `.env`.
+- LoreHub realm: <http://keycloak.localhost:8280/realms/lorehub>
 - OIDC discovery: <http://keycloak.localhost:8280/realms/lorehub/.well-known/openid-configuration>
 
-`scripts/setup-keycloak-secrets.sh` は `POSTGRES_PASSWORD`、`KEYCLOAK_ADMIN_PASSWORD`、
-`KEYCLOAK_DB_PASSWORD`、`LOREHUB_OIDC_CLIENT_SECRET`、`LOREHUB_AUTH_SECRET`、
-`LOREHUB_ACTIONS_SECRET_KEY` を生成します。
-既存の空欄は埋めますが、既存の値は保持します。ローテーションするときだけ `--force` を使います。
-ファイルの権限は `0600` に固定され、値は端末やログへ表示されません。
+`scripts/setup-keycloak-secrets.sh` generates `POSTGRES_PASSWORD`, `KEYCLOAK_ADMIN_PASSWORD`,
+`KEYCLOAK_DB_PASSWORD`, `LOREHUB_OIDC_CLIENT_SECRET`, `LOREHUB_AUTH_SECRET`, and
+`LOREHUB_ACTIONS_SECRET_KEY`. It fills empty values and preserves existing values. Use `--force` only when rotating
+them. The generated `.env` has mode `0600`, is excluded from version control, and is not printed by the script.
 
-## OIDCクライアント
+## OIDC clients
 
-レルムには2つのクライアントが定義されています。
+The realm defines two clients:
 
-| クライアント  | 種類         | 用途                                               |
-| ------------- | ------------ | -------------------------------------------------- |
-| `lorehub-web` | confidential | Next.js webアプリ。Authorization Code + PKCE。     |
-| `lorehub-api` | bearer-only  | Go APIのリソースサーバー。トークンのaudience検証。 |
+| Client        | Type         | Purpose                                                        |
+| ------------- | ------------ | -------------------------------------------------------------- |
+| `lorehub-web` | confidential | Next.js web application using Authorization Code Flow and PKCE |
+| `lorehub-api` | bearer-only  | Go API resource server with audience validation                |
 
-`lorehub-web` は `lorehub-api` をトークンの `aud` に含めるようマッピングされています。Go APIは
-`LOREHUB_OIDC_AUDIENCE=lorehub-api` でトークンを検証します。
+The `lorehub-web` access token includes `lorehub-api` in its audience. The Go API validates it with
+`LOREHUB_OIDC_AUDIENCE=lorehub-api`.
 
-### ローカルログインとパスワードポリシー
+### Local accounts and password policy
 
-自己登録とメールアドレスでのログインを有効にしています。ブートストラップ後のパスワードポリシーは、12文字以上、
-大文字・小文字・数字・記号を各1つ以上、ユーザー名とメールアドレスと同じ値を禁止し、過去3世代の再利用を禁止します。
-総当たり対策は5回の失敗から待機を始め、待機時間は最大900秒です。
+Self-registration and email-address login are enabled. Passwords require at least 12 characters, uppercase and
+lowercase letters, a number, and a symbol. They cannot match the username or email address, and the previous three
+passwords cannot be reused. Brute-force protection starts delaying login after five failures and increases the delay up
+to 900 seconds.
 
-パスワードのハッシュとメールアドレスはKeycloakだけが保持します。LoreHubのPostgreSQLにはパスワードを保存せず、
-この構成ではサンプルユーザーも初期パスワードも作成しません。
+Keycloak stores password hashes and account email addresses. A new LoreHub installation does not create sample accounts
+or initial user passwords.
 
-### リダイレクトとログアウトのURL
+### Redirect and logout URLs
 
-初回インポートにはローカル開発用URLが入っています。`keycloak-bootstrap` は起動のたびに環境変数から
-クライアント設定を更新するため、本番URLへの変更やクライアントシークレットのローテーションに手作業は不要です。
+The realm import contains these local URLs. `keycloak-bootstrap` updates them from environment variables on each start.
 
-- rootUrl: `http://localhost:3000`
-- リダイレクトURI: `http://localhost:3000/auth/callback` の1件だけ
-- ログアウト後リダイレクトURI: `http://localhost:3000/` の1件だけ
-- Web Origin: `http://localhost:3000`
+- Root URL: `http://localhost:3000`
+- Redirect URI: `http://localhost:3000/auth/callback`
+- Post-logout redirect URI: `http://localhost:3000/`
+- Web origin: `http://localhost:3000`
 
-本番では `.env` の `LOREHUB_PUBLIC_ORIGIN`、`LOREHUB_OIDC_REDIRECT_URL`、
-`LOREHUB_OIDC_LOGOUT_REDIRECT_URL` を同じ公開HTTPSサイトに合わせます。`KEYCLOAK_HOSTNAME` と
-`LOREHUB_OIDC_ISSUER` は公開HTTPSのKeycloak URLに合わせます。
+For production, set `LOREHUB_PUBLIC_ORIGIN`, `LOREHUB_OIDC_REDIRECT_URL`, and
+`LOREHUB_OIDC_LOGOUT_REDIRECT_URL` to the same public HTTPS site. Set `KEYCLOAK_HOSTNAME` and
+`LOREHUB_OIDC_ISSUER` to the public HTTPS Keycloak URL.
 
-## Go APIとOIDC issuerの関係
+## Go API and the OIDC issuer
 
-Go APIは `LOREHUB_OIDC_ISSUER` を使ってOIDC discoveryを取得し、トークンのissuer・audience・署名・有効期限を
-検証します。ブラウザログインを使うCompose既定値は `LOREHUB_AUTH_MODE=interactive`、issuerは
-`http://keycloak.localhost:8280/realms/lorehub`、audienceは `lorehub-api`、クライアントIDは `lorehub-web` です。
-APIはKeycloakのhealthcheckとbootstrap完了を待ってから起動します。
+The Go API reads OIDC discovery from `LOREHUB_OIDC_ISSUER` and verifies the token issuer, audience, signature, and
+expiry. Compose uses `LOREHUB_AUTH_MODE=interactive`, issuer
+`http://keycloak.localhost:8280/realms/lorehub`, audience `lorehub-api`, and client ID `lorehub-web`. The API waits for
+the Keycloak health check and bootstrap completion before starting.
 
-`LOREHUB_AUTH_MODE=disabled` を明示すると、APIの認証を無効にした既存の開発挙動を選べます。既存のBearer
-クライアントだけを使う場合は `LOREHUB_AUTH_MODE=bearer` とissuer、audienceを設定します。Keycloakを使わない
-場合は、APIをホストで起動するか、`LOREHUB_AUTH_MODE=disabled docker compose -f infra/compose.yaml run --rm
---no-deps api` のようにComposeの依存サービスを外してください。
+Use `LOREHUB_AUTH_MODE=bearer` with an issuer and audience for bearer-only API clients. Use
+`LOREHUB_AUTH_MODE=disabled` only for local development without authentication. To run the API without Keycloak in
+Compose, remove its service dependencies explicitly:
 
-### ローカルDockerでのdiscovery到達性の注意
-
-既定のCompose構成ではissuerを `http://keycloak.localhost:8280/realms/lorehub` にします。ブラウザは
-`keycloak.localhost` をホストのループバックとして解決し、APIコンテナだけが `extra_hosts` の
-`keycloak.localhost:host-gateway` を使って同じ公開ポートへ到達します。ブラウザとAPIが同じissuerを使うため、
-discoveryとJWKSのURLが一致します。
-
-本番や別のネットワーク構成では、次の条件を満たしてください。
-
-1. issuerがブラウザとAPIの両方から到達できること。
-2. OIDC discoveryが返すissuerと、環境変数の `LOREHUB_OIDC_ISSUER` が完全一致すること。
-3. 逆プロキシを使う場合、外部のTLS、Host、Forwardedヘッダーを正しく渡すこと。
-
-Keycloakをコンテナ内DNS名だけで公開する設定は、ブラウザがその名前を解決できないため避けてください。
-
-## ソーシャルIDプロバイダー
-
-各プロバイダーは `LOREHUB_IDP_<PROVIDER>_CLIENT_ID` と `LOREHUB_IDP_<PROVIDER>_CLIENT_SECRET` の両方が
-設定されているときだけ有効になります。起動後にどちらかを削除すると、既存のプロバイダーは無効化されるため、
-ログイン画面に壊れたボタンが残りません。資格情報を戻せば、設定を更新して再び有効になります。
-
-プロバイダーの資格情報は各開発者コンソールで取得してください。コールバックURLはKeycloak管理コンソールの
-当該プロバイダー画面に表示される `Redirect URI` をそのまま使います。形式は次の通りです。
-
+```bash
+LOREHUB_AUTH_MODE=disabled docker compose -f infra/compose.yaml run --rm --no-deps api
 ```
+
+### OIDC discovery from local Docker
+
+Local Compose uses `http://keycloak.localhost:8280/realms/lorehub` as the issuer. Browsers resolve
+`keycloak.localhost` to the host loopback address. The API container reaches the same published port through the
+`keycloak.localhost:host-gateway` entry. The browser and API therefore read the same issuer, discovery document, and
+JWKS URL.
+
+Other deployments must meet these conditions:
+
+1. The issuer is reachable from both browsers and the API.
+2. The discovery document issuer exactly matches `LOREHUB_OIDC_ISSUER`.
+3. A reverse proxy forwards the external TLS, Host, and `Forwarded` values correctly.
+
+Do not publish an issuer that browsers can resolve only through container DNS.
+
+## Social identity providers
+
+A provider is enabled only when both `LOREHUB_IDP_<PROVIDER>_CLIENT_ID` and
+`LOREHUB_IDP_<PROVIDER>_CLIENT_SECRET` are set. Removing either value disables the provider on the next bootstrap run.
+Restoring both values updates and enables it again.
+
+Create credentials in each provider's developer console. Use the Redirect URI displayed for that provider in the
+Keycloak administration console. It follows this pattern:
+
+```text
 http://keycloak.localhost:8280/realms/lorehub/broker/<alias>/callback
 ```
 
-本番では `http://keycloak.localhost:8280` を公開HTTPSのKeycloak URLに置き換えてください。
+Replace the local origin with the public HTTPS Keycloak URL in production.
 
 ### Google
 
-- コンソール: Google Cloud Console > APIs & Services > Credentials > OAuth client ID
-- アプリケーション種別: Web application
-- 承認済みリダイレクトURI:
+- Console: Google Cloud Console, APIs & Services, Credentials, OAuth client ID
+- Application type: Web application
+- Authorized redirect URI:
   `http://keycloak.localhost:8280/realms/lorehub/broker/google/callback`
-- スコープ: `openid email profile`（Keycloak既定）
-- 任意: `LOREHUB_IDP_GOOGLE_HOSTED_DOMAIN` でGoogle Workspaceドメインに制限できます。
+- Scope: `openid email profile`
+- Optional hosted-domain restriction: `LOREHUB_IDP_GOOGLE_HOSTED_DOMAIN`
 
 ### GitHub
 
-- コンソール: GitHub > Settings > Developer settings > OAuth Apps > New OAuth App
+- Console: GitHub, Settings, Developer settings, OAuth Apps, New OAuth App
 - Authorization callback URL:
   `http://keycloak.localhost:8280/realms/lorehub/broker/github/callback`
-- スコープ: `user:email`（Keycloak既定）
+- Scope: `user:email`
 
 ### Facebook
 
-- コンソール: Meta for Developers > Apps > 対象アプリ > Facebook Login > Settings
-- Valid OAuth Redirect URIs:
+- Console: Meta for Developers, Apps, Facebook Login, Settings
+- Valid OAuth Redirect URI:
   `http://keycloak.localhost:8280/realms/lorehub/broker/facebook/callback`
-- スコープ: `email`（Keycloak既定）
+- Scope: `email`
 
-### X（旧Twitter）
+### X
 
-Keycloak 26.7では組み込みのTwitterブローカーが非推奨（`twitter-broker` 機能フラグの背後に退避、27.0で削除）
-となっており、OAuth 1.0aと未保守のtwitter4jに依存しています。最新のKeycloakとXの公式ドキュメントに従い、
-XのOAuth 2.0エンドポイントに対して汎用OAuth v2プロバイダーを設定します。
+Keycloak 26.7 deprecates its built-in Twitter broker, which uses OAuth 1.0a. LoreHub configures a generic OAuth v2
+provider with the official X OAuth 2.0 endpoints.
 
-- コンソール: X Developer Portal > App > User authentication settings > OAuth 2.0
-- App type: Web App（Confidential Client）
-- Callback URI / Redirect URL:
+- Console: X Developer Portal, App, User authentication settings, OAuth 2.0
+- App type: Web App, Confidential Client
+- Callback URL:
   `http://keycloak.localhost:8280/realms/lorehub/broker/x/callback`
-- Type of App: Confidential Client（Client Secretが発行されます）
-- スコープ: `users.read users.email`
-- 使用するエンドポイント:
-  - Authorization: `https://x.com/i/oauth2/authorize`
-  - Token: `https://api.x.com/2/oauth2/token`
-  - UserInfo: `https://api.x.com/2/users/me?user.fields=confirmed_email`
-- UserInfo応答は `{"data":{"id","name","username","confirmed_email"}}` の形なので、claim名にドット記法
-  （`data.id`、`data.username`、`data.name`、`data.confirmed_email`）を使い、Keycloakのclaimリゾルバで
-  ネストを展開します。
-- PKCE（S256）を有効化しています。
+- Scope: `users.read users.email`
+- Authorization endpoint: `https://x.com/i/oauth2/authorize`
+- Token endpoint: `https://api.x.com/2/oauth2/token`
+- UserInfo endpoint: `https://api.x.com/2/users/me?user.fields=confirmed_email`
+- PKCE: S256
 
-`bootstrap.sh` はこれらのエンドポイントとclaimマッピングを実際の値で設定します。プレースホルダーではありません。
+The UserInfo response nests values under `data`. The Keycloak claim mappings use `data.id`, `data.username`,
+`data.name`, and `data.confirmed_email`.
 
-## アカウント連携のリスク
+## Account linking
 
-ソーシャルプロバイダーからのメールは信頼しない設定（`trustEmail=false`）にしています。これは、未検証の
-ソーシャルメールで既存アカウントを乗っ取るリスクを減らすためです。初回ログイン時の `firstBrokerLogin` フローで
-既存メールとの重複が検出された場合、ユーザーは既存アカウントへのリンクを確認する必要があります。
+Social providers use `trustEmail=false`. When the first broker login finds an existing account with the same email
+address, the user must confirm the account link through the `firstBrokerLogin` flow. Keep the confirmation step enabled
+in production. Adjust duplicate email and linking behavior through Identity Provider Mappers and First Broker Login Flow
+in the realm settings.
 
-メールアドレスの重複とアカウントリンクの挙動は、レルム設定の「Identity Provider Mappers」と
-「First Broker Login Flow」で調整できます。本番では、リンクを自動承認せず、確認ステップを維持してください。
+## Email verification, password reset, and SMTP
 
-## メール検証、パスワードリセット、SMTP
+Local development defaults to `LOREHUB_VERIFY_EMAIL=false`. Password reset requires SMTP even when email verification
+is disabled.
 
-開発環境では `LOREHUB_VERIFY_EMAIL=false` が既定です。SMTPなしで自己登録したユーザーがそのまま
-メールアドレスとパスワードでログインできるため、ローカルでメール配送サービスは必要ありません。
-パスワードリセットを使うには、開発環境でもSMTPを設定してください。
-
-本番では、次の値をすべて設定してから起動します。
+Set all of these values in production:
 
 - `LOREHUB_ENV=production`
 - `LOREHUB_VERIFY_EMAIL=true`
-- `KEYCLOAK_SMTP_HOST`、`KEYCLOAK_SMTP_PORT`、`KEYCLOAK_SMTP_FROM`
-- `KEYCLOAK_SMTP_AUTH`。`true` の場合は `KEYCLOAK_SMTP_USER` と `KEYCLOAK_SMTP_PASSWORD` も必要です。
-- `KEYCLOAK_SMTP_STARTTLS` または `KEYCLOAK_SMTP_SSL` のどちらか一方を `true` にします。
-- 必要に応じて `KEYCLOAK_SMTP_FROM_DISPLAY_NAME`、`KEYCLOAK_SMTP_REPLY_TO`、
-  `KEYCLOAK_SMTP_REPLY_TO_DISPLAY_NAME` を設定します。
+- `KEYCLOAK_SMTP_HOST`, `KEYCLOAK_SMTP_PORT`, and `KEYCLOAK_SMTP_FROM`
+- `KEYCLOAK_SMTP_AUTH`; when `true`, also set `KEYCLOAK_SMTP_USER` and `KEYCLOAK_SMTP_PASSWORD`
+- Exactly one of `KEYCLOAK_SMTP_STARTTLS` or `KEYCLOAK_SMTP_SSL` to `true`
+- Optional sender values: `KEYCLOAK_SMTP_FROM_DISPLAY_NAME`, `KEYCLOAK_SMTP_REPLY_TO`, and
+  `KEYCLOAK_SMTP_REPLY_TO_DISPLAY_NAME`
 
-`keycloak-bootstrap` は本番で検証を無効にしたまま起動すること、またはSMTP設定が欠けたまま検証を有効に
-することを拒否します。検証が有効なときは、レルムの `verifyEmail` とSMTP設定を起動のたびに更新します。
-SMTPパスワードは `.env` から環境変数として渡され、ブートストラップのログには値を出しません。
+`keycloak-bootstrap` rejects a production configuration with email verification disabled or with incomplete SMTP
+settings. When verification is enabled, each bootstrap run updates the realm `verifyEmail` flag and SMTP settings. The
+SMTP password is supplied through the environment and is not written to bootstrap logs.
 
-## バックアップと移行
+## Backup and upgrades
 
-- `keycloak-postgres-data` ボリュームがKeycloakの全状態を保持します。LoreHubアプリケーションDB
-  （`postgres-data`）とは別にバックアップしてください。
-- バックアップ例:
-  ```bash
-  docker compose -f infra/compose.yaml exec keycloak-postgres \
-    pg_dump -U keycloak keycloak > keycloak-backup.sql
-  ```
-- Keycloakバージョンアップ時は、先に `pg_dump` でDBをバックアップし、Keycloakのアップグレードガイドに
-  従ってください。バージョンを更新するときは `infra/keycloak/Dockerfile` の `FROM` 行と
-  `infra/compose.yaml` の `keycloak-bootstrap` サービスのイメージタグを、同じリリース版に揃えます。
-- レルムJSONの変更は、既存レルムがある場合は初回取り込みがスキップされるため、`kcadm` で個別に適用するか、
-  一時的に別レルムへ取り込んで検証してください。
+The `keycloak-postgres-data` volume contains all Keycloak state. Back it up separately from the LoreHub `postgres-data`
+volume.
 
-## 本番のTLSとリバースプロキシ
+```bash
+docker compose -f infra/compose.yaml exec keycloak-postgres \
+  pg_dump -U keycloak keycloak > keycloak-backup.sql
+```
 
-本番ではHTTPを直接公開せず、TLS終端のリバースプロキシ（nginx、Caddy、Cloudflareなど）の背後に置きます。
+Create a database backup before a Keycloak upgrade and follow the Keycloak upgrade guide. Update the
+`infra/keycloak/Dockerfile` base image and the `keycloak-bootstrap` image in `infra/compose.yaml` to the same release.
 
-- `KEYCLOAK_HOSTNAME` を公開HTTPS URLに設定（例: `https://auth.lorehub.example`）。
-- Composeの `--proxy-headers=forwarded` に合わせ、プロキシは標準の `Forwarded` ヘッダーを正しく設定します。
-  別のヘッダー形式を使う場合は、Keycloakの設定とプロキシの設定を同じ方式に揃えてください。
-- Keycloakの公開ポートをインターネットへ直接公開せず、プロキシからだけ到達できるネットワークに置きます。
-- `LOREHUB_PUBLIC_ORIGIN`、`LOREHUB_OIDC_REDIRECT_URL`、`LOREHUB_OIDC_LOGOUT_REDIRECT_URL` も
-  HTTPSへ変更し、APIのCookie設定 `LOREHUB_SESSION_COOKIE_SECURE=true` を明示します。
-- レルムの `sslRequired=external` はローカルのループバック接続を許可し、外部アクセスにはTLSを要求します。
-- 管理コンソールは `KEYCLOAK_ADMIN_USERNAME` / `KEYCLOAK_ADMIN_PASSWORD` を初回起動時に作成します。
-  本番では初回起動後にパスワードを変更し、管理コンソールへのアクセスをネットワークまたはVPNで制限してください。
+Realm import runs only when the realm does not exist. Apply later realm JSON changes with `kcadm`, or import them into a
+temporary realm and verify them before applying the equivalent changes.
+
+## Production TLS and reverse proxy
+
+Place Keycloak behind a TLS-terminating reverse proxy such as nginx, Caddy, or Cloudflare.
+
+- Set `KEYCLOAK_HOSTNAME` to the public HTTPS URL, for example `https://auth.lorehub.example`.
+- Compose starts Keycloak with `--proxy-headers=forwarded`. Configure the proxy to send a valid standard `Forwarded`
+  header. If another header format is used, change both Keycloak and proxy configuration consistently.
+- Make the Keycloak application port reachable only from the reverse proxy network.
+- Change `LOREHUB_PUBLIC_ORIGIN`, `LOREHUB_OIDC_REDIRECT_URL`, and `LOREHUB_OIDC_LOGOUT_REDIRECT_URL` to HTTPS and set
+  `LOREHUB_SESSION_COOKIE_SECURE=true`.
+- Realm setting `sslRequired=external` allows local loopback access and requires TLS for external access.
+- Change the bootstrap administrator password after first startup and restrict administration console access by
+  network policy or VPN.

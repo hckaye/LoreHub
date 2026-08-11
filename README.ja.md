@@ -50,7 +50,7 @@ LoreHubは開発中です。GitHubとGitLabにあるすべての画面やAPIに�
 
 Email/Passwordはローカルの初期設定で使えます。Google、GitHub、Facebook、Xは、各サービスのclient IDと
 client secretを`.env`に追加するとログイン画面に表示されます。設定手順とcallback URLは
-[Keycloak運用ガイド](docs/operations/keycloak.md)を参照してください。
+[Keycloak運用ガイド](docs/operations/keycloak.ja.md)を参照してください。
 
 ## GitHub Actions互換CIを起動する
 
@@ -65,7 +65,7 @@ jobのworkspaceへ配置します。
 
 Linux containerのworkflowに対応しています。WindowsとmacOSのrunner、GitHub管理runner imageとの完全な一致には
 対応していません。対応するworkflow構文と本番の構成は
-[Actions runnerガイド](docs/runner-actions.md)を参照してください。
+[Actions runnerガイド](docs/runner-actions.ja.md)を参照してください。
 
 ## ローカルで開発する
 
@@ -111,12 +111,13 @@ format、ファイル長制限、lint、型検査、test、production build、�
 
 ## 設計と運用
 
-- [設計判断](docs/adr/0001-platform-architecture.md)
-- [Web、API、Lore Serverの責務](docs/architecture/components.md)
-- [ログインとIDの管理](docs/architecture/identity.md)
-- [リポジトリのアクセス権限](docs/operations/control-plane-authorization.md)
-- [Keycloak、ソーシャルログイン、メール、バックアップ](docs/operations/keycloak.md)
-- [GitHub Actions互換範囲とrunner運用](docs/runner-actions.md)
+- [設計判断](docs/adr/0001-platform-architecture.ja.md)
+- [Web、API、Lore Serverの責務](docs/architecture/components.ja.md)
+- [ログインとIDの管理](docs/architecture/identity.ja.md)
+- [Frontendの認証](docs/frontend-auth.ja.md)
+- [リポジトリのアクセス権限](docs/operations/control-plane-authorization.ja.md)
+- [Keycloak、ソーシャルログイン、メール、バックアップ](docs/operations/keycloak.ja.md)
+- [GitHub Actions互換範囲とrunner運用](docs/runner-actions.ja.md)
 
 ## ライセンス
 

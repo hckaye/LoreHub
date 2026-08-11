@@ -1,32 +1,30 @@
-# LoreHubの認証と認可の運用
+# Repository authentication and authorization
 
-この文書は、LoreHubを本番で運用するときの境界、鍵、TLS、復旧方法を説明します。LoreHubはGitHubではなく、
-Epic Games Lore VCSを使うサービスです。
+[English](control-plane-authorization.md) | [日本語](control-plane-authorization.ja.md)
 
-## 管理面とデータ面
+Production deployments use the following permission, token, key, TLS, and recovery boundaries.
 
-LoreHub PostgreSQLは管理面です。利用者、Keycloakとの対応、組織、チーム、役割、リポジトリ方針、監査記録、
-作成処理の状態を保存します。Lore Serverはデータ面です。revision、branch、ファイル、lockの正本はLoreにあり、
-LoreHub PostgreSQLへファイル本文やtreeをコピーしません。
+## Repository boundaries
 
-`repositories.lore_repository_id`が、LoreHubのリポジトリとLoreパーティションを結ぶ唯一の対応です。この値は
-小文字の32桁16進数で、同じ値を二つのLoreHubリポジトリへ登録できません。認証で使うresource IDは、この値へ
-`urc-`を付けたものです。別の`lore_partition_id`列はありません。対応値を変更することは、名前変更ではなく、
-アクセス境界の変更です。
+LoreHub PostgreSQL stores users, Keycloak associations, organizations, teams, roles, repository policies, audit events,
+and provisioning state. Lore Server stores revisions, branches, files, and locks.
 
-一つのLoreパーティションの中にパス単位の秘密を表すACLはありません。パスごとに秘密を分ける必要がある場合は、
-別のLoreリポジトリと別のパーティションを作ります。別パーティションのID、revision、content hashを知っていても、
-そのresourceへの現在の権限がなければLoreのQUICとgRPCの両方が拒否します。
+`repositories.lore_repository_id` maps a LoreHub repository to a Lore partition. It is a unique lowercase 32-character
+hexadecimal value. Authorization resources use the same value with the `urc-` prefix. Changing this value changes the
+repository access boundary.
 
-## 判定の順序と権限
+A Lore partition has repository-level permissions rather than path ACLs. Content that needs a separate access
+boundary uses a separate Lore repository and partition. Lore QUIC and gRPC require current permission for the requested
+partition.
 
-非公開データへのアクセスは、利用者が有効であること、有効な組織所属があること、直接またはteamの有効な
-リポジトリ役割があること、要求したtokenの範囲、リポジトリ方針、branch方針、操作のすべてを満たす必要があります。
-ownerは、直接またはteam役割がなくても、その組織のリポジトリを管理できる明示的な例外です。ただしownerも有効な
-利用者と有効な組織所属でなければなりません。組織maintainerは組織、team、メンバー設定を管理できますが、リポジトリ
-データの読み書きや管理権限は自動では持ちません。
+## Permission evaluation
 
-| LoreHub role | Lore permission    |
+Private repository access requires an active user, active organization membership, a direct or team repository role,
+the requested token scope, repository policy, branch policy, and permission for the operation. An active organization
+owner can administer repositories without a direct or team role. Organization maintainers manage organization, team,
+and membership settings but receive no repository permission automatically.
+
+| LoreHub role | Lore permissions   |
 | ------------ | ------------------ |
 | read         | read               |
 | triage       | read               |
@@ -34,45 +32,47 @@ ownerは、直接またはteam役割がなくても、その組織のリポジ�
 | maintain     | read, write        |
 | admin        | read, write, admin |
 
-通常のadminに`obliterate`は含まれません。これはリポジトリ方針が有効で、対象利用者へ別途付与されたときだけ使える
-高リスク権限です。広い役割や組織の役割が、狭い要求tokenの範囲を広げることはありません。
+`obliterate` is a separate high-risk permission. It requires both an enabled repository policy and an explicit user
+grant. A broader organization role cannot widen the scope requested by a token.
 
-公開リポジトリの匿名readは、専用の`anonymous_reader` service principalへ対象resourceのreadだけを付けて行います。
-認証済み利用者が停止中または組織から外れている場合は、匿名として扱い直しません。非公開resourceは認可に失敗した
-利用者へ404を返します。
+Anonymous reads of public repositories use an `anonymous_reader` service principal with read permission for the exact
+resource. A suspended user or a user removed from the organization is denied instead of being retried as anonymous.
+Unauthorized private repository requests return `404`.
 
-役割、team、collaborator、方針、Link、obliterate、作成処理の変更は、監査記録とoutboxを同じPostgreSQL transaction
-で保存します。どちらか一方だけが成功することはありません。
+Role, team, collaborator, policy, Link, obliterate, and provisioning changes write their audit and outbox records in the
+same PostgreSQL transaction.
 
-## UCS認証とtoken
+## UCS authentication and tokens
 
-Lore 0.8.6の`epic_urc.UrcAuthApi`を実装しています。protoは公式v0.8.6から生成し、出所と再生成手順は
-`services/api/internal/loreauth/proto/README.md`に記録しています。
+LoreHub implements `epic_urc.UrcAuthApi` from Lore 0.8.6. Protocol code is generated from the official v0.8.6 source;
+the source and regeneration steps are recorded in `services/api/internal/loreauth/proto/README.md`.
 
-ブラウザ認証が完了すると、`GetAuthSession`は有効な利用者へ短命のbase authentication tokenを返します。このtokenの
-`resources`は常に空で、リポジトリがない利用者にも同じように発行されます。ログイン時に全resourceを列挙しません。
-base tokenは交換専用で、Loreのデータ面やresource権限の照会には使えません。`expires_at`はLore仕様どおりUnix
-ミリ秒です。
+After browser authentication, `GetAuthSession` returns a short-lived base authentication token for an active user. Its
+`resources` claim is empty. The base token can be exchanged for a resource token and cannot access repository data.
+`expires_at` uses Unix milliseconds as required by Lore.
 
-Loreが要求するresourceを交換するときは、PostgreSQLの現在の直接役割、team役割、組織所属、状態を読み直します。
-要求できるのは、正確な`urc-{32桁ID}`のresourceだけです。`urc-*`、全resourceを含む利用者token、wildcard service
-identityは使いません。交換で発行されるtokenは5〜10分だけ有効です。
+Resource exchange reads current direct roles, team roles, organization membership, and account state from PostgreSQL.
+Only an exact `urc-{32-character-id}` resource can be requested. User tokens do not support resource wildcards. Issued
+resource tokens expire after 5 to 10 minutes.
 
-外部token交換とAPI key交換は、検証済みの安全な連携がないためprotocolの`Unimplemented`を返します。成功したように
-見せる代替処理はありません。token、session code、認証URLの秘密値はログ、エラー、URL、監査内容、metric、traceへ
-出しません。
+External-token exchange and API-key exchange return the protocol `Unimplemented` result. Token values, session codes,
+and private authentication URLs are excluded from logs, errors, audit details, metrics, and traces.
 
-実Loreで境界を確認する場合は、二つのpartitionのURLと、read、base、期限切れ、issuer違い、audience違い、kid違いの
-tokenを環境変数へ渡し、PostgreSQLへ接続できる`DATABASE_URL`を設定して、リポジトリrootで
-`./scripts/test-lore-auth-boundary.sh`を実行します。このscriptはtokenの値を表示せず、stock Lore SDKを使って
-QUICとgRPCの両方を確認した後、teamの付与・取り消し、外部collaborator、protected branchへの直接push拒否、
-一度だけ使えるmerge認可をPostgreSQL上で確認します。Lore 0.8.6のstock protocolにはteamやbranch policyの概念が
-ないため、これらはControl Planeのpolicy testで検証します。別管理のLore Serverだけを確認する場合に限り、
-`LOREHUB_SMOKE_LORE_ONLY=1`を指定できます。二つのLore repositoryと各tokenの準備は運用環境側で行います。
+To test the boundary against Lore, supply two partition URLs and read, base, expired, wrong-issuer, wrong-audience, and
+wrong-key tokens through environment variables. Set `DATABASE_URL`, then run:
 
-## URL、audience、鍵
+```bash
+./scripts/test-lore-auth-boundary.sh
+```
 
-issuer、audience、AuthURL、JWKS、Lore公開URLは、同じ管理対象root domainの名前を使います。例えば本番は次の構成です。
+The script tests QUIC and gRPC with the stock Lore SDK. It also checks team grants and revocation, external
+collaborators, protected branch rejection, and one-time merge authorization in PostgreSQL. Set
+`LOREHUB_SMOKE_LORE_ONLY=1` only when testing a separately managed Lore Server without the PostgreSQL policy checks.
+
+## URLs, audience, and signing keys
+
+Issuer, audience, Auth URL, JWKS URL, and public Lore URL use names under the same managed root domain. A production
+deployment may use:
 
 ```text
 issuer:   auth.lorehub.example
@@ -82,95 +82,92 @@ JWKS:     https://lorehub.example/.well-known/jwks.json
 Lore:     lores://lorehub.example:41337
 ```
 
-ローカルは`lorehub.localhost`をrootにし、HTTPの認証endpoint、JWKS、確認画面を使えます。JWT issuerはURLではなく、
-stock clientがremoteの許可ドメインとして扱う`auth.lorehub.localhost`です。LoreのUCS gRPC endpointは
-`ucs-auth://auth.lorehub.localhost:8443`で、Lore 0.8.6のclientがHTTPSへ変換します。`lore`、`api`、Docker内部名を
-public URLやaudienceには設定しません。hostのLore CLIが解決できるpublic AuthURLを広告し、Lore Serverの
-バックエンド接続に`LOREHUB_LORE_INTERNAL_AUTH_URL`を使います。この接続はHTTPSのCAとSANを検証し、公開AuthURLと
-token storeのキーは書き換えません。policy、JWKS、認証APIの接続先には
-`LOREHUB_LORE_INTERNAL_DOMAIN`を使います。ローカルの既定値は`lorehub.internal`です。`.localhost`はHTTPクライアントが
-loopbackへ固定して解決するため、コンテナ間通信には使いません。productionでは内部DNSでこの名前をAPIへ解決します。
+Local development uses the `lorehub.localhost` root and permits HTTP for authentication, JWKS, and confirmation pages.
+The JWT issuer is the hostname `auth.lorehub.localhost`, matching Lore client domain validation. The UCS gRPC endpoint
+is `ucs-auth://auth.lorehub.localhost:8443`; Lore 0.8.6 converts it to HTTPS.
 
-CI runnerは`LOREHUB_LORE_INTERNAL_URL`を使い、公開Lore URLのpartitionを保ったまま内部authorityへ接続します。
-`runner-data`では`lore.<root-domain>`をLore Serverへ解決します。Loreが広告する公開UCS AuthURLのポートは、APIの
-`LOREHUB_LORE_AUTH_COMPAT_ADDRESS`でも同じTLSサービスを待ち受けます。DBに保存する公開URLは内部URLへ変更しません。
+Public URLs and token audiences use resolvable public names. `LOREHUB_LORE_INTERNAL_AUTH_URL` supplies the API URL used
+by Lore Server. The connection validates the HTTPS CA and SAN. `LOREHUB_LORE_INTERNAL_DOMAIN` supplies the host used by
+policy, JWKS, and authentication API calls. Its local default is `lorehub.internal`; production DNS resolves it to the
+API.
 
-本番で認証endpoint、JWKS、確認画面がHTTPSでない、署名鍵、kid、TLS設定、JWT検証設定がない場合、APIは起動しません。ローカル
-のHTTP設定は開発用profileだけに限定されます。
+The CI runner connects through `LOREHUB_LORE_INTERNAL_URL` while retaining the partition from the public Lore URL. On
+`runner-data`, `lore.<root-domain>` resolves to Lore Server. The API listens for UCS authentication on the advertised
+port through `LOREHUB_LORE_AUTH_COMPAT_ADDRESS`.
 
-署名はRSAの非対称鍵です。JWKSには現在鍵と直前の公開鍵を同時に載せます。鍵を交代するときは、新しい公開鍵を先に
-公開し、次にkidと秘密鍵を切り替え、旧tokenの最大10分の期限を待ってから旧公開鍵を外します。秘密鍵はSecret、KMS、
-または権限を絞ったファイルで渡し、リポジトリへ保存しません。ローカルで秘密鍵がなければ専用volumeへ生成しますが、
-本番での自動生成は行いません。
+Production startup requires HTTPS authentication, JWKS, and confirmation endpoints, plus a signing key, key ID, TLS
+configuration, and Lore JWT verification settings. Local HTTP is limited to development profiles.
 
-## TLSとLore Server
+JWTs use RSA asymmetric signing. JWKS publishes the current and previous public key during rotation. Publish the new
+public key first, switch the signing key and key ID, wait for the previous token lifetime of up to 10 minutes, then
+remove the old public key. Production signing keys come from a secret manager, KMS, or restricted file.
 
-Lore Serverの`[server.auth]`、issuer、audience、`[server.auth.jwk]`は必須です。QUICとgRPCは同じissuer、audience、
-JWKSの公開鍵、kid、期限、resource、permissionを検証します。欠落、期限切れ、別issuer、別audience、未知kid、別partition、
-read tokenによるwriteは拒否します。
+## TLS and Lore Server
 
-ローカルComposeの`tls-init`は、CA、Lore/API用サーバー証明書、hook用client証明書を実際に作ります。証明書のSANには
-`lorehub.localhost`、`auth.lorehub.localhost`、`api.lorehub.localhost`、`lore.lorehub.localhost`、
-`api.lorehub.internal`を含めます。hostのLore CLIで接続するときは、
-`infra/.local-tls/lorehub-local-ca.crt`をTLS trust storeへ追加してください。これはローカル用で、本番のCAや秘密鍵として
-使いません。
+Lore Server requires `[server.auth]`, issuer, audience, and `[server.auth.jwk]`. QUIC and gRPC validate the same issuer,
+audience, public key, key ID, expiry, resource, and permissions.
 
-hookからLoreHubのpolicy endpointへは、設定したmanaged root配下の
-`https://<policy-host>:8444/internal/lore/policy`を使い、相互TLSと1秒のtimeoutを適用します。timeoutは100msから5秒の
-範囲に制限します。観測endpointも同じroot配下の固定パスにします。hookのclient証明書は専用の`lore-policy-hook`
-identityとclientAuth用途を持たなければなりません。接続失敗、証明書不正、SAN不一致、形式不正、拒否応答はすべて
-拒否にします。本番ではendpoint、root、JWKS、
-AuthURL、TLS CA、client証明書、client鍵を省略できず、サービス証明書とhook証明書を共有しません。
+Local Compose `tls-init` creates a CA, Lore and API server certificates, and a hook client certificate. SANs include
+`lorehub.localhost`, `auth.lorehub.localhost`, `api.lorehub.localhost`, `lore.lorehub.localhost`, and
+`api.lorehub.internal`. Add `infra/.local-tls/lorehub-local-ca.crt` to the host TLS trust store before using the host
+Lore CLI. These certificates are for local development.
 
-## protected branchとmerge
+Lore hooks call `https://<policy-host>:8444/internal/lore/policy` under the managed root domain. The connection uses
+mTLS and a timeout from 100 milliseconds to 5 seconds, with a default of 1 second. The observation endpoint uses another
+fixed path under the same root. The hook certificate requires the `lore-policy-hook` identity and client-auth usage.
+Connection, certificate, SAN, payload, and policy failures deny the Lore operation.
 
-Loreイメージは公式v0.8.6を浅くcloneしてビルドし、公式hook registryへLoreHubのhook moduleを登録します。Lore 0.8.6は
-BranchCreateのhook contextへbranch名を渡さないため、二つのhandlerへbranch名metadataを追加します。また、利用者へ広告する
-AuthURLとLore Serverが接続するAuthURLを分ける設定を追加します。変更は二つのpatchに限定し、Loreのソース全体をこの
-リポジトリへコピーしません。更新時は公式tagの変更で`HookContext`、JWT検証、UCS client、environment広告、hook registryを
-確認し、patchの必要性を再評価します。
+Production requires the hook endpoint, managed root, JWKS, Auth URL, CA, client certificate, and client key. The hook
+client certificate is separate from service certificates.
 
-hookが使う`HookContext`はrepository、user、branch ID、branch名、proposed revision、client_ip metadataです。現在の
-revisionはbranch IDをキーにPostgreSQLの観測状態から解決します。観測がない、2分より古い、または状態が不足するpushと
-deleteは拒否します。BranchCreateは受け取った名前を既存のbranch ruleと照合し、直接pushを禁止した名前の作成を拒否します。
-成功したBranchPushはrevisionを更新し、BranchDeleteは状態を削除します。hookのpost観測を失った場合は、
-専用observer service principalによる定期pollerがLoreのbranch一覧を読み、状態を補正します。
+## Protected branches and merge
 
-protected branchへの直接pushは拒否します。merge workerが正確な提案revisionを作った後、内部mTLS endpointへ一度だけ
-準備を依頼します。DBには利用者、repository、target branch IDと名前、期待する現在revision、正確な提案revision、source
-revision、期限、消費状態を保存します。merge workerはsource revisionを確認してから登録します。Lore 0.8.6のhook
-contextにはsource revisionがないため、hookは受け取れる利用者、repository、branch、現在revision、提案revisionをDBの
-tupleと原子的に照合し、source revisionが登録済みで期限内であることも確認して消費します。別tuple、期限切れ、再利用は拒否し、
-利用者へ返すbearer secretやdigestはありません。
+The Lore image builds the official v0.8.6 source and registers the LoreHub module in the official hook registry. Two
+small patches add branch-name metadata to the `BranchCreate` hook context and separate the advertised Auth URL from the
+server-side Auth URL. Each Lore upgrade checks `HookContext`, JWT verification, the UCS client, environment
+advertisement, and the hook registry before retaining those patches.
 
-## リポジトリ作成とLinks
+The hook context contains repository, user, branch ID, branch name, proposed revision, and client IP metadata. The
+current revision is resolved by branch ID from PostgreSQL observation state. Push and delete operations are denied when
+that state is absent, older than two minutes, or incomplete. `BranchCreate` checks its name against branch rules. A
+successful `BranchPush` updates observation state, and `BranchDelete` removes it. An observer service principal polls
+Lore branches to repair state after a missed post-hook event.
 
-新規作成は単なるURL登録ではありません。LoreHubが32桁IDを生成し、pending repository、方針、counter、監査、outbox、
-provisioning状態を一つのtransactionで保存します。その後、実行者本人へ対象IDだけの正確なadmin resource tokenを短時間発行し、
-そのIDを指定してstock LoreのRepositoryCreateを呼びます。冪等確認と再試行の内部処理には、別に対象IDだけの
-`lorehub-provisioner` service principal tokenを発行します。成功後だけactiveへ変更します。失敗はfailedと理由を保存し、
-同じpending IDを使ってretryとreconcileを行います。public URLは`lores://`で保存し、内部authorityへの書き換えは接続時だけです。
+Direct pushes to protected branches are denied. After the merge worker creates the exact proposed revision, it requests
+a one-time authorization from an internal mTLS endpoint. PostgreSQL stores the user, repository, target branch ID and
+name, expected current revision, proposed revision, source revision, expiry, and consumed state. The hook atomically
+matches and consumes the user, repository, branch, current revision, and proposed revision tuple. A different, expired,
+or previously consumed tuple is denied.
 
-既存Lore repositoryのimportは別の処理です。現在の利用者の正確なadmin resource tokenを要求し、Loreのrepository情報と
-canonical IDを確認します。新規作成とimportを同じ登録処理として扱いません。
+## Repository provisioning and Links
 
-Linksはsourceとtarget双方の管理者権限と方針を確認して`declared`として保存します。Lore 0.8.6で実際のLink適用が観測される
-までは`active`にしません。宣言だけでtargetのデータを読めることはなく、path ACLを提供する画面でもありません。
+Repository creation generates a 32-character ID and stores the pending repository, policy, counter, audit event, outbox
+event, and provisioning state in one transaction. The actor receives a short-lived admin resource token for that exact
+ID, which is passed to stock Lore `RepositoryCreate`. Idempotency checks and retries use a separate
+`lorehub-provisioner` token scoped to the same ID. Success changes the repository to active. Failure records the reason;
+retry and reconciliation retain the pending ID. Public URLs use `lores://`, and internal authority substitution occurs
+only while connecting.
 
-## service principal、runner、障害復旧
+Importing an existing Lore repository uses a separate endpoint. It requires the current user's exact admin resource
+token and verifies the repository information and Lore repository ID.
 
-通常のWeb、merge、CI checkout、公開read、branch observer、provisioningは、対象principal、対象partition、必要最小限の
-permissionだけを持つ短命tokenを毎回発行します。service principalには`is_service_account=true`を設定し、DBの監査対象に
-します。service principalはanonymous reader、CI runner、observer、provisionerに分離し、全repositoryの権限を一つにまとめません。
-通常経路で`LOREHUB_LORE_IDENTITY`は使いません。legacy identityは`local-insecure`かつAPI認証disabledのprofileでだけ許可し、
-本番設定では起動を拒否します。
+A Link declaration requires administrator permission and an enabled policy on both source and target repositories. It
+stays `declared` until Lore 0.8.6 reports that the Link is active. A declaration does not grant target repository access
+or add a path ACL.
 
-Composeのrunnerも`LOREHUB_ENV`を継承します。runnerはブラウザや外部APIクライアントを認証しないため、本番でも
-`LOREHUB_RUNNER_AUTH_MODE=disabled`を使用できます。これはLoreやCIの認証を無効にする設定ではありません。managed root
-domain、Lore署名鍵、JWKS、AuthURL、TLS、Actions暗号鍵、CI service principal、PostgreSQLは本番値が必須です。設定が
-足りないrunnerは起動せず、CI checkoutも専用service principalの短命tokenを発行できない限り失敗します。
+## Service principals, runners, and recovery
 
-復旧時は、Lore data store、LoreHub PostgreSQL、Keycloak PostgreSQL、署名鍵、TLS秘密鍵を別々に復元します。PostgreSQLだけを
-戻してもLore本文は戻りません。Loreの各repository IDと`repositories.lore_repository_id`が一致すること、active/failedの
-provisioning状態、監査とoutboxを確認してからAPIを公開します。署名鍵を失った場合は新しいkidで鍵を発行して旧tokenを短く
-失効させます。CAを失った場合は新しいCAと証明書を作り、Lore、API、hook、利用者のtrust storeを同じ停止計画で更新します。
+Web requests, merges, CI checkout, public reads, branch observation, and provisioning each issue a short-lived token for
+the exact service principal, partition, and permissions. Service principals have `is_service_account=true` and appear in
+audit records. Anonymous reader, CI runner, observer, and provisioner principals are separate. Legacy
+`LOREHUB_LORE_IDENTITY` is accepted only in the `local-insecure` profile with API authentication disabled.
+
+The runner inherits `LOREHUB_ENV`. It can use `LOREHUB_RUNNER_AUTH_MODE=disabled` because it does not authenticate
+browser or external API requests. Production runner startup still requires the managed root domain, Lore signing key,
+Auth URL, TLS, Actions encryption key, CI service principal, and PostgreSQL. CI checkout fails unless the runner can
+issue its scoped service-principal token.
+
+Recovery restores Lore storage, LoreHub PostgreSQL, Keycloak PostgreSQL, signing keys, and TLS keys separately. Before
+opening the API, verify each Lore repository ID against `repositories.lore_repository_id`, provisioning state, audit
+events, and outbox events. A lost signing key is replaced under a new key ID so old tokens expire quickly. Replacing a
+lost CA requires a coordinated update of Lore, API, hook, and user trust stores.

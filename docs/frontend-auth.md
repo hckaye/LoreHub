@@ -1,7 +1,9 @@
 # Frontend authentication contract
 
-The Next.js frontend treats the Go API as the only authority for authentication. It never receives or stores an OAuth
-access token in browser JavaScript.
+[English](frontend-auth.md) | [日本語](frontend-auth.ja.md)
+
+The Go API owns authentication state. OAuth access tokens stay in the server-side session and are not exposed to
+browser JavaScript.
 
 ## Session
 
@@ -35,10 +37,9 @@ server-side session and remains valid for that session; it is not an OAuth acces
 
 ## Same-origin routes
 
-The App Router handlers for `/api/*` and `/auth/*` forward requests to `LOREHUB_API_URL` at runtime. Browser code
-therefore uses same-origin paths and does not depend on an internal Docker hostname. Keeping the upstream URL out of
-the image build also allows one immutable Web image to run in different environments. The browser sends
-`credentials: "include"` for mutations and includes the session CSRF token in `X-CSRF-Token`.
+The App Router handlers for `/api/*` and `/auth/*` forward requests to `LOREHUB_API_URL` at runtime. Browser code uses
+same-origin paths. The upstream URL is supplied at runtime, so the same Web image can run in different environments.
+The browser sends `credentials: "include"` for mutations and includes the session CSRF token in `X-CSRF-Token`.
 
 The logout request is `POST /auth/logout`. Issue, pull request, organization, and repository forms use the existing API
 mutation endpoints and show the actual unauthorized, forbidden, invalid, conflict, and unavailable states returned by
@@ -51,11 +52,11 @@ absolute URLs, protocol-relative URLs, and backslash-based paths fall back to `/
 
 The sign-up link uses `/auth/login?return_to=<relative-path>&prompt=create`. `prompt=create` is the documented Keycloak
 OIDC query used to open the provider registration screen. If the deployed identity provider does not enable
-registration, the link still returns the provider error visibly instead of pretending that an account was created.
+registration, the provider error is shown on the sign-up page.
 
 ## Local proxy configuration
 
 Set `LOREHUB_API_URL` to the API origin reachable by the Next.js server, for example
 `http://lorehub.localhost:8080` in Compose or
-`http://127.0.0.1:8080` for host development. This variable is intentionally not `NEXT_PUBLIC_*`; it is used by server
-fetches and the same-origin proxy handlers only.
+`http://127.0.0.1:8080` for host development. This is a server-only variable and must not use the `NEXT_PUBLIC_*`
+prefix.

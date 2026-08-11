@@ -1,9 +1,11 @@
 # Actions runner operations
 
+[English](runner-actions.md) | [日本語](runner-actions.ja.md)
+
 LoreHub Actions keeps `act` as the workflow engine. The runner clones the exact Lore revision, discovers only
 `.github/workflows/*.yml` and `.yaml` at that revision, validates the supported trigger and runtime definitions, and
 invokes `act` with exactly one workflow file and the stored event JSON. `actions/checkout` remains in the workflow;
-the prepared Lore workspace is copied into the remote job by the runner adapter, without Git.
+the runner adapter copies the prepared Lore workspace into the remote job.
 
 ## Trust boundary
 
@@ -34,7 +36,7 @@ the job itself is never attached to the bridge and has no direct outside route. 
 Job HTTP and HTTPS therefore pass through Squid.
 The disposable gateway uses the fixed `haproxy:3.2.4-alpine` image and does not provide a general raw TCP forwarder.
 
-Squid uses the canonical `ubuntu/squid:7.2-26.04_edge` tag. It permits safe HTTP/HTTPS ports and CONNECT to 443 only.
+Squid uses the pinned `ubuntu/squid:7.2-26.04_edge` tag. It permits safe HTTP/HTTPS ports and CONNECT to 443 only.
 Its destination ACL rejects loopback, RFC1918, link-local, CGNAT, documentation and test ranges, multicast/reserved
 ranges, and IPv6 private/link-local ranges. The destination ACL is applied after Squid resolves hostnames, so a public
 hostname that resolves to a private address is rejected. This is a Docker/OCI network boundary, not a claim of a
@@ -45,8 +47,8 @@ runner networks for act artifact upload/download; private and local user HTTP/HT
 Docker Desktop can run without cgroup enforcement. In that case Compose CPU, memory, and PID values limit the outer
 engine container as a whole; they are not per-job security limits. Production requires each trust domain to use a
 dedicated, disposable runner node or pod separate from LoreHub API/Web, and gVisor, Kata Containers, or an equivalent
-verified workload isolation layer is a required production condition. This repository's Compose smoke does not claim
-to verify that stronger layer.
+verified workload isolation layer is a required production condition. The Compose smoke test covers the local Docker
+boundary, not the production isolation layer.
 
 ## Lore credentials
 
@@ -92,14 +94,14 @@ payload.
 The runtime preserves `github.event.inputs` and the `inputs.*` context for act. The configured LoreHub public origin,
 API URL, and GraphQL URL populate the GitHub context and `GITHUB_*` environment values; GitHub.com is never substituted.
 
-The official `actions/checkout@v4` line remains unchanged. Lore supplies the already-cloned workspace without Git. The
-adapter does not support `ref`, `repository`, `path`, `filter`, `sparse-checkout`, `ssh-key`, `lfs: true`, or
+The official `actions/checkout@v4` line remains unchanged. The adapter uses the already-cloned Lore workspace. It does
+not support `ref`, `repository`, `path`, `filter`, `sparse-checkout`, `ssh-key`, `lfs: true`, or
 submodules;
 those inputs disable the workflow with an explicit error.
 
 ## Workflow catalog and branches
 
-The default branch is the canonical Actions catalog. A Lore hook records the latest branch revision for push policy.
+The workflow catalog is read from the default branch. A Lore hook records the latest branch revision for push policy.
 The branch poller records the revision whose workflows it has inspected separately. This prevents an earlier hook
 notification from making the poller skip workflow discovery. Initial discovery synchronizes workflow records without
 inventing a push. Each later inspected revision queues one run per matching supported workflow. Missing workflows
@@ -131,9 +133,7 @@ and artifacts require active read permission. Dispatch, cancellation, and rerun 
 rerun receives a new run number and stores `runAttempt` plus `rerunOf` so each execution remains independently
 addressable.
 Browser session mutations require the finalized cookie CSRF check; bearer authentication remains compatible.
-Unauthorized private/internal repository access returns 404 so repository existence is not disclosed. A public
-repository's bounded artifacts are also intentionally public and may be downloaded anonymously; internal and private
-artifacts require active read permission.
+Unauthorized private/internal repository access returns 404 so repository existence is not disclosed.
 
 ## Compose smoke test
 
