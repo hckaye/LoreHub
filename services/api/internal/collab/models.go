@@ -245,6 +245,29 @@ type ReviewInput struct {
 	Body     string
 }
 
+type ReviewRequest struct {
+	ID          string    `json:"id"`
+	Kind        string    `json:"kind"`
+	Slug        string    `json:"slug"`
+	DisplayName string    `json:"displayName"`
+	AvatarURL   string    `json:"avatarUrl,omitempty"`
+	Status      string    `json:"status"`
+	RequestedBy string    `json:"requestedBy"`
+	RequestedAt time.Time `json:"requestedAt"`
+}
+
+type ReviewRequestSummary struct {
+	Items           []ReviewRequest `json:"items"`
+	ViewerCanManage bool            `json:"viewerCanManage"`
+}
+
+type ReviewCandidate struct {
+	Kind        string `json:"kind"`
+	Slug        string `json:"slug"`
+	DisplayName string `json:"displayName"`
+	AvatarURL   string `json:"avatarUrl,omitempty"`
+}
+
 // BranchRule is a branch protection rule enforced by the Lore merge workflow.
 type BranchRule struct {
 	ID                string    `json:"id"`

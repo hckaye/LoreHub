@@ -139,7 +139,8 @@ func eventKind(topic string) (string, bool) {
 		return "milestones", true
 	case strings.HasPrefix(topic, "project."):
 		return "projects", true
-	case strings.HasPrefix(topic, "merge_request_review."),
+	case strings.HasPrefix(topic, "merge_request_review_request."),
+		strings.HasPrefix(topic, "merge_request_review."),
 		strings.HasPrefix(topic, "merge_request_review_thread."),
 		strings.HasPrefix(topic, "merge_request_review_comment."):
 		return "reviews", true

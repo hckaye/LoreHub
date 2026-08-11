@@ -13,6 +13,8 @@ import type {
   MergeReadiness,
   MergeRequest,
   MergeRequestComment,
+  ReviewCandidate,
+  ReviewRequestSummary,
   ReviewSummary,
   ReviewThread,
   RevisionHistoryEntry,
@@ -30,6 +32,8 @@ type PullRequestDetailProps = {
   mergeRequest: MergeRequest;
   readiness: MergeReadiness | null;
   reviews: ReviewSummary | null;
+  reviewCandidates: ReviewCandidate[];
+  reviewRequests: ReviewRequestSummary | null;
   diff: LoreDiff | null;
   commits: RevisionHistoryEntry[];
   comments: MergeRequestComment[];
@@ -49,6 +53,8 @@ export function PullRequestDetail({
   mergeRequest,
   readiness,
   reviews,
+  reviewCandidates,
+  reviewRequests,
   diff,
   commits,
   comments,
@@ -129,6 +135,8 @@ export function PullRequestDetail({
         dictionary={dictionary}
         mergeRequest={mergeRequest}
         reviews={reviews}
+        reviewCandidates={reviewCandidates}
+        reviewRequests={reviewRequests}
         reviewThreads={reviewThreads}
         reviewThreadsAvailable={reviewThreadsAvailable}
         session={session}
@@ -166,6 +174,8 @@ function PullRequestTab({
   tab,
   mergeRequest,
   reviews,
+  reviewCandidates,
+  reviewRequests,
   comments,
   commentsAvailable,
   reviewThreads,
@@ -181,6 +191,8 @@ function PullRequestTab({
   tab: Tab;
   mergeRequest: MergeRequest;
   reviews: ReviewSummary | null;
+  reviewCandidates: ReviewCandidate[];
+  reviewRequests: ReviewRequestSummary | null;
   comments: MergeRequestComment[];
   commentsAvailable: boolean;
   reviewThreads: ReviewThread[];
@@ -204,6 +216,8 @@ function PullRequestTab({
         owner={owner}
         repository={repository}
         reviews={reviews}
+        reviewCandidates={reviewCandidates}
+        reviewRequests={reviewRequests}
         session={session}
       />
     );

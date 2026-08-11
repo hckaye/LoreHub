@@ -5,6 +5,7 @@ import { PullRequestDetail } from "@/components/repositories/pull-request-detail
 import { EmptyState } from "@/components/ui/empty-state";
 import { getDictionary } from "@/i18n";
 import { isLocale } from "@/i18n/config";
+import type { APIResult } from "@/lib/api-types";
 import { getAuthSession } from "@/lib/auth-api";
 import {
   getLoreDiff,
@@ -12,8 +13,10 @@ import {
   getMergeRequest,
   getMergeRequestComments,
   getPublicRepository,
-  getReviewThreads,
+  getReviewCandidates,
+  getReviewRequests,
   getReviews,
+  getReviewThreads,
   getRevisionHistory,
 } from "@/lib/lorehub-api";
 
@@ -51,18 +54,21 @@ export default async function PullRequestDetailPage({ params }: PullRequestDetai
       />
     );
   }
-  const [session, readiness, reviews, comments, reviewThreads, diff, history] = await Promise.all([
-    getAuthSession(),
-    getMergeReadiness(owner, slug, number),
-    getReviews(owner, slug, number),
-    getMergeRequestComments(owner, slug, number),
-    getReviewThreads(owner, slug, number),
-    getLoreDiff(owner, slug, mergeRequest.data.targetRevision, mergeRequest.data.sourceRevision),
-    getRevisionHistory(owner, slug, {
-      branch: mergeRequest.data.sourceBranch,
-      revision: mergeRequest.data.sourceRevision,
-    }),
-  ]);
+  const [session, readiness, reviews, reviewRequests, reviewCandidates, comments, reviewThreads, diff, history] =
+    await Promise.all([
+      getAuthSession(),
+      getMergeReadiness(owner, slug, number),
+      getReviews(owner, slug, number),
+      getReviewRequests(owner, slug, number),
+      getReviewCandidates(owner, slug, number),
+      getMergeRequestComments(owner, slug, number),
+      getReviewThreads(owner, slug, number),
+      getLoreDiff(owner, slug, mergeRequest.data.targetRevision, mergeRequest.data.sourceRevision),
+      getRevisionHistory(owner, slug, {
+        branch: mergeRequest.data.sourceBranch,
+        revision: mergeRequest.data.sourceRevision,
+      }),
+    ]);
   return (
     <PullRequestDetail
       commits={history.ok ? history.data.entries : []}
@@ -76,6 +82,8 @@ export default async function PullRequestDetailPage({ params }: PullRequestDetai
       readiness={readiness.ok ? readiness.data : null}
       repository={slug}
       reviews={reviews.ok ? reviews.data : null}
+      reviewCandidates={resultData(reviewCandidates, [])}
+      reviewRequests={resultData(reviewRequests, null)}
       reviewThreads={reviewThreadData(reviewThreads)}
       reviewThreadsAvailable={reviewThreads.ok}
       session={session}
@@ -85,4 +93,8 @@ export default async function PullRequestDetailPage({ params }: PullRequestDetai
 
 function reviewThreadData(result: Awaited<ReturnType<typeof getReviewThreads>>) {
   return result.ok ? result.data : [];
+}
+
+function resultData<T, F>(result: APIResult<T>, fallback: F): T | F {
+  return result.ok ? result.data : fallback;
 }

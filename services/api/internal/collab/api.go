@@ -18,16 +18,21 @@ type ActorResolver interface {
 
 // API holds the dependencies shared by all collaboration handlers.
 type API struct {
-	store     Store
-	assignees IssueAssigneeStore
-	actors    ActorResolver
-	logger    *slog.Logger
+	store          Store
+	assignees      IssueAssigneeStore
+	reviewRequests ReviewRequestStore
+	actors         ActorResolver
+	logger         *slog.Logger
 }
 
 // NewAPI constructs a collaboration API backed by the given store.
 func NewAPI(store Store, actors ActorResolver, logger *slog.Logger) *API {
 	assignees, _ := store.(IssueAssigneeStore)
-	return &API{store: store, assignees: assignees, actors: actors, logger: logger}
+	reviewRequests, _ := store.(ReviewRequestStore)
+	return &API{
+		store: store, assignees: assignees, reviewRequests: reviewRequests,
+		actors: actors, logger: logger,
+	}
 }
 
 // actor authenticates a mutating request and provisions the local user.

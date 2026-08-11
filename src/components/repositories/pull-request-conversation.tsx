@@ -6,12 +6,21 @@ import { FormEvent, useState } from "react";
 
 import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
-import type { AuthSession, MergeRequest, MergeRequestComment, Review, ReviewSummary } from "@/lib/api-types";
+import type {
+  AuthSession,
+  MergeRequest,
+  MergeRequestComment,
+  Review,
+  ReviewCandidate,
+  ReviewRequestSummary,
+  ReviewSummary,
+} from "@/lib/api-types";
 import { deleteJson, patchJson, postJson } from "@/lib/auth-client";
 import { mutationFailureMessage } from "@/lib/mutation-messages";
 
 import { FlashNotice } from "../ui/flash-notice";
 import styles from "./pull-request-conversation.module.css";
+import { PullRequestReviewers } from "./pull-request-reviewers";
 
 type PullRequestConversationProps = {
   comments: MergeRequestComment[];
@@ -22,6 +31,8 @@ type PullRequestConversationProps = {
   owner: string;
   repository: string;
   reviews: ReviewSummary | null;
+  reviewCandidates: ReviewCandidate[];
+  reviewRequests: ReviewRequestSummary | null;
   session: AuthSession;
 };
 
@@ -114,6 +125,15 @@ export function PullRequestConversation(props: PullRequestConversationProps) {
         onUpdate={updateMergeRequest}
       />
       <ReviewList dictionary={props.dictionary} reviews={props.reviews} />
+      <PullRequestReviewers
+        candidates={props.reviewCandidates}
+        csrfToken={csrfToken}
+        dictionary={props.dictionary}
+        number={props.mergeRequest.number}
+        owner={props.owner}
+        repository={props.repository}
+        summary={props.reviewRequests}
+      />
       <div className={styles.timeline}>
         {!props.commentsAvailable ? (
           <p className={styles.muted}>{labels.commentsUnavailable}</p>

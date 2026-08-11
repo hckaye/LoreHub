@@ -20,6 +20,7 @@ func TestWikiWebhookEventsAreSupported(t *testing.T) {
 
 func TestReviewThreadWebhookEventsUseReviewSubscriptions(t *testing.T) {
 	for _, topic := range []string{
+		"merge_request_review_request.created",
 		"merge_request_review_thread.created",
 		"merge_request_review_comment.created",
 	} {

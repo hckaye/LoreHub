@@ -17,10 +17,20 @@ pull request author, and users with write access can mark it as resolved or reop
 A comment can be edited or deleted by its author or a user with write access. Deleted comments remain in the
 conversation as a placeholder so replies keep their context.
 
+## Request a review
+
+The pull request author and users with triage access can request reviews from repository users or teams. Open the
+**Conversation** tab, choose a user or team under **Reviewers**, and select **Request**.
+
+Each reviewer shows the decision submitted for the current source revision. If several active team members respond,
+the team shows changes requested before approved, and approved before commented. Remove a request when that review
+is no longer needed.
+
 ## Review a new revision
 
 When the source or target branch changes, conversations from the earlier diff appear under **Outdated
 conversations**. Replies remain available there. Start a new conversation on the current diff when the comment applies
 to a changed line.
 
-Approvals and change requests apply to the current source revision. Submit them from the **Conversation** tab.
+Approvals and change requests apply to the current source revision. Submit them from the **Conversation** tab. When
+the source revision changes, requested reviewers return to **Review requested** until they review the new revision.

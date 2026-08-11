@@ -300,6 +300,7 @@ func (store *Store) syncNotifications(ctx context.Context, transaction pgx.Tx) e
 			    'merge_request_comment.created', 'merge_request_comment.updated',
 			    'merge_request_comment.deleted',
 			    'merge_request_review.created', 'merge_request_review.updated',
+			    'merge_request_review_request.created',
 			    'merge_request_review_thread.created', 'merge_request_review_thread.resolved',
 			    'merge_request_review_thread.unresolved',
 			    'merge_request_review_comment.created', 'merge_request_review_comment.updated',
@@ -352,7 +353,7 @@ func (store *Store) syncNotifications(ctx context.Context, transaction pgx.Tx) e
 			return err
 		}
 		if found {
-			preferences, err := store.notificationRecipients(ctx, transaction, scope, event.Topic)
+			preferences, err := store.notificationRecipients(ctx, transaction, scope, event)
 			if err != nil {
 				return err
 			}
@@ -460,6 +461,18 @@ func (store *Store) resolveNotificationScope(
 			  AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
 			JOIN organizations o ON o.id = r.organization_id AND o.active
 			WHERE comment.id = split_part($1, ':', 1)::uuid
+		`, eventID).Scan(&scope.OrganizationID, &scope.RepositoryID, &scope.OrganizationSlug,
+			&scope.RepositorySlug, &scope.Visibility, &scope.IssueNumber, &scope.MergeRequestNumber,
+			&scope.Title)
+	case strings.HasPrefix(event.Topic, "merge_request_review_request."):
+		err = transaction.QueryRow(ctx, `
+			SELECT r.organization_id, r.id, o.slug, r.slug, r.visibility, NULL, mr.number, mr.title
+			FROM merge_request_review_requests request
+			JOIN merge_requests mr ON mr.id = request.merge_request_id
+			JOIN repositories r ON r.id = request.repository_id
+			  AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
+			JOIN organizations o ON o.id = request.organization_id AND o.active
+			WHERE request.id = split_part($1, ':', 1)::uuid
 		`, eventID).Scan(&scope.OrganizationID, &scope.RepositoryID, &scope.OrganizationSlug,
 			&scope.RepositorySlug, &scope.Visibility, &scope.IssueNumber, &scope.MergeRequestNumber,
 			&scope.Title)
@@ -645,8 +658,12 @@ func (store *Store) notificationRecipients(
 	ctx context.Context,
 	transaction pgx.Tx,
 	scope notificationScope,
-	topic string,
+	event notificationEvent,
 ) ([]string, error) {
+	if strings.HasPrefix(event.Topic, "merge_request_review_request.") {
+		return reviewRequestNotificationRecipients(ctx, transaction, event)
+	}
+	topic := event.Topic
 	if scope.Kind == "team" || strings.HasPrefix(topic, "team.") {
 		rows, err := transaction.Query(ctx, `
 			SELECT DISTINCT tm.user_id::text
@@ -737,6 +754,43 @@ func (store *Store) notificationRecipients(
 	`, scope.OrganizationID, scope.RepositoryID, scope.Visibility)
 	if err != nil {
 		return nil, fmt.Errorf("list notification recipients: %w", err)
+	}
+	return scanNotificationRecipients(rows)
+}
+
+func reviewRequestNotificationRecipients(
+	ctx context.Context,
+	transaction pgx.Tx,
+	event notificationEvent,
+) ([]string, error) {
+	eventID, valid := notificationEventID(event)
+	if !valid {
+		return nil, nil
+	}
+	rows, err := transaction.Query(ctx, `
+		SELECT DISTINCT recipient.id::text
+		FROM merge_request_review_requests request
+		JOIN users recipient
+		  ON recipient.id = request.reviewer_user_id AND recipient.status = 'active'
+		LEFT JOIN notification_preferences preferences ON preferences.user_id = recipient.id
+		WHERE request.id = $1 AND request.removed_at IS NULL
+		  AND COALESCE(preferences.in_app_enabled, true)
+		UNION
+		SELECT DISTINCT recipient.id::text
+		FROM merge_request_review_requests request
+		JOIN teams team ON team.id = request.reviewer_team_id AND team.active
+		JOIN team_memberships membership ON membership.team_id = team.id AND membership.active
+		JOIN organization_memberships organization_member
+		  ON organization_member.organization_id = request.organization_id
+		 AND organization_member.user_id = membership.user_id AND organization_member.active
+		JOIN users recipient ON recipient.id = membership.user_id AND recipient.status = 'active'
+		LEFT JOIN notification_preferences preferences ON preferences.user_id = recipient.id
+		WHERE request.id = $1 AND request.removed_at IS NULL
+		  AND COALESCE(preferences.in_app_enabled, true)
+		  AND COALESCE(preferences.team_enabled, true)
+	`, eventID)
+	if err != nil {
+		return nil, fmt.Errorf("list review request notification recipients: %w", err)
 	}
 	return scanNotificationRecipients(rows)
 }

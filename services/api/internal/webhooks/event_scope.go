@@ -97,6 +97,8 @@ func eventRepositoryQuery(
 			SELECT request.repository_id FROM merge_request_comments comment
 			JOIN merge_requests request ON request.id = comment.merge_request_id WHERE comment.id = $1
 		`, entityID
+	case strings.HasPrefix(topic, "merge_request_review_request."):
+		return `SELECT repository_id FROM merge_request_review_requests WHERE id = $1`, entityID
 	case strings.HasPrefix(topic, "merge_request_review."):
 		return `
 			SELECT request.repository_id FROM merge_request_reviews review
@@ -138,6 +140,8 @@ func auditTargetType(topic string) string {
 		return "issue"
 	case strings.HasPrefix(topic, "merge_request_comment."):
 		return "merge_request_comment"
+	case strings.HasPrefix(topic, "merge_request_review_request."):
+		return "merge_request_review_request"
 	case strings.HasPrefix(topic, "merge_request_review."):
 		return "merge_request_review"
 	case strings.HasPrefix(topic, "merge_request_review_thread."):

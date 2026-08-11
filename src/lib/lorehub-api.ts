@@ -38,6 +38,8 @@ import type {
   ReleasePage,
   Repository,
   RepositoryInsights,
+  ReviewCandidate,
+  ReviewRequestSummary,
   ReviewSummary,
   ReviewThread,
   RevisionHistoryEntry,
@@ -334,6 +336,25 @@ export function getAssignableUsers(
 
 export function getReviews(owner: string, repository: string, number: number): Promise<APIResult<ReviewSummary>> {
   return request(repositoryPath(owner, repository, `/merge-requests/${number}/reviews`));
+}
+
+export function getReviewRequests(
+  owner: string,
+  repository: string,
+  number: number,
+): Promise<APIResult<ReviewRequestSummary>> {
+  return request(repositoryPath(owner, repository, `/merge-requests/${number}/review-requests`));
+}
+
+export async function getReviewCandidates(
+  owner: string,
+  repository: string,
+  number: number,
+): Promise<APIResult<ReviewCandidate[]>> {
+  const result = await request<{ items: ReviewCandidate[] }>(
+    repositoryPath(owner, repository, `/merge-requests/${number}/review-candidates`),
+  );
+  return result.ok ? { ok: true, data: result.data.items } : result;
 }
 
 export async function getReviewThreads(

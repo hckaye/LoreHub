@@ -607,6 +607,29 @@ export type ReviewSummary = {
   comments: number;
 };
 
+export type ReviewRequest = {
+  id: string;
+  kind: "user" | "team";
+  slug: string;
+  displayName: string;
+  avatarUrl?: string;
+  status: "pending" | Review["decision"];
+  requestedBy: string;
+  requestedAt: string;
+};
+
+export type ReviewRequestSummary = {
+  items: ReviewRequest[];
+  viewerCanManage: boolean;
+};
+
+export type ReviewCandidate = {
+  kind: "user" | "team";
+  slug: string;
+  displayName: string;
+  avatarUrl?: string;
+};
+
 export type MergeBlocker = { code: string; detail: string };
 
 export type MergeOperation = {
