@@ -38,6 +38,8 @@ func (api *API) registerCoreRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /auth/lore/confirm", api.loreAuthConfirm)
 	mux.HandleFunc("POST /auth/lore/confirm", api.loreAuthConfirm)
 	mux.HandleFunc("GET /api/v1/dashboard", api.dashboard)
+	mux.HandleFunc("GET /api/v1/issues", api.globalIssues)
+	mux.HandleFunc("GET /api/v1/pulls", api.globalPullRequests)
 	mux.HandleFunc("GET /api/v1/search", api.search)
 	mux.HandleFunc("GET /api/v1/users/{username}", api.userProfile)
 	mux.HandleFunc("GET /api/v1/users/{username}/repositories", api.userRepositories)

@@ -55,12 +55,38 @@ import type {
   WikiRevision,
 } from "./api-types";
 import { normalizeFileLockPage, type FileLockPage } from "./file-locks";
+import { normalizeGlobalWorkItemPage, type GlobalWorkItemPage, type GlobalWorkItemQuery } from "./global-work-items";
 import { normalizePersonalAccessTokenPage } from "./personal-access-token";
 
 const apiOrigin = process.env.LOREHUB_API_URL ?? "http://127.0.0.1:8080";
 
 export function getDashboard(): Promise<APIResult<DashboardData>> {
   return request("/api/v1/dashboard");
+}
+
+export function getGlobalIssues(query: GlobalWorkItemQuery): Promise<APIResult<GlobalWorkItemPage>> {
+  return getGlobalWorkItems("issues", query);
+}
+
+export function getGlobalPullRequests(query: GlobalWorkItemQuery): Promise<APIResult<GlobalWorkItemPage>> {
+  return getGlobalWorkItems("pulls", query);
+}
+
+async function getGlobalWorkItems(
+  resource: "issues" | "pulls",
+  query: GlobalWorkItemQuery,
+): Promise<APIResult<GlobalWorkItemPage>> {
+  const search = queryString({
+    state: query.state,
+    scope: query.scope,
+    q: query.q?.trim(),
+    cursor: query.cursor,
+    limit: "25",
+  });
+  const result = await request<unknown>(`/api/v1/${resource}?${search}`);
+  if (!result.ok) return result;
+  const page = normalizeGlobalWorkItemPage(result.data);
+  return page ? { ok: true, data: page } : { ok: false, reason: "unavailable" };
 }
 
 export async function getFileLocks(

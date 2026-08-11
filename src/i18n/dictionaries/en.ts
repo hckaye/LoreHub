@@ -1,6 +1,7 @@
 import { assignees } from "./assignees";
 import { auditLog } from "./audit-log";
 import { fileLocks } from "./file-locks";
+import { globalWorkItems } from "./global-work-items";
 import { insights } from "./insights";
 import { milestones } from "./milestones";
 import { personalAccessTokens } from "./personal-access-tokens";
@@ -19,6 +20,7 @@ const en = {
   pullRequestDrafts: pullRequestDrafts.en,
   personalAccessTokens: personalAccessTokens.en,
   fileLocks: fileLocks.en,
+  globalWorkItems: globalWorkItems.en,
   metadata: {
     title: "LoreHub · Collaboration for Lore repositories",
     description: "Review, issues, permissions, and GitHub Actions-compatible CI for Lore.",

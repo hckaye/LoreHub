@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, BookOpen, Menu, Search, X } from "lucide-react";
+import { Bell, BookOpen, CircleDot, GitPullRequest, Menu, Search, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useState } from "react";
@@ -58,11 +58,21 @@ export function SiteHeader({ locale, dictionary, session, unreadNotifications }:
             {isAuthenticated ? dictionary.common.dashboard : dictionary.common.explore}
           </Link>
           {isAuthenticated && (
-            <Link href={`/${locale}/notifications`} onClick={() => setNavigationOpen(false)}>
-              <Bell aria-hidden="true" size={16} />
-              {dictionary.common.notifications}
-              {unreadNotifications > 0 && <span className={styles.notificationCount}>{unreadNotifications}</span>}
-            </Link>
+            <>
+              <Link href={`/${locale}/issues`} onClick={() => setNavigationOpen(false)}>
+                <CircleDot aria-hidden="true" size={16} />
+                {dictionary.common.issues}
+              </Link>
+              <Link href={`/${locale}/pulls`} onClick={() => setNavigationOpen(false)}>
+                <GitPullRequest aria-hidden="true" size={16} />
+                {dictionary.common.pullRequests}
+              </Link>
+              <Link href={`/${locale}/notifications`} onClick={() => setNavigationOpen(false)}>
+                <Bell aria-hidden="true" size={16} />
+                {dictionary.common.notifications}
+                {unreadNotifications > 0 && <span className={styles.notificationCount}>{unreadNotifications}</span>}
+              </Link>
+            </>
           )}
           <a href="https://github.com/EpicGames/lore" rel="noreferrer" target="_blank">
             <BookOpen aria-hidden="true" size={16} />

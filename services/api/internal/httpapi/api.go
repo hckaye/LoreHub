@@ -175,6 +175,7 @@ type API struct {
 	loginProviders          []string
 	webhooksStore           webhooksManager
 	personalAccessTokens    PersonalAccessTokenStore
+	globalWorkItems         GlobalWorkItemStore
 }
 
 func New(

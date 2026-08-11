@@ -245,6 +245,7 @@ func run(logger *slog.Logger) error {
 		httpapi.WithActionsSecurity(actionsStore, actionsJobTokens),
 		httpapi.WithActionsExecutionContext(actionsContext),
 		httpapi.WithIdentityStore(store),
+		httpapi.WithGlobalWorkItems(store),
 		httpapi.WithPersonalAccessTokens(store, secretCodec),
 		httpapi.WithConfiguredLoginProviders(settings.IdentityProviders),
 		httpapi.WithCollaboration(collaborationStore),
