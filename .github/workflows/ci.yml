@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: lorehub-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   quality:
     runs-on: ubuntu-latest
@@ -66,3 +70,5 @@ jobs:
           file: infra/lore/Dockerfile
           target: lore-tests
           outputs: type=cacheonly
+          cache-from: type=gha,scope=lore-policy
+          cache-to: type=gha,mode=max,scope=lore-policy
