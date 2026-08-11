@@ -387,12 +387,9 @@ func (store *Store) UpdateRepositorySettings(
 	slug string,
 	input UpdateRepositorySettingsInput,
 ) (Repository, error) {
-	repository, organizationID, role, orgRole, err := store.repositoryManager(ctx, actor.ID, owner, slug)
+	repository, organizationID, err := store.repositoryManager(ctx, actor.ID, owner, slug)
 	if err != nil {
 		return Repository{}, err
-	}
-	if role != "admin" && orgRole != "owner" {
-		return Repository{}, ErrForbidden
 	}
 	transaction, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
@@ -420,6 +417,25 @@ func (store *Store) UpdateRepositorySettings(
 		          JOIN users organization_user ON organization_user.id = om.user_id
 		          WHERE om.organization_id = repositories.organization_id AND om.user_id = $6
 		            AND om.role = 'owner' AND om.active AND organization_user.status = 'active'
+		      )
+		      OR EXISTS (
+		          SELECT 1
+		          FROM team_repository_roles role
+		          JOIN teams team
+		            ON team.id = role.team_id
+		           AND team.organization_id = repositories.organization_id
+		           AND team.active
+		          JOIN team_memberships team_membership
+		            ON team_membership.team_id = team.id
+		           AND team_membership.user_id = $6
+		           AND team_membership.active
+		          JOIN organization_memberships organization_membership
+		            ON organization_membership.organization_id = repositories.organization_id
+		           AND organization_membership.user_id = $6
+		           AND organization_membership.active
+		          JOIN users team_user ON team_user.id = $6 AND team_user.status = 'active'
+		          WHERE role.repository_id = repositories.id
+		            AND role.role = 'admin' AND role.active
 		      )
 		  )
 	`, repository.ID, input.DisplayName, input.Description, input.Visibility, input.HomepageURL, actor.ID)
@@ -450,12 +466,22 @@ func (store *Store) UpdateRepositorySettings(
 	return updated, nil
 }
 
+func (store *Store) RepositoryForSettings(
+	ctx context.Context,
+	actor User,
+	owner string,
+	slug string,
+) (Repository, error) {
+	repository, _, err := store.repositoryManager(ctx, actor.ID, owner, slug)
+	return repository, err
+}
+
 func (store *Store) repositoryManager(
 	ctx context.Context,
 	userID string,
 	owner string,
 	slug string,
-) (Repository, string, string, string, error) {
+) (Repository, string, error) {
 	row := store.pool.QueryRow(ctx, repositorySelect+`
 		WHERE o.slug = $1 AND r.slug = $2 AND o.active
 		  AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
@@ -472,6 +498,22 @@ func (store *Store) repositoryManager(
 		          WHERE om.organization_id = o.id AND om.user_id = $3
 		            AND om.role = 'owner' AND om.active AND organization_user.status = 'active'
 		      )
+		      OR EXISTS (
+		          SELECT 1
+		          FROM team_repository_roles role
+		          JOIN teams team
+		            ON team.id = role.team_id
+		           AND team.organization_id = o.id AND team.active
+		          JOIN team_memberships team_membership
+		            ON team_membership.team_id = team.id
+		           AND team_membership.user_id = $3 AND team_membership.active
+		          JOIN organization_memberships organization_membership
+		            ON organization_membership.organization_id = o.id
+		           AND organization_membership.user_id = $3
+		           AND organization_membership.active
+		          JOIN users team_user ON team_user.id = $3 AND team_user.status = 'active'
+		          WHERE role.repository_id = r.id AND role.role = 'admin' AND role.active
+		      )
 		  )
 		GROUP BY r.id, o.slug
 	`, owner, slug, userID)
@@ -479,27 +521,17 @@ func (store *Store) repositoryManager(
 	if errors.Is(err, pgx.ErrNoRows) {
 		visible, visibilityErr := store.repositoryVisibleForActor(ctx, userID, owner, slug)
 		if visibilityErr != nil {
-			return Repository{}, "", "", "", visibilityErr
+			return Repository{}, "", visibilityErr
 		}
 		if !visible {
-			return Repository{}, "", "", "", ErrNotFound
+			return Repository{}, "", ErrNotFound
 		}
-		return Repository{}, "", "", "", ErrForbidden
+		return Repository{}, "", ErrForbidden
 	}
 	if err != nil {
-		return Repository{}, "", "", "", fmt.Errorf("find repository settings: %w", err)
+		return Repository{}, "", fmt.Errorf("find repository settings: %w", err)
 	}
-	var role, orgRole string
-	err = store.pool.QueryRow(ctx, `
-		SELECT COALESCE((SELECT rm.role FROM repository_memberships rm
-		                WHERE rm.repository_id = $1 AND rm.user_id = $2 AND rm.active), ''),
-		       COALESCE((SELECT om.role FROM organization_memberships om
-		                 WHERE om.organization_id = $3 AND om.user_id = $2 AND om.active), '')
-	`, repository.ID, userID, repository.OrganizationID).Scan(&role, &orgRole)
-	if err != nil {
-		return Repository{}, "", "", "", fmt.Errorf("read repository settings role: %w", err)
-	}
-	return repository, repository.OrganizationID, role, orgRole, nil
+	return repository, repository.OrganizationID, nil
 }
 
 func (store *Store) organizationRole(ctx context.Context, userID string, slug string) (string, string, error) {

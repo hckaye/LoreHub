@@ -111,6 +111,10 @@ export function getPublicRepository(owner: string, repository: string): Promise<
   return request(`/api/v1/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}`);
 }
 
+export function getRepositorySettings(owner: string, repository: string): Promise<APIResult<Repository>> {
+  return request(repositoryPath(owner, repository, "/settings"));
+}
+
 export async function getBranches(owner: string, repository: string): Promise<APIResult<Branch[]>> {
   const result = await getBranchOverview(owner, repository);
   return result.ok ? { ok: true, data: result.data.branches } : result;

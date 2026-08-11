@@ -533,11 +533,13 @@ func TestRepositorySettingsRequireExplicitAdminOrOrganizationOwner(t *testing.T)
 	owner := platformTestUser("settings-owner-" + suffix)
 	maintainer := platformTestUser("settings-maintainer-" + suffix)
 	repositoryAdmin := platformTestUser("settings-admin-" + suffix)
+	teamAdmin := platformTestUser("settings-team-admin-" + suffix)
 	orgID := uuid.NewString()
 	repositoryID := uuid.NewString()
+	teamID := uuid.NewString()
 	orgSlug := "settings-org-" + suffix
 	repositorySlug := "settings-repository-" + suffix
-	for _, user := range []User{owner, maintainer, repositoryAdmin} {
+	for _, user := range []User{owner, maintainer, repositoryAdmin, teamAdmin} {
 		mustIdentityExec(t, pool, `INSERT INTO users (id, username, display_name) VALUES ($1, $2, $3)`,
 			user.ID, user.Username, user.DisplayName)
 	}
@@ -547,8 +549,8 @@ func TestRepositorySettingsRequireExplicitAdminOrOrganizationOwner(t *testing.T)
 	`, orgID, orgSlug, owner.ID)
 	mustIdentityExec(t, pool, `
 		INSERT INTO organization_memberships (organization_id, user_id, role)
-		VALUES ($1, $2, 'owner'), ($1, $3, 'maintainer')
-	`, orgID, owner.ID, maintainer.ID)
+		VALUES ($1, $2, 'owner'), ($1, $3, 'maintainer'), ($1, $4, 'member')
+	`, orgID, owner.ID, maintainer.ID, teamAdmin.ID)
 	mustIdentityExec(t, pool, `
 		INSERT INTO repositories (
 			id, organization_id, slug, display_name, visibility,
@@ -559,9 +561,21 @@ func TestRepositorySettingsRequireExplicitAdminOrOrganizationOwner(t *testing.T)
 	mustIdentityExec(t, pool, `
 		INSERT INTO repository_memberships (repository_id, user_id, role) VALUES ($1, $2, 'admin')
 	`, repositoryID, repositoryAdmin.ID)
+	mustIdentityExec(t, pool, `
+		INSERT INTO teams (id, organization_id, slug, display_name, created_by)
+		VALUES ($1, $2, $3, 'Repository administrators', $4)
+	`, teamID, orgID, "settings-admins-"+suffix, owner.ID)
+	mustIdentityExec(t, pool, `
+		INSERT INTO team_memberships (team_id, user_id, role) VALUES ($1, $2, 'member')
+	`, teamID, teamAdmin.ID)
+	mustIdentityExec(t, pool, `
+		INSERT INTO team_repository_roles (team_id, repository_id, role, created_by)
+		VALUES ($1, $2, 'admin', $3)
+	`, teamID, repositoryID, owner.ID)
 	t.Cleanup(func() {
 		_, _ = pool.Exec(ctx, `DELETE FROM organizations WHERE id = $1`, orgID)
-		_, _ = pool.Exec(ctx, `DELETE FROM users WHERE id IN ($1, $2, $3)`, owner.ID, maintainer.ID, repositoryAdmin.ID)
+		_, _ = pool.Exec(ctx, `DELETE FROM users WHERE id IN ($1, $2, $3, $4)`,
+			owner.ID, maintainer.ID, repositoryAdmin.ID, teamAdmin.ID)
 	})
 
 	maintainerName := "Maintainer must not change repository"
@@ -577,17 +591,57 @@ func TestRepositorySettingsRequireExplicitAdminOrOrganizationOwner(t *testing.T)
 	if displayName != "Original settings" {
 		t.Fatalf("denied update changed display name to %q", displayName)
 	}
+	if _, err := store.RepositoryForSettings(ctx, maintainer, orgSlug, repositorySlug); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("organization maintainer private settings read error = %v, want not found", err)
+	}
 	adminName := "Repository admin update"
 	updated, err := store.UpdateRepositorySettings(ctx, repositoryAdmin, orgSlug, repositorySlug,
 		UpdateRepositorySettingsInput{DisplayName: &adminName})
 	if err != nil || updated.DisplayName != adminName {
 		t.Fatalf("repository admin update = %+v, err=%v", updated, err)
 	}
+	if _, err := store.RepositoryForSettings(ctx, repositoryAdmin, orgSlug, repositorySlug); err != nil {
+		t.Fatalf("repository admin settings read: %v", err)
+	}
+	teamName := "Team admin update"
+	updated, err = store.UpdateRepositorySettings(ctx, teamAdmin, orgSlug, repositorySlug,
+		UpdateRepositorySettingsInput{DisplayName: &teamName})
+	if err != nil || updated.DisplayName != teamName {
+		t.Fatalf("team admin update = %+v, err=%v", updated, err)
+	}
+	if _, err := store.RepositoryForSettings(ctx, teamAdmin, orgSlug, repositorySlug); err != nil {
+		t.Fatalf("team admin settings read: %v", err)
+	}
+	mustIdentityExec(t, pool, `
+		UPDATE organization_memberships SET active = false
+		WHERE organization_id = $1 AND user_id = $2
+	`, orgID, teamAdmin.ID)
+	revokedName := "Revoked team admin must not update"
+	if _, err := store.UpdateRepositorySettings(ctx, teamAdmin, orgSlug, repositorySlug,
+		UpdateRepositorySettingsInput{DisplayName: &revokedName}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("revoked team admin update error = %v, want not found", err)
+	}
 	ownerName := "Organization owner update"
 	updated, err = store.UpdateRepositorySettings(ctx, owner, orgSlug, repositorySlug,
 		UpdateRepositorySettingsInput{DisplayName: &ownerName})
 	if err != nil || updated.DisplayName != ownerName {
 		t.Fatalf("organization owner update = %+v, err=%v", updated, err)
+	}
+	var auditCount, outboxCount int
+	if err := pool.QueryRow(ctx, `
+		SELECT count(*) FROM audit_events
+		WHERE repository_id = $1 AND action = 'repository.settings_update'
+	`, repositoryID).Scan(&auditCount); err != nil {
+		t.Fatalf("count repository settings audit events: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `
+		SELECT count(*) FROM outbox_events
+		WHERE topic = 'repository.settings_updated' AND event_key LIKE $1
+	`, repositoryID+":%").Scan(&outboxCount); err != nil {
+		t.Fatalf("count repository settings outbox events: %v", err)
+	}
+	if auditCount != 3 || outboxCount != 3 {
+		t.Fatalf("repository settings audit = %d, outbox = %d, want 3 each", auditCount, outboxCount)
 	}
 }
 

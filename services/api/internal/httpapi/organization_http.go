@@ -283,9 +283,12 @@ func (api *API) updateRepositorySettings(writer http.ResponseWriter, request *ht
 	if !decodeJSON(writer, request, &input) {
 		return
 	}
+	trimOptionalText(input.DisplayName)
+	trimOptionalText(input.Description)
+	trimOptionalText(input.HomepageURL)
 	if !validOptionalText(input.DisplayName, 200) || !validOptionalText(input.Description, 10_000) ||
 		!validOptionalText(input.HomepageURL, 500) || !validOptionalURL(input.HomepageURL) ||
-		!validVisibilityPointer(input.Visibility) {
+		!validVisibilityPointer(input.Visibility) || (input.DisplayName != nil && *input.DisplayName == "") {
 		writeProblem(writer, http.StatusBadRequest, "invalid_input", "Repository settings are invalid")
 		return
 	}
@@ -306,7 +309,11 @@ func (api *API) repositorySettings(writer http.ResponseWriter, request *http.Req
 	if !ok {
 		return
 	}
-	repository, err := api.store.RepositoryForWrite(request.Context(), actor, request.PathValue("owner"),
+	if api.identityStore == nil {
+		api.identityUnavailable(writer)
+		return
+	}
+	repository, err := api.identityStore.RepositoryForSettings(request.Context(), actor, request.PathValue("owner"),
 		request.PathValue("repository"))
 	if err != nil {
 		api.platformError(writer, request, "get repository settings", err)
@@ -317,6 +324,12 @@ func (api *API) repositorySettings(writer http.ResponseWriter, request *http.Req
 
 func validOptionalText(value *string, limit int) bool {
 	return value == nil || len([]rune(*value)) <= limit
+}
+
+func trimOptionalText(value *string) {
+	if value != nil {
+		*value = strings.TrimSpace(*value)
+	}
 }
 
 func validVisibilityPointer(value *string) bool {

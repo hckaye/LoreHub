@@ -35,6 +35,11 @@ func TestIdentityQueryHelpers(t *testing.T) {
 		validOptionalURL(pointerToString("javascript:alert(1)")) {
 		t.Fatal("URL helper accepted an unsafe or rejected a safe URL")
 	}
+	trimmed := pointerToString("  Repository name  ")
+	trimOptionalText(trimmed)
+	if *trimmed != "Repository name" {
+		t.Fatalf("trimmed repository setting = %q", *trimmed)
+	}
 }
 
 func TestConfiguredLoginProvidersAreReturnedWithoutSecrets(t *testing.T) {
@@ -126,6 +131,19 @@ type repositorySettingsHTTPIdentityStore struct {
 	calledActor platform.User
 }
 
+func (store *repositorySettingsHTTPIdentityStore) RepositoryForSettings(
+	_ context.Context,
+	actor platform.User,
+	_ string,
+	_ string,
+) (platform.Repository, error) {
+	store.calledActor = actor
+	if store.err != nil {
+		return platform.Repository{}, store.err
+	}
+	return store.repository, nil
+}
+
 func (store *repositorySettingsHTTPIdentityStore) UpdateRepositorySettings(
 	_ context.Context,
 	actor platform.User,
@@ -193,5 +211,36 @@ func TestRepositorySettingsHTTPPreservesRBACDenialAndSuccess(t *testing.T) {
 	}
 	if allowedStore.calledActor.ID != "user-1" {
 		t.Fatalf("settings update actor = %q, want authenticated actor", allowedStore.calledActor.ID)
+	}
+	cookie, csrf := prepareSessionCookie(t, authenticationStore, codec)
+	request := httptest.NewRequest(http.MethodPatch, "/api/v1/repositories/acme/lore/settings",
+		strings.NewReader(`{"displayName":"   "}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-CSRF-Token", csrf)
+	request.AddCookie(cookie)
+	response = httptest.NewRecorder()
+	newHandler(allowedStore).ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("blank repository name response = %d %s", response.Code, response.Body.String())
+	}
+	readFor := func(identityStore *repositorySettingsHTTPIdentityStore) *httptest.ResponseRecorder {
+		cookie, _ := prepareSessionCookie(t, authenticationStore, codec)
+		request := httptest.NewRequest(http.MethodGet, "/api/v1/repositories/acme/lore/settings", nil)
+		request.AddCookie(cookie)
+		response := httptest.NewRecorder()
+		newHandler(identityStore).ServeHTTP(response, request)
+		return response
+	}
+	response = readFor(deniedStore)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("denied repository settings read = %d %s", response.Code, response.Body.String())
+	}
+	response = readFor(privateStore)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("private repository settings read = %d %s", response.Code, response.Body.String())
+	}
+	response = readFor(allowedStore)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "repository-1") {
+		t.Fatalf("allowed repository settings read = %d %s", response.Code, response.Body.String())
 	}
 }

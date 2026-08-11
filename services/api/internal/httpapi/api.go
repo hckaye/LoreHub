@@ -150,9 +150,9 @@ type IdentityStore interface {
 	TeamMembers(context.Context, *platform.User, string, string) ([]platform.TeamMember, error)
 	AddTeamMember(context.Context, platform.User, string, string, string, string) (platform.TeamMember, error)
 	RemoveTeamMember(context.Context, platform.User, string, string, string) error
-	UpdateRepositorySettings(
-		context.Context, platform.User, string, string, platform.UpdateRepositorySettingsInput,
-	) (platform.Repository, error)
+	UpdateRepositorySettings(context.Context, platform.User, string, string,
+		platform.UpdateRepositorySettingsInput) (platform.Repository, error)
+	RepositoryForSettings(context.Context, platform.User, string, string) (platform.Repository, error)
 }
 
 type API struct {

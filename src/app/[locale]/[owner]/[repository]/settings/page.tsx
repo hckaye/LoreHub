@@ -1,14 +1,16 @@
 import { LockKeyhole, ServerOff } from "lucide-react";
+import { notFound } from "next/navigation";
 
 import { ActionsContextSettings } from "@/components/actions/actions-context-settings";
 import { AuthRequired } from "@/components/auth/auth-required";
 import { RepositoryAccessSettings } from "@/components/repositories/repository-access-settings";
 import { RepositoryPanel, RepositorySection } from "@/components/repositories/repository-section";
+import { RepositorySettingsForm } from "@/components/repositories/repository-settings-form";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getDictionary } from "@/i18n";
 import { isLocale } from "@/i18n/config";
 import { getAuthSession } from "@/lib/auth-api";
-import { getPublicRepository } from "@/lib/lorehub-api";
+import { getRepositorySettings } from "@/lib/lorehub-api";
 import { repositoryPath } from "@/lib/routes";
 
 import styles from "@/components/repositories/repository-detail.module.css";
@@ -22,11 +24,7 @@ export const dynamic = "force-dynamic";
 export default async function RepositorySettingsPage({ params }: RepositorySettingsPageProps) {
   const { locale: value, owner, repository } = await params;
   const locale = isLocale(value) ? value : "en";
-  const [dictionary, session, repositoryResult] = await Promise.all([
-    getDictionary(locale),
-    getAuthSession(),
-    getPublicRepository(owner, repository),
-  ]);
+  const [dictionary, session] = await Promise.all([getDictionary(locale), getAuthSession()]);
   if (session.status !== "authenticated") {
     return (
       <RepositorySection description={dictionary.settingsPage.description} title={dictionary.settingsPage.title}>
@@ -36,6 +34,18 @@ export default async function RepositorySettingsPage({ params }: RepositorySetti
           session={session}
         />
       </RepositorySection>
+    );
+  }
+  const repositoryResult = await getRepositorySettings(owner, repository);
+  if (!repositoryResult.ok && repositoryResult.reason === "not-found") notFound();
+  if (!repositoryResult.ok && repositoryResult.reason === "forbidden") {
+    return (
+      <EmptyState
+        body={dictionary.settingsPage.notAuthorized}
+        icon={<LockKeyhole aria-hidden="true" />}
+        title={dictionary.errors.forbidden}
+        tone="warning"
+      />
     );
   }
   if (!repositoryResult.ok) {
@@ -51,8 +61,11 @@ export default async function RepositorySettingsPage({ params }: RepositorySetti
   const data = repositoryResult.data;
   return (
     <RepositorySection description={dictionary.settingsPage.description} title={dictionary.settingsPage.title}>
-      <RepositoryPanel description={dictionary.settingsPage.readOnlyBody} title={dictionary.settingsPage.readOnlyTitle}>
-        <p>{dictionary.settingsPage.readOnlyBody}</p>
+      <RepositoryPanel
+        description={dictionary.settingsPage.generalDescription}
+        title={dictionary.settingsPage.generalTitle}
+      >
+        <RepositorySettingsForm dictionary={dictionary} repository={data} session={session} />
       </RepositoryPanel>
       <RepositoryPanel title={dictionary.settingsPage.repositoryIdentity}>
         <dl className={styles.details}>
@@ -83,10 +96,6 @@ export default async function RepositorySettingsPage({ params }: RepositorySetti
             <dd>
               <code>{data.loreRepositoryId}</code>
             </dd>
-          </div>
-          <div>
-            <dt>{dictionary.settingsPage.canonicalNote}</dt>
-            <dd>{dictionary.settingsPage.canonicalNote}</dd>
           </div>
           <div>
             <dt>{dictionary.settingsPage.loreUrl}</dt>
