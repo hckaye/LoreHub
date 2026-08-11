@@ -11,6 +11,13 @@ type labelRequest struct {
 	Color       string `json:"color"`
 }
 
+type labelListResponse struct {
+	Items          []Label `json:"items"`
+	NextCursor     string  `json:"nextCursor,omitempty"`
+	HasMore        bool    `json:"hasMore"`
+	ViewerCanWrite bool    `json:"viewerCanWrite"`
+}
+
 func (api *API) listLabels(writer http.ResponseWriter, request *http.Request) {
 	actor, ok := api.optionalActor(writer, request)
 	if !ok {
@@ -30,7 +37,18 @@ func (api *API) listLabels(writer http.ResponseWriter, request *http.Request) {
 		storeError(writer, request, "list labels", err, api.logger)
 		return
 	}
-	writeJSON(writer, http.StatusOK, result)
+	viewerCanWrite := false
+	if actor != nil {
+		access, allowed := api.permission(writer, request, *actor, repo)
+		if !allowed {
+			return
+		}
+		viewerCanWrite = access.AtLeast(PermWrite)
+	}
+	writeJSON(writer, http.StatusOK, labelListResponse{
+		Items: result.Items, NextCursor: result.NextCursor, HasMore: result.HasMore,
+		ViewerCanWrite: viewerCanWrite,
+	})
 }
 
 func (api *API) createLabel(writer http.ResponseWriter, request *http.Request) {

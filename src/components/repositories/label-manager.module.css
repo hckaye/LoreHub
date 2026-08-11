@@ -1,0 +1,144 @@
+.manager {
+  display: grid;
+  gap: 16px;
+}
+
+.createForm,
+.editForm {
+  display: grid;
+  gap: 12px;
+}
+
+.createForm {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 16px;
+}
+
+.createForm h2 {
+  font-size: 16px;
+  margin: 0;
+}
+
+.fields {
+  align-items: end;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(160px, 0.8fr) minmax(220px, 1.4fr) 80px;
+}
+
+.fields label {
+  display: grid;
+  font-size: 13px;
+  font-weight: 600;
+  gap: 6px;
+}
+
+.fields input:not([type="color"]) {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+  min-width: 0;
+  padding: 8px 10px;
+}
+
+.colorField input {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  height: 36px;
+  padding: 3px;
+  width: 64px;
+}
+
+.createForm > button,
+.actions button {
+  background: var(--canvas-subtle);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  padding: 6px 12px;
+  width: fit-content;
+}
+
+.createForm > button {
+  background: var(--success-border);
+  border-color: transparent;
+  color: #fff;
+}
+
+.list {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.list > li + li {
+  border-top: 1px solid var(--border);
+}
+
+.row {
+  align-items: center;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(140px, 0.6fr) minmax(220px, 1.4fr) auto;
+  padding: 14px 16px;
+}
+
+.row p {
+  color: var(--fg-muted);
+  margin: 0;
+}
+
+.chip {
+  background: var(--label-color);
+  border: 1px solid color-mix(in srgb, var(--label-color), #000 18%);
+  border-radius: 999px;
+  color: var(--label-text);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 10px;
+  width: fit-content;
+}
+
+.editForm {
+  padding: 14px 16px;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.actions .deleteButton {
+  color: var(--danger-fg, #cf222e);
+}
+
+.success,
+.error {
+  margin: 0;
+}
+
+.success {
+  color: var(--success-fg, #1a7f37);
+}
+
+.error {
+  color: var(--danger-fg, #cf222e);
+}
+
+@media (max-width: 760px) {
+  .fields,
+  .row {
+    grid-template-columns: 1fr;
+  }
+
+  .actions {
+    justify-content: flex-start;
+  }
+}

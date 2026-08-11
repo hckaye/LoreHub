@@ -18,6 +18,7 @@ import type {
   Issue,
   IssueComment,
   Label,
+  LabelPage,
   LoreDiff,
   LoreFile,
   LoreRevision,
@@ -201,8 +202,12 @@ export async function getIssueComments(
 }
 
 export async function getLabels(owner: string, repository: string): Promise<APIResult<Label[]>> {
-  const result = await request<{ items: Label[] }>(repositoryPath(owner, repository, "/labels?limit=100"));
+  const result = await getLabelPage(owner, repository);
   return result.ok ? { ok: true, data: result.data.items } : result;
+}
+
+export function getLabelPage(owner: string, repository: string): Promise<APIResult<LabelPage>> {
+  return request(repositoryPath(owner, repository, "/labels?limit=100"));
 }
 
 export async function getMergeRequests(

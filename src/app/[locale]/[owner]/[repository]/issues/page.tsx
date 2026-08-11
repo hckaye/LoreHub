@@ -30,6 +30,9 @@ export default async function IssuesPage({ params, searchParams }: IssuesPagePro
     <RepositorySection
       actions={
         <div className={styles.panelActions}>
+          <Link className={styles.secondaryButton} href={repositoryPath(locale, owner, repository, "labels")}>
+            {dictionary.labelsPage.title}
+          </Link>
           <Link className={styles.secondaryButton} href={repositoryMilestonesPath(locale, owner, repository)}>
             {dictionary.milestonesPage.milestonesLink}
           </Link>

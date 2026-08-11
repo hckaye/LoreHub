@@ -248,6 +248,13 @@ export type Label = {
   createdAt: string;
 };
 
+export type LabelPage = {
+  items: Label[];
+  nextCursor?: string;
+  hasMore: boolean;
+  viewerCanWrite: boolean;
+};
+
 export type MergeRequest = {
   id: string;
   number: number;
