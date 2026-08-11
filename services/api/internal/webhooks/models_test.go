@@ -17,3 +17,14 @@ func TestWikiWebhookEventsAreSupported(t *testing.T) {
 		t.Fatalf("wiki event kind = %q, supported = %t", kind, ok)
 	}
 }
+
+func TestReviewThreadWebhookEventsUseReviewSubscriptions(t *testing.T) {
+	for _, topic := range []string{
+		"merge_request_review_thread.created",
+		"merge_request_review_comment.created",
+	} {
+		if kind, ok := eventKind(topic); !ok || kind != "reviews" {
+			t.Fatalf("review event %q kind = %q, supported = %t", topic, kind, ok)
+		}
+	}
+}

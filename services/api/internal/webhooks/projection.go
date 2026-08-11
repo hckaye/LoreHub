@@ -64,7 +64,8 @@ func claimSourceEvents(ctx context.Context, tx pgx.Tx) ([]sourceEvent, error) {
 			FROM outbox_events event
 			LEFT JOIN webhook_projection_ledger ledger ON ledger.source_event_id = event.id
 			WHERE event.topic ~ '^(actions|branch_rule|branch|issue_comment|issue_label|issue|label|milestone|'
-			    'project|merge_request_comment|merge_request_review|merge_request|merge_operation|release|repository|wiki)\.'
+			    'project|merge_request_comment|merge_request_review|merge_request_review_thread|'
+			    'merge_request_review_comment|merge_request|merge_operation|release|repository|wiki)\.'
 			  AND (
 			      ledger.source_event_id IS NULL
 			      OR (ledger.status = 'processing' AND ledger.claimed_at < now() - interval '5 minutes')

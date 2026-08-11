@@ -27,6 +27,7 @@ import (
 	"github.com/lorehub/lorehub/services/api/internal/platform"
 	"github.com/lorehub/lorehub/services/api/internal/projects"
 	"github.com/lorehub/lorehub/services/api/internal/releases"
+	"github.com/lorehub/lorehub/services/api/internal/reviewthreads"
 	"github.com/lorehub/lorehub/services/api/internal/runner"
 	"github.com/lorehub/lorehub/services/api/internal/webhooks"
 	"github.com/lorehub/lorehub/services/api/internal/wiki"
@@ -222,6 +223,7 @@ func run(logger *slog.Logger) error {
 		httpapi.WithIdentityStore(store),
 		httpapi.WithConfiguredLoginProviders(settings.IdentityProviders),
 		httpapi.WithCollaboration(collaborationStore),
+		httpapi.WithReviewThreads(reviewthreads.NewStore(pool)),
 		httpapi.WithBranchObservations(store),
 		httpapi.WithProjects(projects.NewStore(pool)),
 		httpapi.WithReleases(releases.NewStore(pool)),

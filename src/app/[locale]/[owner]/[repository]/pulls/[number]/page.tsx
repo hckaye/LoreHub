@@ -12,6 +12,7 @@ import {
   getMergeRequest,
   getMergeRequestComments,
   getPublicRepository,
+  getReviewThreads,
   getReviews,
   getRevisionHistory,
 } from "@/lib/lorehub-api";
@@ -50,12 +51,13 @@ export default async function PullRequestDetailPage({ params }: PullRequestDetai
       />
     );
   }
-  const [session, readiness, reviews, comments, diff, history] = await Promise.all([
+  const [session, readiness, reviews, comments, reviewThreads, diff, history] = await Promise.all([
     getAuthSession(),
     getMergeReadiness(owner, slug, number),
     getReviews(owner, slug, number),
     getMergeRequestComments(owner, slug, number),
-    getLoreDiff(owner, slug, mergeRequest.data.sourceRevision, mergeRequest.data.targetRevision),
+    getReviewThreads(owner, slug, number),
+    getLoreDiff(owner, slug, mergeRequest.data.targetRevision, mergeRequest.data.sourceRevision),
     getRevisionHistory(owner, slug, {
       branch: mergeRequest.data.sourceBranch,
       revision: mergeRequest.data.sourceRevision,
@@ -74,7 +76,13 @@ export default async function PullRequestDetailPage({ params }: PullRequestDetai
       readiness={readiness.ok ? readiness.data : null}
       repository={slug}
       reviews={reviews.ok ? reviews.data : null}
+      reviewThreads={reviewThreadData(reviewThreads)}
+      reviewThreadsAvailable={reviewThreads.ok}
       session={session}
     />
   );
+}
+
+function reviewThreadData(result: Awaited<ReturnType<typeof getReviewThreads>>) {
+  return result.ok ? result.data : [];
 }

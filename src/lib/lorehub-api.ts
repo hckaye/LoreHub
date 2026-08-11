@@ -39,6 +39,7 @@ import type {
   Repository,
   RepositoryInsights,
   ReviewSummary,
+  ReviewThread,
   RevisionHistoryEntry,
   SARIFUploadMetadata,
   SearchResults,
@@ -333,6 +334,17 @@ export function getAssignableUsers(
 
 export function getReviews(owner: string, repository: string, number: number): Promise<APIResult<ReviewSummary>> {
   return request(repositoryPath(owner, repository, `/merge-requests/${number}/reviews`));
+}
+
+export async function getReviewThreads(
+  owner: string,
+  repository: string,
+  number: number,
+): Promise<APIResult<ReviewThread[]>> {
+  const result = await request<{ threads: ReviewThread[] }>(
+    repositoryPath(owner, repository, `/merge-requests/${number}/review-threads`),
+  );
+  return result.ok ? { ok: true, data: result.data.threads } : result;
 }
 
 export function getMergeReadiness(

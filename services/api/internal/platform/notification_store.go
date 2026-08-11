@@ -300,6 +300,10 @@ func (store *Store) syncNotifications(ctx context.Context, transaction pgx.Tx) e
 			    'merge_request_comment.created', 'merge_request_comment.updated',
 			    'merge_request_comment.deleted',
 			    'merge_request_review.created', 'merge_request_review.updated',
+			    'merge_request_review_thread.created', 'merge_request_review_thread.resolved',
+			    'merge_request_review_thread.unresolved',
+			    'merge_request_review_comment.created', 'merge_request_review_comment.updated',
+			    'merge_request_review_comment.deleted',
 			    'label.created', 'label.updated', 'label.deleted', 'branch_rule.created',
 			    'branch_rule.updated', 'branch_rule.deleted', 'team.created', 'team.updated',
 			    'team.member_added', 'team.member_removed'
@@ -468,6 +472,19 @@ func (store *Store) resolveNotificationScope(
 			  AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
 			JOIN organizations o ON o.id = r.organization_id AND o.active
 			WHERE review.id = split_part($1, ':', 1)::uuid
+		`, eventID).Scan(&scope.OrganizationID, &scope.RepositoryID, &scope.OrganizationSlug,
+			&scope.RepositorySlug, &scope.Visibility, &scope.IssueNumber, &scope.MergeRequestNumber,
+			&scope.Title)
+	case strings.HasPrefix(event.Topic, "merge_request_review_thread."),
+		strings.HasPrefix(event.Topic, "merge_request_review_comment."):
+		err = transaction.QueryRow(ctx, `
+			SELECT r.organization_id, r.id, o.slug, r.slug, r.visibility, NULL, mr.number, mr.title
+			FROM merge_request_review_threads thread
+			JOIN merge_requests mr ON mr.id = thread.merge_request_id
+			JOIN repositories r ON r.id = mr.repository_id
+			  AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
+			JOIN organizations o ON o.id = r.organization_id AND o.active
+			WHERE thread.id = split_part($1, ':', 1)::uuid
 		`, eventID).Scan(&scope.OrganizationID, &scope.RepositoryID, &scope.OrganizationSlug,
 			&scope.RepositorySlug, &scope.Visibility, &scope.IssueNumber, &scope.MergeRequestNumber,
 			&scope.Title)

@@ -4,8 +4,8 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { AuthRequired } from "@/components/auth/auth-required";
-import { DiffView } from "@/components/repositories/diff-view";
 import { PullRequestConversation } from "@/components/repositories/pull-request-conversation";
+import { ReviewDiffView } from "@/components/repositories/review-diff-view";
 import type {
   AuthSession,
   LoreDiff,
@@ -14,6 +14,7 @@ import type {
   MergeRequest,
   MergeRequestComment,
   ReviewSummary,
+  ReviewThread,
   RevisionHistoryEntry,
 } from "@/lib/api-types";
 import { postJson } from "@/lib/auth-client";
@@ -33,6 +34,8 @@ type PullRequestDetailProps = {
   commits: RevisionHistoryEntry[];
   comments: MergeRequestComment[];
   commentsAvailable: boolean;
+  reviewThreads: ReviewThread[];
+  reviewThreadsAvailable: boolean;
   session: AuthSession;
   dictionary: Dictionary;
 };
@@ -50,6 +53,8 @@ export function PullRequestDetail({
   commits,
   comments,
   commentsAvailable,
+  reviewThreads,
+  reviewThreadsAvailable,
   session,
   dictionary,
 }: PullRequestDetailProps) {
@@ -124,6 +129,8 @@ export function PullRequestDetail({
         dictionary={dictionary}
         mergeRequest={mergeRequest}
         reviews={reviews}
+        reviewThreads={reviewThreads}
+        reviewThreadsAvailable={reviewThreadsAvailable}
         session={session}
         tab={tab}
         locale={locale}
@@ -161,6 +168,8 @@ function PullRequestTab({
   reviews,
   comments,
   commentsAvailable,
+  reviewThreads,
+  reviewThreadsAvailable,
   commits,
   diff,
   dictionary,
@@ -174,6 +183,8 @@ function PullRequestTab({
   reviews: ReviewSummary | null;
   comments: MergeRequestComment[];
   commentsAvailable: boolean;
+  reviewThreads: ReviewThread[];
+  reviewThreadsAvailable: boolean;
   commits: RevisionHistoryEntry[];
   diff: LoreDiff | null;
   dictionary: Dictionary;
@@ -219,7 +230,17 @@ function PullRequestTab({
     <section aria-labelledby="files-title" className={styles.panel}>
       <h2 id="files-title">{dictionary.pullRequestDetail.filesChanged}</h2>
       {diff ? (
-        <DiffView diff={diff} dictionary={dictionary} />
+        <ReviewDiffView
+          authenticated={session.status === "authenticated"}
+          available={reviewThreadsAvailable}
+          csrfToken={sessionCSRF(session)}
+          dictionary={dictionary}
+          diff={diff}
+          number={mergeRequest.number}
+          owner={owner}
+          repository={repository}
+          threads={reviewThreads}
+        />
       ) : (
         <p className={styles.meta}>{dictionary.pullRequestDetail.noChangedFiles}</p>
       )}

@@ -22,6 +22,7 @@ import (
 	"github.com/lorehub/lorehub/services/api/internal/platform"
 	projectsapi "github.com/lorehub/lorehub/services/api/internal/projects"
 	releasesapi "github.com/lorehub/lorehub/services/api/internal/releases"
+	reviewthreadsapi "github.com/lorehub/lorehub/services/api/internal/reviewthreads"
 	"github.com/lorehub/lorehub/services/api/internal/runner"
 	wikiapi "github.com/lorehub/lorehub/services/api/internal/wiki"
 )
@@ -146,6 +147,7 @@ type API struct {
 	releasesStore           releasesapi.Store
 	milestonesStore         milestonesapi.Store
 	wikiStore               wikiapi.Store
+	reviewThreadsStore      reviewthreadsapi.Store
 	loginProvider           auth.LoginProvider
 	loginStore              auth.LoginTransactionStore
 	sessionStore            auth.SessionStore
@@ -196,6 +198,12 @@ func New(
 func WithCollaboration(store collab.Store) Option {
 	return func(api *API) {
 		api.collabStore = store
+	}
+}
+
+func WithReviewThreads(store reviewthreadsapi.Store) Option {
+	return func(api *API) {
+		api.reviewThreadsStore = store
 	}
 }
 
