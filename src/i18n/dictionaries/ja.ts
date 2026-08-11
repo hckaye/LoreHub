@@ -3,12 +3,14 @@ import { auditLog } from "./audit-log";
 import { insights } from "./insights";
 import { milestones } from "./milestones";
 import { releases } from "./releases";
+import { webhooks } from "./webhooks";
 
 const concat = (...parts: string[]) => parts.join("");
 
 const ja = {
   auditLog: auditLog.ja,
   insightsPage: insights.ja,
+  webhookSettings: webhooks.ja,
   metadata: {
     title: "LoreHub · Loreリポジトリの共同開発基盤",
     description: "Loreにレビュー、Issue、権限管理、GitHub Actions互換CIを追加します。",

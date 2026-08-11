@@ -33,7 +33,7 @@ docker compose -f infra/compose.yaml up --build
 
 `scripts/setup-keycloak-secrets.sh` は `POSTGRES_PASSWORD`、`KEYCLOAK_ADMIN_PASSWORD`、
 `KEYCLOAK_DB_PASSWORD`、`LOREHUB_OIDC_CLIENT_SECRET`、`LOREHUB_AUTH_SECRET`、
-`LOREHUB_ACTIONS_SECRET_KEY` を生成します。
+`LOREHUB_ACTIONS_SECRET_KEY`、`LOREHUB_WEBHOOK_SECRET_KEY` を生成します。
 既存の空欄は埋めますが、既存の値は保持します。ローテーションするときだけ `--force` を使います。
 ファイルの権限は `0600` に固定され、値は端末やログへ表示されません。
 

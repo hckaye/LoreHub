@@ -30,9 +30,10 @@ Local endpoints:
 - OIDC discovery: <http://keycloak.localhost:8280/realms/lorehub/.well-known/openid-configuration>
 
 `scripts/setup-keycloak-secrets.sh` generates `POSTGRES_PASSWORD`, `KEYCLOAK_ADMIN_PASSWORD`,
-`KEYCLOAK_DB_PASSWORD`, `LOREHUB_OIDC_CLIENT_SECRET`, `LOREHUB_AUTH_SECRET`, and
-`LOREHUB_ACTIONS_SECRET_KEY`. It fills empty values and preserves existing values. Use `--force` only when rotating
-them. The generated `.env` has mode `0600`, is excluded from version control, and is not printed by the script.
+`KEYCLOAK_DB_PASSWORD`, `LOREHUB_OIDC_CLIENT_SECRET`, `LOREHUB_AUTH_SECRET`,
+`LOREHUB_ACTIONS_SECRET_KEY`, and `LOREHUB_WEBHOOK_SECRET_KEY`. It fills empty values and preserves existing values.
+Use `--force` only when rotating them. The generated `.env` has mode `0600`, is excluded from version control, and is
+not printed by the script.
 
 ## OIDC clients
 

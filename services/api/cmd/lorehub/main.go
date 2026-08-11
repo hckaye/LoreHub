@@ -28,6 +28,7 @@ import (
 	"github.com/lorehub/lorehub/services/api/internal/projects"
 	"github.com/lorehub/lorehub/services/api/internal/releases"
 	"github.com/lorehub/lorehub/services/api/internal/runner"
+	"github.com/lorehub/lorehub/services/api/internal/webhooks"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 )
@@ -134,6 +135,33 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	webhookSecrets, err := webhooks.NewSecretBox(settings.WebhookSecretKeyID, settings.WebhookSecretKey)
+	if err != nil {
+		return err
+	}
+	localWebhookTargets := settings.Environment == "development" || settings.Environment == "test" ||
+		settings.Environment == "local" || settings.Environment == "local-insecure"
+	webhookTargets, err := webhooks.NewTargetPolicy(
+		localWebhookTargets,
+		settings.WebhookAllowPrivateTargets,
+		settings.WebhookRequestTimeout,
+	)
+	if err != nil {
+		return err
+	}
+	webhookStore, err := webhooks.NewStore(pool, webhookSecrets, webhookTargets)
+	if err != nil {
+		return err
+	}
+	webhookWorker, err := webhooks.NewWorker(
+		webhookStore,
+		settings.WebhookPollPeriod,
+		settings.WebhookLeaseDuration,
+		logger,
+	)
+	if err != nil {
+		return err
+	}
 	switch settings.AuthMode {
 	case config.AuthModeInteractive:
 		provider, err := auth.NewOIDCProvider(rootContext, auth.OIDCConfig{
@@ -197,6 +225,7 @@ func run(logger *slog.Logger) error {
 		httpapi.WithProjects(projects.NewStore(pool)),
 		httpapi.WithReleases(releases.NewStore(pool)),
 		httpapi.WithMilestones(milestones.NewStore(pool)),
+		httpapi.WithWebhooks(webhookStore),
 		httpapi.WithAuthorization(store),
 		httpapi.WithLoreAuth(loreAuth),
 		httpapi.WithLorePublicURL(settings.LorePublicURL),
@@ -269,7 +298,7 @@ func run(logger *slog.Logger) error {
 		logger,
 		settings.RunnerPlatformImages,
 	)
-	serverErrors := make(chan error, 3+len(authListeners))
+	serverErrors := make(chan error, 4+len(authListeners))
 	go func() {
 		logger.Info("LoreHub API listening", "address", settings.HTTPAddress)
 		serverErrors <- server.ListenAndServe()
@@ -286,6 +315,9 @@ func run(logger *slog.Logger) error {
 	}()
 	go func() {
 		serverErrors <- branchPoller.Run(rootContext)
+	}()
+	go func() {
+		serverErrors <- webhookWorker.Run(rootContext)
 	}()
 
 	select {

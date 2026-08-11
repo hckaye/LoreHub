@@ -15,11 +15,9 @@ import (
 	"github.com/lorehub/lorehub/services/api/internal/auth"
 	"github.com/lorehub/lorehub/services/api/internal/authz"
 	branchesapi "github.com/lorehub/lorehub/services/api/internal/branches"
-	codeapi "github.com/lorehub/lorehub/services/api/internal/code"
 	"github.com/lorehub/lorehub/services/api/internal/collab"
 	loreclient "github.com/lorehub/lorehub/services/api/internal/lore"
 	"github.com/lorehub/lorehub/services/api/internal/loreauth"
-	mergeapi "github.com/lorehub/lorehub/services/api/internal/merge"
 	milestonesapi "github.com/lorehub/lorehub/services/api/internal/milestones"
 	"github.com/lorehub/lorehub/services/api/internal/platform"
 	projectsapi "github.com/lorehub/lorehub/services/api/internal/projects"
@@ -158,6 +156,7 @@ type API struct {
 	lorePublicURL           string
 	identityStore           IdentityStore
 	loginProviders          []string
+	webhooksStore           webhooksManager
 }
 
 func New(
@@ -186,129 +185,7 @@ func New(
 		api.managedLoreClient = managedClient
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /health/live", api.live)
-	mux.HandleFunc("GET /health/ready", api.ready)
-	mux.HandleFunc("GET /auth/login", api.login)
-	mux.HandleFunc("GET /auth/callback", api.callback)
-	mux.HandleFunc("POST /auth/logout", api.logout)
-	mux.HandleFunc("GET /api/v1/auth/session", api.session)
-	mux.HandleFunc("GET /api/v1/auth/providers", api.providers)
-	mux.HandleFunc("GET /.well-known/jwks.json", api.jwks)
-	mux.HandleFunc("GET /auth/lore/confirm", api.loreAuthConfirm)
-	mux.HandleFunc("POST /auth/lore/confirm", api.loreAuthConfirm)
-	mux.HandleFunc("GET /api/v1/dashboard", api.dashboard)
-	mux.HandleFunc("GET /api/v1/search", api.search)
-	mux.HandleFunc("GET /api/v1/users/{username}", api.userProfile)
-	mux.HandleFunc("GET /api/v1/users/{username}/repositories", api.userRepositories)
-	mux.HandleFunc("PATCH /api/v1/account/profile", api.updateProfile)
-	mux.HandleFunc("GET /api/v1/account/notification-preferences", api.notificationPreferences)
-	mux.HandleFunc("PATCH /api/v1/account/notification-preferences", api.updateNotificationPreferences)
-	mux.HandleFunc("GET /api/v1/notifications", api.notifications)
-	mux.HandleFunc("GET /api/v1/notifications/unread-count", api.unreadNotificationCount)
-	mux.HandleFunc("PATCH /api/v1/notifications/{notificationID}/read", api.markNotificationRead)
-	mux.HandleFunc("POST /api/v1/notifications/read-all", api.markAllNotificationsRead)
-	mux.HandleFunc("GET /api/v1/explore/repositories", api.exploreRepositories)
-	mux.HandleFunc("POST /api/v1/organizations", api.createOrganization)
-	mux.HandleFunc("GET /api/v1/organizations/{organization}", api.organization)
-	mux.HandleFunc("PATCH /api/v1/organizations/{organization}/settings", api.updateOrganization)
-	mux.HandleFunc("GET /api/v1/organizations/{organization}/audit-log", api.organizationAuditLog)
-	mux.HandleFunc("GET /api/v1/organizations/{organization}/actions/settings",
-		api.listOrganizationActionsSettings)
-	mux.HandleFunc("PUT /api/v1/organizations/{organization}/actions/settings/{valueKind}/{name}",
-		api.upsertOrganizationActionsSetting)
-	mux.HandleFunc("DELETE /api/v1/organizations/{organization}/actions/settings/{valueKind}/{name}",
-		api.deleteOrganizationActionsSetting)
-	mux.HandleFunc("GET /api/v1/organizations/{organization}/repositories", api.organizationRepositories)
-	mux.HandleFunc("GET /api/v1/organizations/{organization}/teams/{team}", api.team)
-	mux.HandleFunc("PATCH /api/v1/organizations/{organization}/teams/{team}/settings", api.updateIdentityTeam)
-	mux.HandleFunc("POST /api/v1/organizations/{organization}/teams/{team}/members", api.addTeamMember)
-	mux.HandleFunc(
-		"DELETE /api/v1/organizations/{organization}/teams/{team}/members/{username}",
-		api.removeTeamMember,
-	)
-	mux.HandleFunc("POST /api/v1/organizations/{organization}/repositories", api.registerRepository)
-	mux.HandleFunc("POST /api/v1/organizations/{organization}/repositories/import", api.importRepository)
-	mux.HandleFunc("POST /api/v1/repositories/{owner}/{repository}/provision", api.retryRepositoryProvisioning)
-	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}", api.publicRepository)
-	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/settings", api.repositorySettings)
-	mux.HandleFunc("PATCH /api/v1/repositories/{owner}/{repository}/settings", api.updateRepositorySettings)
-	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/insights", api.repositoryInsights)
-	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/branches", api.repositoryBranches)
-	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/issues", api.listIssues)
-	mux.HandleFunc("POST /api/v1/repositories/{owner}/{repository}/issues", api.createIssue)
-	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/merge-requests", api.listMergeRequests)
-	mux.HandleFunc("POST /api/v1/repositories/{owner}/{repository}/merge-requests", api.createMergeRequest)
-	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/actions/runs", api.listCIRuns)
-	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/actions/settings",
-		api.listRepositoryActionsSettings)
-	mux.HandleFunc(
-		"PUT /api/v1/repositories/{owner}/{repository}/actions/settings/{scopeKind}/{valueKind}/{name}",
-		api.upsertRepositoryActionsSetting,
-	)
-	mux.HandleFunc(
-		"DELETE /api/v1/repositories/{owner}/{repository}/actions/settings/{scopeKind}/{valueKind}/{name}",
-		api.deleteRepositoryActionsSetting,
-	)
-	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/actions/workflows", api.listActionWorkflows)
-	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/actions/runs/{runNumber}", api.actionRunDetail)
-	mux.HandleFunc("POST /api/v1/repositories/{owner}/{repository}/actions/workflows/{workflow}/dispatches",
-		api.dispatchActionWorkflow)
-	mux.HandleFunc("POST /api/v1/repositories/{owner}/{repository}/actions/dispatches", api.dispatchRepositoryEvent)
-	mux.HandleFunc("POST /api/v1/repositories/{owner}/{repository}/actions/events/pull_request",
-		api.dispatchPullRequestEvent)
-	mux.HandleFunc("POST /api/v1/repositories/{owner}/{repository}/actions/runs/{runNumber}/cancel",
-		api.cancelActionRun)
-	mux.HandleFunc("POST /api/v1/repositories/{owner}/{repository}/actions/runs/{runNumber}/rerun",
-		api.rerunActionRun)
-	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/actions/jobs/{jobID}/logs", api.actionJobLog)
-	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/actions/artifacts/{artifactID}",
-		api.actionArtifact)
-	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/actions/artifacts/{artifactID}/download",
-		api.actionArtifact)
-	mux.HandleFunc("POST /api/v3/repos/{owner}/{repository}/code-scanning/sarifs", api.uploadSARIF)
-	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/code-scanning/sarif-uploads",
-		api.listSARIFUploads)
-	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/code-scanning/sarif-uploads/{uploadID}",
-		api.getSARIFUpload)
-	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/code-scanning/alerts",
-		api.listCodeScanningAlerts)
-	if api.collabStore != nil {
-		collab.Register(mux, api.collabStore, api, logger)
-		branchClient, branchClientOK := api.lore.(branchesapi.LoreClient)
-		if branchClientOK && api.branchObservations != nil {
-			branchesapi.Register(
-				mux, api.collabStore, api.branchObservations, api,
-				branchClient, api.loreCredentials, logger,
-			)
-		}
-		if api.projectsStore != nil {
-			projectsapi.Register(mux, api.projectsStore, api.collabStore, api, logger)
-		}
-		if api.releasesStore != nil {
-			releasesapi.Register(
-				mux, api.releasesStore, api.collabStore, api,
-				api.lore, api.loreCredentials, logger,
-			)
-		}
-		if api.milestonesStore != nil {
-			milestonesapi.Register(mux, api.milestonesStore, api.collabStore, api, logger)
-		}
-		if codeClient, ok := api.lore.(loreclient.CodeClient); ok {
-			codeapi.Register(mux, api.collabStore, api.lore, codeClient, api, api.loreCredentials,
-				api.serviceSubjects.PublicReader, logger)
-		}
-		if workflow, ok := api.collabStore.(collab.MergeWorkflowStore); ok {
-			if mergeClient, mergeOK := api.lore.(loreclient.MergeClient); mergeOK {
-				pushAuthorizer, _ := api.collabStore.(loreclient.PushAuthorizer)
-				mergeAuthorization, _ := api.authorization.(mergeapi.MergeAuthorizationStore)
-				mergeapi.Register(mux, api.collabStore, workflow, api.lore, mergeClient, api,
-					api.loreCredentials, pushAuthorizer, mergeAuthorization, logger)
-			}
-		}
-	}
-	if api.authorization != nil {
-		registerAuthorizationRoutes(mux, api)
-	}
+	api.registerRoutes(mux)
 	return api.recoverPanic(api.securityHeaders(api.requestLog(mux)))
 }
 

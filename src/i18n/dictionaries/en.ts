@@ -3,10 +3,12 @@ import { auditLog } from "./audit-log";
 import { insights } from "./insights";
 import { milestones } from "./milestones";
 import { releases } from "./releases";
+import { webhooks } from "./webhooks";
 
 const en = {
   auditLog: auditLog.en,
   insightsPage: insights.en,
+  webhookSettings: webhooks.en,
   metadata: {
     title: "LoreHub · Collaboration for Lore repositories",
     description: "Review, issues, permissions, and GitHub Actions-compatible CI for Lore.",

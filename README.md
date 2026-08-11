@@ -43,6 +43,7 @@ docker compose -f infra/compose.yaml down
 - Sign in with email and password or configured social providers
 - Use the interface in English or Japanese
 - Run GitHub Actions-compatible workflows with logs, artifacts, variables, secrets, and SARIF results
+- Send repository events to external services with [webhooks](docs/webhooks.md) and delivery history
 
 LoreHub is under active development. It does not yet provide every screen or API available in GitHub and GitLab.
 

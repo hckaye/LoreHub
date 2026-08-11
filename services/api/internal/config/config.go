@@ -25,104 +25,6 @@ const (
 	maxRunnerJobTimeout = 24 * time.Hour
 )
 
-type Config struct {
-	Environment                       string
-	HTTPAddress                       string
-	DatabaseURL                       string
-	DatabaseTimeout                   time.Duration
-	ShutdownTimeout                   time.Duration
-	AuthMode                          string
-	OIDCIssuer                        string
-	OIDCAudience                      string
-	OIDCClientID                      string
-	OIDCClientSecret                  string
-	OIDCRedirectURL                   string
-	PublicOrigin                      string
-	PublicAPIURL                      string
-	PublicGraphQLURL                  string
-	ActionSourceURL                   string
-	AuthSecret                        string
-	SessionCookieName                 string
-	LoginBindingCookieName            string
-	SessionCookiePath                 string
-	SessionCookieDomain               string
-	SessionCookieSecure               bool
-	SessionTTL                        time.Duration
-	LoginTransactionTTL               time.Duration
-	IdentityProviders                 []string
-	LoreCacheDir                      string
-	LoreIdentity                      string
-	AllowLegacyLoreIdentity           bool
-	LoreCredentials                   map[string]loreclient.CredentialMaterial
-	LoreAuthAuthority                 string
-	LorePublicReaderSubject           string
-	LoreActionsRunnerSubject          string
-	LoreObserverSubject               string
-	LoreRepositoryRegistrationSubject string
-	LoreAllowDevelopmentFallback      bool
-	DevLoreIdentity                   string
-	DevLoreIdentityFallback           bool
-	ActionsSecretKeyID                string
-	ActionsSecretKey                  string
-	ActionsJobTokenAudience           string
-	LoreAuthIssuer                    string
-	LoreAuthAudience                  string
-	LoreRootDomain                    string
-	LoreAuthJWKSURL                   string
-	LoreAuthEnvironment               string
-	LoreAuthIDP                       string
-	LoreAuthTokenTTL                  time.Duration
-	LoreAuthSessionTTL                time.Duration
-	LoreAuthLoginURL                  string
-	LoreAuthURL                       string
-	LorePublicURL                     string
-	LoreInternalURL                   string
-	LoreAuthAddress                   string
-	LoreAuthCompatAddress             string
-	LoreAuthTLSCert                   string
-	LoreAuthTLSKey                    string
-	AuthSigningKeyPath                string
-	AuthSigningKeyPEM                 string
-	AuthSigningKeyKID                 string
-	AuthPreviousKeys                  string
-	PolicyAddress                     string
-	PolicyTLSCert                     string
-	PolicyTLSKey                      string
-	PolicyTLSClientCA                 string
-	LorePolicyEndpoint                string
-	LoreObservationEndpoint           string
-	LoreBinary                        string
-	ActBinary                         string
-	RunnerPollPeriod                  time.Duration
-	BranchPollPeriod                  time.Duration
-	RunnerJobTimeout                  time.Duration
-	RunnerLeaseDuration               time.Duration
-	RunnerLogMaxBytes                 int64
-	RunnerLogMaxLineBytes             int64
-	RunnerArtifactMaxCount            int
-	RunnerArtifactMaxFile             int64
-	RunnerArtifactMaxTotal            int64
-	RunnerLogDir                      string
-	RunnerArtifactDir                 string
-	RunnerWorkDir                     string
-	RunnerProxyURL                    string
-	RunnerEngineProxyURL              string
-	RunnerPlatformImages              map[string]string
-	DevActionsContext                 DevActionsContext
-	DevActionsContextFallback         bool
-	DevActionsJobToken                string
-	DevActionsJobTokenFallback        bool
-}
-
-type DevActionsContext struct {
-	OrganizationVariables map[string]string `json:"organization_variables"`
-	RepositoryVariables   map[string]string `json:"repository_variables"`
-	EnvironmentVariables  map[string]string `json:"environment_variables"`
-	OrganizationSecrets   map[string]string `json:"organization_secrets"`
-	RepositorySecrets     map[string]string `json:"repository_secrets"`
-	EnvironmentSecrets    map[string]string `json:"environment_secrets"`
-}
-
 func Load() (Config, error) {
 	return LoadFor("serve")
 }
@@ -254,6 +156,31 @@ func LoadFor(command string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	webhookAllowPrivateTargets := false
+	webhookPollPeriod := 2 * time.Second
+	webhookRequestTimeout := 10 * time.Second
+	webhookLeaseDuration := 30 * time.Second
+	if command == "serve" {
+		webhookAllowPrivateTargets, err = boolSetting("LOREHUB_WEBHOOK_ALLOW_PRIVATE_TARGETS", false)
+		if err != nil {
+			return Config{}, err
+		}
+		webhookPollPeriod, err = durationSetting("LOREHUB_WEBHOOK_POLL_PERIOD", webhookPollPeriod)
+		if err != nil {
+			return Config{}, err
+		}
+		webhookRequestTimeout, err = durationSetting(
+			"LOREHUB_WEBHOOK_REQUEST_TIMEOUT",
+			webhookRequestTimeout,
+		)
+		if err != nil {
+			return Config{}, err
+		}
+		webhookLeaseDuration, err = durationSetting("LOREHUB_WEBHOOK_LEASE_DURATION", webhookLeaseDuration)
+		if err != nil {
+			return Config{}, err
+		}
+	}
 	platformImages, err := parseJSONMapSetting("LOREHUB_RUNNER_PLATFORM_IMAGES")
 	if err != nil {
 		return Config{}, err
@@ -315,6 +242,12 @@ func LoadFor(command string) (Config, error) {
 		ActionsSecretKeyID:                os.Getenv("LOREHUB_ACTIONS_SECRET_KEY_ID"),
 		ActionsSecretKey:                  os.Getenv("LOREHUB_ACTIONS_SECRET_KEY"),
 		ActionsJobTokenAudience:           envOrDefault("LOREHUB_ACTIONS_JOB_TOKEN_AUDIENCE", publicAPIURL),
+		WebhookSecretKeyID:                os.Getenv("LOREHUB_WEBHOOK_SECRET_KEY_ID"),
+		WebhookSecretKey:                  os.Getenv("LOREHUB_WEBHOOK_SECRET_KEY"),
+		WebhookPollPeriod:                 webhookPollPeriod,
+		WebhookRequestTimeout:             webhookRequestTimeout,
+		WebhookLeaseDuration:              webhookLeaseDuration,
+		WebhookAllowPrivateTargets:        webhookAllowPrivateTargets,
 		LoreAuthIssuer:                    loreAuthIssuer,
 		LoreAuthAudience:                  envOrDefault("LOREHUB_LORE_AUTH_AUDIENCE", loreRootDomain),
 		LoreRootDomain:                    loreRootDomain,
@@ -364,6 +297,9 @@ func LoadFor(command string) (Config, error) {
 		DevActionsJobTokenFallback:        devActionsJobTokenFallback,
 	}
 
+	if err := validateWebhookConfig(config, command); err != nil {
+		return Config{}, err
+	}
 	if err := validate(config, command); err != nil {
 		return Config{}, err
 	}

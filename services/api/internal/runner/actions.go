@@ -747,7 +747,13 @@ func recordActionEvent(
 	targetID string,
 	details map[string]any,
 ) error {
-	encoded, err := json.Marshal(details)
+	payload := make(map[string]any, len(details)+2)
+	for key, value := range details {
+		payload[key] = value
+	}
+	payload["organizationId"] = access.OrganizationID
+	payload["repositoryId"] = access.ID
+	encoded, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("encode Actions audit details: %w", err)
 	}

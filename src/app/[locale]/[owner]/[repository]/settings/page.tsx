@@ -7,6 +7,7 @@ import { RepositoryAccessSettings } from "@/components/repositories/repository-a
 import { RepositoryPanel, RepositorySection } from "@/components/repositories/repository-section";
 import { RepositorySettingsForm } from "@/components/repositories/repository-settings-form";
 import { EmptyState } from "@/components/ui/empty-state";
+import { RepositoryWebhookSettings } from "@/components/webhooks/repository-webhook-settings";
 import { getDictionary } from "@/i18n";
 import { isLocale } from "@/i18n/config";
 import { getAuthSession } from "@/lib/auth-api";
@@ -126,6 +127,15 @@ export default async function RepositorySettingsPage({ params }: RepositorySetti
           locale={locale}
           session={session}
           target={{ kind: "repository", owner: data.owner, repository: data.slug }}
+        />
+      </RepositoryPanel>
+      <RepositoryPanel description={dictionary.webhookSettings.description} title={dictionary.webhookSettings.title}>
+        <RepositoryWebhookSettings
+          dictionary={dictionary}
+          locale={locale}
+          owner={data.owner}
+          repository={data.slug}
+          session={session}
         />
       </RepositoryPanel>
     </RepositorySection>

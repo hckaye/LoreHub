@@ -43,6 +43,7 @@ docker compose -f infra/compose.yaml down
 - Email/Passwordまたは設定済みのソーシャルプロバイダーによるログイン
 - 英語と日本語の画面
 - GitHub Actions互換workflow、log、artifact、variables、secrets、SARIF結果
+- [Webhook](docs/webhooks.ja.md)による外部サービスへのイベント通知と配信履歴
 
 LoreHubは開発中です。GitHubとGitLabにあるすべての画面やAPIにはまだ対応していません。
 

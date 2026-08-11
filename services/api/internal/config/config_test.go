@@ -100,6 +100,10 @@ func TestLoadForProductionRunnerDoesNotRequireWebAuthentication(t *testing.T) {
 	t.Setenv("LOREHUB_OIDC_CLIENT_SECRET", "")
 	t.Setenv("LOREHUB_OIDC_REDIRECT_URL", "")
 	t.Setenv("LOREHUB_AUTH_SECRET", "")
+	t.Setenv("LOREHUB_WEBHOOK_SECRET_KEY_ID", "")
+	t.Setenv("LOREHUB_WEBHOOK_SECRET_KEY", "")
+	t.Setenv("LOREHUB_WEBHOOK_ALLOW_PRIVATE_TARGETS", "invalid")
+	t.Setenv("LOREHUB_WEBHOOK_REQUEST_TIMEOUT", "invalid")
 
 	settings, err := LoadFor("runner")
 	if err != nil {
@@ -107,6 +111,47 @@ func TestLoadForProductionRunnerDoesNotRequireWebAuthentication(t *testing.T) {
 	}
 	if settings.AuthMode != AuthModeDisabled {
 		t.Fatalf("runner authentication mode = %q, want disabled", settings.AuthMode)
+	}
+}
+
+func TestLoadRequiresDedicatedWebhookEncryptionKey(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("LOREHUB_WEBHOOK_SECRET_KEY", "not-base64")
+
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "LOREHUB_WEBHOOK_SECRET_KEY") {
+		t.Fatalf("expected an invalid webhook encryption key to fail, got %v", err)
+	}
+}
+
+func TestLoadRejectsLineWrappedWebhookEncryptionKey(t *testing.T) {
+	setRequiredEnvironment(t)
+	key := "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+	t.Setenv("LOREHUB_WEBHOOK_SECRET_KEY", key[:8]+"\n"+key[8:])
+
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "LOREHUB_WEBHOOK_SECRET_KEY") {
+		t.Fatalf("expected a line-wrapped webhook key to fail, got %v", err)
+	}
+}
+
+func TestLoadRejectsPrivateWebhookTargetsOutsideLocalProfiles(t *testing.T) {
+	setProductionEnvironment(t)
+	t.Setenv("LOREHUB_WEBHOOK_ALLOW_PRIVATE_TARGETS", "true")
+
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "LOREHUB_WEBHOOK_ALLOW_PRIVATE_TARGETS") {
+		t.Fatalf("expected private webhook targets to fail in production, got %v", err)
+	}
+}
+
+func TestLoadRejectsInvalidWebhookDurations(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("LOREHUB_WEBHOOK_REQUEST_TIMEOUT", "not-a-duration")
+
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "LOREHUB_WEBHOOK_REQUEST_TIMEOUT") {
+		t.Fatalf("expected an invalid webhook timeout to fail, got %v", err)
 	}
 }
 
@@ -432,6 +477,15 @@ func setRequiredEnvironment(t *testing.T) {
 		"MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
 	)
 	t.Setenv("LOREHUB_ACTIONS_JOB_TOKEN_AUDIENCE", "")
+	t.Setenv("LOREHUB_WEBHOOK_SECRET_KEY_ID", "test-webhooks-v1")
+	t.Setenv(
+		"LOREHUB_WEBHOOK_SECRET_KEY",
+		"MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
+	)
+	t.Setenv("LOREHUB_WEBHOOK_ALLOW_PRIVATE_TARGETS", "")
+	t.Setenv("LOREHUB_WEBHOOK_POLL_PERIOD", "")
+	t.Setenv("LOREHUB_WEBHOOK_REQUEST_TIMEOUT", "")
+	t.Setenv("LOREHUB_WEBHOOK_LEASE_DURATION", "")
 	t.Setenv("LOREHUB_DEV_ALLOW_LORE_IDENTITY_FALLBACK", "")
 	t.Setenv("LOREHUB_DEV_LORE_IDENTITY", "")
 	t.Setenv("LOREHUB_AUTH_MODE", "")

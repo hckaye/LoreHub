@@ -1,0 +1,296 @@
+.stack {
+  display: grid;
+  gap: 16px;
+}
+
+.statusArea:empty {
+  display: none;
+}
+
+.muted,
+.error,
+.success,
+.empty p,
+.callout p,
+.events {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.muted,
+.empty p,
+.events {
+  color: var(--fg-muted);
+}
+
+.error {
+  color: var(--danger-fg);
+}
+
+.success {
+  color: var(--success-fg);
+}
+
+.callout,
+.empty {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-subtle, var(--surface-raised));
+}
+
+.callout h3,
+.empty h3 {
+  margin: 0 0 4px;
+  font-size: 0.9rem;
+}
+
+.callout .secondaryButton {
+  margin-top: 12px;
+}
+
+.webhookList {
+  display: grid;
+  gap: 12px;
+}
+
+.webhookCard {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.webhookHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 14px 6px;
+}
+
+.webhookHeading > div:first-child {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.webhookHeading strong {
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+}
+
+.activeStatus,
+.inactiveStatus {
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.activeStatus {
+  color: var(--success-fg);
+}
+
+.inactiveStatus {
+  color: var(--fg-muted);
+}
+
+.events {
+  padding: 0 14px 14px;
+}
+
+.rowActions,
+.formActions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.iconButton,
+.dangerIconButton {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  place-items: center;
+  background: var(--surface-raised);
+  color: var(--fg-default);
+}
+
+.dangerIconButton {
+  color: var(--danger-fg);
+}
+
+.deliverySection {
+  border-top: 1px solid var(--border-muted);
+}
+
+.deliverySection h4,
+.deliverySection > .muted {
+  margin: 0;
+  padding: 10px 14px;
+}
+
+.deliverySection h4 {
+  background: var(--surface-subtle, var(--surface-raised));
+  font-size: 0.76rem;
+}
+
+.tableScroll {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.76rem;
+}
+
+.table th,
+.table td {
+  padding: 9px 12px;
+  border-top: 1px solid var(--border-muted);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.table th {
+  color: var(--fg-muted);
+  font-size: 0.69rem;
+  font-weight: 600;
+}
+
+.form {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.form h3 {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+  color: var(--fg-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.field input {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface-raised);
+  color: var(--fg-default);
+}
+
+.field small {
+  font-weight: 400;
+  line-height: 1.45;
+}
+
+.eventFieldset {
+  padding: 0;
+  border: 0;
+}
+
+.eventFieldset legend {
+  margin-bottom: 8px;
+  color: var(--fg-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.eventGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px 16px;
+}
+
+.eventGrid label,
+.activeField {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 0.78rem;
+}
+
+.eventGrid input,
+.activeField input {
+  accent-color: var(--accent-emphasis);
+}
+
+.primaryButton,
+.secondaryButton {
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.primaryButton {
+  border: 1px solid var(--accent-emphasis);
+  background: var(--accent-emphasis);
+  color: var(--fg-on-emphasis);
+}
+
+.secondaryButton {
+  border: 1px solid var(--border-strong);
+  background: var(--surface-raised);
+  color: var(--fg-default);
+}
+
+.primaryButton:disabled,
+.secondaryButton:disabled,
+.iconButton:disabled,
+.dangerIconButton:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 720px) {
+  .eventGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .webhookHeading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .rowActions {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 460px) {
+  .eventGrid {
+    grid-template-columns: 1fr;
+  }
+}
