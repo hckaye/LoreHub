@@ -301,6 +301,40 @@ export type ProjectList = {
   viewerCanWrite: boolean;
 };
 
+export type ReleaseAsset = {
+  id: string;
+  name: string;
+  externalUrl: string;
+  createdBy: string;
+  createdAt: string;
+};
+
+export type Release = {
+  id: string;
+  tagName: string;
+  title: string;
+  notes: string;
+  sourceBranch: string;
+  revision: string;
+  state: "draft" | "published";
+  createdBy: string;
+  publishedBy: string | null;
+  publishedAt: string | null;
+  version: number;
+  assets: ReleaseAsset[];
+  createdAt: string;
+  updatedAt: string;
+  viewerCanWrite: boolean;
+};
+
+export type ReleasePage = {
+  releases: Release[];
+  page: number;
+  perPage: number;
+  hasNext: boolean;
+  viewerCanWrite: boolean;
+};
+
 export type TreeEntry = {
   name: string;
   path: string;

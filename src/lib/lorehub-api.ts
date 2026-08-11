@@ -31,6 +31,7 @@ import type {
   OrganizationView,
   Project,
   ProjectList,
+  ReleasePage,
   Repository,
   ReviewSummary,
   RevisionHistoryEntry,
@@ -242,6 +243,11 @@ export function getProject(owner: string, repository: string, number: number): P
   return request(repositoryPath(owner, repository, `/projects/${number}`));
 }
 
+export function getReleases(owner: string, repository: string, page: number): Promise<APIResult<ReleasePage>> {
+  const query = new URLSearchParams({ page: String(page), perPage: "20" });
+  return request(repositoryPath(owner, repository, `/releases?${query.toString()}`));
+}
+
 export function getReviews(owner: string, repository: string, number: number): Promise<APIResult<ReviewSummary>> {
   return request(repositoryPath(owner, repository, `/merge-requests/${number}/reviews`));
 }
@@ -358,8 +364,19 @@ function queryString(query: Record<string, string | undefined>): string {
 
 async function readProblemCode(response: Response): Promise<string | undefined> {
   try {
-    const payload = (await response.json()) as { error?: { code?: unknown } };
-    return typeof payload.error?.code === "string" ? payload.error.code : undefined;
+    const payload = (await response.json()) as {
+      error?: { code?: unknown };
+      code?: unknown;
+      type?: unknown;
+    };
+    if (typeof payload.error?.code === "string") return payload.error.code;
+    if (typeof payload.code === "string") return payload.code;
+    if (typeof payload.type === "string") {
+      const marker = "/problems/";
+      const index = payload.type.lastIndexOf(marker);
+      return index >= 0 ? payload.type.slice(index + marker.length) : undefined;
+    }
+    return undefined;
   } catch {
     return undefined;
   }

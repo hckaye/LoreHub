@@ -14,6 +14,7 @@ import {
 test("repository routes keep the locale and encode path segments", () => {
   assert.equal(repositoryPath("ja", "Epic Games", "Lore Hub", "pulls"), "/ja/Epic%20Games/Lore%20Hub/pulls");
   assert.equal(repositoryPath("en", "owner", "repository"), "/en/owner/repository");
+  assert.equal(repositoryPath("ja", "owner", "repository", "releases"), "/ja/owner/repository/releases");
   assert.equal(repositoryBranchesPath("ja", "Epic Games", "Lore Hub"), "/ja/Epic%20Games/Lore%20Hub/branches");
 });
 

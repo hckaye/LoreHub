@@ -25,6 +25,7 @@ import (
 	epic_urc "github.com/lorehub/lorehub/services/api/internal/loreauth/epic_urc"
 	"github.com/lorehub/lorehub/services/api/internal/platform"
 	"github.com/lorehub/lorehub/services/api/internal/projects"
+	"github.com/lorehub/lorehub/services/api/internal/releases"
 	"github.com/lorehub/lorehub/services/api/internal/runner"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -193,6 +194,7 @@ func run(logger *slog.Logger) error {
 		httpapi.WithCollaboration(collaborationStore),
 		httpapi.WithBranchObservations(store),
 		httpapi.WithProjects(projects.NewStore(pool)),
+		httpapi.WithReleases(releases.NewStore(pool)),
 		httpapi.WithAuthorization(store),
 		httpapi.WithLoreAuth(loreAuth),
 		httpapi.WithLorePublicURL(settings.LorePublicURL),

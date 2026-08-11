@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { classifyMutationStatus, deleteJson, patchJson, postJson, putJson } from "../src/lib/auth-client";
+import {
+  classifyMutationStatus,
+  deleteJson,
+  deleteJsonWithBody,
+  patchJson,
+  postJson,
+  putJson,
+} from "../src/lib/auth-client";
 
 test("mutation status maps authentication and API failures", () => {
   assert.equal(classifyMutationStatus(401), "unauthorized");
@@ -69,6 +76,24 @@ test("JSON mutations use same-origin credentials and CSRF header", async () => {
     const headers = new Headers(request?.init?.headers);
     assert.equal(headers.get("X-CSRF-Token"), "csrf-token");
     assert.equal(headers.get("Content-Type"), "application/json");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("DELETE can send an optimistic version as strict JSON", async () => {
+  const originalFetch = globalThis.fetch;
+  let request: RequestInit | undefined;
+  globalThis.fetch = async (_input, init) => {
+    request = init;
+    return new Response(null, { status: 204 });
+  };
+  try {
+    const result = await deleteJsonWithBody<null>("/api/v1/releases/1", { expectedVersion: 7 }, "csrf-token");
+    assert.deepEqual(result, { ok: true, data: null });
+    assert.equal(request?.method, "DELETE");
+    assert.equal(new Headers(request?.headers).get("Content-Type"), "application/json");
+    assert.equal(request?.body, JSON.stringify({ expectedVersion: 7 }));
   } finally {
     globalThis.fetch = originalFetch;
   }

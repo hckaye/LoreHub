@@ -6,6 +6,7 @@ export const repositorySections = [
   "pulls",
   "actions",
   "projects",
+  "releases",
   "security",
   "insights",
   "settings",

@@ -1,0 +1,330 @@
+.page,
+.list {
+  display: grid;
+  gap: 16px;
+}
+
+.createArea {
+  display: grid;
+  gap: 12px;
+  justify-items: end;
+}
+
+.primaryButton,
+.secondaryButton,
+.cardActions button,
+.textButton {
+  align-items: center;
+  border: 1px solid;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  gap: 6px;
+  justify-content: center;
+  min-height: 32px;
+  padding: 5px 12px;
+}
+
+.primaryButton {
+  background: #1f883d;
+  border-color: rgba(31, 35, 40, 0.15);
+  color: #fff;
+}
+
+.secondaryButton,
+.cardActions button,
+.textButton {
+  background: #f6f8fa;
+  border-color: #d0d7de;
+  color: #24292f;
+}
+
+.primaryButton:disabled,
+.secondaryButton:disabled,
+.cardActions button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.createForm {
+  background: #fff;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(140, 149, 159, 0.2);
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  width: min(100%, 720px);
+}
+
+.createForm h2,
+.assets h3,
+.releaseCard h2 {
+  margin: 0;
+}
+
+.createForm h2,
+.releaseCard h2 {
+  font-size: 20px;
+}
+
+.createForm > label,
+.formGrid label {
+  display: grid;
+  font-size: 14px;
+  font-weight: 600;
+  gap: 6px;
+}
+
+.createForm input,
+.createForm select,
+.createForm textarea,
+.editForm input,
+.editForm textarea,
+.assetForm input {
+  background: #fff;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  color: #1f2328;
+  font: inherit;
+  min-width: 0;
+  padding: 8px 10px;
+}
+
+.createForm textarea,
+.editForm textarea {
+  min-height: 130px;
+  resize: vertical;
+}
+
+.formGrid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 1fr 1fr;
+}
+
+.formHint {
+  color: #636c76;
+  font-size: 12px;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.formActions,
+.cardActions,
+.assetsHeading,
+.pagination {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.formActions {
+  justify-content: flex-end;
+}
+
+.releaseCard {
+  background: #fff;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  display: grid;
+  gap: 16px;
+  overflow: hidden;
+  padding: 20px;
+}
+
+.releaseHeader {
+  align-items: flex-start;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.releaseHeader > div:first-child {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.tagLine {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tag {
+  color: #0969da;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.published,
+.draft {
+  border: 1px solid;
+  border-radius: 2em;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 1px 8px;
+}
+
+.published {
+  border-color: #1a7f37;
+  color: #1a7f37;
+}
+
+.draft {
+  border-color: #636c76;
+  color: #636c76;
+}
+
+.meta,
+.emptyAssets {
+  color: #636c76;
+  font-size: 12px;
+  margin: 0;
+}
+
+.cardActions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.cardActions .dangerButton {
+  color: #cf222e;
+}
+
+.notes {
+  line-height: 1.55;
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.editForm {
+  display: grid;
+  gap: 10px;
+}
+
+.revision {
+  background: #f6f8fa;
+  border: 1px solid #d8dee4;
+  border-radius: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 13px;
+  gap: 8px 20px;
+  padding: 10px 12px;
+}
+
+.revision a {
+  color: #0969da;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+
+.assets {
+  border-top: 1px solid #d8dee4;
+  display: grid;
+  gap: 10px;
+  padding-top: 14px;
+}
+
+.assetsHeading {
+  justify-content: space-between;
+}
+
+.assets h3 {
+  font-size: 14px;
+}
+
+.textButton {
+  background: transparent;
+  border-color: transparent;
+  color: #0969da;
+  padding: 3px 6px;
+}
+
+.assetList {
+  border: 1px solid #d8dee4;
+  border-radius: 6px;
+  list-style: none;
+  margin: 0;
+  overflow: hidden;
+  padding: 0;
+}
+
+.assetList li {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  padding: 9px 12px;
+}
+
+.assetList li + li {
+  border-top: 1px solid #d8dee4;
+}
+
+.assetList a {
+  align-items: center;
+  color: #0969da;
+  display: inline-flex;
+  gap: 8px;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+
+.assetList button {
+  background: transparent;
+  border: 0;
+  color: #cf222e;
+  cursor: pointer;
+  padding: 3px;
+}
+
+.assetForm {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(120px, 0.7fr) minmax(180px, 1.3fr) auto;
+}
+
+.pagination {
+  justify-content: center;
+}
+
+.pagination a {
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  color: #0969da;
+  padding: 6px 12px;
+  text-decoration: none;
+}
+
+.pagination span {
+  color: #636c76;
+  font-size: 13px;
+}
+
+@media (max-width: 720px) {
+  .createArea {
+    justify-items: stretch;
+  }
+
+  .formGrid,
+  .assetForm {
+    grid-template-columns: 1fr;
+  }
+
+  .releaseHeader {
+    display: grid;
+  }
+
+  .cardActions {
+    justify-content: flex-start;
+  }
+}

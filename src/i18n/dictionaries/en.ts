@@ -1,3 +1,5 @@
+import { releases } from "./releases";
+
 const en = {
   metadata: {
     title: "LoreHub · Collaboration for Lore repositories",
@@ -29,6 +31,7 @@ const en = {
     pullRequests: "Pull requests",
     actions: "Actions",
     projects: "Projects",
+    releases: "Releases",
     security: "Security",
     insights: "Insights",
     settings: "Settings",
@@ -506,6 +509,7 @@ const en = {
       confirmDeleteProject: "Delete this project and every column and card in it?",
     },
   },
+  releasesPage: releases.en,
   securityPage: {
     title: "Security",
     description: "Review code scanning findings uploaded by this repository's workflows.",

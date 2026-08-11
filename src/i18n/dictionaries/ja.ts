@@ -1,3 +1,5 @@
+import { releases } from "./releases";
+
 const concat = (...parts: string[]) => parts.join("");
 
 const ja = {
@@ -31,6 +33,7 @@ const ja = {
     pullRequests: "プルリクエスト",
     actions: "Actions",
     projects: "プロジェクト",
+    releases: "リリース",
     security: "セキュリティ",
     insights: "分析",
     settings: "設定",
@@ -584,6 +587,7 @@ const ja = {
       confirmDeleteProject: "このプロジェクトとすべての列、カードを削除しますか？",
     },
   },
+  releasesPage: releases.ja,
   securityPage: {
     title: "セキュリティ",
     // prettier-ignore

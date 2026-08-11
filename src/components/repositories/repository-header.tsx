@@ -11,6 +11,7 @@ import {
   Settings,
   ShieldCheck,
   Star,
+  Tags,
   Workflow,
 } from "lucide-react";
 import Link from "next/link";
@@ -39,6 +40,7 @@ const tabs = [
   ["pulls", GitPullRequest],
   ["actions", PlayCircle],
   ["projects", Workflow],
+  ["releases", Tags],
   ["security", ShieldCheck],
   ["insights", BarChart3],
   ["settings", Settings],

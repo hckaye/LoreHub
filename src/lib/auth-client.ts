@@ -47,6 +47,14 @@ export async function deleteJson<T>(path: string, csrfToken: string): Promise<Mu
   return jsonMutation("DELETE", path, undefined, csrfToken);
 }
 
+export async function deleteJsonWithBody<T>(
+  path: string,
+  input: unknown,
+  csrfToken: string,
+): Promise<MutationResult<T>> {
+  return jsonMutation("DELETE", path, input, csrfToken);
+}
+
 export async function postLogout(csrfToken: string): Promise<MutationResult<null>> {
   try {
     const response = await fetch("/auth/logout", {
@@ -134,6 +142,14 @@ async function readProblemCode(response: Response): Promise<string | null> {
     const payload = (await response.json()) as unknown;
     if (isRecord(payload) && isRecord(payload.error) && typeof payload.error.code === "string") {
       return payload.error.code;
+    }
+    if (isRecord(payload) && typeof payload.code === "string") {
+      return payload.code;
+    }
+    if (isRecord(payload) && typeof payload.type === "string") {
+      const marker = "/problems/";
+      const index = payload.type.lastIndexOf(marker);
+      return index >= 0 ? payload.type.slice(index + marker.length) : null;
     }
   } catch {
     return null;
