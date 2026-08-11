@@ -1,6 +1,6 @@
 module github.com/lorehub/lorehub/services/api
 
-go 1.26.0
+go 1.26.5
 
 require (
 	github.com/EpicGames/lore-go v0.8.5
