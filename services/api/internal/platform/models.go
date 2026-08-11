@@ -88,6 +88,7 @@ type MergeRequest struct {
 	Title          string    `json:"title"`
 	Body           string    `json:"body"`
 	State          string    `json:"state"`
+	IsDraft        bool      `json:"isDraft"`
 	SourceBranch   string    `json:"sourceBranch"`
 	TargetBranch   string    `json:"targetBranch"`
 	SourceRevision string    `json:"sourceRevision"`
@@ -256,6 +257,7 @@ type CreateIssueInput struct {
 type CreateMergeRequestInput struct {
 	Title          string
 	Body           string
+	IsDraft        bool
 	SourceBranch   string
 	TargetBranch   string
 	SourceRevision string

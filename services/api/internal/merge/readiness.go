@@ -85,6 +85,10 @@ func (api *API) buildReadiness(
 		readiness.Blockers = append(readiness.Blockers, collab.MergeBlocker{Code: "state_not_open",
 			Detail: "Only an open merge request can be merged"})
 	}
+	if mergeRequest.IsDraft {
+		readiness.Blockers = append(readiness.Blockers, collab.MergeBlocker{Code: "draft",
+			Detail: "Mark the pull request as ready for review before merging"})
+	}
 	if readiness.SourceStale {
 		readiness.Blockers = append(readiness.Blockers, collab.MergeBlocker{Code: "stale_source_revision",
 			Detail: "The source branch revision changed since this merge request was opened"})

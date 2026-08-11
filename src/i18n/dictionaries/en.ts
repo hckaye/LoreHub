@@ -2,6 +2,7 @@ import { assignees } from "./assignees";
 import { auditLog } from "./audit-log";
 import { insights } from "./insights";
 import { milestones } from "./milestones";
+import { pullRequestDrafts } from "./pull-request-drafts";
 import { pullRequestMetadata } from "./pull-request-metadata";
 import { releases } from "./releases";
 import { webhooks } from "./webhooks";
@@ -13,6 +14,7 @@ const en = {
   webhookSettings: webhooks.en,
   wikiPage: wiki.en,
   pullRequestMetadata: pullRequestMetadata.en,
+  pullRequestDrafts: pullRequestDrafts.en,
   metadata: {
     title: "LoreHub · Collaboration for Lore repositories",
     description: "Review, issues, permissions, and GitHub Actions-compatible CI for Lore.",

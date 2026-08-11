@@ -588,6 +588,7 @@ func (api *API) createMergeRequest(writer http.ResponseWriter, request *http.Req
 	var input struct {
 		Title        string `json:"title"`
 		Body         string `json:"body"`
+		IsDraft      bool   `json:"isDraft"`
 		SourceBranch string `json:"sourceBranch"`
 		TargetBranch string `json:"targetBranch"`
 	}
@@ -640,6 +641,7 @@ func (api *API) createMergeRequest(writer http.ResponseWriter, request *http.Req
 		platform.CreateMergeRequestInput{
 			Title:          input.Title,
 			Body:           input.Body,
+			IsDraft:        input.IsDraft,
 			SourceBranch:   input.SourceBranch,
 			TargetBranch:   input.TargetBranch,
 			SourceRevision: sourceRevision,

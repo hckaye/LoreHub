@@ -637,9 +637,11 @@ func (s *store) FinalizeMerged(
 		UPDATE merge_requests
 		SET state = 'merged', merged_by = $3, merged_revision = $4,
 		    merged_at = $5, closed_at = $5, updated_at = $5
-		WHERE repository_id = $1 AND number = $2 AND state = 'open'
+		WHERE repository_id = $1 AND number = $2 AND state = 'open' AND NOT is_draft
 		RETURNING id
-	`, repositoryID, number, actor.ID, pushedRevision, now).Scan(&mr.ID); err != nil {
+	`, repositoryID, number, actor.ID, pushedRevision, now).Scan(&mr.ID); errors.Is(err, pgx.ErrNoRows) {
+		return MergeRequest{}, platform.ErrConflict
+	} else if err != nil {
 		return MergeRequest{}, fmt.Errorf("finalize merge request: %w", err)
 	}
 	if _, err := tx.Exec(ctx, `
@@ -817,7 +819,7 @@ func loadMergeResolutions(
 
 func scanMergeRequestByTxForUpdate(ctx context.Context, tx pgx.Tx, repoID string, number int64) (MergeRequest, error) {
 	row := tx.QueryRow(ctx, `
-		SELECT mr.id, mr.number, mr.title, mr.body, mr.state,
+		SELECT mr.id, mr.number, mr.title, mr.body, mr.state, mr.is_draft,
 		       mr.source_branch, mr.target_branch, mr.source_revision, mr.target_revision,
 		       author.username, mr.author_id, merged.username, mr.merged_revision,
 		       mr.merged_at, mr.created_at, mr.updated_at, mr.closed_at

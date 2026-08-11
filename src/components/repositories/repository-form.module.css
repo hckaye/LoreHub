@@ -50,6 +50,26 @@
   line-height: 1.45;
 }
 
+.checkbox {
+  align-items: start;
+  display: flex;
+  gap: 9px;
+}
+
+.checkbox input {
+  margin-top: 3px;
+}
+
+.checkbox span {
+  display: grid;
+  gap: 3px;
+}
+
+.checkbox small {
+  color: var(--fg-muted);
+  line-height: 1.45;
+}
+
 .error {
   margin: 0;
   color: var(--danger-fg);

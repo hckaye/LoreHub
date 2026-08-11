@@ -22,6 +22,7 @@ type API struct {
 	assignees      IssueAssigneeStore
 	reviewRequests ReviewRequestStore
 	metadata       MergeRequestMetadataStore
+	drafts         MergeRequestDraftStore
 	actors         ActorResolver
 	logger         *slog.Logger
 }
@@ -31,9 +32,10 @@ func NewAPI(store Store, actors ActorResolver, logger *slog.Logger) *API {
 	assignees, _ := store.(IssueAssigneeStore)
 	reviewRequests, _ := store.(ReviewRequestStore)
 	metadata, _ := store.(MergeRequestMetadataStore)
+	drafts, _ := store.(MergeRequestDraftStore)
 	return &API{
 		store: store, assignees: assignees, reviewRequests: reviewRequests,
-		metadata: metadata, actors: actors, logger: logger,
+		metadata: metadata, drafts: drafts, actors: actors, logger: logger,
 	}
 }
 

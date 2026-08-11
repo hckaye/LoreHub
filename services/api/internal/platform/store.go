@@ -557,7 +557,7 @@ func (store *Store) ListPublicMergeRequests(
 		state = "open"
 	}
 	rows, err := store.pool.Query(ctx, `
-		SELECT mr.id, mr.number, mr.title, mr.body, mr.state,
+		SELECT mr.id, mr.number, mr.title, mr.body, mr.state, mr.is_draft,
 		       mr.source_branch, mr.target_branch, mr.source_revision, mr.target_revision,
 		       author.username,
 		       COUNT(review.id) FILTER (WHERE review.decision = 'approved'),
@@ -586,6 +586,7 @@ func (store *Store) ListPublicMergeRequests(
 			&mergeRequest.Title,
 			&mergeRequest.Body,
 			&mergeRequest.State,
+			&mergeRequest.IsDraft,
 			&mergeRequest.SourceBranch,
 			&mergeRequest.TargetBranch,
 			&mergeRequest.SourceRevision,
@@ -632,28 +633,38 @@ func (store *Store) CreateMergeRequest(
 	if err != nil {
 		return MergeRequest{}, fmt.Errorf("allocate merge request number: %w", err)
 	}
+	createdAt := time.Now().UTC()
 	mergeRequest := MergeRequest{
 		ID:             uuid.NewString(),
 		Number:         number,
 		Title:          strings.TrimSpace(input.Title),
 		Body:           input.Body,
 		State:          "open",
+		IsDraft:        input.IsDraft,
 		SourceBranch:   input.SourceBranch,
 		TargetBranch:   input.TargetBranch,
 		SourceRevision: input.SourceRevision,
 		TargetRevision: input.TargetRevision,
 		Author:         actor.Username,
-		CreatedAt:      time.Now().UTC(),
-		UpdatedAt:      time.Now().UTC(),
+		CreatedAt:      createdAt,
+		UpdatedAt:      createdAt,
+	}
+	var draftChangedAt *time.Time
+	var draftChangedBy *string
+	if mergeRequest.IsDraft {
+		draftChangedAt = &createdAt
+		draftChangedBy = &actor.ID
 	}
 	_, err = transaction.Exec(ctx, `
 		INSERT INTO merge_requests (
-			id, repository_id, number, title, body, state, source_branch, target_branch,
-			source_revision, target_revision, author_id, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+			id, repository_id, number, title, body, state, is_draft,
+			source_branch, target_branch, source_revision, target_revision,
+			author_id, draft_changed_at, draft_changed_by, created_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+		          $13, $14, $15, $16)
 	`, mergeRequest.ID, repositoryID, mergeRequest.Number, mergeRequest.Title, mergeRequest.Body,
-		mergeRequest.State, mergeRequest.SourceBranch, mergeRequest.TargetBranch,
-		mergeRequest.SourceRevision, mergeRequest.TargetRevision, actor.ID,
+		mergeRequest.State, mergeRequest.IsDraft, mergeRequest.SourceBranch, mergeRequest.TargetBranch,
+		mergeRequest.SourceRevision, mergeRequest.TargetRevision, actor.ID, draftChangedAt, draftChangedBy,
 		mergeRequest.CreatedAt, mergeRequest.UpdatedAt)
 	if err != nil {
 		return MergeRequest{}, fmt.Errorf("create merge request: %w", err)

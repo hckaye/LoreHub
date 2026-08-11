@@ -24,8 +24,20 @@
 }
 
 .details h3 {
+  align-items: center;
+  display: flex;
+  gap: 7px;
   margin: 0 0 4px;
   font-size: 0.9rem;
+}
+
+.draft {
+  border: 1px solid var(--border-strong);
+  border-radius: 2em;
+  color: var(--fg-muted);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
 }
 
 .details p,

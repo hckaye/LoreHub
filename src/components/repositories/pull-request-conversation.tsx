@@ -19,7 +19,7 @@ import type {
   ReviewRequestSummary,
   ReviewSummary,
 } from "@/lib/api-types";
-import { deleteJson, patchJson, postJson } from "@/lib/auth-client";
+import { deleteJson, patchJson, postJson, putJson } from "@/lib/auth-client";
 import { mutationFailureMessage } from "@/lib/mutation-messages";
 
 import { FlashNotice } from "../ui/flash-notice";
@@ -99,6 +99,19 @@ export function PullRequestConversation(props: PullRequestConversationProps) {
     return completed;
   }
 
+  async function setDraft(isDraft: boolean) {
+    const completed = await mutation("draft", () =>
+      isDraft
+        ? putJson<MergeRequest>(`${apiPath}/draft`, undefined, csrfToken)
+        : deleteJson<MergeRequest>(`${apiPath}/draft`, csrfToken),
+    );
+    if (completed) {
+      setSuccess(
+        isDraft ? props.dictionary.pullRequestDrafts.convertedToDraft : props.dictionary.pullRequestDrafts.markedReady,
+      );
+    }
+  }
+
   async function mutation(
     action: string,
     request: () => Promise<
@@ -136,6 +149,14 @@ export function PullRequestConversation(props: PullRequestConversationProps) {
         mergeRequest={props.mergeRequest}
         onUpdate={updateMergeRequest}
       />
+      {props.mergeRequest.viewerCanUpdate && props.mergeRequest.state === "open" && (
+        <DraftControl
+          busy={busy === "draft"}
+          dictionary={props.dictionary}
+          isDraft={props.mergeRequest.isDraft}
+          onChange={setDraft}
+        />
+      )}
       <ReviewList dictionary={props.dictionary} reviews={props.reviews} />
       <PullRequestReviewers
         candidates={props.reviewCandidates}
@@ -189,6 +210,26 @@ export function PullRequestConversation(props: PullRequestConversationProps) {
         <ReviewForm busy={busy === "review"} dictionary={props.dictionary} onSubmit={submitReview} />
       )}
     </section>
+  );
+}
+
+function DraftControl(props: {
+  busy: boolean;
+  dictionary: Dictionary;
+  isDraft: boolean;
+  onChange(isDraft: boolean): Promise<void>;
+}) {
+  const copy = props.dictionary.pullRequestDrafts;
+  return (
+    <div className={styles.draftControl}>
+      <div>
+        <strong>{props.isDraft ? copy.badge : copy.ready}</strong>
+        {props.isDraft && <span>{copy.createAsDraftHelp}</span>}
+      </div>
+      <button disabled={props.busy} onClick={() => props.onChange(!props.isDraft)} type="button">
+        {props.isDraft ? copy.markReady : copy.convertToDraft}
+      </button>
+    </div>
   );
 }
 

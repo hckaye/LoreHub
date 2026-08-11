@@ -13,6 +13,22 @@
   margin: 0;
 }
 
+.heading h1 {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.draft {
+  border: 1px solid var(--border-strong);
+  border-radius: 2em;
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 8px;
+}
+
 .heading p,
 .meta {
   color: var(--fg-muted);

@@ -611,7 +611,7 @@ func (api *API) restart(writer http.ResponseWriter, request *http.Request) {
 func hasRestartBlocker(blockers []collab.MergeBlocker) bool {
 	for _, blocker := range blockers {
 		switch blocker.Code {
-		case "write_permission_required", "state_not_open":
+		case "write_permission_required", "state_not_open", "draft":
 			return true
 		}
 	}

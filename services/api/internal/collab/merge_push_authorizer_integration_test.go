@@ -84,6 +84,18 @@ func TestIntegrationLorePushAuthorizationIsAtomicAndIdempotent(t *testing.T) {
 			t.Fatalf("wrong %s authorization error = %v, want denial", name, err)
 		}
 	}
+	mustExec(t, ctx, pool, `
+		UPDATE merge_requests
+		SET is_draft = true, draft_changed_at = now(), draft_changed_by = $3
+		WHERE repository_id = $1 AND number = $2
+	`, fixture.repoID, number, fixture.alice.ID)
+	if err := store.AuthorizeLoreMergePush(ctx, authorization); !errors.Is(
+		err, loreclient.ErrPushAuthorizationDenied,
+	) {
+		t.Fatalf("draft pull request authorization error = %v, want denial", err)
+	}
+	mustExec(t, ctx, pool, `UPDATE merge_requests SET is_draft = false WHERE repository_id = $1 AND number = $2`,
+		fixture.repoID, number)
 	auditBefore := countAuditAction(t, ctx, pool, "merge_operation.push_authorized")
 	outboxBefore := countTopic(t, ctx, pool, "merge_operation.push_authorized")
 	if err := store.AuthorizeLoreMergePush(ctx, authorization); err != nil {

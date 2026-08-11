@@ -17,7 +17,7 @@ func (s *store) GetMergeRequest(
 	number int64,
 ) (MergeRequest, error) {
 	row := s.pool.QueryRow(ctx, `
-		SELECT mr.id, mr.number, mr.title, mr.body, mr.state,
+		SELECT mr.id, mr.number, mr.title, mr.body, mr.state, mr.is_draft,
 		       mr.source_branch, mr.target_branch, mr.source_revision, mr.target_revision,
 		       author.username, mr.author_id, merged.username, mr.merged_revision,
 		       mr.merged_at, mr.created_at, mr.updated_at, mr.closed_at
@@ -39,7 +39,7 @@ func (s *store) GetMergeRequest(
 func scanMergeRequest(row pgx.Row) (MergeRequest, error) {
 	var mr MergeRequest
 	err := row.Scan(
-		&mr.ID, &mr.Number, &mr.Title, &mr.Body, &mr.State,
+		&mr.ID, &mr.Number, &mr.Title, &mr.Body, &mr.State, &mr.IsDraft,
 		&mr.SourceBranch, &mr.TargetBranch, &mr.SourceRevision, &mr.TargetRevision,
 		&mr.Author, &mr.AuthorID, &mr.MergedBy, &mr.MergedRevision, &mr.MergedAt,
 		&mr.CreatedAt, &mr.UpdatedAt, &mr.ClosedAt,
@@ -196,7 +196,7 @@ func scanMergeRequestByTx(
 	number int64,
 ) (MergeRequest, error) {
 	row := tx.QueryRow(ctx, `
-		SELECT mr.id, mr.number, mr.title, mr.body, mr.state,
+		SELECT mr.id, mr.number, mr.title, mr.body, mr.state, mr.is_draft,
 		       mr.source_branch, mr.target_branch, mr.source_revision, mr.target_revision,
 		       author.username, mr.author_id, merged.username, mr.merged_revision,
 		       mr.merged_at, mr.created_at, mr.updated_at, mr.closed_at

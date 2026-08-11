@@ -45,6 +45,7 @@ func (s *store) AuthorizeLoreMergePush(
 		FROM merge_operations mo
 		JOIN merge_requests mr
 		  ON mr.id = mo.merge_request_id AND mr.repository_id = mo.repository_id
+		 AND mr.state = 'open' AND NOT mr.is_draft
 		JOIN repositories r ON r.id = mo.repository_id
 		WHERE mo.id = $1 AND mo.repository_id = $2 AND mr.target_branch = $3
 		FOR UPDATE

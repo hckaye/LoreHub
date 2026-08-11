@@ -421,7 +421,7 @@ func (store *Store) ListMergeRequestsForRead(
 		state = "open"
 	}
 	rows, err := store.pool.Query(ctx, `
-		SELECT mr.id, mr.number, mr.title, mr.body, mr.state,
+		SELECT mr.id, mr.number, mr.title, mr.body, mr.state, mr.is_draft,
 		       mr.source_branch, mr.target_branch, mr.source_revision, mr.target_revision,
 		       author.username,
 		       COUNT(review.id) FILTER (WHERE review.decision = 'approved'),
@@ -447,6 +447,7 @@ func (store *Store) ListMergeRequestsForRead(
 			&mergeRequest.Title,
 			&mergeRequest.Body,
 			&mergeRequest.State,
+			&mergeRequest.IsDraft,
 			&mergeRequest.SourceBranch,
 			&mergeRequest.TargetBranch,
 			&mergeRequest.SourceRevision,

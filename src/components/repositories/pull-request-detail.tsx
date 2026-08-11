@@ -119,7 +119,9 @@ export function PullRequestDetail({
     <div className={styles.layout}>
       <div className={styles.heading}>
         <h1>
-          {mergeRequest.title} <span className={styles.meta}>#{mergeRequest.number}</span>
+          {mergeRequest.title}
+          {mergeRequest.isDraft && <span className={styles.draft}>{dictionary.pullRequestDrafts.badge}</span>}
+          <span className={styles.meta}>#{mergeRequest.number}</span>
         </h1>
         <p>
           {mergeRequest.author} · <code>{mergeRequest.sourceBranch}</code> → <code>{mergeRequest.targetBranch}</code>
@@ -595,6 +597,8 @@ function blockerLabel(code: string, dictionary: Dictionary): string {
       return labels.writePermission;
     case "state_not_open":
       return labels.stateNotOpen;
+    case "draft":
+      return dictionary.pullRequestDrafts.blocker;
     case "stale_source_revision":
       return labels.staleSource;
     case "stale_target_revision":

@@ -1,0 +1,26 @@
+export const pullRequestDrafts = {
+  en: {
+    badge: "Draft",
+    createAsDraft: "Create as draft",
+    createAsDraftHelp: "Draft pull requests cannot be merged until they are marked ready for review.",
+    createDraft: "Create draft pull request",
+    ready: "Ready for review",
+    markReady: "Mark ready for review",
+    convertToDraft: "Convert to draft",
+    markedReady: "The pull request is ready for review.",
+    convertedToDraft: "The pull request is now a draft.",
+    blocker: "Mark the pull request as ready for review before merging.",
+  },
+  ja: {
+    badge: "ドラフト",
+    createAsDraft: "ドラフトとして作成",
+    createAsDraftHelp: "レビュー準備完了にするまで、このプルリクエストはマージできません。",
+    createDraft: "ドラフトのプルリクエストを作成",
+    ready: "レビュー準備完了",
+    markReady: "レビュー準備完了にする",
+    convertToDraft: "ドラフトに戻す",
+    markedReady: "プルリクエストをレビュー準備完了にしました。",
+    convertedToDraft: "プルリクエストをドラフトに戻しました。",
+    blocker: "マージする前にレビュー準備完了にしてください。",
+  },
+} as const;

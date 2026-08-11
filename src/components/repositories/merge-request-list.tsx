@@ -38,6 +38,7 @@ export function MergeRequestList({ mergeRequests, dictionary, locale, owner, rep
               <Link href={`${repositoryPath(locale, owner, repository, "pulls")}/${mergeRequest.number}`}>
                 {mergeRequest.title}
               </Link>
+              {mergeRequest.isDraft && <span className={styles.draft}>{dictionary.pullRequestDrafts.badge}</span>}
             </h3>
             <p>
               #{mergeRequest.number} · {mergeRequest.author}

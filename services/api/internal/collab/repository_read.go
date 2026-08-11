@@ -119,7 +119,7 @@ func (s *store) ListMergeRequestsForRepository(
 	state string,
 ) ([]MergeRequest, error) {
 	query := `
-		SELECT mr.id, mr.number, mr.title, mr.body, mr.state,
+		SELECT mr.id, mr.number, mr.title, mr.body, mr.state, mr.is_draft,
 		       mr.source_branch, mr.target_branch, mr.source_revision, mr.target_revision,
 		       author.username, mr.author_id, merged.username, mr.merged_revision,
 		       mr.merged_at, mr.created_at, mr.updated_at, mr.closed_at,
@@ -147,6 +147,7 @@ func (s *store) ListMergeRequestsForRepository(
 		var mergeRequest MergeRequest
 		if err := rows.Scan(
 			&mergeRequest.ID, &mergeRequest.Number, &mergeRequest.Title, &mergeRequest.Body, &mergeRequest.State,
+			&mergeRequest.IsDraft,
 			&mergeRequest.SourceBranch, &mergeRequest.TargetBranch, &mergeRequest.SourceRevision,
 			&mergeRequest.TargetRevision, &mergeRequest.Author, &mergeRequest.AuthorID, &mergeRequest.MergedBy,
 			&mergeRequest.MergedRevision, &mergeRequest.MergedAt, &mergeRequest.CreatedAt, &mergeRequest.UpdatedAt,

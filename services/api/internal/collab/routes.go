@@ -27,6 +27,8 @@ import (
 //	DELETE /api/v1/repositories/{owner}/{repository}/issues/{number}/labels/{labelID}
 //	GET    /api/v1/repositories/{owner}/{repository}/merge-requests/{number}
 //	PATCH  /api/v1/repositories/{owner}/{repository}/merge-requests/{number}
+//	PUT    /api/v1/repositories/{owner}/{repository}/merge-requests/{number}/draft
+//	DELETE /api/v1/repositories/{owner}/{repository}/merge-requests/{number}/draft
 //	GET    /api/v1/repositories/{owner}/{repository}/merge-requests/{number}/reviews
 //	POST   /api/v1/repositories/{owner}/{repository}/merge-requests/{number}/reviews
 //	PUT    /api/v1/repositories/{owner}/{repository}/star
@@ -91,6 +93,8 @@ func Register(mux *http.ServeMux, store Store, actors ActorResolver, logger *slo
 		api.putMergeRequestMilestone)
 	mux.HandleFunc("DELETE "+base+"/merge-requests/{number}/metadata/milestone",
 		api.deleteMergeRequestMilestone)
+	mux.HandleFunc("PUT "+base+"/merge-requests/{number}/draft", api.putMergeRequestDraft)
+	mux.HandleFunc("DELETE "+base+"/merge-requests/{number}/draft", api.deleteMergeRequestDraft)
 
 	mux.HandleFunc("PUT "+base+"/star", api.putRepositoryStar)
 	mux.HandleFunc("DELETE "+base+"/star", api.deleteRepositoryStar)

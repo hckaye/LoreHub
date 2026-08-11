@@ -33,6 +33,7 @@ export function PullRequestForm({ locale, owner, repository, dictionary, session
   const [body, setBody] = useState("");
   const [sourceBranch, setSourceBranch] = useState(initialSource?.name ?? "");
   const [targetBranch, setTargetBranch] = useState(initialTarget?.name ?? "");
+  const [isDraft, setIsDraft] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [failure, setFailure] = useState<string | null>(null);
   const [requiresLogin, setRequiresLogin] = useState(false);
@@ -68,7 +69,7 @@ export function PullRequestForm({ locale, owner, repository, dictionary, session
     setPending(true);
     const result = await postJson<MergeRequest>(
       `/api/v1/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/merge-requests`,
-      { title: title.trim(), body, sourceBranch, targetBranch },
+      { title: title.trim(), body, isDraft, sourceBranch, targetBranch },
       session.csrfToken,
     );
     if (result.ok) {
@@ -138,9 +139,20 @@ export function PullRequestForm({ locale, owner, repository, dictionary, session
           ))}
         </select>
       </div>
+      <label className={styles.checkbox}>
+        <input checked={isDraft} onChange={(event) => setIsDraft(event.target.checked)} type="checkbox" />
+        <span>
+          <strong>{dictionary.pullRequestDrafts.createAsDraft}</strong>
+          <small>{dictionary.pullRequestDrafts.createAsDraftHelp}</small>
+        </span>
+      </label>
       <div className={styles.actions}>
         <button className={styles.submit} disabled={pending} type="submit">
-          {pending ? dictionary.forms.submittingLabel : dictionary.forms.submitPullRequest}
+          {pending
+            ? dictionary.forms.submittingLabel
+            : isDraft
+              ? dictionary.pullRequestDrafts.createDraft
+              : dictionary.forms.submitPullRequest}
         </button>
         <a className={styles.cancel} href={repositoryPath(locale, owner, repository, "pulls")}>
           {dictionary.common.cancel}

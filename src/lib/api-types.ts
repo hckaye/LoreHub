@@ -330,6 +330,7 @@ export type MergeRequest = {
   title: string;
   body: string;
   state: "open" | "closed" | "merged";
+  isDraft: boolean;
   sourceBranch: string;
   targetBranch: string;
   sourceRevision: string;

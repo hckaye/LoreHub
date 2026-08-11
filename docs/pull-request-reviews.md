@@ -9,6 +9,15 @@ side refers to the proposed result.
 Text files with a complete diff support line comments. Binary files and truncated diffs can still be inspected, but
 they do not accept line comments.
 
+## Draft pull requests
+
+Select **Create as draft** when the pull request is not ready for review. A draft can receive comments and reviews,
+but it cannot be merged.
+
+Open the **Conversation** tab and select **Mark ready for review** when the change is ready. The author and users with
+triage access can mark it ready or convert it back to a draft. LoreHub checks the draft state again before updating
+the target branch.
+
 ## Continue a conversation
 
 Anyone who can read the repository can reply to a review conversation. The person who started the conversation, the
