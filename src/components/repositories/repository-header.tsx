@@ -37,6 +37,7 @@ type RepositoryHeaderProps = {
 
 const tabs = [
   ["code", Box],
+  ["locks", LockKeyhole],
   ["issues", CircleDot],
   ["pulls", GitPullRequest],
   ["actions", PlayCircle],

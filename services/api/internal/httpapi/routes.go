@@ -6,6 +6,7 @@ import (
 	branchesapi "github.com/lorehub/lorehub/services/api/internal/branches"
 	codeapi "github.com/lorehub/lorehub/services/api/internal/code"
 	"github.com/lorehub/lorehub/services/api/internal/collab"
+	filelocksapi "github.com/lorehub/lorehub/services/api/internal/filelocks"
 	loreclient "github.com/lorehub/lorehub/services/api/internal/lore"
 	mergeapi "github.com/lorehub/lorehub/services/api/internal/merge"
 	milestonesapi "github.com/lorehub/lorehub/services/api/internal/milestones"
@@ -158,6 +159,13 @@ func (api *API) registerFeatureRoutes(mux *http.ServeMux) {
 					api.loreCredentials, api.logger,
 				)
 			}
+		}
+		if lockClient, ok := api.lore.(filelocksapi.LoreClient); ok &&
+			api.fileLockUsers != nil && api.fileLockObservations != nil {
+			filelocksapi.Register(
+				mux, api.collabStore, api.fileLockUsers, api.fileLockObservations, api,
+				lockClient, api.loreCredentials, api.serviceSubjects.PublicReader, api.logger,
+			)
 		}
 		if workflow, ok := api.collabStore.(collab.MergeWorkflowStore); ok {
 			if mergeClient, mergeOK := api.lore.(loreclient.MergeClient); mergeOK {

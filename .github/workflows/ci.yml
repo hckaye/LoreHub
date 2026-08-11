@@ -72,3 +72,5 @@ jobs:
           outputs: type=cacheonly
           cache-from: type=gha,scope=lore-policy
           cache-to: type=gha,mode=max,scope=lore-policy
+      - name: Test Lore Server integration
+        run: scripts/lore-merge-integration.sh

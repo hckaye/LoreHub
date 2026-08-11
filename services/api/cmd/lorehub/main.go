@@ -250,6 +250,7 @@ func run(logger *slog.Logger) error {
 		httpapi.WithCollaboration(collaborationStore),
 		httpapi.WithReviewThreads(reviewthreads.NewStore(pool)),
 		httpapi.WithBranchObservations(store),
+		httpapi.WithFileLocks(store, store),
 		httpapi.WithProjects(projects.NewStore(pool)),
 		httpapi.WithReleases(releases.NewStore(pool)),
 		httpapi.WithMilestones(milestones.NewStore(pool)),

@@ -10,8 +10,11 @@ import (
 var ErrNotFound = errors.New("Lore resource not found")
 
 var (
-	ErrBranchExists   = errors.New("Lore branch already exists at a different revision")
-	ErrBranchNotFound = errors.New("Lore branch was not found")
+	ErrBranchExists     = errors.New("Lore branch already exists at a different revision")
+	ErrBranchNotFound   = errors.New("Lore branch was not found")
+	ErrFileLockConflict = errors.New("Lore file is locked by another user")
+	ErrFileLockNotFound = errors.New("Lore file lock was not found")
+	ErrFileLockNotOwned = errors.New("Lore file lock belongs to another user")
 )
 
 type Repository struct {
@@ -104,6 +107,21 @@ type Branch struct {
 	CreatedAt      time.Time `json:"createdAt"`
 	Current        bool      `json:"current"`
 	Archived       bool      `json:"archived"`
+}
+
+type FileLock struct {
+	BranchID string    `json:"branchId"`
+	Path     string    `json:"path"`
+	OwnerID  string    `json:"ownerId"`
+	LockedAt time.Time `json:"lockedAt"`
+}
+
+type FileLockClient interface {
+	QueryFileLocks(
+		context.Context, RepositoryRef, string, string, string, Credential,
+	) ([]FileLock, error)
+	AcquireFileLock(context.Context, RepositoryRef, string, string, Credential) (FileLock, error)
+	ReleaseFileLock(context.Context, RepositoryRef, string, string, Credential, bool) (FileLock, error)
 }
 
 type Client interface {

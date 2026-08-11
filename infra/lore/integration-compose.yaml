@@ -9,8 +9,12 @@ services:
       interval: 3s
       timeout: 3s
       retries: 30
+    entrypoint: ["/usr/local/bin/loreserver"]
+    command: ["--config", "/etc/lore/integration", "--env", "integration"]
     volumes:
       - lore-server-data:/data
+      - ./integration.toml:/etc/lore/integration/default.toml:ro
+      - ${LORE_TEST_TLS_DIR:?LORE_TEST_TLS_DIR is required}:/etc/lore/integration-tls:ro
 
   lore-test:
     platform: linux/amd64

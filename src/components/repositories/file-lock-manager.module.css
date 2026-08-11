@@ -1,0 +1,217 @@
+.stack {
+  display: grid;
+  gap: 18px;
+}
+
+.panel {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.panelHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+  border-bottom: 1px solid var(--border-muted);
+  background: var(--canvas-subtle);
+  color: var(--fg-muted);
+}
+
+.panelHeading h2,
+.panelHeading p {
+  margin: 0;
+}
+
+.panelHeading h2 {
+  color: var(--fg-default);
+  font-size: 1rem;
+}
+
+.panelHeading p {
+  margin-top: 4px;
+  color: var(--fg-muted);
+  font-size: 0.8rem;
+}
+
+.lockForm {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.7fr) minmax(280px, 2fr) auto;
+  align-items: end;
+  gap: 12px;
+  padding: 16px;
+}
+
+.lockForm label {
+  display: grid;
+  gap: 6px;
+}
+
+.lockForm label > span {
+  color: var(--fg-default);
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.lockForm input,
+.lockForm select,
+.filter input {
+  min-height: 34px;
+  padding: 6px 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--fg-default);
+  font: inherit;
+  font-size: 0.82rem;
+}
+
+.lockForm button,
+.lockRow button {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--fg-default);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.lockForm button {
+  border-color: var(--success-border);
+  background: var(--success-border);
+  color: white;
+}
+
+.lockForm button:disabled,
+.lockRow button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-muted);
+  color: var(--fg-muted);
+}
+
+.filter input {
+  width: min(420px, 100%);
+}
+
+.lockList {
+  display: grid;
+}
+
+.lockRow {
+  display: flex;
+  min-height: 72px;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-muted);
+  color: var(--fg-muted);
+}
+
+.lockRow:last-child {
+  border-bottom: 0;
+}
+
+.lockRow > div {
+  min-width: 0;
+  flex: 1;
+}
+
+.lockRow code {
+  overflow-wrap: anywhere;
+  color: var(--accent-fg);
+  font-family: var(--font-mono);
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.lockRow p {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 6px 0 0;
+  color: var(--fg-subtle);
+  font-size: 0.74rem;
+}
+
+.notice,
+.success,
+.error,
+.warning,
+.noMatches {
+  margin: 0;
+  padding: 12px 16px;
+  font-size: 0.8rem;
+}
+
+.notice,
+.success,
+.error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.success {
+  border: 1px solid var(--success-border);
+  border-radius: 6px;
+  color: var(--success-fg);
+}
+
+.error {
+  border: 1px solid var(--danger-border);
+  border-radius: 6px;
+  color: var(--danger-fg);
+}
+
+.notice,
+.noMatches {
+  color: var(--fg-muted);
+}
+
+.warning {
+  border-bottom: 1px solid var(--attention-border);
+  background: var(--attention-bg);
+  color: var(--attention-fg);
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+@media (max-width: 700px) {
+  .lockForm {
+    grid-template-columns: 1fr;
+  }
+
+  .lockRow {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .lockRow button {
+    margin-left: 30px;
+  }
+}

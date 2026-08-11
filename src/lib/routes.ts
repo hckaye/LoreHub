@@ -2,6 +2,7 @@ import type { Locale } from "@/i18n/config";
 
 export const repositorySections = [
   "code",
+  "locks",
   "issues",
   "labels",
   "pulls",

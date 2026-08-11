@@ -5,6 +5,7 @@ set -eu
 # is not evidence for production authentication or push authorization hooks.
 repository_url=$1
 worktree=$2
+repository_id=${repository_url##*/}
 identity=fixture
 lore=/usr/local/bin/lore
 
@@ -14,7 +15,7 @@ run_lore() {
     "$lore" --repository "$worktree" --identity "$identity" "$@"
 }
 
-run_lore repository create "$repository_url"
+run_lore repository create "$repository_url" --id "$repository_id"
 printf '%s\n' '# Lore merge fixture' >"$worktree/README.md"
 printf '%s\n' 'package fixture' >"$worktree/src/main.go"
 run_lore status --scan .

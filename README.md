@@ -34,6 +34,7 @@ docker compose -f infra/compose.yaml down
 ## Features
 
 - Browse files, branches, revisions, history, and diffs
+- Prevent conflicting binary changes with Lore [file locks](docs/file-locks.md)
 - Track work with issues, labels, comments, and projects
 - Maintain repository documentation with a versioned [wiki](docs/wiki.md)
 - Review changes with [pull requests](docs/pull-request-reviews.md), reviews, and branch rules
@@ -119,6 +120,7 @@ vulnerabilities. [GitHub Actions](.github/workflows/ci.yml) runs the same checks
 - [Sign-in and identity management](docs/architecture/identity.md)
 - [Frontend authentication](docs/frontend-auth.md)
 - [Repository access control](docs/operations/control-plane-authorization.md)
+- [File locks](docs/file-locks.md)
 - [Keycloak, social sign-in, email, and backups](docs/operations/keycloak.md)
 - [GitHub Actions compatibility and runner operations](docs/runner-actions.md)
 

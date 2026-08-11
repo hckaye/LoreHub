@@ -24,6 +24,7 @@ type Scope string
 const (
 	ScopeRead  Scope = "repository:read"
 	ScopeWrite Scope = "repository:write"
+	ScopeAdmin Scope = "repository:admin"
 )
 
 const (
@@ -312,10 +313,10 @@ func ParseCredentialMap(value string) (map[string]CredentialMaterial, error) {
 }
 
 func ValidateCredential(repository RepositoryRef, credential Credential, scope Scope) error {
-	if scope != ScopeRead && scope != ScopeWrite {
+	if !validCredentialScope(scope) {
 		return errors.New("unsupported Lore credential scope")
 	}
-	if credential.Scope != scope && !(credential.Scope == ScopeWrite && scope == ScopeRead) {
+	if !credentialScopePermits(credential.Scope, scope) {
 		return fmt.Errorf("Lore credential scope %q does not permit %q", credential.Scope, scope)
 	}
 	if !credential.Principal.valid() {
@@ -347,7 +348,7 @@ func normalizeCredentialRequest(request *CredentialRequest) (string, error) {
 	if !request.Principal.valid() {
 		return "", ErrInvalidPrincipal
 	}
-	if request.Scope != ScopeRead && request.Scope != ScopeWrite {
+	if !validCredentialScope(request.Scope) {
 		return "", errors.New("unsupported Lore credential scope")
 	}
 	partition, err := request.Repository.ValidatedPartition()
@@ -451,13 +452,27 @@ func credentialScopeNarrowed(requested Scope, granted Scope) bool {
 	return requested == granted
 }
 
+func validCredentialScope(scope Scope) bool {
+	return scope == ScopeRead || scope == ScopeWrite || scope == ScopeAdmin
+}
+
+func credentialScopePermits(granted Scope, requested Scope) bool {
+	if !validCredentialScope(granted) || !validCredentialScope(requested) {
+		return false
+	}
+	if granted == ScopeAdmin {
+		return true
+	}
+	return granted == requested || granted == ScopeWrite && requested == ScopeRead
+}
+
 func validScopeLists(requested Scope, requestedScopes []string, grantedScopes []string) bool {
 	if len(requestedScopes) == 0 || len(grantedScopes) == 0 {
 		return false
 	}
 	requestedSet := make(map[string]bool, len(requestedScopes))
 	for _, scope := range requestedScopes {
-		if scope != string(ScopeRead) && scope != string(ScopeWrite) || requestedSet[scope] {
+		if !validCredentialScope(Scope(scope)) || requestedSet[scope] {
 			return false
 		}
 		requestedSet[scope] = true
@@ -466,7 +481,7 @@ func validScopeLists(requested Scope, requestedScopes []string, grantedScopes []
 		return false
 	}
 	for _, scope := range grantedScopes {
-		if (scope != string(ScopeRead) && scope != string(ScopeWrite)) || !requestedSet[scope] {
+		if !validCredentialScope(Scope(scope)) || !requestedSet[scope] {
 			return false
 		}
 	}
@@ -479,13 +494,13 @@ func validCredentialScopeSubset(requestedScopes []string, grantedScopes []string
 	}
 	requestedSet := make(map[string]bool, len(requestedScopes))
 	for _, scope := range requestedScopes {
-		if scope != string(ScopeRead) && scope != string(ScopeWrite) || requestedSet[scope] {
+		if !validCredentialScope(Scope(scope)) || requestedSet[scope] {
 			return false
 		}
 		requestedSet[scope] = true
 	}
 	for _, scope := range grantedScopes {
-		if scope != string(ScopeRead) && scope != string(ScopeWrite) || !requestedSet[scope] {
+		if !validCredentialScope(Scope(scope)) || !requestedSet[scope] {
 			return false
 		}
 	}

@@ -96,6 +96,38 @@ func TestSDKClientAgainstLoreServer(t *testing.T) {
 	if diff.Source != history[1].Revision || diff.Target != latest || len(diff.Files) == 0 {
 		t.Fatalf("revision diff did not contain a changed file: %#v", diff)
 	}
+	lockIdentity := "fixture-lock-user"
+	writeCredential := Credential{
+		Partition: repository.ID, Identity: lockIdentity, Scope: ScopeWrite,
+		Principal: UserPrincipal(lockIdentity), InsecureDevelopment: true,
+	}
+	locked, err := client.AcquireFileLock(
+		ctx, ref, repository.DefaultBranch, "README.md", writeCredential,
+	)
+	if err != nil {
+		t.Fatalf("AcquireFileLock returned an error: %v", err)
+	}
+	defer func() {
+		_, _ = client.ReleaseFileLock(
+			context.Background(), ref, repository.DefaultBranch, "README.md", writeCredential, false,
+		)
+	}()
+	if locked.Path != "README.md" || locked.OwnerID == "" || locked.BranchID == "" {
+		t.Fatalf("acquired file lock is incomplete: %#v", locked)
+	}
+	locks, err := client.QueryFileLocks(ctx, ref, repository.DefaultBranch, "", "README.md", writeCredential)
+	if err != nil || len(locks) != 1 || locks[0].Path != "README.md" {
+		t.Fatalf("QueryFileLocks returned locks=%#v error=%v", locks, err)
+	}
+	if _, err := client.ReleaseFileLock(
+		ctx, ref, repository.DefaultBranch, "README.md", writeCredential, false,
+	); err != nil {
+		t.Fatalf("ReleaseFileLock returned an error: %v", err)
+	}
+	locks, err = client.QueryFileLocks(ctx, ref, repository.DefaultBranch, "", "README.md", writeCredential)
+	if err != nil || len(locks) != 0 {
+		t.Fatalf("released file lock remained: locks=%#v error=%v", locks, err)
+	}
 }
 
 func TestSDKClientLoreAuthBoundaryAgainstLoreServer(t *testing.T) {

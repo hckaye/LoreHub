@@ -54,12 +54,25 @@ import type {
   WikiPageList,
   WikiRevision,
 } from "./api-types";
+import { normalizeFileLockPage, type FileLockPage } from "./file-locks";
 import { normalizePersonalAccessTokenPage } from "./personal-access-token";
 
 const apiOrigin = process.env.LOREHUB_API_URL ?? "http://127.0.0.1:8080";
 
 export function getDashboard(): Promise<APIResult<DashboardData>> {
   return request("/api/v1/dashboard");
+}
+
+export async function getFileLocks(
+  owner: string,
+  repository: string,
+  branch?: string,
+): Promise<APIResult<FileLockPage>> {
+  const query = queryString({ branch });
+  const result = await request<unknown>(repositoryPath(owner, repository, `/locks${query ? `?${query}` : ""}`));
+  if (!result.ok) return result;
+  const page = normalizeFileLockPage(result.data);
+  return page ? { ok: true, data: page } : { ok: false, reason: "unavailable" };
 }
 
 export function getSearchResults(query: string): Promise<APIResult<SearchResults>> {

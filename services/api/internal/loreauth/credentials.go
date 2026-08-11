@@ -31,12 +31,15 @@ func (issuer *CredentialIssuer) IssueCredential(
 	if err != nil || request.Partition != partition {
 		return loreclient.Credential{}, loreclient.ErrCredentialContract
 	}
-	if request.Scope != loreclient.ScopeRead && request.Scope != loreclient.ScopeWrite {
+	if request.Scope != loreclient.ScopeRead && request.Scope != loreclient.ScopeWrite &&
+		request.Scope != loreclient.ScopeAdmin {
 		return loreclient.Credential{}, loreclient.ErrCredentialContract
 	}
 	requested := []string{"read"}
 	if request.Scope == loreclient.ScopeWrite {
 		requested = []string{"write"}
+	} else if request.Scope == loreclient.ScopeAdmin {
+		requested = []string{"admin"}
 	}
 	var credential loreclient.Credential
 	if request.Principal.UserID != "" {

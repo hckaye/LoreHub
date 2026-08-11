@@ -34,6 +34,7 @@ docker compose -f infra/compose.yaml down
 ## 主な機能
 
 - ファイル、branch、revision、履歴、差分の閲覧
+- Loreの[ファイルロック](docs/file-locks.ja.md)によるバイナリファイルの競合防止
 - Issue、label、comment、projectによるタスク管理
 - バージョン履歴付きの[Wiki](docs/wiki.ja.md)によるリポジトリ文書の管理
 - [pull request](docs/pull-request-reviews.ja.md)、review、branch ruleによる変更管理
@@ -119,6 +120,7 @@ format、ファイル長制限、lint、型検査、test、production build、�
 - [ログインとIDの管理](docs/architecture/identity.ja.md)
 - [Frontendの認証](docs/frontend-auth.ja.md)
 - [リポジトリのアクセス権限](docs/operations/control-plane-authorization.ja.md)
+- [ファイルロック](docs/file-locks.ja.md)
 - [Keycloak、ソーシャルログイン、メール、バックアップ](docs/operations/keycloak.ja.md)
 - [GitHub Actions互換範囲とrunner運用](docs/runner-actions.ja.md)
 

@@ -1,5 +1,6 @@
 import { assignees } from "./assignees";
 import { auditLog } from "./audit-log";
+import { fileLocks } from "./file-locks";
 import { insights } from "./insights";
 import { milestones } from "./milestones";
 import { personalAccessTokens } from "./personal-access-tokens";
@@ -19,6 +20,7 @@ const ja = {
   pullRequestMetadata: pullRequestMetadata.ja,
   pullRequestDrafts: pullRequestDrafts.ja,
   personalAccessTokens: personalAccessTokens.ja,
+  fileLocks: fileLocks.ja,
   metadata: {
     title: "LoreHub · Loreリポジトリの共同開発基盤",
     description: "Loreにレビュー、Issue、権限管理、GitHub Actions互換CIを追加します。",
@@ -55,6 +57,7 @@ const ja = {
     insights: "分析",
     settings: "設定",
     branches: "ブランチ",
+    locks: "ロック",
     branch: "ブランチ",
     defaultBranch: "既定ブランチ",
     latestRevision: "最新リビジョン",

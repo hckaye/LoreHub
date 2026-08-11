@@ -1,0 +1,36 @@
+[server.quic]
+verify_client_certs = false
+
+[server.quic.certificate]
+cert_file = "/etc/lore/integration-tls/server.crt"
+pkey_file = "/etc/lore/integration-tls/server.key"
+
+[server.grpc]
+verify_client_certs = false
+
+[immutable_store]
+mode = "local"
+
+[immutable_store.local]
+path = "/data/store"
+flush_delay_seconds = 1
+
+[mutable_store]
+mode = "local"
+
+[mutable_store.local]
+path = "/data/store"
+flush_delay_seconds = 1
+
+[lock_store]
+mode = "local"
+
+[notification]
+mode = "local"
+
+[topology]
+provider = "none"
+
+[telemetry.logger]
+format = "text"
+output = "stdout"

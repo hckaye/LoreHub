@@ -264,6 +264,37 @@ func TestNewServiceRejectsNonCanonicalAuthURL(t *testing.T) {
 	}
 }
 
+func TestCredentialIssuerProducesRepositoryAdminCredential(t *testing.T) {
+	policy := testPolicy()
+	policy.resources["alice"][testResource] = []string{
+		authz.PermissionRead, authz.PermissionWrite, authz.PermissionAdmin,
+	}
+	service, _ := newTestService(t, policy, &fakeSessions{sessions: make(map[string]*fakeSession)})
+	issuer, err := NewCredentialIssuer(service)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := loreclient.RepositoryRef{LoreRepositoryID: "0123456789abcdef0123456789abcdef"}
+	credential, err := issuer.IssueCredential(context.Background(), loreclient.CredentialRequest{
+		Principal: loreclient.UserPrincipal("alice"), Repository: repository,
+		Partition: repository.LoreRepositoryID, Scope: loreclient.ScopeAdmin,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if credential.Scope != loreclient.ScopeAdmin ||
+		len(credential.GrantedScopes) != 1 || credential.GrantedScopes[0] != string(loreclient.ScopeAdmin) {
+		t.Fatalf("admin credential = %#v", credential)
+	}
+	for _, scope := range []loreclient.Scope{
+		loreclient.ScopeRead, loreclient.ScopeWrite, loreclient.ScopeAdmin,
+	} {
+		if err := loreclient.ValidateCredential(repository, credential, scope); err != nil {
+			t.Fatalf("admin credential did not permit %s: %v", scope, err)
+		}
+	}
+}
+
 func bearerContext(raw string) context.Context {
 	return metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+raw))
 }

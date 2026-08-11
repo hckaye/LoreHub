@@ -16,6 +16,7 @@ import (
 	"github.com/lorehub/lorehub/services/api/internal/authz"
 	branchesapi "github.com/lorehub/lorehub/services/api/internal/branches"
 	"github.com/lorehub/lorehub/services/api/internal/collab"
+	filelocksapi "github.com/lorehub/lorehub/services/api/internal/filelocks"
 	loreclient "github.com/lorehub/lorehub/services/api/internal/lore"
 	"github.com/lorehub/lorehub/services/api/internal/loreauth"
 	milestonesapi "github.com/lorehub/lorehub/services/api/internal/milestones"
@@ -153,6 +154,8 @@ type API struct {
 	logger                  *slog.Logger
 	collabStore             collab.Store
 	branchObservations      branchesapi.ObservationStore
+	fileLockUsers           filelocksapi.UserDirectory
+	fileLockObservations    filelocksapi.ObservationStore
 	projectsStore           projectsapi.Store
 	releasesStore           releasesapi.Store
 	milestonesStore         milestonesapi.Store
@@ -221,6 +224,13 @@ func WithReviewThreads(store reviewthreadsapi.Store) Option {
 func WithBranchObservations(store branchesapi.ObservationStore) Option {
 	return func(api *API) {
 		api.branchObservations = store
+	}
+}
+
+func WithFileLocks(users filelocksapi.UserDirectory, observations filelocksapi.ObservationStore) Option {
+	return func(api *API) {
+		api.fileLockUsers = users
+		api.fileLockObservations = observations
 	}
 }
 
