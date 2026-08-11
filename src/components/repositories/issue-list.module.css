@@ -24,6 +24,36 @@
   color: var(--success-fg);
 }
 
+.content {
+  min-width: 0;
+}
+
+.trailing {
+  align-items: center;
+  display: flex;
+  gap: 0.65rem;
+  margin-left: auto;
+}
+
+.assignees {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.assignees span {
+  align-items: center;
+  background: var(--canvas-subtle);
+  border: 1px solid var(--surface);
+  border-radius: 50%;
+  display: inline-flex;
+  font-size: 0.65rem;
+  font-weight: 650;
+  height: 1.5rem;
+  justify-content: center;
+  margin-left: -0.3rem;
+  width: 1.5rem;
+}
+
 .row h3 {
   margin: 0 0 4px;
   color: var(--fg-default);
@@ -56,7 +86,6 @@
 }
 
 .comments {
-  margin-left: auto;
   color: var(--fg-muted);
   font-size: 0.75rem;
 }

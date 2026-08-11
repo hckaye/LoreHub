@@ -14,7 +14,17 @@ import (
 const issueDetailQuery = `
 	SELECT i.id, i.number, i.title, i.body, i.state,
 	       author.username, i.author_id,
-	       assignee.username,
+	       COALESCE((
+	           SELECT jsonb_agg(jsonb_build_object(
+	               'id', assigned_user.id,
+	               'username', assigned_user.username,
+	               'displayName', assigned_user.display_name,
+	               'avatarUrl', assigned_user.avatar_url
+	           ) ORDER BY assignment.assigned_at, assigned_user.username)
+	           FROM issue_assignees assignment
+	           JOIN users assigned_user ON assigned_user.id = assignment.user_id
+	           WHERE assignment.issue_id = i.id
+	       ), '[]'::jsonb),
 	       milestone.id, milestone.number, milestone.title, milestone.state,
 	       to_char(milestone.due_on, 'YYYY-MM-DD'),
 	       COALESCE((
@@ -34,7 +44,6 @@ const issueDetailQuery = `
 	       i.created_at, i.updated_at, closed_by.username, i.closed_at
 	FROM issues i
 	JOIN users author ON author.id = i.author_id
-	LEFT JOIN users assignee ON assignee.id = i.assignee_id
 	LEFT JOIN repository_milestones milestone ON milestone.id = i.milestone_id
 	LEFT JOIN users closed_by ON closed_by.id = i.closed_by
 	WHERE i.repository_id = $1 AND i.number = $2
@@ -56,7 +65,7 @@ func (s *store) GetIssue(ctx context.Context, repoID string, number int64) (Issu
 
 func scanIssue(row pgx.Row) (Issue, error) {
 	var issue Issue
-	var labels json.RawMessage
+	var assignees, labels json.RawMessage
 	var milestoneID, milestoneTitle, milestoneState, milestoneDueOn *string
 	var milestoneNumber *int64
 	err := row.Scan(
@@ -67,7 +76,7 @@ func scanIssue(row pgx.Row) (Issue, error) {
 		&issue.State,
 		&issue.Author,
 		&issue.AuthorID,
-		&issue.Assignee,
+		&assignees,
 		&milestoneID,
 		&milestoneNumber,
 		&milestoneTitle,
@@ -83,6 +92,10 @@ func scanIssue(row pgx.Row) (Issue, error) {
 	if err != nil {
 		return Issue{}, err
 	}
+	if err := json.Unmarshal(assignees, &issue.Assignees); err != nil {
+		return Issue{}, fmt.Errorf("decode issue assignees: %w", err)
+	}
+	setPrimaryAssignee(&issue)
 	if err := json.Unmarshal(labels, &issue.Labels); err != nil {
 		return Issue{}, fmt.Errorf("decode issue labels: %w", err)
 	}
@@ -94,6 +107,12 @@ func scanIssue(row pgx.Row) (Issue, error) {
 		}
 	}
 	return issue, nil
+}
+
+func setPrimaryAssignee(issue *Issue) {
+	if len(issue.Assignees) > 0 {
+		issue.Assignee = &issue.Assignees[0].Username
+	}
 }
 
 // UpdateIssue applies a partial update to an issue. When IfMatch is set, the

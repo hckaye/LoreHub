@@ -6,8 +6,9 @@ import { useState } from "react";
 
 import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
-import type { AuthSession, Issue, IssueComment, Label, Milestone } from "@/lib/api-types";
+import type { Assignee, AuthSession, Issue, IssueComment, Label, Milestone } from "@/lib/api-types";
 import { deleteJson, patchJson, postJson, putJson } from "@/lib/auth-client";
+import { assignIssueUser, removeIssueUser } from "@/lib/issue-assignee-client";
 import { assignIssueMilestone, removeIssueMilestone } from "@/lib/milestone-client";
 import { mutationFailureMessage } from "@/lib/mutation-messages";
 import { repositoryPath } from "@/lib/routes";
@@ -26,6 +27,8 @@ type IssueDetailProps = {
   labelsAvailable: boolean;
   milestones: Milestone[];
   milestonesAvailable: boolean;
+  assignableUsers: Assignee[];
+  assigneesAvailable: boolean;
   locale: Locale;
   owner: string;
   repository: string;
@@ -134,6 +137,25 @@ export function IssueDetail(props: IssueDetailProps) {
     router.refresh();
   }
 
+  async function setAssignee(assignee: Assignee, selected: boolean): Promise<void> {
+    if (!csrfToken) return;
+    setBusyAction(`assignee:${assignee.id}`);
+    setMessage(null);
+    const result = selected
+      ? await assignIssueUser(props.owner, props.repository, issue.number, assignee.username, csrfToken)
+      : await removeIssueUser(props.owner, props.repository, issue.number, assignee.username, csrfToken);
+    setBusyAction(null);
+    if (!result.ok) {
+      setMessage(
+        result.code === "assignee_limit"
+          ? dictionary.issueAssignees.limit
+          : mutationFailureMessage(result.kind, dictionary),
+      );
+      return;
+    }
+    router.refresh();
+  }
+
   const openedText = formatActivity(
     issue.state === "closed" && issue.closedBy && issue.closedAt
       ? dictionary.issueDetail.closedBy
@@ -186,9 +208,14 @@ export function IssueDetail(props: IssueDetailProps) {
           labelsAvailable={labelsAvailable}
           milestones={props.milestones}
           milestonesAvailable={props.milestonesAvailable}
+          assignableUsers={props.assignableUsers}
+          assigneesAvailable={props.assigneesAvailable}
+          onSetAssignee={setAssignee}
           onSetMilestone={setMilestone}
           onUpdateState={(state) => updateIssue({ state })}
           onToggleLabel={toggleLabel}
+          owner={props.owner}
+          repository={props.repository}
         />
       </div>
       {props.session.status !== "authenticated" && (

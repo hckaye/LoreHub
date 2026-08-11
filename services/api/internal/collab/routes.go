@@ -43,6 +43,9 @@ func Register(mux *http.ServeMux, store Store, actors ActorResolver, logger *slo
 
 	mux.HandleFunc("GET "+base+"/issues/{number}", api.getIssue)
 	mux.HandleFunc("PATCH "+base+"/issues/{number}", api.patchIssue)
+	mux.HandleFunc("GET "+base+"/assignees", api.listAssignableUsers)
+	mux.HandleFunc("PUT "+base+"/issues/{number}/assignees/{username}", api.putIssueAssignee)
+	mux.HandleFunc("DELETE "+base+"/issues/{number}/assignees/{username}", api.deleteIssueAssignee)
 
 	mux.HandleFunc("GET "+base+"/issues/{number}/comments", api.listIssueComments)
 	mux.HandleFunc("POST "+base+"/issues/{number}/comments", api.createIssueComment)

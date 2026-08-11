@@ -1,3 +1,4 @@
+import { assignees } from "./assignees";
 import { milestones } from "./milestones";
 import { releases } from "./releases";
 
@@ -590,6 +591,7 @@ const ja = {
   },
   releasesPage: releases.ja,
   milestonesPage: milestones.ja,
+  issueAssignees: assignees.ja,
   securityPage: {
     title: "セキュリティ",
     // prettier-ignore

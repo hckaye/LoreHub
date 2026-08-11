@@ -49,6 +49,7 @@ type Issue struct {
 	Author                   string            `json:"author"`
 	AuthorID                 string            `json:"-"`
 	Assignee                 *string           `json:"assignee"`
+	Assignees                []Assignee        `json:"assignees"`
 	Labels                   []Label           `json:"labels"`
 	Milestone                *MilestoneSummary `json:"milestone"`
 	LabelCount               int64             `json:"labelCount"`
@@ -60,6 +61,14 @@ type Issue struct {
 	ViewerCanUpdate          bool              `json:"viewerCanUpdate"`
 	ViewerCanManageLabels    bool              `json:"viewerCanManageLabels"`
 	ViewerCanManageMilestone bool              `json:"viewerCanManageMilestone"`
+	ViewerCanManageAssignees bool              `json:"viewerCanManageAssignees"`
+}
+
+type Assignee struct {
+	ID          string `json:"id"`
+	Username    string `json:"username"`
+	DisplayName string `json:"displayName"`
+	AvatarURL   string `json:"avatarUrl"`
 }
 
 type MilestoneSummary struct {

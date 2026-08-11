@@ -453,7 +453,14 @@ func (store *Store) ListPublicIssues(
 		JOIN repositories r ON r.id = i.repository_id
 		JOIN organizations o ON o.id = r.organization_id AND o.active
 		JOIN users author ON author.id = i.author_id
-		LEFT JOIN users assignee ON assignee.id = i.assignee_id
+		LEFT JOIN LATERAL (
+			SELECT assigned_user.username
+			FROM issue_assignees assignment
+			JOIN users assigned_user ON assigned_user.id = assignment.user_id
+			WHERE assignment.issue_id = i.id
+			ORDER BY assignment.assigned_at, assigned_user.username
+			LIMIT 1
+		) assignee ON true
 		LEFT JOIN issue_comments c ON c.issue_id = i.id
 		WHERE o.slug = $1 AND r.slug = $2 AND o.active
 		  AND r.visibility = 'public' AND r.lifecycle_state = 'active' AND i.state = $3

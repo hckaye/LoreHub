@@ -33,7 +33,7 @@ export function IssueList({ issues, dictionary, locale, owner, repository }: Iss
       {issues.map((issue) => (
         <article className={styles.row} key={issue.id}>
           <CircleDot aria-hidden="true" className={styles.stateIcon} size={18} />
-          <div>
+          <div className={styles.content}>
             <h3>
               <Link href={`${repositoryPath(locale, owner, repository, "issues")}/${issue.number}`}>{issue.title}</Link>
             </h3>
@@ -47,7 +47,22 @@ export function IssueList({ issues, dictionary, locale, owner, repository }: Iss
               )}
             </p>
           </div>
-          {issue.commentCount > 0 && <span className={styles.comments}>{issue.commentCount}</span>}
+          <div className={styles.trailing}>
+            {issue.assignees.length > 0 && (
+              <div aria-label={dictionary.issueAssignees.title} className={styles.assignees}>
+                {issue.assignees.slice(0, 3).map((assignee) => (
+                  <span
+                    aria-label={dictionary.issueAssignees.assignedTo.replace("{username}", assignee.username)}
+                    key={assignee.id}
+                    title={`@${assignee.username}`}
+                  >
+                    {[...(assignee.displayName || assignee.username)][0]?.toUpperCase() ?? "?"}
+                  </span>
+                ))}
+              </div>
+            )}
+            {issue.commentCount > 0 && <span className={styles.comments}>{issue.commentCount}</span>}
+          </div>
         </article>
       ))}
     </div>

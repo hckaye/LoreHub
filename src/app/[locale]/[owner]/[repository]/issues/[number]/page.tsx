@@ -6,7 +6,14 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { getDictionary } from "@/i18n";
 import { isLocale } from "@/i18n/config";
 import { getAuthSession } from "@/lib/auth-api";
-import { getIssue, getIssueComments, getLabels, getMilestones, getPublicRepository } from "@/lib/lorehub-api";
+import {
+  getAssignableUsers,
+  getIssue,
+  getIssueComments,
+  getLabels,
+  getMilestones,
+  getPublicRepository,
+} from "@/lib/lorehub-api";
 
 type IssueDetailPageProps = {
   params: Promise<{ locale: string; owner: string; repository: string; number: string }>;
@@ -29,10 +36,11 @@ export default async function IssueDetailPage({ params }: IssueDetailPageProps) 
   if (!issue.ok && issue.reason === "not-found") notFound();
   if (!issue.ok) return unavailable(dictionary);
 
-  const [comments, labels, milestones, session] = await Promise.all([
+  const [comments, labels, milestones, assignees, session] = await Promise.all([
     getIssueComments(owner, repository, number),
     getLabels(owner, repository),
     getMilestones(owner, repository, "all", 1, 100),
+    getAssignableUsers(owner, repository),
     getAuthSession(),
   ]);
   return (
@@ -49,6 +57,8 @@ export default async function IssueDetailPage({ params }: IssueDetailPageProps) 
       session={session}
       milestones={milestones.ok ? milestones.data.milestones : []}
       milestonesAvailable={milestones.ok}
+      assignableUsers={assignees.ok ? assignees.data.items : []}
+      assigneesAvailable={assignees.ok}
     />
   );
 }

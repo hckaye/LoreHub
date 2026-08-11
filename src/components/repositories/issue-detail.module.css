@@ -234,6 +234,88 @@
   z-index: 2;
 }
 
+.assigneeMenu {
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 0.45rem;
+  box-shadow: var(--shadow-popover);
+  display: grid;
+  gap: 0.3rem;
+  max-height: 20rem;
+  min-width: 17rem;
+  overflow: auto;
+  padding: 0.5rem;
+  position: absolute;
+  right: 0;
+  top: 1.8rem;
+  z-index: 3;
+}
+
+.assigneeMenu > input {
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 0.35rem;
+  color: var(--fg-default);
+  font: inherit;
+  padding: 0.45rem 0.55rem;
+}
+
+.assigneeMenu label {
+  align-items: center;
+  border-radius: 0.3rem;
+  cursor: pointer;
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.35rem;
+}
+
+.assigneeMenu label:hover {
+  background: var(--canvas-subtle);
+}
+
+.assigneeList {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.assigneeIdentity {
+  align-items: center;
+  display: flex;
+  font-size: 0.78rem;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.assigneeIdentity > span:last-child {
+  display: grid;
+  min-width: 0;
+}
+
+.assigneeIdentity strong,
+.assigneeIdentity small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assigneeIdentity small {
+  color: var(--fg-muted);
+}
+
+.assigneeAvatar {
+  align-items: center;
+  background: var(--canvas-subtle);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  display: inline-flex;
+  flex: 0 0 1.65rem;
+  font-size: 0.72rem;
+  font-weight: 650;
+  height: 1.65rem;
+  justify-content: center;
+  width: 1.65rem;
+}
+
 .milestoneMenu {
   background: var(--surface-raised);
   border: 1px solid var(--border);

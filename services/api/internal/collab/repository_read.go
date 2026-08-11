@@ -2,6 +2,7 @@ package collab
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/lorehub/lorehub/services/api/internal/platform"
@@ -46,13 +47,23 @@ func (s *store) ListCIRunsForRepository(ctx context.Context, repositoryID string
 func (s *store) ListIssuesForRepository(ctx context.Context, repositoryID, state string) ([]Issue, error) {
 	query := `
 		SELECT i.id, i.number, i.title, i.body, i.state, author.username, i.author_id,
-		       assignee.username, milestone.id, milestone.number, milestone.title,
+		       COALESCE((
+		           SELECT jsonb_agg(jsonb_build_object(
+		               'id', assigned_user.id,
+		               'username', assigned_user.username,
+		               'displayName', assigned_user.display_name,
+		               'avatarUrl', assigned_user.avatar_url
+		           ) ORDER BY assignment.assigned_at, assigned_user.username)
+		           FROM issue_assignees assignment
+		           JOIN users assigned_user ON assigned_user.id = assignment.user_id
+		           WHERE assignment.issue_id = i.id
+		       ), '[]'::jsonb),
+		       milestone.id, milestone.number, milestone.title,
 		       milestone.state, to_char(milestone.due_on, 'YYYY-MM-DD'),
 		       COUNT(DISTINCT c.id), i.created_at, i.updated_at,
 		       closed_by.username, i.closed_at
 		FROM issues i
 		JOIN users author ON author.id = i.author_id
-		LEFT JOIN users assignee ON assignee.id = i.assignee_id
 		LEFT JOIN repository_milestones milestone ON milestone.id = i.milestone_id
 		LEFT JOIN users closed_by ON closed_by.id = i.closed_by
 		LEFT JOIN issue_comments c ON c.issue_id = i.id
@@ -63,7 +74,7 @@ func (s *store) ListIssuesForRepository(ctx context.Context, repositoryID, state
 		query += " AND i.state = $2\n"
 		args = append(args, state)
 	}
-	query += ` GROUP BY i.id, author.username, assignee.username, closed_by.username,
+	query += ` GROUP BY i.id, author.username, closed_by.username,
 	                 milestone.id
 		ORDER BY i.updated_at DESC, i.id DESC LIMIT 100`
 	rows, err := s.pool.Query(ctx, query, args...)
@@ -74,15 +85,20 @@ func (s *store) ListIssuesForRepository(ctx context.Context, repositoryID, state
 	issues := make([]Issue, 0)
 	for rows.Next() {
 		var issue Issue
+		var assignees json.RawMessage
 		var milestoneID, milestoneTitle, milestoneState, milestoneDueOn *string
 		var milestoneNumber *int64
 		if err := rows.Scan(&issue.ID, &issue.Number, &issue.Title, &issue.Body, &issue.State,
-			&issue.Author, &issue.AuthorID, &issue.Assignee,
+			&issue.Author, &issue.AuthorID, &assignees,
 			&milestoneID, &milestoneNumber, &milestoneTitle, &milestoneState, &milestoneDueOn,
 			&issue.CommentCount, &issue.CreatedAt,
 			&issue.UpdatedAt, &issue.ClosedBy, &issue.ClosedAt); err != nil {
 			return nil, fmt.Errorf("scan repository issue: %w", err)
 		}
+		if err := json.Unmarshal(assignees, &issue.Assignees); err != nil {
+			return nil, fmt.Errorf("decode repository issue assignees: %w", err)
+		}
+		setPrimaryAssignee(&issue)
 		if milestoneID != nil && milestoneNumber != nil && milestoneTitle != nil && milestoneState != nil {
 			issue.Milestone = &MilestoneSummary{
 				ID: *milestoneID, Number: *milestoneNumber, Title: *milestoneTitle,

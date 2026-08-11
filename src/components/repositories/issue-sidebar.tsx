@@ -1,7 +1,10 @@
-import type { CSSProperties } from "react";
+"use client";
+
+import { useEffect, useState, type CSSProperties } from "react";
 
 import type { Dictionary } from "@/i18n";
-import type { Issue, Label, Milestone } from "@/lib/api-types";
+import type { Assignee, Issue, Label, Milestone } from "@/lib/api-types";
+import { searchIssueAssignees } from "@/lib/issue-assignee-client";
 
 import styles from "./issue-detail.module.css";
 
@@ -13,6 +16,11 @@ type IssueSidebarProps = {
   labelsAvailable: boolean;
   milestones: Milestone[];
   milestonesAvailable: boolean;
+  owner: string;
+  repository: string;
+  assignableUsers: Assignee[];
+  assigneesAvailable: boolean;
+  onSetAssignee: (assignee: Assignee, selected: boolean) => Promise<void>;
   onSetMilestone: (number: number | null) => Promise<void>;
   onToggleLabel: (label: Label, selected: boolean) => Promise<void>;
   onUpdateState: (state: "open" | "closed") => Promise<boolean>;
@@ -22,6 +30,7 @@ export function IssueSidebar(props: IssueSidebarProps) {
   const selected = new Set(props.issue.labels.map((label) => label.id));
   return (
     <aside className={styles.sidebar}>
+      <AssigneeSection {...props} />
       <section>
         <div className={styles.sidebarHeading}>
           <h2>{props.dictionary.issueDetail.labels}</h2>
@@ -112,6 +121,98 @@ export function IssueSidebar(props: IssueSidebarProps) {
       )}
     </aside>
   );
+}
+
+function AssigneeSection(props: IssueSidebarProps) {
+  const assignedUsers = new Set(props.issue.assignees.map((assignee) => assignee.id));
+  const [query, setQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<Assignee[] | null>(null);
+  const normalizedQuery = query.trim().toLowerCase();
+  const candidates = normalizedQuery && searchResults ? searchResults : props.assignableUsers;
+  const options = mergeAssignees(props.issue.assignees, candidates).filter((assignee) => {
+    return !normalizedQuery || `${assignee.displayName} ${assignee.username}`.toLowerCase().includes(normalizedQuery);
+  });
+  useEffect(() => {
+    if (!normalizedQuery) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      const result = await searchIssueAssignees(props.owner, props.repository, normalizedQuery, controller.signal);
+      if (result.ok) setSearchResults(result.data.items);
+    }, 200);
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [normalizedQuery, props.owner, props.repository]);
+  return (
+    <section>
+      <div className={styles.sidebarHeading}>
+        <h2>{props.dictionary.issueAssignees.title}</h2>
+        {props.issue.viewerCanManageAssignees && props.assigneesAvailable && (
+          <details>
+            <summary>{props.dictionary.issueAssignees.manage}</summary>
+            <div className={styles.assigneeMenu}>
+              <input
+                aria-label={props.dictionary.issueAssignees.searchLabel}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder={props.dictionary.issueAssignees.searchPlaceholder}
+                type="search"
+                value={query}
+              />
+              {options.length > 0 ? (
+                options.map((assignee) => (
+                  <label key={assignee.id}>
+                    <input
+                      checked={assignedUsers.has(assignee.id)}
+                      disabled={props.busyAction === `assignee:${assignee.id}`}
+                      onChange={(event) => props.onSetAssignee(assignee, event.target.checked)}
+                      type="checkbox"
+                    />
+                    <AssigneeIdentity assignee={assignee} />
+                  </label>
+                ))
+              ) : (
+                <p>{props.dictionary.issueAssignees.noCandidates}</p>
+              )}
+            </div>
+          </details>
+        )}
+      </div>
+      {props.issue.assignees.length > 0 ? (
+        <div className={styles.assigneeList}>
+          {props.issue.assignees.map((assignee) => (
+            <AssigneeIdentity assignee={assignee} key={assignee.id} />
+          ))}
+        </div>
+      ) : (
+        <p>{props.dictionary.issueAssignees.empty}</p>
+      )}
+      {props.issue.viewerCanManageAssignees && !props.assigneesAvailable && (
+        <p>{props.dictionary.issueAssignees.unavailable}</p>
+      )}
+    </section>
+  );
+}
+
+function AssigneeIdentity({ assignee }: { assignee: Assignee }) {
+  const initial = [...(assignee.displayName || assignee.username)][0]?.toUpperCase() ?? "?";
+  return (
+    <span className={styles.assigneeIdentity}>
+      <span aria-hidden="true" className={styles.assigneeAvatar}>
+        {initial}
+      </span>
+      <span>
+        <strong>{assignee.displayName || assignee.username}</strong>
+        <small>@{assignee.username}</small>
+      </span>
+    </span>
+  );
+}
+
+function mergeAssignees(current: Assignee[], candidates: Assignee[]): Assignee[] {
+  const users = new Map<string, Assignee>();
+  for (const user of [...current, ...candidates]) users.set(user.id, user);
+  return [...users.values()];
 }
 
 function LabelChip({ label }: { label: Label }) {

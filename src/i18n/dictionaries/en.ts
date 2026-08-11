@@ -1,3 +1,4 @@
+import { assignees } from "./assignees";
 import { milestones } from "./milestones";
 import { releases } from "./releases";
 
@@ -512,6 +513,7 @@ const en = {
   },
   releasesPage: releases.en,
   milestonesPage: milestones.en,
+  issueAssignees: assignees.en,
   securityPage: {
     title: "Security",
     description: "Review code scanning findings uploaded by this repository's workflows.",

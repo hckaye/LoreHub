@@ -193,6 +193,19 @@ export type MilestoneSummary = {
   dueOn: string | null;
 };
 
+export type Assignee = {
+  id: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string;
+};
+
+export type AssigneePage = {
+  items: Assignee[];
+  nextCursor?: string;
+  hasMore: boolean;
+};
+
 export type Issue = {
   id: string;
   number: number;
@@ -201,6 +214,7 @@ export type Issue = {
   state: "open" | "closed";
   author: string;
   assignee: string | null;
+  assignees: Assignee[];
   labels: Label[];
   milestone: MilestoneSummary | null;
   labelCount: number;
@@ -212,6 +226,7 @@ export type Issue = {
   viewerCanUpdate: boolean;
   viewerCanManageLabels: boolean;
   viewerCanManageMilestone: boolean;
+  viewerCanManageAssignees: boolean;
 };
 
 export type IssueComment = {

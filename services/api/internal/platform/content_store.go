@@ -375,7 +375,14 @@ func (store *Store) ListIssuesForRead(
 		       assignee.username, COUNT(c.id), i.created_at, i.updated_at
 		FROM issues i
 		JOIN users author ON author.id = i.author_id
-		LEFT JOIN users assignee ON assignee.id = i.assignee_id
+		LEFT JOIN LATERAL (
+			SELECT assigned_user.username
+			FROM issue_assignees assignment
+			JOIN users assigned_user ON assigned_user.id = assignment.user_id
+			WHERE assignment.issue_id = i.id
+			ORDER BY assignment.assigned_at, assigned_user.username
+			LIMIT 1
+		) assignee ON true
 		LEFT JOIN issue_comments c ON c.issue_id = i.id
 		WHERE i.repository_id = $1 AND i.state = $2
 		GROUP BY i.id, author.username, assignee.username

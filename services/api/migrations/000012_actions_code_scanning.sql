@@ -1,13 +1,19 @@
 DO $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'ci_runs_id_repository_unique'
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'ci_runs_id_repository_unique'
+          AND conrelid = 'ci_runs'::regclass
     ) THEN
         ALTER TABLE ci_runs
             ADD CONSTRAINT ci_runs_id_repository_unique UNIQUE (id, repository_id);
     END IF;
     IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'ci_jobs_id_run_unique'
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'ci_jobs_id_run_unique'
+          AND conrelid = 'ci_jobs'::regclass
     ) THEN
         ALTER TABLE ci_jobs
             ADD CONSTRAINT ci_jobs_id_run_unique UNIQUE (id, run_id);

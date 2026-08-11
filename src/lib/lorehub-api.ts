@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 
 import type {
   APIResult,
+  AssigneePage,
   Branch,
   BranchOverview,
   BranchRule,
@@ -258,6 +259,17 @@ export function getMilestones(
 ): Promise<APIResult<MilestonePage>> {
   const query = new URLSearchParams({ state, page: String(page), perPage: String(perPage) });
   return request(repositoryPath(owner, repository, `/milestones?${query.toString()}`));
+}
+
+export function getAssignableUsers(
+  owner: string,
+  repository: string,
+  query = "",
+  limit = 100,
+): Promise<APIResult<AssigneePage>> {
+  const parameters = new URLSearchParams({ limit: String(limit) });
+  if (query) parameters.set("query", query);
+  return request(repositoryPath(owner, repository, `/assignees?${parameters.toString()}`));
 }
 
 export function getReviews(owner: string, repository: string, number: number): Promise<APIResult<ReviewSummary>> {
