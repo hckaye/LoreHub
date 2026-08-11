@@ -61,7 +61,26 @@ func lookupRepository(
 		SELECT r.id, r.organization_id, o.slug, r.slug, r.display_name, r.description,
 		       r.visibility, r.lore_repository_id, r.lore_url, r.default_branch,
 		       (SELECT COUNT(*) FROM issues i WHERE i.repository_id = r.id),
-		       (SELECT COUNT(*) FROM merge_requests mr WHERE mr.repository_id = r.id), r.updated_at
+		       (SELECT COUNT(*) FROM merge_requests mr WHERE mr.repository_id = r.id),
+		       (
+		           SELECT COUNT(*) FROM repository_stars star
+		           JOIN users stargazer ON stargazer.id = star.user_id AND stargazer.status = 'active'
+		           WHERE star.repository_id = r.id
+		       ),
+		       (
+		           SELECT COUNT(*) FROM repository_watches watch
+		           JOIN users watcher ON watcher.id = watch.user_id AND watcher.status = 'active'
+		           WHERE watch.repository_id = r.id
+		       ),
+		       EXISTS (
+		           SELECT 1 FROM repository_stars star
+		           WHERE star.repository_id = r.id AND star.user_id = $3
+		       ),
+		       EXISTS (
+		           SELECT 1 FROM repository_watches watch
+		           WHERE watch.repository_id = r.id AND watch.user_id = $3
+		       ),
+		       r.updated_at
 		FROM repositories r
 		JOIN organizations o ON o.id = r.organization_id AND o.active
 		JOIN users actor_user ON actor_user.id = $3 AND actor_user.status = 'active'
@@ -114,7 +133,18 @@ func lookupPublicRepository(
 		SELECT r.id, r.organization_id, o.slug, r.slug, r.display_name, r.description,
 		       r.visibility, r.lore_repository_id, r.lore_url, r.default_branch,
 		       (SELECT COUNT(*) FROM issues i WHERE i.repository_id = r.id),
-		       (SELECT COUNT(*) FROM merge_requests mr WHERE mr.repository_id = r.id), r.updated_at
+		       (SELECT COUNT(*) FROM merge_requests mr WHERE mr.repository_id = r.id),
+		       (
+		           SELECT COUNT(*) FROM repository_stars star
+		           JOIN users stargazer ON stargazer.id = star.user_id AND stargazer.status = 'active'
+		           WHERE star.repository_id = r.id
+		       ),
+		       (
+		           SELECT COUNT(*) FROM repository_watches watch
+		           JOIN users watcher ON watcher.id = watch.user_id AND watcher.status = 'active'
+		           WHERE watch.repository_id = r.id
+		       ),
+		       false, false, r.updated_at
 		FROM repositories r
 		JOIN organizations o ON o.id = r.organization_id AND o.active
 		WHERE o.slug = $1 AND r.slug = $2 AND r.archived_at IS NULL AND r.lifecycle_state = 'active'
@@ -264,6 +294,10 @@ func scanRepositoryRow(row pgx.Row) (Repository, error) {
 		&repo.DefaultBranch,
 		&repo.IssueCount,
 		&repo.MergeRequestCount,
+		&repo.StarCount,
+		&repo.WatcherCount,
+		&repo.ViewerHasStarred,
+		&repo.ViewerIsWatching,
 		&repo.UpdatedAt,
 	)
 	return repo, err

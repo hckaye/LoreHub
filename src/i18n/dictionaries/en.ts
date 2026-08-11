@@ -123,6 +123,10 @@ const en = {
     approvals: "approvals",
     sourceTarget: "Source to target",
     lastUpdated: "Last updated",
+    star: "Star",
+    unstar: "Unstar",
+    watch: "Watch",
+    unwatch: "Unwatch",
     unavailable: "Repository data is temporarily unavailable.",
     readOnlyNote:
       "This page only shows data currently exposed by LoreHub. It does not change Lore or repository policy.",

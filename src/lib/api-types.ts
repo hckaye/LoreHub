@@ -14,7 +14,18 @@ export type Repository = {
   allowMergeRequests: boolean;
   issueCount: number;
   mergeRequestCount: number;
+  starCount?: number;
+  watcherCount?: number;
+  viewerHasStarred?: boolean;
+  viewerIsWatching?: boolean;
   updatedAt: string;
+};
+
+export type RepositoryEngagement = {
+  starCount: number;
+  watcherCount: number;
+  viewerHasStarred: boolean;
+  viewerIsWatching: boolean;
 };
 
 export type Organization = {

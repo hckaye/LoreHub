@@ -151,6 +151,10 @@ const ja = {
     approvals: "件の承認",
     sourceTarget: "ソースから対象へ",
     lastUpdated: "最終更新",
+    star: "スター",
+    unstar: "スター解除",
+    watch: "ウォッチ",
+    unwatch: "ウォッチ解除",
     unavailable: "リポジトリ情報を一時的に取得できません。",
     readOnlyNote: concat(
       "このページはLoreHubが現在提供している情報だけを表示します。",

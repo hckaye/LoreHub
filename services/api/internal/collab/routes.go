@@ -29,6 +29,10 @@ import (
 //	PATCH  /api/v1/repositories/{owner}/{repository}/merge-requests/{number}
 //	GET    /api/v1/repositories/{owner}/{repository}/merge-requests/{number}/reviews
 //	POST   /api/v1/repositories/{owner}/{repository}/merge-requests/{number}/reviews
+//	PUT    /api/v1/repositories/{owner}/{repository}/star
+//	DELETE /api/v1/repositories/{owner}/{repository}/star
+//	PUT    /api/v1/repositories/{owner}/{repository}/watch
+//	DELETE /api/v1/repositories/{owner}/{repository}/watch
 //	GET    /api/v1/repositories/{owner}/{repository}/branch-rules
 //	POST   /api/v1/repositories/{owner}/{repository}/branch-rules
 //	PATCH  /api/v1/repositories/{owner}/{repository}/branch-rules/{ruleID}
@@ -61,6 +65,11 @@ func Register(mux *http.ServeMux, store Store, actors ActorResolver, logger *slo
 	mux.HandleFunc("DELETE "+base+"/merge-requests/{number}/comments/{commentID}", api.deleteMergeRequestComment)
 	mux.HandleFunc("GET "+base+"/merge-requests/{number}/reviews", api.listReviews)
 	mux.HandleFunc("POST "+base+"/merge-requests/{number}/reviews", api.createReview)
+
+	mux.HandleFunc("PUT "+base+"/star", api.putRepositoryStar)
+	mux.HandleFunc("DELETE "+base+"/star", api.deleteRepositoryStar)
+	mux.HandleFunc("PUT "+base+"/watch", api.putRepositoryWatch)
+	mux.HandleFunc("DELETE "+base+"/watch", api.deleteRepositoryWatch)
 
 	mux.HandleFunc("GET "+base+"/branch-rules", api.listBranchRules)
 	mux.HandleFunc("POST "+base+"/branch-rules", api.createBranchRule)

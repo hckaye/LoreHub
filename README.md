@@ -205,6 +205,18 @@ APIをDockerコンテナで起動する場合のdiscovery到達性について�
 - `GET /api/v1/repositories/{owner}/{repo}/revisions`、`/diff`: 任意認証。履歴と差分
 - `GET /api/v1/repositories/{owner}/{repo}/issues`: 認証不要。公開Issue一覧
 - `POST /api/v1/repositories/{owner}/{repo}/issues`: OIDC。Issue作成
+- `GET /api/v1/repositories/{owner}/{repo}/merge-requests/{number}`: プルリクエスト閲覧
+- `PATCH /api/v1/repositories/{owner}/{repo}/merge-requests/{number}`: プルリクエスト更新
+- `GET /api/v1/repositories/{owner}/{repo}/merge-requests/{number}/comments`: コメント一覧
+- `POST /api/v1/repositories/{owner}/{repo}/merge-requests/{number}/comments`: コメント作成
+- `PATCH /api/v1/repositories/{owner}/{repo}/merge-requests/{number}/comments/{id}`: コメント更新
+- `DELETE /api/v1/repositories/{owner}/{repo}/merge-requests/{number}/comments/{id}`: コメント削除
+- `GET /api/v1/repositories/{owner}/{repo}/merge-requests/{number}/reviews`: レビュー一覧
+- `POST /api/v1/repositories/{owner}/{repo}/merge-requests/{number}/reviews`: レビュー提出
+- `PUT /api/v1/repositories/{owner}/{repo}/star`: Star追加
+- `DELETE /api/v1/repositories/{owner}/{repo}/star`: Star解除
+- `PUT /api/v1/repositories/{owner}/{repo}/watch`: Watch追加
+- `DELETE /api/v1/repositories/{owner}/{repo}/watch`: Watch解除
 - `GET /api/v1/repositories/{owner}/{repo}/merge-requests/{number}/merge-readiness`: 任意認証。merge条件確認
 - `POST /api/v1/repositories/{owner}/{repo}/merge-requests/{number}/merge/start`: CSRF/write。Lore merge開始
 - `POST /api/v1/repositories/{owner}/{repo}/merge-requests/{number}/merge`: CSRF/write。Lore pushとDB確定

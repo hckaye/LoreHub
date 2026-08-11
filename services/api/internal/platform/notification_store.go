@@ -297,6 +297,8 @@ func (store *Store) syncNotifications(ctx context.Context, transaction pgx.Tx) e
 			    'repository.settings_updated', 'issue.created', 'issue.updated',
 			    'issue_comment.created', 'issue_comment.updated', 'issue_comment.deleted',
 			    'merge_request.created', 'merge_request.updated',
+			    'merge_request_comment.created', 'merge_request_comment.updated',
+			    'merge_request_comment.deleted',
 			    'merge_request_review.created', 'merge_request_review.updated',
 			    'label.created', 'label.updated', 'label.deleted', 'branch_rule.created',
 			    'branch_rule.updated', 'branch_rule.deleted', 'team.created', 'team.updated',
@@ -445,6 +447,18 @@ func (store *Store) resolveNotificationScope(
 		`, eventID).Scan(&scope.OrganizationID, &scope.RepositoryID, &scope.OrganizationSlug,
 			&scope.RepositorySlug, &scope.Visibility, &scope.IssueNumber, &scope.MergeRequestNumber,
 			&scope.Title)
+	case strings.HasPrefix(event.Topic, "merge_request_comment."):
+		err = transaction.QueryRow(ctx, `
+			SELECT r.organization_id, r.id, o.slug, r.slug, r.visibility, NULL, mr.number, mr.title
+			FROM merge_request_comments comment
+			JOIN merge_requests mr ON mr.id = comment.merge_request_id
+			JOIN repositories r ON r.id = mr.repository_id
+			  AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
+			JOIN organizations o ON o.id = r.organization_id AND o.active
+			WHERE comment.id = split_part($1, ':', 1)::uuid
+		`, eventID).Scan(&scope.OrganizationID, &scope.RepositoryID, &scope.OrganizationSlug,
+			&scope.RepositorySlug, &scope.Visibility, &scope.IssueNumber, &scope.MergeRequestNumber,
+			&scope.Title)
 	case strings.HasPrefix(event.Topic, "merge_request_review."):
 		err = transaction.QueryRow(ctx, `
 			SELECT r.organization_id, r.id, o.slug, r.slug, r.visibility, NULL, mr.number, mr.title
@@ -521,10 +535,11 @@ func (store *Store) resolveDeletedNotificationScope(
 	event notificationEvent,
 ) (notificationScope, bool, error) {
 	var payload struct {
-		IssueID      string `json:"issueId"`
-		RepositoryID string `json:"repositoryId"`
-		Name         string `json:"name"`
-		Pattern      string `json:"pattern"`
+		IssueID        string `json:"issueId"`
+		MergeRequestID string `json:"mergeRequestId"`
+		RepositoryID   string `json:"repositoryId"`
+		Name           string `json:"name"`
+		Pattern        string `json:"pattern"`
 	}
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
 		return notificationScope{}, false, nil
@@ -549,6 +564,26 @@ func (store *Store) resolveDeletedNotificationScope(
 				return notificationScope{}, false, nil
 			}
 			return notificationScope{}, false, fmt.Errorf("resolve deleted comment scope: %w", err)
+		}
+		scope.Kind = "repository"
+	case strings.HasPrefix(event.Topic, "merge_request_comment.") && payload.MergeRequestID != "":
+		if _, err := uuid.Parse(payload.MergeRequestID); err != nil {
+			return notificationScope{}, false, nil
+		}
+		err := transaction.QueryRow(ctx, `
+			SELECT r.organization_id, r.id, o.slug, r.slug, r.visibility, NULL, mr.number, mr.title
+			FROM merge_requests mr JOIN repositories r ON r.id = mr.repository_id
+			  AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
+			JOIN organizations o ON o.id = r.organization_id AND o.active
+			WHERE mr.id = $1
+		`, payload.MergeRequestID).Scan(&scope.OrganizationID, &scope.RepositoryID,
+			&scope.OrganizationSlug, &scope.RepositorySlug, &scope.Visibility,
+			&scope.IssueNumber, &scope.MergeRequestNumber, &scope.Title)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return notificationScope{}, false, nil
+			}
+			return notificationScope{}, false, fmt.Errorf("resolve deleted pull request comment scope: %w", err)
 		}
 		scope.Kind = "repository"
 	case (strings.HasPrefix(event.Topic, "label.") && payload.RepositoryID != "") ||
@@ -668,6 +703,14 @@ func (store *Store) notificationRecipients(
 			  AND team_members.active
 			  AND recipient.status = 'active'
 			  AND $3 IN ('public', 'private')
+			UNION
+			SELECT watches.user_id
+			FROM repository_watches watches
+			JOIN repositories r ON r.id = watches.repository_id
+			  AND r.organization_id = $1 AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
+			JOIN organizations o ON o.id = r.organization_id AND o.active
+			JOIN users recipient ON recipient.id = watches.user_id AND recipient.status = 'active'
+			WHERE watches.repository_id = $2
 		)
 		SELECT DISTINCT eligible.user_id::text
 		FROM eligible
@@ -722,10 +765,12 @@ func notificationMessage(event notificationEvent, scope notificationScope) notif
 
 func notificationHref(scope notificationScope) string {
 	if scope.RepositorySlug != "" && scope.IssueNumber != nil {
-		return "/" + scope.OrganizationSlug + "/" + scope.RepositorySlug + "/issues"
+		return "/" + scope.OrganizationSlug + "/" + scope.RepositorySlug +
+			"/issues/" + fmt.Sprint(*scope.IssueNumber)
 	}
 	if scope.RepositorySlug != "" && scope.MergeRequestNumber != nil {
-		return "/" + scope.OrganizationSlug + "/" + scope.RepositorySlug + "/pulls"
+		return "/" + scope.OrganizationSlug + "/" + scope.RepositorySlug +
+			"/pulls/" + fmt.Sprint(*scope.MergeRequestNumber)
 	}
 	if scope.RepositorySlug != "" {
 		return "/" + scope.OrganizationSlug + "/" + scope.RepositorySlug

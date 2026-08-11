@@ -25,7 +25,18 @@ type Repository struct {
 	DefaultBranch     string    `json:"defaultBranch"`
 	IssueCount        int64     `json:"issueCount"`
 	MergeRequestCount int64     `json:"mergeRequestCount"`
+	StarCount         int64     `json:"starCount"`
+	WatcherCount      int64     `json:"watcherCount"`
+	ViewerHasStarred  bool      `json:"viewerHasStarred"`
+	ViewerIsWatching  bool      `json:"viewerIsWatching"`
 	UpdatedAt         time.Time `json:"updatedAt"`
+}
+
+type RepositoryEngagement struct {
+	StarCount        int64 `json:"starCount"`
+	WatcherCount     int64 `json:"watcherCount"`
+	ViewerHasStarred bool  `json:"viewerHasStarred"`
+	ViewerIsWatching bool  `json:"viewerIsWatching"`
 }
 
 // Issue is a single issue record returned by the detail endpoint.
