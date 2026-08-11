@@ -212,10 +212,15 @@ if (apiClient) {
   expect(apiClient.bearerOnly === true, "lorehub-api must be bearer-only");
   expect(apiClient.standardFlowEnabled === false, "lorehub-api must not enable login flow");
 }
-const scopeNames = (realm.clientScopes ?? []).map((s) => s.name);
-for (const name of ["profile", "email", "roles", "web-origins"]) {
+const scopes = realm.clientScopes ?? [];
+const scopeNames = scopes.map((scope) => scope.name);
+for (const name of ["basic", "profile", "email", "roles", "web-origins"]) {
   expect(scopeNames.includes(name), `realm must define the ${name} client scope`);
 }
+const basicScope = scopes.find((scope) => scope.name === "basic");
+const subjectMapper = basicScope?.protocolMappers?.find((mapper) => mapper.protocolMapper === "oidc-sub-mapper");
+expect(subjectMapper?.config?.["access.token.claim"] === "true", "access tokens must contain a subject claim");
+expect((realm.defaultDefaultClientScopes ?? []).includes("basic"), "basic must be a default client scope");
 expect((realm.defaultDefaultClientScopes ?? []).includes("profile"), "profile must be a default client scope");
 
 // --- bootstrap.sh -----------------------------------------------------------
@@ -241,6 +246,8 @@ expect(bootstrap.includes("LOREHUB_VERIFY_EMAIL"), "bootstrap must configure ema
 expect(bootstrap.includes("KEYCLOAK_SMTP_HOST"), "bootstrap must configure SMTP from environment");
 expect(bootstrap.includes("production requires LOREHUB_VERIFY_EMAIL=true"), "production must require verification");
 expect(bootstrap.includes("post.logout.redirect.uris"), "bootstrap must update the logout URI");
+expect(bootstrap.includes("oidc-sub-mapper"), "bootstrap must add the access-token subject mapper");
+expect(bootstrap.includes("default-client-scopes"), "bootstrap must assign the basic scope to existing clients");
 expect(bootstrap.includes('redirectUris=[\\"${REDIRECT_URL}\\"]'), "bootstrap must update only the API callback");
 expect(!bootstrap.includes("offline.access"), "X must not request unnecessary offline access");
 expect(bootstrap.includes("x oauth2"), "X must use the generic oauth2 provider");

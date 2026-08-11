@@ -136,6 +136,43 @@ if [ "$VERIFY_EMAIL" = "true" ]; then
 fi
 "$KCADM" update "realms/${REALM}" -r "$REALM" "${realm_args[@]}" >/dev/null
 
+basic_scope_id=$(
+  "$KCADM" get client-scopes -r "$REALM" --fields id,name 2>/dev/null |
+    sed -n '
+      /"id"[[:space:]]*:/ {
+        s/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/
+        h
+      }
+      /"name"[[:space:]]*:[[:space:]]*"basic"/ {
+        g
+        p
+        q
+      }
+    '
+)
+if [ -z "$basic_scope_id" ]; then
+  echo "[bootstrap] creating basic OIDC client scope"
+  basic_scope_id=$(
+    "$KCADM" create client-scopes -r "$REALM" -i \
+      -s "name=basic" \
+      -s "description=OpenID Connect subject claim scope" \
+      -s "protocol=openid-connect" \
+      -s 'attributes."include.in.token.scope"=false' \
+      -s 'attributes."display.on.consent.screen"=false'
+  )
+fi
+if ! "$KCADM" get "client-scopes/${basic_scope_id}/protocol-mappers/models" -r "$REALM" |
+  grep -q '"protocolMapper" : "oidc-sub-mapper"'; then
+  echo "[bootstrap] adding subject mapper to basic OIDC client scope"
+  "$KCADM" create "client-scopes/${basic_scope_id}/protocol-mappers/models" -r "$REALM" \
+    -s "name=sub" \
+    -s "protocol=openid-connect" \
+    -s "protocolMapper=oidc-sub-mapper" \
+    -s "consentRequired=false" \
+    -s 'config."introspection.token.claim"=true' \
+    -s 'config."access.token.claim"=true' >/dev/null
+fi
+
 client_uuid=$(
   "$KCADM" get clients -r "$REALM" -q "clientId=${CLIENT_ID}" --fields id 2>/dev/null |
     sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' |
@@ -165,6 +202,7 @@ client_args=(
 )
 echo "[bootstrap] updating OIDC client ${CLIENT_ID}"
 "$KCADM" update "clients/${client_uuid}" -r "$REALM" "${client_args[@]}" >/dev/null
+"$KCADM" update "clients/${client_uuid}/default-client-scopes/${basic_scope_id}" -r "$REALM" >/dev/null
 
 provider_exists() {
   "$KCADM" get "identity-provider/instances/$1" -r "$REALM" >/dev/null 2>&1

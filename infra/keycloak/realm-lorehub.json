@@ -43,6 +43,24 @@
   "adminEventsDetailsEnabled": false,
   "clientScopes": [
     {
+      "name": "basic",
+      "description": "OpenID Connect subject claim scope",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "false", "display.on.consent.screen": "false" },
+      "protocolMappers": [
+        {
+          "name": "sub",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-sub-mapper",
+          "consentRequired": false,
+          "config": {
+            "introspection.token.claim": "true",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
       "name": "profile",
       "description": "OpenID Connect profile claim scope",
       "protocol": "openid-connect",
@@ -222,7 +240,7 @@
       ]
     }
   ],
-  "defaultDefaultClientScopes": ["profile", "email", "roles", "web-origins"],
+  "defaultDefaultClientScopes": ["basic", "profile", "email", "roles", "web-origins"],
   "defaultOptionalClientScopes": [],
   "clients": [
     {
