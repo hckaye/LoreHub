@@ -1,103 +1,135 @@
-import { Building2, Search as SearchIcon, UserRound } from "lucide-react";
-import Link from "next/link";
+import { Search as SearchIcon, ShieldAlert, TriangleAlert } from "lucide-react";
 
 import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
-import type { SearchResults } from "@/lib/api-types";
+import { lastSearchPage, searchTypeCount, type SearchQuery, type SearchResults, type SearchType } from "@/lib/search";
 
-import { RepositoryCard } from "../repositories/repository-card";
 import { EmptyState } from "../ui/empty-state";
+import { SearchOrganizationResults } from "./search-organization-results";
 import styles from "./search-page.module.css";
+import { SearchPagination } from "./search-pagination";
+import { SearchRepositoryResults } from "./search-repository-results";
+import { SearchTypeTabs } from "./search-type-tabs";
+import { SearchUserResults } from "./search-user-results";
+import { SearchWorkItemResults } from "./search-work-item-results";
+
+export type SearchFailure = "forbidden" | "unavailable" | null;
 
 type SearchPageProps = {
   dictionary: Dictionary;
+  failure: SearchFailure;
   locale: Locale;
-  query: string;
+  query: SearchQuery;
   results: SearchResults | null;
 };
 
-export function SearchPage({ dictionary, locale, query, results }: SearchPageProps) {
-  const hasResults = Boolean(
-    results && (results.repositories.length > 0 || results.organizations.length > 0 || results.users.length > 0),
-  );
+export function SearchPage({ dictionary, failure, locale, query, results }: SearchPageProps) {
+  const selectedCount = results ? searchTypeCount(results.counts, query.type) : 0;
+  const lastPage = results ? lastSearchPage(results, query.type) : 1;
   return (
-    <div className={styles.page}>
-      <div className={styles.heading}>
-        <p className={styles.eyebrow}>{dictionary.common.search}</p>
-        <h1>{query ? `${dictionary.home.searchResults}: ${query}` : dictionary.home.discoverTitle}</h1>
-        <p>{dictionary.home.searchResultsDescription}</p>
-      </div>
-      {!query ? (
+    <main className={styles.page}>
+      <header className={styles.heading}>
+        <h1>{dictionary.searchPage.title}</h1>
+        <p>{dictionary.searchPage.description}</p>
+        <form action={`/${locale}/search`} className={styles.searchForm} role="search">
+          <input name="type" type="hidden" value={query.type} />
+          <label className="visually-hidden" htmlFor="cross-resource-search">
+            {dictionary.searchPage.inputLabel}
+          </label>
+          <input
+            defaultValue={query.q}
+            id="cross-resource-search"
+            maxLength={160}
+            name="q"
+            placeholder={dictionary.searchPage.inputPlaceholder}
+            type="search"
+          />
+          <button type="submit">{dictionary.searchPage.submit}</button>
+        </form>
+      </header>
+      {!query.q ? (
         <EmptyState
-          body={dictionary.home.searchEmptyBody}
+          body={dictionary.searchPage.initialBody}
           icon={<SearchIcon aria-hidden="true" />}
-          title={dictionary.home.searchEmptyTitle}
+          title={dictionary.searchPage.initialTitle}
         />
-      ) : !results ? (
+      ) : failure === "forbidden" ? (
         <EmptyState
-          body={dictionary.home.apiUnavailableBody}
-          icon={<SearchIcon aria-hidden="true" />}
-          title={dictionary.home.apiUnavailableTitle}
+          body={dictionary.searchPage.forbiddenBody}
+          icon={<ShieldAlert aria-hidden="true" />}
+          title={dictionary.searchPage.forbiddenTitle}
           tone="warning"
         />
-      ) : !hasResults ? (
+      ) : failure === "unavailable" || !results ? (
         <EmptyState
-          body={dictionary.home.searchEmptyBody}
-          icon={<SearchIcon aria-hidden="true" />}
-          title={dictionary.home.searchEmptyTitle}
+          body={dictionary.searchPage.unavailableBody}
+          icon={<TriangleAlert aria-hidden="true" />}
+          title={dictionary.searchPage.unavailableTitle}
+          tone="warning"
         />
+      ) : selectedCount === 0 ? (
+        <>
+          <SearchTypeTabs counts={results.counts} dictionary={dictionary} locale={locale} query={query} />
+          <EmptyState
+            body={dictionary.searchPage.emptyBody}
+            icon={<SearchIcon aria-hidden="true" />}
+            title={dictionary.searchPage.emptyTitle}
+          />
+        </>
       ) : (
-        <div className={styles.results}>
-          {results.repositories.length > 0 && (
-            <section>
-              <h2>{dictionary.common.repositories}</h2>
-              <div className={styles.repositoryGrid}>
-                {results.repositories.map((repository) => (
-                  <RepositoryCard dictionary={dictionary} key={repository.id} locale={locale} repository={repository} />
-                ))}
-              </div>
-            </section>
-          )}
-          {results.organizations.length > 0 && (
-            <section>
-              <h2>
-                <Building2 aria-hidden="true" size={18} />
-                {dictionary.common.organizations}
-              </h2>
-              <ul className={styles.list}>
-                {results.organizations.map((organization) => (
-                  <li key={organization.id}>
-                    <Link href={`/${locale}/organizations/${encodeURIComponent(organization.slug)}`}>
-                      <strong>{organization.displayName}</strong>
-                      <span>
-                        {organization.slug} · {organization.visibility}
-                      </span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-          {results.users.length > 0 && (
-            <section>
-              <h2>
-                <UserRound aria-hidden="true" size={18} />
-                {dictionary.profile.title}
-              </h2>
-              <ul className={styles.list}>
-                {results.users.map((user) => (
-                  <li key={user.id}>
-                    <Link href={`/${locale}/${encodeURIComponent(user.username)}`}>
-                      <strong>{user.displayName}</strong>
-                      <span>@{user.username}</span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-        </div>
+        <>
+          <SearchTypeTabs counts={results.counts} dictionary={dictionary} locale={locale} query={query} />
+          <div className={styles.results}>
+            {shows(query.type, "repositories") && (
+              <SearchRepositoryResults
+                count={results.counts.repositories}
+                dictionary={dictionary}
+                locale={locale}
+                repositories={results.repositories}
+              />
+            )}
+            {shows(query.type, "organizations") && (
+              <SearchOrganizationResults
+                count={results.counts.organizations}
+                dictionary={dictionary}
+                locale={locale}
+                organizations={results.organizations}
+              />
+            )}
+            {shows(query.type, "users") && (
+              <SearchUserResults
+                count={results.counts.users}
+                dictionary={dictionary}
+                locale={locale}
+                users={results.users}
+              />
+            )}
+            {shows(query.type, "issues") && (
+              <SearchWorkItemResults
+                count={results.counts.issues}
+                dictionary={dictionary}
+                items={results.issues}
+                kind="issues"
+                locale={locale}
+              />
+            )}
+            {shows(query.type, "pulls") && (
+              <SearchWorkItemResults
+                count={results.counts.pullRequests}
+                dictionary={dictionary}
+                items={results.pullRequests}
+                kind="pulls"
+                locale={locale}
+              />
+            )}
+          </div>
+          <SearchPagination dictionary={dictionary} lastPage={lastPage} locale={locale} query={query} />
+        </>
       )}
-    </div>
+    </main>
   );
+}
+
+function shows(active: SearchType, section: Exclude<SearchType, "all">): boolean {
+  return active === "all" || active === section;
 }

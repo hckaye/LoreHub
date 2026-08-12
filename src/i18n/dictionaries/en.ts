@@ -15,6 +15,7 @@ import { pullRequestDrafts } from "./pull-request-drafts";
 import { pullRequestMetadata } from "./pull-request-metadata";
 import { releases } from "./releases";
 import { repositoryLifecycle } from "./repository-lifecycle";
+import { search } from "./search";
 import { webhooks } from "./webhooks";
 import { wiki } from "./wiki";
 import { workItemLists } from "./work-item-lists";
@@ -36,6 +37,7 @@ const en = {
   fileLocks: fileLocks.en,
   globalWorkItems: globalWorkItems.en,
   repositoryLifecycle: repositoryLifecycle.en,
+  searchPage: search.en,
   metadata: metadata.en,
   common: {
     productName: "LoreHub",

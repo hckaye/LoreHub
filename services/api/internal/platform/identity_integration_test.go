@@ -83,14 +83,14 @@ func TestIdentitySearchFiltersPrivateResources(t *testing.T) {
 		_, _ = pool.Exec(ctx, `DELETE FROM users WHERE id IN ($1, $2)`, alice.ID, bob.ID)
 	})
 
-	anonymous, err := store.Search(ctx, nil, "Search", "repositories", 20)
+	anonymous, err := store.Search(ctx, nil, "Search", "repositories", 1, 20)
 	if err != nil {
 		t.Fatalf("anonymous search: %v", err)
 	}
 	if len(anonymous.Repositories) != 1 || anonymous.Repositories[0].Slug != "public-"+suffix {
 		t.Fatalf("anonymous search leaked private repository: %+v", anonymous.Repositories)
 	}
-	member, err := store.Search(ctx, &bob, "Search", "repositories", 20)
+	member, err := store.Search(ctx, &bob, "Search", "repositories", 1, 20)
 	if err != nil {
 		t.Fatalf("member search: %v", err)
 	}
@@ -183,38 +183,38 @@ func TestIdentityVisibilityMatrixCoversEveryRepositoryProjection(t *testing.T) {
 		}
 	}
 
-	search, err := store.Search(ctx, nil, "visibility-", "repositories", 20)
+	search, err := store.Search(ctx, nil, "visibility-", "repositories", 1, 20)
 	if err != nil {
 		t.Fatalf("anonymous search: %v", err)
 	}
 	assertVisibleRepositories("anonymous search", search.Repositories, "public", "archived")
-	search, err = store.Search(ctx, &member, "visibility-", "repositories", 20)
+	search, err = store.Search(ctx, &member, "visibility-", "repositories", 1, 20)
 	if err != nil {
 		t.Fatalf("organization member search: %v", err)
 	}
 	assertVisibleRepositories("organization member search", search.Repositories, "public", "internal", "archived")
-	search, err = store.Search(ctx, &grantee, "visibility-", "repositories", 20)
+	search, err = store.Search(ctx, &grantee, "visibility-", "repositories", 1, 20)
 	if err != nil {
 		t.Fatalf("explicit grant search: %v", err)
 	}
 	assertVisibleRepositories(
 		"explicit grant search", search.Repositories, "public", "internal", "private", "archived",
 	)
-	search, err = store.Search(ctx, &owner, "visibility-", "repositories", 20)
+	search, err = store.Search(ctx, &owner, "visibility-", "repositories", 1, 20)
 	if err != nil {
 		t.Fatalf("organization owner search: %v", err)
 	}
 	assertVisibleRepositories(
 		"organization owner search", search.Repositories, "public", "internal", "private", "archived",
 	)
-	search, err = store.Search(ctx, &maintainer, "visibility-", "repositories", 20)
+	search, err = store.Search(ctx, &maintainer, "visibility-", "repositories", 1, 20)
 	if err != nil {
 		t.Fatalf("organization maintainer search: %v", err)
 	}
 	assertVisibleRepositories(
 		"organization maintainer search", search.Repositories, "public", "internal", "archived",
 	)
-	search, err = store.Search(ctx, &suspendedOwner, "visibility-", "repositories", 20)
+	search, err = store.Search(ctx, &suspendedOwner, "visibility-", "repositories", 1, 20)
 	if err != nil {
 		t.Fatalf("suspended owner search: %v", err)
 	}
@@ -657,7 +657,7 @@ func TestRepositorySettingsRequireExplicitAdminOrOrganizationOwner(t *testing.T)
 	if !slices.Equal(updated.Topics, wantTopics) {
 		t.Fatalf("repository topics = %v, want %v", updated.Topics, wantTopics)
 	}
-	search, err := store.Search(ctx, &owner, topic, "repositories", 20)
+	search, err := store.Search(ctx, &owner, topic, "repositories", 1, 20)
 	if err != nil || len(search.Repositories) != 1 || search.Repositories[0].ID != repositoryID {
 		t.Fatalf("topic search = %+v, err=%v", search.Repositories, err)
 	}

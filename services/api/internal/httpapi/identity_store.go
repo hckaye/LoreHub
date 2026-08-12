@@ -8,7 +8,7 @@ import (
 
 type IdentityStore interface {
 	Dashboard(context.Context, platform.User) (platform.Dashboard, error)
-	Search(context.Context, *platform.User, string, string, int) (platform.SearchResults, error)
+	Search(context.Context, *platform.User, string, string, int, int) (platform.SearchResults, error)
 	UserProfile(context.Context, *platform.User, string) (platform.UserProfile, error)
 	UserRepositories(context.Context, *platform.User, string) ([]platform.Repository, error)
 	UpdateProfile(context.Context, platform.User, platform.UpdateProfileInput) (platform.UserProfile, error)

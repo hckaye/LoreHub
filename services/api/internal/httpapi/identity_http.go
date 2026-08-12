@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/google/uuid"
 	"github.com/lorehub/lorehub/services/api/internal/platform"
@@ -54,30 +55,110 @@ func (api *API) search(writer http.ResponseWriter, request *http.Request) {
 	if !ok {
 		return
 	}
-	query := strings.TrimSpace(request.URL.Query().Get("q"))
-	if len([]rune(query)) > 160 {
-		writeProblem(writer, http.StatusBadRequest, "invalid_query", "The search query is too long")
-		return
-	}
-	kind := request.URL.Query().Get("type")
-	if kind == "" {
-		kind = "all"
-	}
-	if kind != "all" && kind != "repositories" && kind != "organizations" && kind != "users" {
-		writeProblem(writer, http.StatusBadRequest, "invalid_type", "The search type is invalid")
-		return
-	}
-	limit, err := queryLimit(request.URL.Query().Get("limit"), 20, 50)
+	parameters, err := parseSearchParameters(request.URL.Query())
 	if err != nil {
-		writeProblem(writer, http.StatusBadRequest, "invalid_limit", "The search limit is invalid")
+		writeProblem(writer, http.StatusBadRequest, "invalid_query", "The search query is invalid")
 		return
 	}
-	results, err := api.identityStore.Search(request.Context(), viewer, query, kind, limit)
+	results, err := api.identityStore.Search(
+		request.Context(), viewer, parameters.Query, parameters.Kind,
+		parameters.Page, parameters.PerPage,
+	)
 	if err != nil {
 		api.internalError(writer, request, "search LoreHub", err)
 		return
 	}
 	writeJSON(writer, http.StatusOK, results)
+}
+
+type searchParameters struct {
+	Query   string
+	Kind    string
+	Page    int
+	PerPage int
+}
+
+func parseSearchParameters(values url.Values) (searchParameters, error) {
+	allowed := map[string]bool{
+		"q": true, "type": true, "page": true, "per_page": true, "limit": true,
+	}
+	for key, entries := range values {
+		if !allowed[key] || len(entries) != 1 {
+			return searchParameters{}, errors.New("invalid search query")
+		}
+	}
+	parameters := searchParameters{Kind: "all", Page: 1, PerPage: 20}
+	if entries, ok := values["q"]; ok {
+		parameters.Query = strings.TrimSpace(entries[0])
+	}
+	if parameters.Query == "" || len([]rune(parameters.Query)) > 160 || hasSearchControl(parameters.Query) {
+		return searchParameters{}, errors.New("search query is too long")
+	}
+	if entries, ok := values["type"]; ok {
+		parameters.Kind = entries[0]
+	}
+	if !validSearchType(parameters.Kind) {
+		return searchParameters{}, errors.New("invalid search type")
+	}
+	page, err := strictPositiveSearchValue(values, "page", 1, 100_000)
+	if err != nil {
+		return searchParameters{}, err
+	}
+	parameters.Page = page
+	if _, perPageSet := values["per_page"]; perPageSet {
+		if _, limitSet := values["limit"]; limitSet {
+			return searchParameters{}, errors.New("per_page and limit cannot be combined")
+		}
+	}
+	pageSizeKey := "limit"
+	if _, ok := values["per_page"]; ok {
+		pageSizeKey = "per_page"
+	}
+	perPage, err := strictPositiveSearchValue(values, pageSizeKey, 20, 50)
+	if err != nil {
+		return searchParameters{}, err
+	}
+	parameters.PerPage = perPage
+	maximum := int(^uint(0) >> 1)
+	if parameters.Page-1 > maximum/parameters.PerPage {
+		return searchParameters{}, errors.New("search offset overflows")
+	}
+	return parameters, nil
+}
+
+func hasSearchControl(value string) bool {
+	for _, character := range value {
+		if unicode.IsControl(character) {
+			return true
+		}
+	}
+	return false
+}
+
+func strictPositiveSearchValue(
+	values url.Values,
+	key string,
+	fallback int,
+	maximum int,
+) (int, error) {
+	entries, ok := values[key]
+	if !ok {
+		return fallback, nil
+	}
+	parsed, err := strconv.ParseUint(entries[0], 10, 64)
+	if err != nil || parsed < 1 || parsed > uint64(maximum) {
+		return 0, errors.New("invalid positive search value")
+	}
+	return int(parsed), nil
+}
+
+func validSearchType(value string) bool {
+	switch value {
+	case "all", "repositories", "organizations", "users", "issues", "pulls":
+		return true
+	default:
+		return false
+	}
 }
 
 func (api *API) userProfile(writer http.ResponseWriter, request *http.Request) {

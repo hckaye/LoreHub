@@ -66,7 +66,7 @@ test("repository settings use effective admin access and the production form", a
   assert.match(form, /maxLength=\{10_000\}/);
   assert.match(form, /topicsInvalid/);
   assert.match(home, /\.\.\.repository\.topics/);
-  assert.match(search, /getSearchResults\(q, searchType\)/);
+  assert.match(search, /getSearchResults\(query\.q, query\.type, query\.page\)/);
   assert.match(card, /limit=\{5\}/);
   assert.match(header, /<RepositoryTopicList/);
   assert.match(topicList, /type=repositories/);

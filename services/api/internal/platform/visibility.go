@@ -5,100 +5,72 @@ import "fmt"
 // repositoryAccessClause is shared by every repository projection and search query.
 func repositoryAccessClause(repositoryAlias, viewerParam string) string {
 	return fmt.Sprintf(`(
-		%s.lifecycle_state = 'active'
+		%[1]s.lifecycle_state = 'active'
 		AND EXISTS (
 			SELECT 1
 			FROM organizations repository_org
-			WHERE repository_org.id = %s.organization_id
+			WHERE repository_org.id = %[1]s.organization_id
 			  AND repository_org.active
 		)
 		AND (
-			NULLIF(%s::text, '') IS NULL
+			(
+				NULLIF(%[2]s::text, '') IS NULL
+				AND %[1]s.visibility = 'public'
+			)
 			OR EXISTS (
 				SELECT 1
 				FROM users active_viewer
-				WHERE active_viewer.id = NULLIF(%s::text, '')::uuid
+				WHERE active_viewer.id = NULLIF(%[2]s::text, '')::uuid
 				  AND active_viewer.status = 'active'
-			)
-		)
-		AND (
-			%s.visibility = 'public'
-			OR (
-				NULLIF(%s::text, '') IS NOT NULL
-				AND EXISTS (
-					SELECT 1
-					FROM users active_viewer
-					WHERE active_viewer.id = NULLIF(%s::text, '')::uuid
-					  AND active_viewer.status = 'active'
-				)
 				AND (
-					(
-						%s.visibility = 'internal'
+					%[1]s.visibility = 'public'
+					OR (
+						%[1]s.visibility = 'internal'
 						AND EXISTS (
 							SELECT 1
 							FROM organization_memberships viewer_org
-							JOIN organizations viewer_organization
-							  ON viewer_organization.id = viewer_org.organization_id
-							 AND viewer_organization.active
-							WHERE viewer_org.organization_id = %s.organization_id
-							  AND viewer_org.user_id = NULLIF(%s::text, '')::uuid
+							WHERE viewer_org.organization_id = %[1]s.organization_id
+							  AND viewer_org.user_id = NULLIF(%[2]s::text, '')::uuid
 							  AND viewer_org.active
 						)
 					)
-					OR (
-						%s.visibility = 'private'
-						AND (
-							EXISTS (
-								SELECT 1
-								FROM repository_memberships viewer_repo
-								JOIN users viewer_user ON viewer_user.id = viewer_repo.user_id
-								WHERE viewer_repo.repository_id = %s.id
-								  AND viewer_repo.user_id = NULLIF(%s::text, '')::uuid
-								  AND viewer_repo.active
-								  AND viewer_user.status = 'active'
-							)
-							OR EXISTS (
-								SELECT 1
-								FROM team_repository_roles team_repo
-								JOIN teams viewer_team
-								  ON viewer_team.id = team_repo.team_id
-								 AND viewer_team.organization_id = %s.organization_id
-								 AND viewer_team.active
-								JOIN team_memberships viewer_membership
-								  ON viewer_membership.team_id = viewer_team.id
-								 AND viewer_membership.user_id = NULLIF(%s::text, '')::uuid
-								 AND viewer_membership.active
-								JOIN organization_memberships viewer_org
-								  ON viewer_org.organization_id = viewer_team.organization_id
-								 AND viewer_org.user_id = viewer_membership.user_id
-								 AND viewer_org.active
-								JOIN users viewer_user ON viewer_user.id = viewer_membership.user_id
-								WHERE team_repo.repository_id = %s.id
-							  AND team_repo.active
-							  AND viewer_user.status = 'active'
-							)
-							OR EXISTS (
-								SELECT 1
-								FROM organization_memberships viewer_owner
-								JOIN organizations owner_organization
-								  ON owner_organization.id = viewer_owner.organization_id
-								 AND owner_organization.active
-								JOIN users viewer_user ON viewer_user.id = viewer_owner.user_id
-								WHERE viewer_owner.organization_id = %s.organization_id
-							  AND viewer_owner.user_id = NULLIF(%s::text, '')::uuid
-							  AND viewer_owner.role = 'owner'
-							  AND viewer_owner.active
-							  AND viewer_user.status = 'active'
-							)
-						)
+					OR EXISTS (
+						SELECT 1
+						FROM organization_memberships viewer_owner
+						WHERE viewer_owner.organization_id = %[1]s.organization_id
+						  AND viewer_owner.user_id = NULLIF(%[2]s::text, '')::uuid
+						  AND viewer_owner.role = 'owner'
+						  AND viewer_owner.active
+					)
+					OR EXISTS (
+						SELECT 1
+						FROM repository_memberships viewer_repo
+						WHERE viewer_repo.repository_id = %[1]s.id
+						  AND viewer_repo.user_id = NULLIF(%[2]s::text, '')::uuid
+						  AND viewer_repo.active
+					)
+					OR EXISTS (
+						SELECT 1
+						FROM team_repository_roles team_repo
+						JOIN teams viewer_team
+						  ON viewer_team.id = team_repo.team_id
+						 AND viewer_team.organization_id = %[1]s.organization_id
+						 AND viewer_team.active
+						JOIN team_memberships viewer_membership
+						  ON viewer_membership.team_id = viewer_team.id
+						 AND viewer_membership.user_id = NULLIF(%[2]s::text, '')::uuid
+						 AND viewer_membership.active
+						JOIN organization_memberships viewer_org
+						  ON viewer_org.organization_id = viewer_team.organization_id
+						 AND viewer_org.user_id = viewer_membership.user_id
+						 AND viewer_org.active
+						WHERE team_repo.repository_id = %[1]s.id
+						  AND team_repo.active
 					)
 				)
 			)
 		)
-	)`, repositoryAlias, repositoryAlias, viewerParam, viewerParam, repositoryAlias,
-		viewerParam, viewerParam, repositoryAlias, repositoryAlias, viewerParam, repositoryAlias,
-		repositoryAlias, viewerParam, repositoryAlias, viewerParam, repositoryAlias, repositoryAlias,
-		viewerParam)
+	)`, repositoryAlias, viewerParam)
 }
 
 // notificationCurrentAccessClause applies current authorization to materialized notification rows.

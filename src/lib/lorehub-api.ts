@@ -55,7 +55,6 @@ import type {
   RevisionHistoryEntry,
   RevisionStatusPage,
   SARIFUploadMetadata,
-  SearchResults,
   Team,
   TeamMember,
   UserProfile,
@@ -78,6 +77,7 @@ import {
   type RepositoryIssueQuery,
   type RepositoryMergeRequestQuery,
 } from "./repository-work-item-query";
+import { parseSearchResults, searchPageSize, type SearchResults, type SearchType } from "./search";
 
 export type {
   IssueFilter,
@@ -131,11 +131,16 @@ export async function getFileLocks(
   return page ? { ok: true, data: page } : { ok: false, reason: "unavailable" };
 }
 
-export type SearchType = "all" | "organizations" | "repositories" | "users";
-
-export function getSearchResults(query: string, type: SearchType = "all"): Promise<APIResult<SearchResults>> {
-  const params = new URLSearchParams({ q: query.trim(), type, limit: "50" });
-  return request(`/api/v1/search?${params.toString()}`);
+export async function getSearchResults(
+  query: string,
+  type: SearchType = "all",
+  page = 1,
+): Promise<APIResult<SearchResults>> {
+  const params = new URLSearchParams({ q: query.trim(), type, page: String(page), per_page: String(searchPageSize) });
+  const result = await request<unknown>(`/api/v1/search?${params.toString()}`);
+  if (!result.ok) return result;
+  const data = parseSearchResults(result.data, { q: query.trim(), type, page });
+  return data ? { ok: true, data } : { ok: false, reason: "unavailable" };
 }
 
 export function getUserProfile(username: string): Promise<APIResult<UserProfile>> {

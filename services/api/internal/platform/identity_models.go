@@ -45,6 +45,19 @@ type SearchResults struct {
 	Repositories  []Repository       `json:"repositories"`
 	Organizations []OrganizationView `json:"organizations"`
 	Users         []UserSearchResult `json:"users"`
+	Issues        []GlobalWorkItem   `json:"issues"`
+	PullRequests  []GlobalWorkItem   `json:"pullRequests"`
+	Counts        SearchCounts       `json:"counts"`
+	Page          int                `json:"page"`
+	PerPage       int                `json:"perPage"`
+}
+
+type SearchCounts struct {
+	Repositories  int64 `json:"repositories"`
+	Organizations int64 `json:"organizations"`
+	Users         int64 `json:"users"`
+	Issues        int64 `json:"issues"`
+	PullRequests  int64 `json:"pullRequests"`
 }
 
 type UserSearchResult struct {

@@ -99,7 +99,7 @@ func TestIdentityCanonicalLifecycleBoundary(t *testing.T) {
 
 	assertSearch := func(label string, viewer *User, expected ...string) {
 		t.Helper()
-		results, err := store.Search(ctx, viewer, "Lifecycle", "repositories", 20)
+		results, err := store.Search(ctx, viewer, "Lifecycle", "repositories", 1, 20)
 		if err != nil {
 			t.Fatalf("%s search: %v", label, err)
 		}

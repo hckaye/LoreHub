@@ -202,19 +202,6 @@ export type DashboardData = {
   unreadNotifications: number;
 };
 
-export type SearchUser = {
-  id: string;
-  username: string;
-  displayName: string;
-  avatarUrl: string;
-};
-
-export type SearchResults = {
-  repositories: Repository[];
-  organizations: OrganizationView[];
-  users: SearchUser[];
-};
-
 export type AuthProvider = {
   id: "password" | "google" | "github" | "facebook" | "x";
 };
