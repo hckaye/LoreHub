@@ -12,6 +12,7 @@ export type WebhookEvent =
   | "releases"
   | "repository"
   | "reviews"
+  | "statuses"
   | "wiki";
 
 export type RepositoryWebhook = {
@@ -304,6 +305,7 @@ const webhookEvents = new Set<WebhookEvent>([
   "releases",
   "repository",
   "reviews",
+  "statuses",
   "wiki",
 ]);
 

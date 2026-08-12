@@ -1,3 +1,7 @@
+import type { MergeStatusCheck } from "./commit-status-types";
+
+export type { MergeStatusCheck, RevisionStatus, RevisionStatusPage, RevisionStatusState } from "./commit-status-types";
+
 export type Repository = {
   id: string;
   organizationId: string;
@@ -263,6 +267,7 @@ export type BranchRule = {
   pattern: string;
   requiredApprovals: number;
   requireCiSuccess: boolean;
+  requiredStatusChecks: string[];
   blockDirectPush: boolean;
   createdAt: string;
   updatedAt: string;
@@ -426,14 +431,14 @@ export type MergeRequest = {
   targetRevision: string;
   author: string;
   approvalCount: number;
-  mergedBy?: string | null;
-  mergedRevision?: string | null;
-  mergedAt?: string | null;
+  mergedBy: string | null;
+  mergedRevision: string | null;
+  mergedAt: string | null;
   createdAt: string;
   updatedAt: string;
-  closedAt?: string | null;
-  viewerCanUpdate?: boolean;
-  viewerCanReview?: boolean;
+  closedAt: string | null;
+  viewerCanUpdate: boolean;
+  viewerCanReview: boolean;
 };
 
 export type MergeRequestComment = {
@@ -739,6 +744,8 @@ export type MergeOperation = {
   targetRevision: string;
   stagedRevision?: string;
   pushedRevision?: string;
+  parentRevisions: string[];
+  resolutions: MergeResolution[];
   state: "created" | "started" | "conflicts" | "ready_to_push" | "pushing" | "pushed" | "aborted" | "merged";
   conflictPaths: string[];
   errorCode?: string;
@@ -747,6 +754,14 @@ export type MergeOperation = {
   leaseExpiresAt?: string;
   startedAt?: string;
   completedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type MergeResolution = {
+  path: string;
+  strategy: "mine" | "theirs";
+  actor?: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -762,14 +777,9 @@ export type MergeReadiness = {
   blockers: MergeBlocker[];
   reviews: ReviewSummary;
   ciSuccess: boolean;
+  statusChecks: MergeStatusCheck[];
   directPushBlocked: boolean;
-  rules: Array<{
-    id: string;
-    pattern: string;
-    requiredApprovals: number;
-    requireCiSuccess: boolean;
-    blockDirectPush: boolean;
-  }>;
+  rules: BranchRule[];
   operation?: MergeOperation;
 };
 

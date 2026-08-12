@@ -71,6 +71,15 @@ func (s *store) AuthorizeLoreMergePush(
 		if *authorizedRevision == input.ProposedRevision && authorizedActor != nil &&
 			*authorizedActor == input.ActorUserID && authorizedBranch != nil &&
 			*authorizedBranch == input.TargetBranchID {
+			if err := validateObservedBranch(ctx, tx, input); err != nil {
+				return err
+			}
+			if err := validatePushPermission(ctx, tx, input); err != nil {
+				return err
+			}
+			if err := validateCurrentMergePolicy(ctx, tx, mergeRequestID, input); err != nil {
+				return err
+			}
 			if err := tx.Commit(ctx); err != nil {
 				return fmt.Errorf("commit repeated Lore push authorization: %w", err)
 			}
@@ -257,14 +266,33 @@ func validateCurrentMergePolicy(
 			return loreclient.ErrPushAuthorizationDenied
 		}
 	}
+	requiredChecks := RequiredBranchStatusChecks(matched)
+	if len(requiredChecks) > 0 {
+		checks, err := listRevisionStatusChecks(ctx, tx, input.RepositoryID, input.SourceRevision)
+		if err != nil {
+			return fmt.Errorf("check exact Lore merge statuses: %w", err)
+		}
+		if !RequiredBranchStatusChecksSuccessful(requiredChecks, checks) {
+			return loreclient.ErrPushAuthorizationDenied
+		}
+	}
 	return nil
 }
 
 func branchRulesForTransaction(ctx context.Context, tx pgx.Tx, repositoryID string) ([]BranchRule, error) {
 	rows, err := tx.Query(ctx, `
-		SELECT id, repository_id, pattern, required_approvals,
-		       require_ci_success, block_direct_push, created_at, updated_at
-		FROM branch_rules WHERE repository_id = $1 ORDER BY pattern ASC
+		SELECT rule.id, rule.repository_id, rule.pattern, rule.required_approvals,
+		       rule.require_ci_success, rule.required_status_checks, rule.block_direct_push,
+		       rule.created_at, rule.updated_at
+		FROM branch_rules rule
+		JOIN repositories repository
+		  ON repository.id = rule.repository_id
+		 AND repository.lifecycle_state = 'active'
+		 AND repository.archived_at IS NULL
+		JOIN organizations organization
+		  ON organization.id = repository.organization_id AND organization.active
+		WHERE rule.repository_id = $1
+		ORDER BY rule.pattern ASC
 	`, repositoryID)
 	if err != nil {
 		return nil, fmt.Errorf("list Lore merge branch rules: %w", err)
@@ -274,7 +302,8 @@ func branchRulesForTransaction(ctx context.Context, tx pgx.Tx, repositoryID stri
 	for rows.Next() {
 		var rule BranchRule
 		if err := rows.Scan(&rule.ID, &rule.RepositoryID, &rule.Pattern, &rule.RequiredApprovals,
-			&rule.RequireCISuccess, &rule.BlockDirectPush, &rule.CreatedAt, &rule.UpdatedAt); err != nil {
+			&rule.RequireCISuccess, &rule.RequiredStatusChecks, &rule.BlockDirectPush,
+			&rule.CreatedAt, &rule.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan Lore merge branch rule: %w", err)
 		}
 		rules = append(rules, rule)

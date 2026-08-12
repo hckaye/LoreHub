@@ -45,6 +45,44 @@ func BranchRequiresCI(rules []BranchRule) bool {
 	return false
 }
 
+// RequiredBranchStatusChecks returns the sorted union of status contexts from
+// every matching rule.
+func RequiredBranchStatusChecks(rules []BranchRule) []string {
+	unique := make(map[string]string)
+	for _, rule := range rules {
+		for _, contextName := range rule.RequiredStatusChecks {
+			key := strings.ToLower(contextName)
+			if _, found := unique[key]; !found {
+				unique[key] = contextName
+			}
+		}
+	}
+	checks := make([]string, 0, len(unique))
+	for _, contextName := range unique {
+		checks = append(checks, contextName)
+	}
+	sort.SliceStable(checks, func(left, right int) bool {
+		return strings.ToLower(checks[left]) < strings.ToLower(checks[right])
+	})
+	return checks
+}
+
+func RequiredBranchStatusChecksSuccessful(
+	required []string,
+	checks []RevisionStatusCheck,
+) bool {
+	states := make(map[string]string, len(checks))
+	for _, check := range checks {
+		states[strings.ToLower(check.Context)] = check.State
+	}
+	for _, contextName := range required {
+		if states[strings.ToLower(contextName)] != "success" {
+			return false
+		}
+	}
+	return true
+}
+
 func BranchBlocksDirectPush(rules []BranchRule) bool {
 	for _, rule := range rules {
 		if rule.BlockDirectPush {

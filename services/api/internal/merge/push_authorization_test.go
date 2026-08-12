@@ -96,6 +96,28 @@ func TestFixedPushAuthorizerRequiresConfiguredDependency(t *testing.T) {
 	}
 }
 
+func TestFixedPushAuthorizerDoesNotPrepareDeniedPush(t *testing.T) {
+	pushAuthorization := &recordingPushAuthorizer{err: loreclient.ErrPushAuthorizationDenied}
+	mergeAuthorization := &recordingMergeAuthorization{}
+	api := &API{pushAuth: pushAuthorization, mergeAuthorization: mergeAuthorization}
+	authorizer := api.fixedPushAuthorizer(
+		platform.User{ID: "actor-1"},
+		collab.Repository{ID: "repository-1", LoreRepositoryID: "partition-1"},
+		"operation-1",
+	)
+	err := authorizer.AuthorizeLoreMergePush(context.Background(), loreclient.PushAuthorization{})
+	if !errors.Is(err, loreclient.ErrPushAuthorizationDenied) {
+		t.Fatalf("denied push error = %v", err)
+	}
+	if pushAuthorization.count != 1 || mergeAuthorization.count != 0 {
+		t.Fatalf(
+			"authorization calls = push %d, prepared %d",
+			pushAuthorization.count,
+			mergeAuthorization.count,
+		)
+	}
+}
+
 func TestPushAuthorizationDoubleRejectsWrongTuple(t *testing.T) {
 	want := loreclient.PushAuthorization{
 		ActorUserID: "actor-1", RepositoryID: "repo-1", RepositoryPartition: "partition-1",

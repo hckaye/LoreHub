@@ -21,6 +21,9 @@ func (api *API) fixedPushAuthorizer(
 		input.ActorUserID = actor.ID
 		input.RepositoryID = repository.ID
 		input.OperationID = operationID
+		if err := api.pushAuth.AuthorizeLoreMergePush(ctx, input); err != nil {
+			return err
+		}
 		if err := api.mergeAuthorization.PrepareMergeAuthorization(ctx, actor.ID,
 			platform.MergeAuthorizationInput{
 				OperationID:    input.OperationID,
@@ -37,6 +40,6 @@ func (api *API) fixedPushAuthorizer(
 			}
 			return loreclient.ErrPushAuthorizationDenied
 		}
-		return api.pushAuth.AuthorizeLoreMergePush(ctx, input)
+		return nil
 	})
 }

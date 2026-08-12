@@ -424,11 +424,11 @@ func (store *Store) CheckPolicy(
 		if check.BranchName == "" {
 			return authz.PolicyDecision{}, nil
 		}
-		protected, err := store.branchBlocksDirectPush(ctx, repository.ID, check.BranchName)
+		policy, err := store.branchPolicy(ctx, repository.ID, check.BranchName)
 		if err != nil {
 			return authz.PolicyDecision{}, err
 		}
-		return authz.PolicyDecision{Allowed: !protected}, nil
+		return authz.PolicyDecision{Allowed: !policy.BlockDirectPush}, nil
 	}
 	if check.BranchID == "" ||
 		(check.Operation == authz.OperationBranchPush && check.ProposedRevision == "") {
@@ -441,11 +441,23 @@ func (store *Store) CheckPolicy(
 	if branchID == "" || branchName == "" || currentRevision == "" {
 		return authz.PolicyDecision{}, nil
 	}
-	protected, err := store.branchBlocksDirectPush(ctx, repository.ID, branchName)
+	policy, err := store.branchPolicy(ctx, repository.ID, branchName)
 	if err != nil {
 		return authz.PolicyDecision{}, err
 	}
-	if !protected {
+	if !policy.BlockDirectPush {
+		if check.Operation == authz.OperationBranchPush && len(policy.RequiredStatusChecks) > 0 {
+			success, err := store.requiredRevisionStatusesSuccessful(
+				ctx,
+				repository.ID,
+				check.ProposedRevision,
+				policy.RequiredStatusChecks,
+			)
+			if err != nil {
+				return authz.PolicyDecision{}, err
+			}
+			return authz.PolicyDecision{Allowed: success}, nil
+		}
 		return authz.PolicyDecision{Allowed: true}, nil
 	}
 	if check.Operation == authz.OperationBranchDelete {
@@ -465,34 +477,122 @@ func (store *Store) CheckPolicy(
 	return authz.PolicyDecision{Allowed: consumed}, nil
 }
 
-func (store *Store) branchBlocksDirectPush(
+type branchPolicy struct {
+	BlockDirectPush      bool
+	RequiredStatusChecks []string
+}
+
+type branchPolicyQueryer interface {
+	Query(context.Context, string, ...any) (pgx.Rows, error)
+}
+
+func (store *Store) branchPolicy(
 	ctx context.Context,
 	repositoryID string,
 	branchName string,
-) (bool, error) {
-	rows, err := store.pool.Query(ctx, `
-		SELECT pattern, block_direct_push
-		FROM branch_rules
-		WHERE repository_id = $1
+) (branchPolicy, error) {
+	return branchPolicyForQueryer(ctx, store.pool, repositoryID, branchName)
+}
+
+func branchPolicyForQueryer(
+	ctx context.Context,
+	queryer branchPolicyQueryer,
+	repositoryID string,
+	branchName string,
+) (branchPolicy, error) {
+	rows, err := queryer.Query(ctx, `
+		SELECT rule.pattern, rule.block_direct_push, rule.required_status_checks
+		FROM branch_rules rule
+		JOIN repositories repository
+		  ON repository.id = rule.repository_id
+		 AND repository.lifecycle_state = 'active'
+		 AND repository.archived_at IS NULL
+		JOIN organizations organization
+		  ON organization.id = repository.organization_id AND organization.active
+		WHERE rule.repository_id = $1
 	`, repositoryID)
 	if err != nil {
-		return false, fmt.Errorf("find branch policy: %w", err)
+		return branchPolicy{}, fmt.Errorf("find branch policy: %w", err)
 	}
 	defer rows.Close()
+	policy := branchPolicy{RequiredStatusChecks: []string{}}
+	contextNames := make(map[string]string)
 	for rows.Next() {
 		var pattern string
 		var blockDirectPush bool
-		if err := rows.Scan(&pattern, &blockDirectPush); err != nil {
-			return false, fmt.Errorf("scan branch policy: %w", err)
+		var requiredStatusChecks []string
+		if err := rows.Scan(&pattern, &blockDirectPush, &requiredStatusChecks); err != nil {
+			return branchPolicy{}, fmt.Errorf("scan branch policy: %w", err)
 		}
-		if blockDirectPush && authz.MatchBranchPattern(pattern, branchName) {
-			return true, nil
+		if !authz.MatchBranchPattern(pattern, branchName) {
+			continue
+		}
+		policy.BlockDirectPush = policy.BlockDirectPush || blockDirectPush
+		for _, contextName := range requiredStatusChecks {
+			key := strings.ToLower(contextName)
+			if _, found := contextNames[key]; !found {
+				contextNames[key] = contextName
+			}
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return false, fmt.Errorf("iterate branch policy: %w", err)
+		return branchPolicy{}, fmt.Errorf("iterate branch policy: %w", err)
 	}
-	return false, nil
+	for _, contextName := range contextNames {
+		policy.RequiredStatusChecks = append(policy.RequiredStatusChecks, contextName)
+	}
+	return policy, nil
+}
+
+func (store *Store) requiredRevisionStatusesSuccessful(
+	ctx context.Context,
+	repositoryID string,
+	revision string,
+	required []string,
+) (bool, error) {
+	return requiredRevisionStatusesSuccessful(ctx, store.pool, repositoryID, revision, required)
+}
+
+type revisionStatusQueryer interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}
+
+func requiredRevisionStatusesSuccessful(
+	ctx context.Context,
+	queryer revisionStatusQueryer,
+	repositoryID string,
+	revision string,
+	required []string,
+) (bool, error) {
+	var successful bool
+	err := queryer.QueryRow(ctx, `
+		WITH required(context) AS (
+			SELECT unnest($3::text[])
+		), latest AS (
+			SELECT required.context, (
+				SELECT status.state
+				FROM revision_statuses status
+				JOIN repositories repository
+				  ON repository.id = status.repository_id
+				 AND repository.lifecycle_state = 'active'
+				 AND repository.archived_at IS NULL
+				JOIN organizations organization
+				  ON organization.id = repository.organization_id AND organization.active
+				WHERE status.repository_id = $1 AND status.revision = $2
+				  AND lower(status.context) = lower(required.context)
+				ORDER BY status.created_at DESC, status.id DESC
+				LIMIT 1
+			) AS state
+			FROM required
+		)
+		SELECT NOT EXISTS (
+			SELECT 1 FROM latest WHERE state IS DISTINCT FROM 'success'
+		)
+	`, repositoryID, revision, required).Scan(&successful)
+	if err != nil {
+		return false, fmt.Errorf("check branch push revision statuses: %w", err)
+	}
+	return successful, nil
 }
 
 func (store *Store) resolveBranchPolicyInput(
@@ -502,10 +602,16 @@ func (store *Store) resolveBranchPolicyInput(
 ) (string, string, string, error) {
 	var branchName, currentRevision string
 	err := store.pool.QueryRow(ctx, `
-		SELECT branch_name, latest_revision
-		FROM repository_branch_states
-		WHERE repository_id = $1 AND branch_id = $2
-		  AND observed_at > now() - interval '2 minutes'
+		SELECT state.branch_name, state.latest_revision
+		FROM repository_branch_states state
+		JOIN repositories repository
+		  ON repository.id = state.repository_id
+		 AND repository.lifecycle_state = 'active'
+		 AND repository.archived_at IS NULL
+		JOIN organizations organization
+		  ON organization.id = repository.organization_id AND organization.active
+		WHERE state.repository_id = $1 AND state.branch_id = $2
+		  AND state.observed_at > now() - interval '2 minutes'
 	`, repositoryID, branchID).Scan(&branchName, &currentRevision)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", "", "", nil

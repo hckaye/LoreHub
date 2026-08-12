@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/url"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -12,14 +13,16 @@ import (
 )
 
 const (
-	maxBodyBytes      = 1_000_000
-	maxTitleLen       = 512
-	maxLabelNameLen   = 128
-	maxDescriptionLen = 10_000
-	maxPatternLen     = 255
-	maxReviewBodyLen  = 1_000_000
-	defaultPageLimit  = 30
-	maxPageLimit      = 100
+	maxBodyBytes        = 1_000_000
+	maxTitleLen         = 512
+	maxLabelNameLen     = 128
+	maxDescriptionLen   = 10_000
+	maxPatternLen       = 255
+	maxStatusContexts   = 50
+	maxStatusContextLen = 100
+	maxReviewBodyLen    = 1_000_000
+	defaultPageLimit    = 30
+	maxPageLimit        = 100
 )
 
 var (
@@ -32,6 +35,7 @@ var (
 	ErrInvalidDecision     = errors.New("review decision is invalid")
 	ErrInvalidPattern      = errors.New("branch pattern is invalid")
 	ErrInvalidApprovals    = errors.New("required approvals must be between 0 and 100")
+	ErrInvalidStatusChecks = errors.New("required status checks are invalid")
 	ErrInvalidPrecondition = errors.New("If-Match must be a valid timestamp")
 )
 
@@ -163,12 +167,51 @@ func validateBranchRuleInput(input BranchRuleInput) (BranchRuleInput, error) {
 	if input.RequiredApprovals < 0 || input.RequiredApprovals > 100 {
 		return BranchRuleInput{}, ErrInvalidApprovals
 	}
+	statusChecks, err := validateRequiredStatusChecks(input.RequiredStatusChecks)
+	if err != nil {
+		return BranchRuleInput{}, err
+	}
 	return BranchRuleInput{
-		Pattern:           pattern,
-		RequiredApprovals: input.RequiredApprovals,
-		RequireCISuccess:  input.RequireCISuccess,
-		BlockDirectPush:   input.BlockDirectPush,
+		Pattern:              pattern,
+		RequiredApprovals:    input.RequiredApprovals,
+		RequireCISuccess:     input.RequireCISuccess,
+		RequiredStatusChecks: statusChecks,
+		BlockDirectPush:      input.BlockDirectPush,
 	}, nil
+}
+
+func validateRequiredStatusChecks(values []string) ([]string, error) {
+	if len(values) > maxStatusContexts {
+		return nil, ErrInvalidStatusChecks
+	}
+	checks := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		contextName := strings.TrimSpace(value)
+		if contextName == "" || utf8.RuneCountInString(contextName) > maxStatusContextLen ||
+			hasControlRune(contextName) {
+			return nil, ErrInvalidStatusChecks
+		}
+		key := strings.ToLower(contextName)
+		if _, duplicate := seen[key]; duplicate {
+			return nil, ErrInvalidStatusChecks
+		}
+		seen[key] = struct{}{}
+		checks = append(checks, contextName)
+	}
+	sort.SliceStable(checks, func(left, right int) bool {
+		return strings.ToLower(checks[left]) < strings.ToLower(checks[right])
+	})
+	return checks, nil
+}
+
+func hasControlRune(value string) bool {
+	for _, r := range value {
+		if unicode.IsControl(r) {
+			return true
+		}
+	}
+	return false
 }
 
 // parsePage extracts a bounded pagination window from query parameters. The

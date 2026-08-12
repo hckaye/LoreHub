@@ -124,6 +124,15 @@ func (store *Store) consumePreparedMergeAuthorization(
 			  AND expires_at > now() AND consumed_at IS NULL
 			  AND EXISTS (
 				SELECT 1
+				FROM repositories repository
+				JOIN organizations organization
+				  ON organization.id = repository.organization_id AND organization.active
+				WHERE repository.id = lore_merge_authorizations.repository_id
+				  AND repository.lifecycle_state = 'active'
+				  AND repository.archived_at IS NULL
+			  )
+			  AND EXISTS (
+				SELECT 1
 				FROM merge_operations operation
 				JOIN merge_requests request ON request.id = operation.merge_request_id
 				WHERE operation.id = lore_merge_authorizations.merge_operation_id
@@ -139,7 +148,12 @@ func (store *Store) consumePreparedMergeAuthorization(
 		)
 		SELECT consumed.id, repository.organization_id, consumed.source_revision
 		FROM consumed
-		JOIN repositories repository ON repository.id = consumed.repository_id
+		JOIN repositories repository
+		  ON repository.id = consumed.repository_id
+		 AND repository.lifecycle_state = 'active'
+		 AND repository.archived_at IS NULL
+		JOIN organizations organization
+		  ON organization.id = repository.organization_id AND organization.active
 	`, repositoryID, userID, branchID, branchName, currentRevision, proposedRevision).
 		Scan(&authorizationID, &organizationID, &sourceRevision)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -147,6 +161,25 @@ func (store *Store) consumePreparedMergeAuthorization(
 	}
 	if err != nil {
 		return false, fmt.Errorf("consume merge authorization: %w", err)
+	}
+	policy, err := branchPolicyForQueryer(ctx, transaction, repositoryID, branchName)
+	if err != nil {
+		return false, err
+	}
+	if len(policy.RequiredStatusChecks) > 0 {
+		success, err := requiredRevisionStatusesSuccessful(
+			ctx,
+			transaction,
+			repositoryID,
+			sourceRevision,
+			policy.RequiredStatusChecks,
+		)
+		if err != nil {
+			return false, err
+		}
+		if !success {
+			return false, nil
+		}
 	}
 	if err := insertAuditDetails(ctx, transaction, userID, organizationID, repositoryID,
 		"repository.merge_authorization.consume", "merge_authorization", authorizationID,

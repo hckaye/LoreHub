@@ -29,9 +29,10 @@ func TestMatchBranchPattern(t *testing.T) {
 
 func TestMatchingRulesAreDeterministicAndMostRestrictive(t *testing.T) {
 	rules := []collab.BranchRule{
-		{Pattern: "release/*", RequiredApprovals: 1, RequireCISuccess: false, BlockDirectPush: false},
-		{Pattern: "*", RequiredApprovals: 2, RequireCISuccess: true, BlockDirectPush: true},
-		{Pattern: "release/2026.*", RequiredApprovals: 3, RequireCISuccess: false, BlockDirectPush: false},
+		{Pattern: "release/*", RequiredApprovals: 1, RequiredStatusChecks: []string{"CI/Test"}},
+		{Pattern: "*", RequiredApprovals: 2, RequireCISuccess: true, BlockDirectPush: true,
+			RequiredStatusChecks: []string{"lint", "ci/test"}},
+		{Pattern: "release/2026.*", RequiredApprovals: 3, RequiredStatusChecks: []string{"build"}},
 	}
 	matched := matchingRules(rules, "release/2026.08")
 	if len(matched) != 3 || matched[0].Pattern != "*" || matched[1].Pattern != "release/*" ||
@@ -44,6 +45,10 @@ func TestMatchingRulesAreDeterministicAndMostRestrictive(t *testing.T) {
 	if !requiresCI(matched) || !directPushBlocked(matched) {
 		t.Fatalf("combined branch rule policy = ci=%v direct-push=%v, want both enabled",
 			requiresCI(matched), directPushBlocked(matched))
+	}
+	checks := requiredStatusChecks(matched)
+	if len(checks) != 3 || checks[0] != "build" || checks[1] != "ci/test" || checks[2] != "lint" {
+		t.Fatalf("required status checks = %#v, want matched-rule union", checks)
 	}
 }
 
@@ -64,6 +69,7 @@ func TestRestartIgnoresRequirementsThatMustBeReevaluatedAfterRevisionRefresh(t *
 		{Code: "required_approvals"},
 		{Code: "changes_requested"},
 		{Code: "ci_required"},
+		{Code: "required_status_checks"},
 	}
 	if hasRestartBlocker(blockers) {
 		t.Fatal("revision-dependent policy blockers should not prevent restarting a stale operation")

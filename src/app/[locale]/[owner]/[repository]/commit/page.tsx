@@ -1,12 +1,13 @@
 import { ServerOff } from "lucide-react";
 import { notFound } from "next/navigation";
 
+import { CommitStatusList } from "@/components/repositories/commit-status-list";
 import { DiffView } from "@/components/repositories/diff-view";
 import { RepositoryPanel } from "@/components/repositories/repository-section";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getDictionary } from "@/i18n";
 import { isLocale } from "@/i18n/config";
-import { getLoreDiff, getPublicRepository, getRevision } from "@/lib/lorehub-api";
+import { getLoreDiff, getPublicRepository, getRevision, getRevisionStatuses } from "@/lib/lorehub-api";
 
 import styles from "@/components/repositories/code-detail.module.css";
 
@@ -42,9 +43,10 @@ export default async function RevisionPage({ params, searchParams }: RevisionPag
       />
     );
   }
-  const diff = revision.data.parents[0]
-    ? await getLoreDiff(owner, slug, revision.data.parents[0], revision.data.revision)
-    : null;
+  const [diff, statuses] = await Promise.all([
+    loadParentDiff(owner, slug, revision.data.revision, revision.data.parents[0]),
+    getRevisionStatuses(owner, slug, revision.data.revision),
+  ]);
   return (
     <RepositoryPanel
       description={revision.data.message ?? dictionary.codeBrowser.revision}
@@ -57,8 +59,21 @@ export default async function RevisionPage({ params, searchParams }: RevisionPag
             {dictionary.pullRequestDetail.commits}: {revision.data.number}
           </p>
         </div>
+        <CommitStatusList dictionary={dictionary} locale={locale} {...statusListProps(statuses)} />
         {diff?.ok && <DiffView diff={diff.data} dictionary={dictionary} />}
       </div>
     </RepositoryPanel>
   );
+}
+
+function loadParentDiff(owner: string, repository: string, revision: string, parent?: string) {
+  return parent ? getLoreDiff(owner, repository, parent, revision) : Promise.resolve(null);
+}
+
+function statusListProps(result: Awaited<ReturnType<typeof getRevisionStatuses>>) {
+  if (result.ok) {
+    return { state: result.data.state, statuses: result.data.statuses };
+  }
+  const forbidden = result.reason === "forbidden" || result.reason === "unauthorized";
+  return { statuses: null, unavailableReason: forbidden ? ("forbidden" as const) : ("unavailable" as const) };
 }

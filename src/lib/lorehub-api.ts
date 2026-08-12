@@ -51,6 +51,7 @@ import type {
   ReviewSummary,
   ReviewThread,
   RevisionHistoryEntry,
+  RevisionStatusPage,
   SARIFUploadMetadata,
   SearchResults,
   Team,
@@ -60,8 +61,11 @@ import type {
   WikiPageList,
   WikiRevision,
 } from "./api-types";
+import { parseBranchRuleList } from "./branch-rule-contract";
+import { parseRevisionStatusResponse } from "./commit-status-client";
 import { normalizeFileLockPage, type FileLockPage } from "./file-locks";
 import { normalizeGlobalWorkItemPage, type GlobalWorkItemPage, type GlobalWorkItemQuery } from "./global-work-items";
+import { parseMergeReadiness } from "./merge-readiness-contract";
 import { normalizePersonalAccessTokenPage } from "./personal-access-token";
 
 const apiOrigin = process.env.LOREHUB_API_URL ?? "http://127.0.0.1:8080";
@@ -211,8 +215,10 @@ export function getBranchOverview(owner: string, repository: string): Promise<AP
 }
 
 export async function getBranchRules(owner: string, repository: string): Promise<APIResult<BranchRule[]>> {
-  const result = await request<{ items: BranchRule[] }>(repositoryPath(owner, repository, "/branch-rules"));
-  return result.ok ? { ok: true, data: result.data.items } : result;
+  const result = await request<unknown>(repositoryPath(owner, repository, "/branch-rules"));
+  if (!result.ok) return result;
+  const rules = parseBranchRuleList(result.data);
+  return rules ? { ok: true, data: rules } : { ok: false, reason: "unavailable" };
 }
 
 export async function getOpenIssues(owner: string, repository: string): Promise<APIResult<Issue[]>> {
@@ -499,12 +505,15 @@ export async function getReviewThreads(
   return result.ok ? { ok: true, data: result.data.threads } : result;
 }
 
-export function getMergeReadiness(
+export async function getMergeReadiness(
   owner: string,
   repository: string,
   number: number,
 ): Promise<APIResult<MergeReadiness>> {
-  return request(repositoryPath(owner, repository, `/merge-requests/${number}/merge-readiness`));
+  const result = await request<unknown>(repositoryPath(owner, repository, `/merge-requests/${number}/merge-readiness`));
+  if (!result.ok) return result;
+  const readiness = parseMergeReadiness(result.data);
+  return readiness ? { ok: true, data: readiness } : { ok: false, reason: "unavailable" };
 }
 
 export function getMergeOperation(
@@ -549,6 +558,17 @@ export function getFileHistory(
 
 export function getRevision(owner: string, repository: string, revision: string): Promise<APIResult<LoreRevision>> {
   return request(repositoryPath(owner, repository, `/revisions/${encodeURIComponent(revision)}`));
+}
+
+export async function getRevisionStatuses(
+  owner: string,
+  repository: string,
+  revision: string,
+): Promise<APIResult<RevisionStatusPage>> {
+  const result = await request<unknown>(
+    repositoryPath(owner, repository, `/revisions/${encodeURIComponent(revision)}/statuses`),
+  );
+  return parseRevisionStatusResponse(result);
 }
 
 export function getLoreDiff(

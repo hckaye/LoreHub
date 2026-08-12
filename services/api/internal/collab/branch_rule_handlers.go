@@ -6,10 +6,11 @@ import (
 )
 
 type branchRuleRequest struct {
-	Pattern           string `json:"pattern"`
-	RequiredApprovals int    `json:"requiredApprovals"`
-	RequireCISuccess  bool   `json:"requireCiSuccess"`
-	BlockDirectPush   bool   `json:"blockDirectPush"`
+	Pattern              string   `json:"pattern"`
+	RequiredApprovals    int      `json:"requiredApprovals"`
+	RequireCISuccess     bool     `json:"requireCiSuccess"`
+	RequiredStatusChecks []string `json:"requiredStatusChecks"`
+	BlockDirectPush      bool     `json:"blockDirectPush"`
 }
 
 func (api *API) listBranchRules(writer http.ResponseWriter, request *http.Request) {
@@ -100,10 +101,11 @@ func decodeBranchRuleRequest(writer http.ResponseWriter, request *http.Request) 
 		return BranchRuleInput{}, false
 	}
 	input, err := validateBranchRuleInput(BranchRuleInput{
-		Pattern:           body.Pattern,
-		RequiredApprovals: body.RequiredApprovals,
-		RequireCISuccess:  body.RequireCISuccess,
-		BlockDirectPush:   body.BlockDirectPush,
+		Pattern:              body.Pattern,
+		RequiredApprovals:    body.RequiredApprovals,
+		RequireCISuccess:     body.RequireCISuccess,
+		RequiredStatusChecks: body.RequiredStatusChecks,
+		BlockDirectPush:      body.BlockDirectPush,
 	})
 	if err != nil {
 		validationError(writer, err)

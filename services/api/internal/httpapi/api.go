@@ -26,6 +26,7 @@ import (
 	releasesapi "github.com/lorehub/lorehub/services/api/internal/releases"
 	reviewthreadsapi "github.com/lorehub/lorehub/services/api/internal/reviewthreads"
 	"github.com/lorehub/lorehub/services/api/internal/runner"
+	statusesapi "github.com/lorehub/lorehub/services/api/internal/statuses"
 	wikiapi "github.com/lorehub/lorehub/services/api/internal/wiki"
 )
 
@@ -164,6 +165,7 @@ type API struct {
 	milestonesStore         milestonesapi.Store
 	wikiStore               wikiapi.Store
 	reviewThreadsStore      reviewthreadsapi.Store
+	statusesStore           statusesapi.Store
 	loginProvider           auth.LoginProvider
 	loginStore              auth.LoginTransactionStore
 	sessionStore            auth.SessionStore

@@ -152,6 +152,7 @@ func validationError(writer http.ResponseWriter, err error) bool {
 		errors.Is(err, ErrInvalidDecision),
 		errors.Is(err, ErrInvalidPattern),
 		errors.Is(err, ErrInvalidApprovals),
+		errors.Is(err, ErrInvalidStatusChecks),
 		errors.Is(err, ErrInvalidPrecondition):
 		writeProblem(writer, http.StatusBadRequest, "invalid_input", err.Error())
 		return true

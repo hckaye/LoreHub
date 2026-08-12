@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { AuthRequired } from "@/components/auth/auth-required";
+import { CommitStatusList } from "@/components/repositories/commit-status-list";
 import { PullRequestConversation } from "@/components/repositories/pull-request-conversation";
 import { ReviewDiffView } from "@/components/repositories/review-diff-view";
 import type {
@@ -35,6 +36,7 @@ type PullRequestDetailProps = {
   locale: "en" | "ja";
   mergeRequest: MergeRequest;
   readiness: MergeReadiness | null;
+  readinessUnavailableReason: "forbidden" | "unavailable";
   reviews: ReviewSummary | null;
   reviewCandidates: ReviewCandidate[];
   reviewRequests: ReviewRequestSummary | null;
@@ -63,6 +65,7 @@ export function PullRequestDetail({
   locale,
   mergeRequest,
   readiness,
+  readinessUnavailableReason,
   reviews,
   reviewCandidates,
   reviewRequests,
@@ -171,6 +174,12 @@ export function PullRequestDetail({
         locale={locale}
         owner={owner}
         repository={repository}
+      />
+      <CommitStatusList
+        dictionary={dictionary}
+        locale={locale}
+        statuses={readiness ? readiness.statusChecks : null}
+        unavailableReason={readiness ? undefined : readinessUnavailableReason}
       />
       {readiness && (
         <MergePanel
@@ -609,6 +618,8 @@ function blockerLabel(code: string, dictionary: Dictionary): string {
       return labels.approvals;
     case "ci_required":
       return labels.ci;
+    case "required_status_checks":
+      return dictionary.commitStatuses.requiredContexts;
     default:
       return dictionary.pullRequestDetail.policyBlocked;
   }

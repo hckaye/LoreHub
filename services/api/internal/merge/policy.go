@@ -22,6 +22,10 @@ func requiresCI(rules []collab.BranchRule) bool {
 	return collab.BranchRequiresCI(rules)
 }
 
+func requiredStatusChecks(rules []collab.BranchRule) []string {
+	return collab.RequiredBranchStatusChecks(rules)
+}
+
 func directPushBlocked(rules []collab.BranchRule) bool {
 	return collab.BranchBlocksDirectPush(rules)
 }

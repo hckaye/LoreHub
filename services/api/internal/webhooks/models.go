@@ -29,6 +29,7 @@ var eventKinds = map[string]struct{}{
 	"releases":      {},
 	"repository":    {},
 	"reviews":       {},
+	"statuses":      {},
 	"wiki":          {},
 }
 
@@ -151,6 +152,8 @@ func eventKind(topic string) (string, bool) {
 		return "pull_requests", true
 	case strings.HasPrefix(topic, "release."):
 		return "releases", true
+	case strings.HasPrefix(topic, "revision_status."):
+		return "statuses", true
 	case strings.HasPrefix(topic, "wiki."):
 		return "wiki", true
 	case strings.HasPrefix(topic, "repository."):

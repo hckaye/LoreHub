@@ -31,6 +31,7 @@ import (
 	"github.com/lorehub/lorehub/services/api/internal/repodeletion"
 	"github.com/lorehub/lorehub/services/api/internal/reviewthreads"
 	"github.com/lorehub/lorehub/services/api/internal/runner"
+	"github.com/lorehub/lorehub/services/api/internal/statuses"
 	"github.com/lorehub/lorehub/services/api/internal/webhooks"
 	"github.com/lorehub/lorehub/services/api/internal/wiki"
 	"google.golang.org/grpc"
@@ -272,6 +273,7 @@ func run(logger *slog.Logger) error {
 		httpapi.WithReleases(releases.NewStore(pool)),
 		httpapi.WithMilestones(milestones.NewStore(pool)),
 		httpapi.WithWiki(wiki.NewStore(pool)),
+		httpapi.WithStatuses(statuses.NewStore(pool)),
 		httpapi.WithWebhooks(webhookStore),
 		httpapi.WithAuthorization(store),
 		httpapi.WithLoreAuth(loreAuth),

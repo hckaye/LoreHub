@@ -196,19 +196,32 @@ type MergeBlocker struct {
 }
 
 type MergeReadiness struct {
-	MergeRequest          MergeRequest    `json:"mergeRequest"`
-	CurrentSourceRevision string          `json:"currentSourceRevision"`
-	CurrentTargetRevision string          `json:"currentTargetRevision"`
-	SourceStale           bool            `json:"sourceStale"`
-	TargetStale           bool            `json:"targetStale"`
-	CanMerge              bool            `json:"canMerge"`
-	Ready                 bool            `json:"ready"`
-	Blockers              []MergeBlocker  `json:"blockers"`
-	Reviews               ReviewSummary   `json:"reviews"`
-	CISuccess             bool            `json:"ciSuccess"`
-	DirectPushBlocked     bool            `json:"directPushBlocked"`
-	Rules                 []BranchRule    `json:"rules"`
-	Operation             *MergeOperation `json:"operation,omitempty"`
+	MergeRequest          MergeRequest          `json:"mergeRequest"`
+	CurrentSourceRevision string                `json:"currentSourceRevision"`
+	CurrentTargetRevision string                `json:"currentTargetRevision"`
+	SourceStale           bool                  `json:"sourceStale"`
+	TargetStale           bool                  `json:"targetStale"`
+	CanMerge              bool                  `json:"canMerge"`
+	Ready                 bool                  `json:"ready"`
+	Blockers              []MergeBlocker        `json:"blockers"`
+	Reviews               ReviewSummary         `json:"reviews"`
+	CISuccess             bool                  `json:"ciSuccess"`
+	StatusChecks          []RevisionStatusCheck `json:"statusChecks"`
+	DirectPushBlocked     bool                  `json:"directPushBlocked"`
+	Rules                 []BranchRule          `json:"rules"`
+	Operation             *MergeOperation       `json:"operation,omitempty"`
+}
+
+// RevisionStatusCheck is the latest reported state for one status context on
+// an exact repository revision. Required is derived from matched branch rules.
+type RevisionStatusCheck struct {
+	Context     string    `json:"context"`
+	State       string    `json:"state"`
+	Description string    `json:"description"`
+	TargetURL   string    `json:"targetUrl"`
+	Creator     string    `json:"creator"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+	Required    bool      `json:"required"`
 }
 
 // UpdateMergeRequestInput captures mutable merge_request fields.
@@ -282,22 +295,24 @@ type MergeRequestMetadata struct {
 
 // BranchRule is a branch protection rule enforced by the Lore merge workflow.
 type BranchRule struct {
-	ID                string    `json:"id"`
-	RepositoryID      string    `json:"repositoryId"`
-	Pattern           string    `json:"pattern"`
-	RequiredApprovals int       `json:"requiredApprovals"`
-	RequireCISuccess  bool      `json:"requireCiSuccess"`
-	BlockDirectPush   bool      `json:"blockDirectPush"`
-	CreatedAt         time.Time `json:"createdAt"`
-	UpdatedAt         time.Time `json:"updatedAt"`
+	ID                   string    `json:"id"`
+	RepositoryID         string    `json:"repositoryId"`
+	Pattern              string    `json:"pattern"`
+	RequiredApprovals    int       `json:"requiredApprovals"`
+	RequireCISuccess     bool      `json:"requireCiSuccess"`
+	RequiredStatusChecks []string  `json:"requiredStatusChecks"`
+	BlockDirectPush      bool      `json:"blockDirectPush"`
+	CreatedAt            time.Time `json:"createdAt"`
+	UpdatedAt            time.Time `json:"updatedAt"`
 }
 
 // BranchRuleInput is the validated payload for creating or updating a rule.
 type BranchRuleInput struct {
-	Pattern           string
-	RequiredApprovals int
-	RequireCISuccess  bool
-	BlockDirectPush   bool
+	Pattern              string   `json:"pattern"`
+	RequiredApprovals    int      `json:"requiredApprovals"`
+	RequireCISuccess     bool     `json:"requireCiSuccess"`
+	RequiredStatusChecks []string `json:"requiredStatusChecks"`
+	BlockDirectPush      bool     `json:"blockDirectPush"`
 }
 
 // Page is a bounded pagination window with an opaque string cursor.

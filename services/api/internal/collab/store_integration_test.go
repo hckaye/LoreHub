@@ -475,9 +475,20 @@ func TestIntegrationBranchRules(t *testing.T) {
 		t.Fatalf("bob create rule expected ErrForbidden, got %v", err)
 	}
 	// Alice (org owner/admin) can.
-	rule, err := s.CreateBranchRule(ctx, fix.alice, fix.repoID, BranchRuleInput{Pattern: "main", RequiredApprovals: 2})
+	rule, err := s.CreateBranchRule(ctx, fix.alice, fix.repoID, BranchRuleInput{
+		Pattern:              "main",
+		RequiredApprovals:    2,
+		RequiredStatusChecks: []string{" lint ", "CI/Test"},
+	})
 	if err != nil {
 		t.Fatalf("create rule: %v", err)
+	}
+	if strings.Join(rule.RequiredStatusChecks, ",") != "CI/Test,lint" {
+		t.Fatalf("created rule status checks = %#v", rule.RequiredStatusChecks)
+	}
+	rules, err := s.ListBranchRules(ctx, fix.repoID)
+	if err != nil || len(rules) != 1 || strings.Join(rules[0].RequiredStatusChecks, ",") != "CI/Test,lint" {
+		t.Fatalf("listed rule status checks = %#v, err=%v", rules, err)
 	}
 	// Duplicate pattern conflicts.
 	_, err = s.CreateBranchRule(ctx, fix.alice, fix.repoID, BranchRuleInput{Pattern: "main", RequiredApprovals: 0})
@@ -486,11 +497,13 @@ func TestIntegrationBranchRules(t *testing.T) {
 	}
 	// Update and delete.
 	updated, err := s.UpdateBranchRule(ctx, fix.alice, fix.repoID, rule.ID,
-		BranchRuleInput{Pattern: "release/*", RequiredApprovals: 3})
+		BranchRuleInput{Pattern: "release/*", RequiredApprovals: 3,
+			RequiredStatusChecks: []string{"security", "Build"}})
 	if err != nil {
 		t.Fatalf("update rule: %v", err)
 	}
-	if updated.Pattern != "release/*" || updated.RequiredApprovals != 3 {
+	if updated.Pattern != "release/*" || updated.RequiredApprovals != 3 ||
+		strings.Join(updated.RequiredStatusChecks, ",") != "Build,security" {
 		t.Fatalf("updated rule = %+v", updated)
 	}
 	if _, err := s.UpdateBranchRule(ctx, fix.alice, fix.repoID, rule.ID,

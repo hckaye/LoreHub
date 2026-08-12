@@ -440,8 +440,10 @@ func TestAuthorizationIntegrationProtectedBranchAndOneTimeMerge(t *testing.T) {
 	ctx := context.Background()
 	resourceA := "urc-" + fixture.loreA
 	authorizationMustExec(t, fixture.pool, `
-		INSERT INTO branch_rules (id, repository_id, pattern, required_approvals, block_direct_push)
-		VALUES ($1, $2, 'main', 0, true)
+		INSERT INTO branch_rules (
+			id, repository_id, pattern, required_approvals,
+			required_status_checks, block_direct_push
+		) VALUES ($1, $2, 'main', 0, '{}', true)
 	`, uuid.New(), fixture.repositoryA)
 	authorizationMustExec(t, fixture.pool, `
 		INSERT INTO repository_branch_states (repository_id, branch_id, branch_name, latest_revision)
@@ -593,7 +595,9 @@ func TestAuthorizationIntegrationProtectedBranchAndOneTimeMerge(t *testing.T) {
 	}
 
 	authorizationMustExec(t, fixture.pool, `
-		UPDATE branch_rules SET block_direct_push = false WHERE repository_id = $1
+		UPDATE branch_rules
+		SET block_direct_push = false, required_status_checks = '{}'
+		WHERE repository_id = $1
 	`, fixture.repositoryA)
 	decision, err = fixture.store.CheckPolicy(ctx, authz.PolicyCheck{
 		UserID: fixture.alice.ID, ResourceID: resourceA, Operation: authz.OperationBranchPush,

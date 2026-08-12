@@ -802,6 +802,7 @@ func TestListReviewsAggregate(t *testing.T) {
 
 func TestCreateBranchRuleAdminSuccess(t *testing.T) {
 	t.Parallel()
+	var received BranchRuleInput
 	store := &fakeStore{
 		user: alice(),
 		lookupRepo: func(_ *platform.User, owner, slug string) (Repository, error) {
@@ -811,16 +812,21 @@ func TestCreateBranchRuleAdminSuccess(t *testing.T) {
 			return Access{Permission: PermAdmin}, nil
 		},
 		createRule: func(_ platform.User, _ string, input BranchRuleInput) (BranchRule, error) {
-			return BranchRule{ID: "rule-1", Pattern: input.Pattern, RequiredApprovals: input.RequiredApprovals}, nil
+			received = input
+			return BranchRule{ID: "rule-1", Pattern: input.Pattern, RequiredApprovals: input.RequiredApprovals,
+				RequiredStatusChecks: input.RequiredStatusChecks}, nil
 		},
 	}
 	handler := newTestAPI(store)
-	body := `{"pattern":"main","requiredApprovals":2}`
+	body := `{"pattern":"main","requiredApprovals":2,"requiredStatusChecks":[" lint ","Build"]}`
 	recorder := doRequest(handler, http.MethodPost,
 		"/api/v1/repositories/acme/lore/branch-rules", body,
 		"Authorization", "Bearer alice", "Content-Type", "application/json")
 	if recorder.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d %s", recorder.Code, recorder.Body.String())
+	}
+	if strings.Join(received.RequiredStatusChecks, ",") != "Build,lint" {
+		t.Fatalf("required status checks = %#v, want normalized values", received.RequiredStatusChecks)
 	}
 }
 

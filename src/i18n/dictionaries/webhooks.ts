@@ -58,6 +58,7 @@ export const webhooks = {
       releases: "Releases",
       repository: "Repository settings",
       reviews: "Reviews",
+      statuses: "Status checks",
       wiki: "Wiki",
     },
     statuses: {
@@ -127,6 +128,7 @@ export const webhooks = {
       releases: "リリース",
       repository: "リポジトリ設定",
       reviews: "レビュー",
+      statuses: "ステータスチェック",
       wiki: "Wiki",
     },
     statuses: {

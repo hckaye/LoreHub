@@ -2,6 +2,7 @@ import { actionsEnvironments } from "./actions-environments";
 import { actionsSettings } from "./actions-settings";
 import { assignees } from "./assignees";
 import { auditLog } from "./audit-log";
+import { commitStatuses } from "./commit-statuses";
 import { discussions } from "./discussions";
 import { fileLocks } from "./file-locks";
 import { globalWorkItems } from "./global-work-items";
@@ -19,6 +20,7 @@ import { wiki } from "./wiki";
 const concat = (...parts: string[]) => parts.join("");
 
 const ja = {
+  commitStatuses: commitStatuses.ja,
   discussionsPage: discussions.ja,
   actionsEnvironments: actionsEnvironments.ja,
   actionsSettings: actionsSettings.ja,

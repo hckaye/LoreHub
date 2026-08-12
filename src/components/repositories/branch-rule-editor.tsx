@@ -5,9 +5,13 @@ import { FormEvent, useState } from "react";
 import type { Dictionary } from "@/i18n";
 import type { AuthSession, BranchRule } from "@/lib/api-types";
 import { deleteJson, patchJson, postJson } from "@/lib/auth-client";
+import { parseBranchRule } from "@/lib/branch-rule-contract";
 import { mutationFailureMessage } from "@/lib/mutation-messages";
 
 import styles from "./branch-management.module.css";
+import { BranchRuleFields } from "./branch-rule-fields";
+import { emptyBranchRule, normalizeBranchRuleInput, type BranchRuleInput } from "./branch-rule-input";
+import { BranchRuleRow } from "./branch-rule-row";
 
 type RuleEditorProps = {
   owner: string;
@@ -20,17 +24,8 @@ type RuleEditorProps = {
   onMessage(message: string, error: boolean): void;
 };
 
-type RuleInput = Pick<BranchRule, "pattern" | "requiredApprovals" | "requireCiSuccess" | "blockDirectPush">;
-
-const emptyRule: RuleInput = {
-  pattern: "",
-  requiredApprovals: 1,
-  requireCiSuccess: true,
-  blockDirectPush: true,
-};
-
 export function BranchRuleEditor(props: RuleEditorProps) {
-  const [draft, setDraft] = useState(emptyRule);
+  const [draft, setDraft] = useState(emptyBranchRule);
   const [saving, setSaving] = useState(false);
   const copy = props.dictionary.branchManagement;
   const session = props.session.status === "authenticated" ? props.session : null;
@@ -40,20 +35,26 @@ export function BranchRuleEditor(props: RuleEditorProps) {
 
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!session || !draft.pattern.trim()) return;
+    const input = normalizeBranchRuleInput(draft);
+    if (!session || !input?.pattern) return;
     setSaving(true);
-    const result = await postJson<BranchRule>(base, { ...draft, pattern: draft.pattern.trim() }, session.csrfToken);
+    const result = await postJson<BranchRule>(base, input, session.csrfToken);
     setSaving(false);
     if (!result.ok) {
       props.onMessage(mutationFailureMessage(result.kind, props.dictionary), true);
       return;
     }
-    props.onRulesChanged([...props.initialRules, result.data].sort(sortRules));
-    setDraft(emptyRule);
+    const rule = parseBranchRule(result.data);
+    if (!rule) {
+      props.onMessage(props.dictionary.commitStatuses.invalidRuleResponse, true);
+      return;
+    }
+    props.onRulesChanged([...props.initialRules, rule].sort(sortRules));
+    setDraft(emptyBranchRule);
     props.onMessage(copy.ruleSaved, false);
   }
 
-  async function update(rule: BranchRule, input: RuleInput) {
+  async function update(rule: BranchRule, input: BranchRuleInput) {
     if (!session) return;
     setSaving(true);
     const result = await patchJson<BranchRule>(`${base}/${encodeURIComponent(rule.id)}`, input, session.csrfToken);
@@ -62,7 +63,12 @@ export function BranchRuleEditor(props: RuleEditorProps) {
       props.onMessage(mutationFailureMessage(result.kind, props.dictionary), true);
       return;
     }
-    props.onRulesChanged(props.initialRules.map((item) => (item.id === rule.id ? result.data : item)).sort(sortRules));
+    const updated = parseBranchRule(result.data);
+    if (!updated) {
+      props.onMessage(props.dictionary.commitStatuses.invalidRuleResponse, true);
+      return;
+    }
+    props.onRulesChanged(props.initialRules.map((item) => (item.id === rule.id ? updated : item)).sort(sortRules));
     props.onMessage(copy.ruleSaved, false);
   }
 
@@ -85,7 +91,7 @@ export function BranchRuleEditor(props: RuleEditorProps) {
         <p className={styles.muted}>{copy.noRules}</p>
       ) : (
         props.initialRules.map((rule) => (
-          <RuleRow
+          <BranchRuleRow
             canManage={props.canManage && Boolean(session)}
             dictionary={props.dictionary}
             disabled={saving}
@@ -98,121 +104,12 @@ export function BranchRuleEditor(props: RuleEditorProps) {
       )}
       {props.canManage && session && (
         <form className={styles.ruleForm} onSubmit={create}>
-          <RuleFields dictionary={props.dictionary} input={draft} onChange={setDraft} prefix="new-rule" />
+          <BranchRuleFields dictionary={props.dictionary} input={draft} onChange={setDraft} prefix="new-rule" />
           <button className={styles.primaryButton} disabled={saving || !draft.pattern.trim()} type="submit">
             {copy.addRule}
           </button>
         </form>
       )}
-    </div>
-  );
-}
-
-function RuleRow({
-  rule,
-  canManage,
-  disabled,
-  dictionary,
-  onSave,
-  onDelete,
-}: {
-  rule: BranchRule;
-  canManage: boolean;
-  disabled: boolean;
-  dictionary: Dictionary;
-  onSave(input: RuleInput): Promise<void>;
-  onDelete(): Promise<void>;
-}) {
-  const [input, setInput] = useState<RuleInput>(rule);
-  const copy = dictionary.branchManagement;
-  return (
-    <form
-      className={styles.ruleForm}
-      onSubmit={(event) => {
-        event.preventDefault();
-        void onSave({ ...input, pattern: input.pattern.trim() });
-      }}
-    >
-      <RuleFields
-        dictionary={dictionary}
-        disabled={!canManage}
-        input={input}
-        onChange={setInput}
-        prefix={`rule-${rule.id}`}
-      />
-      {canManage && (
-        <div className={styles.ruleActions}>
-          <button className={styles.secondaryButton} disabled={disabled || !input.pattern.trim()} type="submit">
-            {copy.saveRule}
-          </button>
-          <button className={styles.dangerButton} disabled={disabled} onClick={() => void onDelete()} type="button">
-            {copy.deleteRule}
-          </button>
-        </div>
-      )}
-    </form>
-  );
-}
-
-function RuleFields({
-  input,
-  prefix,
-  disabled = false,
-  dictionary,
-  onChange,
-}: {
-  input: RuleInput;
-  prefix: string;
-  disabled?: boolean;
-  dictionary: Dictionary;
-  onChange(input: RuleInput): void;
-}) {
-  const copy = dictionary.branchManagement;
-  return (
-    <div className={styles.ruleFields}>
-      <label>
-        <span>{copy.pattern}</span>
-        <input
-          disabled={disabled}
-          maxLength={255}
-          name={`${prefix}-pattern`}
-          onChange={(event) => onChange({ ...input, pattern: event.target.value })}
-          required
-          value={input.pattern}
-        />
-      </label>
-      <label>
-        <span>{copy.approvals}</span>
-        <input
-          disabled={disabled}
-          max={100}
-          min={0}
-          name={`${prefix}-approvals`}
-          onChange={(event) => onChange({ ...input, requiredApprovals: Number(event.target.value) })}
-          type="number"
-          value={input.requiredApprovals}
-        />
-      </label>
-      <label className={styles.checkbox}>
-        <input
-          checked={input.requireCiSuccess}
-          disabled={disabled}
-          name={`${prefix}-ci`}
-          onChange={(event) => onChange({ ...input, requireCiSuccess: event.target.checked })}
-          type="checkbox"
-        />
-        <span>{copy.requireCi}</span>
-      </label>
-      <label className={styles.checkbox}>
-        <input
-          checked={input.blockDirectPush}
-          disabled={disabled}
-          name={`${prefix}-push`}
-          onChange={(event) => onChange({ ...input, blockDirectPush: event.target.checked })}
-          type="checkbox"
-        />
-        <span>{copy.blockPush}</span>
-      </label>
     </div>
   );
 }

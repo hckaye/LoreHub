@@ -66,7 +66,7 @@ func claimSourceEvents(ctx context.Context, tx pgx.Tx) ([]sourceEvent, error) {
 			WHERE event.topic ~ '^(actions|branch_rule|branch|discussion|issue_comment|issue_label|issue|label|milestone|'
 			    'project|merge_request_comment|merge_request_review_request|merge_request_review|'
 			    'merge_request_review_thread|'
-			    'merge_request_review_comment|merge_request|merge_operation|release|repository|wiki)\.'
+			    'merge_request_review_comment|merge_request|merge_operation|release|repository|revision_status|wiki)\.'
 			  AND (
 			      ledger.source_event_id IS NULL
 			      OR (ledger.status = 'processing' AND ledger.claimed_at < now() - interval '5 minutes')

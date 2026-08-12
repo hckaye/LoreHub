@@ -46,6 +46,22 @@ func (api *API) buildReadiness(
 	sourceCurrent, sourceFound := branchRevision(branches, mergeRequest.SourceBranch)
 	targetCurrent, targetFound := branchRevision(branches, mergeRequest.TargetBranch)
 	matched := matchingRules(rules, mergeRequest.TargetBranch)
+	statusStore, ok := api.store.(collab.RevisionStatusStore)
+	if !ok {
+		return collab.MergeReadiness{}, errors.New("revision status store is not configured")
+	}
+	statusChecks, err := statusStore.ListRevisionStatusChecks(
+		ctx,
+		repository.ID,
+		mergeRequest.SourceRevision,
+	)
+	if err != nil {
+		return collab.MergeReadiness{}, err
+	}
+	statusChecks, unsuccessfulChecks := evaluateRequiredStatusChecks(
+		statusChecks,
+		requiredStatusChecks(matched),
+	)
 	ciSuccess := true
 	if requiresCI(matched) {
 		ciSuccess = false
@@ -65,6 +81,7 @@ func (api *API) buildReadiness(
 		TargetStale:           !targetFound || targetCurrent != mergeRequest.TargetRevision,
 		Reviews:               reviews,
 		CISuccess:             ciSuccess,
+		StatusChecks:          statusChecks,
 		DirectPushBlocked:     directPushBlocked(matched),
 		Rules:                 matched,
 		Blockers:              []collab.MergeBlocker{},
@@ -108,6 +125,9 @@ func (api *API) buildReadiness(
 	if requiresCI(matched) && !ciSuccess {
 		readiness.Blockers = append(readiness.Blockers, collab.MergeBlocker{Code: "ci_required",
 			Detail: "A successful CI run for the exact source revision is required"})
+	}
+	if blocker, blocked := requiredStatusChecksBlocker(unsuccessfulChecks); blocked {
+		readiness.Blockers = append(readiness.Blockers, blocker)
 	}
 	if operation, operationErr := api.workflow.GetMergeOperation(ctx, repository.ID, number); operationErr == nil {
 		readiness.Operation = &operation

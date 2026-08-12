@@ -60,7 +60,8 @@
 
 .field input,
 .field select,
-.ruleFields input {
+.ruleFields input,
+.ruleFields textarea {
   min-height: 34px;
   padding: 6px 9px;
   border: 1px solid var(--border-strong);
@@ -207,7 +208,7 @@
   display: grid;
   min-width: 0;
   flex: 1;
-  grid-template-columns: minmax(160px, 1fr) 90px auto auto;
+  grid-template-columns: minmax(160px, 1fr) 90px minmax(210px, 1.25fr) auto auto;
   align-items: end;
   gap: 12px;
 }
@@ -221,6 +222,17 @@
 
 .ruleFields .checkbox input {
   min-height: auto;
+}
+
+.statusChecksField textarea {
+  min-height: 62px;
+  resize: vertical;
+}
+
+.statusChecksField small {
+  color: var(--fg-muted);
+  font-size: 0.7rem;
+  line-height: 1.4;
 }
 
 .ruleActions {

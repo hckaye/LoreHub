@@ -108,6 +108,11 @@ export default async function PullRequestDetailPage({ params }: PullRequestDetai
       milestonesAvailable={milestones.ok}
       owner={owner}
       readiness={resultData(readiness, null)}
+      readinessUnavailableReason={
+        !readiness.ok && (readiness.reason === "forbidden" || readiness.reason === "unauthorized")
+          ? "forbidden"
+          : "unavailable"
+      }
       repository={slug}
       reviews={resultData(reviews, null)}
       reviewCandidates={resultData(reviewCandidates, [])}

@@ -3,6 +3,7 @@ package collab
 import (
 	"errors"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -180,6 +181,40 @@ func TestValidateBranchRuleInput(t *testing.T) {
 	if _, err := validateBranchRuleInput(BranchRuleInput{Pattern: "main\nx", RequiredApprovals: 0}); !errors.Is(err,
 		ErrInvalidPattern) {
 		t.Errorf("newline pattern: got %v, want ErrInvalidPattern", err)
+	}
+	validated, err := validateBranchRuleInput(BranchRuleInput{
+		Pattern:              "main",
+		RequiredStatusChecks: []string{" lint ", "Build"},
+	})
+	if err != nil {
+		t.Fatalf("valid status contexts: %v", err)
+	}
+	if strings.Join(validated.RequiredStatusChecks, ",") != "Build,lint" {
+		t.Fatalf("normalized status contexts = %#v, want stable case-insensitive order", validated.RequiredStatusChecks)
+	}
+	invalidChecks := [][]string{
+		{""},
+		{"CI/Test", "ci/test"},
+		{"build\nunsafe"},
+		{strings.Repeat("x", maxStatusContextLen+1)},
+	}
+	for _, checks := range invalidChecks {
+		if _, err := validateBranchRuleInput(BranchRuleInput{
+			Pattern:              "main",
+			RequiredStatusChecks: checks,
+		}); !errors.Is(err, ErrInvalidStatusChecks) {
+			t.Errorf("status contexts %#v: got %v, want ErrInvalidStatusChecks", checks, err)
+		}
+	}
+	tooMany := make([]string, maxStatusContexts+1)
+	for index := range tooMany {
+		tooMany[index] = "check-" + strconv.Itoa(index)
+	}
+	if _, err := validateBranchRuleInput(BranchRuleInput{
+		Pattern:              "main",
+		RequiredStatusChecks: tooMany,
+	}); !errors.Is(err, ErrInvalidStatusChecks) {
+		t.Errorf("too many status contexts: got %v, want ErrInvalidStatusChecks", err)
 	}
 }
 
