@@ -89,7 +89,7 @@ func translateStoreError(operation string, err error) error {
 	var postgresError *pgconn.PgError
 	if errors.As(err, &postgresError) {
 		switch postgresError.Code {
-		case "23503":
+		case "23001", "23503":
 			return fmt.Errorf("%s: %w", operation, platform.ErrConflict)
 		case "23505":
 			return fmt.Errorf("%s: %w", operation, platform.ErrConflict)
