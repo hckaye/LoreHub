@@ -364,7 +364,7 @@ func (api *API) updateNotificationPreferences(writer http.ResponseWriter, reques
 			RepositoryEnabled: input.RepositoryEnabled,
 		})
 	if err != nil {
-		api.internalError(writer, request, "update notification preferences", err)
+		api.platformError(writer, request, "update notification preferences", err)
 		return
 	}
 	writeJSON(writer, http.StatusOK, preferences)

@@ -189,6 +189,7 @@ export type NotificationPage = {
 export type NotificationPreferences = {
   inAppEnabled: boolean;
   emailEnabled: boolean;
+  emailAvailable: boolean;
   mentionEnabled: boolean;
   teamEnabled: boolean;
   repositoryEnabled: boolean;

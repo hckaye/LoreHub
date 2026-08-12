@@ -26,11 +26,16 @@ var (
 )
 
 type Store struct {
-	pool *pgxpool.Pool
+	pool                       *pgxpool.Pool
+	notificationEmailAvailable bool
 }
 
 func NewStore(pool *pgxpool.Pool) *Store {
 	return &Store{pool: pool}
+}
+
+func NewStoreWithNotificationEmail(pool *pgxpool.Pool, available bool) *Store {
+	return &Store{pool: pool, notificationEmailAvailable: available}
 }
 
 func (store *Store) ActiveUser(ctx context.Context, userID string) (User, error) {

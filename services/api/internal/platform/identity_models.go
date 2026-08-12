@@ -80,6 +80,7 @@ type Notification struct {
 type NotificationPreferences struct {
 	InAppEnabled      bool      `json:"inAppEnabled"`
 	EmailEnabled      bool      `json:"emailEnabled"`
+	EmailAvailable    bool      `json:"emailAvailable"`
 	MentionEnabled    bool      `json:"mentionEnabled"`
 	TeamEnabled       bool      `json:"teamEnabled"`
 	RepositoryEnabled bool      `json:"repositoryEnabled"`

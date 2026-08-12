@@ -24,6 +24,7 @@ docker compose -f infra/compose.yaml up --build
 - API health: <http://localhost:8080/health/ready>
 - Lore Server health: <http://localhost:41339/health_check>
 - Keycloak管理画面: <http://keycloak.localhost:8280/admin/master/console>
+- ローカルメール受信画面: <http://localhost:8025>
 
 データを残したまま停止するには、次を実行します。
 
@@ -41,7 +42,7 @@ docker compose -f infra/compose.yaml down
 - Lore branchのmerge、競合解決、結果のpush
 - releaseの公開と外部配布ファイルへのリンク
 - 組織、team、リポジトリの公開範囲とアクセス権限の管理
-- Star、Watch、通知、検索
+- Star、Watch、[アプリ内通知とメール通知](docs/operations/email-notifications.ja.md)、検索
 - Email/Passwordまたは設定済みのソーシャルプロバイダーによるログイン
 - [Personal access token](docs/personal-access-tokens.ja.md)によるLore CLIとAPI clientの認証
 - 英語と日本語の画面
@@ -122,6 +123,7 @@ format、ファイル長制限、lint、型検査、test、production build、�
 - [リポジトリのアクセス権限](docs/operations/control-plane-authorization.ja.md)
 - [ファイルロック](docs/file-locks.ja.md)
 - [Keycloak、ソーシャルログイン、メール、バックアップ](docs/operations/keycloak.ja.md)
+- [通知メール](docs/operations/email-notifications.ja.md)
 - [GitHub Actions互換範囲とrunner運用](docs/runner-actions.ja.md)
 
 ## ライセンス

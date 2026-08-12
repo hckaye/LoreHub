@@ -25,6 +25,18 @@ test("notification actions have explicit button types and accessible status outp
   assert.match(source, /dateTime=\{item\.createdAt\}/);
 });
 
+test("notification settings disable email when the server cannot deliver it", async () => {
+  const form = await readText("src/components/account/notification-settings-form.tsx");
+  const types = await readText("src/lib/api-types.ts");
+  const english = await readText("src/i18n/dictionaries/en.ts");
+  const japanese = await readText("src/i18n/dictionaries/ja.ts");
+  assert.match(form, /disabled=\{!values\.emailAvailable\}/);
+  assert.match(form, /dictionary\.accountSettings\.emailUnavailable/);
+  assert.match(types, /emailAvailable: boolean/);
+  assert.match(english, /Email delivery is not configured for this installation\./);
+  assert.match(japanese, /このLoreHubではメール送信が設定されていません。/);
+});
+
 async function readText(path: string): Promise<string> {
   return readFile(new URL(path, root), "utf8");
 }

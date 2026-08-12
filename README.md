@@ -24,6 +24,7 @@ The local services are available at:
 - API health: <http://localhost:8080/health/ready>
 - Lore Server health: <http://localhost:41339/health_check>
 - Keycloak administration: <http://keycloak.localhost:8280/admin/master/console>
+- Captured local email: <http://localhost:8025>
 
 Stop the services without deleting their data:
 
@@ -41,7 +42,8 @@ docker compose -f infra/compose.yaml down
 - Merge Lore branches, resolve conflicts, and push the result
 - Publish releases and attach links to externally hosted files
 - Manage organizations, teams, repository visibility, and access
-- Star and watch repositories, receive notifications, and search
+- Star and watch repositories, receive [in-app and email notifications](docs/operations/email-notifications.md),
+  and search
 - Sign in with email and password or configured social providers
 - Authenticate the Lore CLI and API clients with [personal access tokens](docs/personal-access-tokens.md)
 - Use the interface in English or Japanese
@@ -122,6 +124,7 @@ vulnerabilities. [GitHub Actions](.github/workflows/ci.yml) runs the same checks
 - [Repository access control](docs/operations/control-plane-authorization.md)
 - [File locks](docs/file-locks.md)
 - [Keycloak, social sign-in, email, and backups](docs/operations/keycloak.md)
+- [Notification email](docs/operations/email-notifications.md)
 - [GitHub Actions compatibility and runner operations](docs/runner-actions.md)
 
 ## License

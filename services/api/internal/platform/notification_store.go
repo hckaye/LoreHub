@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -52,7 +51,7 @@ func (store *Store) ListNotifications(
 		return NotificationPage{}, fmt.Errorf("begin notification projection: %w", err)
 	}
 	defer func() { _ = transaction.Rollback(context.WithoutCancel(ctx)) }()
-	if err := store.syncNotifications(ctx, transaction); err != nil {
+	if _, err := store.syncNotifications(ctx, transaction); err != nil {
 		return NotificationPage{}, err
 	}
 	if err := store.pruneInaccessibleNotifications(ctx, transaction, actor.ID); err != nil {
@@ -63,6 +62,7 @@ func (store *Store) ListNotifications(
 		SELECT COUNT(*)
 		FROM notifications n
 		WHERE n.recipient_id = $1
+		  AND n.in_app_enabled
 		  AND `+notificationCurrentAccessClause("n", "$1")+`
 		  AND ($2 = false OR n.read_at IS NULL)
 	`, actor.ID, unreadOnly).Scan(&total); err != nil {
@@ -72,6 +72,7 @@ func (store *Store) ListNotifications(
 		SELECT n.id, n.topic, n.title, n.body, n.href, n.read_at, n.created_at
 		FROM notifications n
 		WHERE n.recipient_id = $1
+		  AND n.in_app_enabled
 		  AND `+notificationCurrentAccessClause("n", "$1")+`
 		  AND ($2 = false OR n.read_at IS NULL)
 		ORDER BY n.created_at DESC, n.id DESC
@@ -137,6 +138,7 @@ func (store *Store) MarkNotificationRead(ctx context.Context, actor User, notifi
 	query := fmt.Sprintf(`
 		UPDATE notifications SET read_at = COALESCE(read_at, now())
 		WHERE id = $1 AND recipient_id = $2
+		  AND in_app_enabled
 		  AND %s
 	`, notificationCurrentAccessClause("notifications", "$2"))
 	tag, err := transaction.Exec(ctx, query, notificationID, actor.ID)
@@ -171,6 +173,7 @@ func (store *Store) MarkAllNotificationsRead(ctx context.Context, actor User) er
 	query := fmt.Sprintf(`
 		UPDATE notifications SET read_at = now()
 		WHERE recipient_id = $1 AND read_at IS NULL
+		  AND in_app_enabled
 		  AND %s
 	`, notificationCurrentAccessClause("notifications", "$1"))
 	tag, err := transaction.Exec(ctx, query, actor.ID)
@@ -214,6 +217,9 @@ func (store *Store) UpdateNotificationPreferences(
 	actor User,
 	input UpdateNotificationPreferencesInput,
 ) (NotificationPreferences, error) {
+	if input.EmailEnabled != nil && *input.EmailEnabled && !store.notificationEmailAvailable {
+		return NotificationPreferences{}, ErrInvalidInput
+	}
 	transaction, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return NotificationPreferences{}, fmt.Errorf("begin notification preferences update: %w", err)
@@ -246,6 +252,19 @@ func (store *Store) UpdateNotificationPreferences(
 	); err != nil {
 		return NotificationPreferences{}, err
 	}
+	if input.EmailEnabled != nil && !*input.EmailEnabled {
+		if _, err := transaction.Exec(ctx, `
+			UPDATE notification_email_deliveries delivery
+			SET status = 'cancelled', lease_owner = NULL, lease_expires_at = NULL,
+			    last_error = '', updated_at = now()
+			FROM notifications notification
+			WHERE notification.id = delivery.notification_id
+			  AND notification.recipient_id = $1
+			  AND delivery.status IN ('queued', 'failed')
+		`, actor.ID); err != nil {
+			return NotificationPreferences{}, fmt.Errorf("cancel notification email deliveries: %w", err)
+		}
+	}
 	var preferences NotificationPreferences
 	err = transaction.QueryRow(ctx, `
 		SELECT in_app_enabled, email_enabled, mention_enabled, team_enabled, repository_enabled, updated_at
@@ -264,6 +283,7 @@ func (store *Store) UpdateNotificationPreferences(
 	if err := transaction.Commit(ctx); err != nil {
 		return NotificationPreferences{}, fmt.Errorf("commit notification preferences update: %w", err)
 	}
+	preferences.EmailAvailable = store.notificationEmailAvailable
 	return preferences, nil
 }
 
@@ -283,12 +303,13 @@ func (store *Store) readNotificationPreferences(ctx context.Context, userID stri
 	if err != nil {
 		return NotificationPreferences{}, fmt.Errorf("read notification preferences: %w", err)
 	}
+	preferences.EmailAvailable = store.notificationEmailAvailable
 	return preferences, nil
 }
 
 const notificationProjectionBatchSize = 100
 
-func (store *Store) syncNotifications(ctx context.Context, transaction pgx.Tx) error {
+func (store *Store) syncNotifications(ctx context.Context, transaction pgx.Tx) (int, error) {
 	rows, err := transaction.Query(ctx, `
 		WITH candidates AS MATERIALIZED (
 			SELECT events.id, events.topic, events.event_key, events.payload, events.created_at
@@ -339,60 +360,81 @@ func (store *Store) syncNotifications(ctx context.Context, transaction pgx.Tx) e
 		ORDER BY candidates.created_at ASC, candidates.id ASC
 	`)
 	if err != nil {
-		return fmt.Errorf("claim notification source events: %w", err)
+		return 0, fmt.Errorf("claim notification source events: %w", err)
 	}
 	events := make([]notificationEvent, 0)
 	for rows.Next() {
 		var event notificationEvent
 		if err := rows.Scan(&event.ID, &event.Topic, &event.EventKey, &event.Payload, &event.CreatedAt); err != nil {
 			rows.Close()
-			return fmt.Errorf("scan notification source event: %w", err)
+			return 0, fmt.Errorf("scan notification source event: %w", err)
 		}
 		events = append(events, event)
 	}
 	if err := rows.Err(); err != nil {
-		return fmt.Errorf("iterate claimed notification source events: %w", err)
+		return 0, fmt.Errorf("iterate claimed notification source events: %w", err)
 	}
 	rows.Close()
 	for _, event := range events {
 		scope, found, err := store.resolveNotificationScope(ctx, transaction, event)
 		if err != nil {
-			return err
+			return 0, err
 		}
 		if found {
 			preferences, err := store.notificationRecipients(ctx, transaction, scope, event)
 			if err != nil {
-				return err
+				return 0, err
 			}
-			sort.Strings(preferences)
+			sort.Slice(preferences, func(left, right int) bool {
+				return preferences[left].ID < preferences[right].ID
+			})
 			message := notificationMessage(event, scope)
 			for _, recipient := range preferences {
-				var activeRecipient string
+				if !recipient.InAppEnabled && !(store.notificationEmailAvailable && recipient.EmailEnabled) {
+					continue
+				}
+				var activeRecipient, email string
 				if err := transaction.QueryRow(ctx, `
-						SELECT id::text FROM users WHERE id = $1 AND status = 'active' FOR UPDATE
-					`, recipient).Scan(&activeRecipient); errors.Is(err, pgx.ErrNoRows) {
+						SELECT id::text, COALESCE(email, '')
+						FROM users WHERE id = $1 AND status = 'active' FOR UPDATE
+					`, recipient.ID).Scan(&activeRecipient, &email); errors.Is(err, pgx.ErrNoRows) {
 					continue
 				} else if err != nil {
-					return fmt.Errorf("lock notification recipient: %w", err)
+					return 0, fmt.Errorf("lock notification recipient: %w", err)
 				}
-				_, err := transaction.Exec(ctx, `
+				emailEnabled := store.notificationEmailAvailable && recipient.EmailEnabled &&
+					strings.TrimSpace(email) != ""
+				var notificationID string
+				err := transaction.QueryRow(ctx, `
 					INSERT INTO notifications (
 					    id, recipient_id, source_event_id, topic, title, body, href,
 					    scope_kind, scope_organization_id, scope_repository_id, scope_team_id,
-					    scope_visibility, created_at
+					    scope_visibility, in_app_enabled, email_enabled, created_at
 					) VALUES ($1, $2, $3, $4, $5, $6, $7,
 					    NULLIF($8, ''), NULLIF($9, '')::uuid, NULLIF($10, '')::uuid,
-					    NULLIF($11, '')::uuid, NULLIF($12, ''), $13)
+					    NULLIF($11, '')::uuid, NULLIF($12, ''), $13, $14, $15)
 					ON CONFLICT (recipient_id, source_event_id) DO UPDATE SET
 						scope_kind = EXCLUDED.scope_kind,
 						scope_organization_id = EXCLUDED.scope_organization_id,
 						scope_repository_id = EXCLUDED.scope_repository_id,
 						scope_team_id = EXCLUDED.scope_team_id,
-						scope_visibility = EXCLUDED.scope_visibility
-				`, uuid.NewString(), recipient, event.ID, event.Topic, message.title, message.body, message.href,
-					scope.Kind, scope.OrganizationID, scope.RepositoryID, scope.TeamID, scope.Visibility, event.CreatedAt)
+						scope_visibility = EXCLUDED.scope_visibility,
+						in_app_enabled = EXCLUDED.in_app_enabled,
+						email_enabled = EXCLUDED.email_enabled
+					RETURNING id::text
+				`, uuid.NewString(), recipient.ID, event.ID, event.Topic, message.title, message.body, message.href,
+					scope.Kind, scope.OrganizationID, scope.RepositoryID, scope.TeamID, scope.Visibility,
+					recipient.InAppEnabled, emailEnabled, event.CreatedAt).Scan(&notificationID)
 				if err != nil {
-					return fmt.Errorf("materialize notification: %w", err)
+					return 0, fmt.Errorf("materialize notification: %w", err)
+				}
+				if emailEnabled {
+					if _, err := transaction.Exec(ctx, `
+						INSERT INTO notification_email_deliveries (id, notification_id)
+						VALUES ($1, $2) ON CONFLICT (notification_id) DO NOTHING
+					`, uuid.NewString(), notificationID); err != nil {
+						return 0, fmt.Errorf("queue notification email: %w", err)
+					}
 				}
 			}
 		}
@@ -401,10 +443,10 @@ func (store *Store) syncNotifications(ctx context.Context, transaction pgx.Tx) e
 			SET status = 'processed', processed_at = now()
 			WHERE source_event_id = $1 AND status = 'processing'
 		`, event.ID); err != nil {
-			return fmt.Errorf("mark notification source event processed: %w", err)
+			return 0, fmt.Errorf("mark notification source event processed: %w", err)
 		}
 	}
-	return nil
+	return len(events), nil
 }
 
 func (store *Store) resolveNotificationScope(
@@ -730,217 +772,6 @@ func notificationEventID(event notificationEvent) (string, bool) {
 		return "", false
 	}
 	return eventID, true
-}
-
-func (store *Store) notificationRecipients(
-	ctx context.Context,
-	transaction pgx.Tx,
-	scope notificationScope,
-	event notificationEvent,
-) ([]string, error) {
-	if strings.HasPrefix(event.Topic, "merge_request_review_request.") {
-		return reviewRequestNotificationRecipients(ctx, transaction, event)
-	}
-	topic := event.Topic
-	if scope.Kind == "team" || strings.HasPrefix(topic, "team.") {
-		rows, err := transaction.Query(ctx, `
-			SELECT DISTINCT tm.user_id::text
-			FROM team_memberships tm
-			JOIN teams t ON t.id = tm.team_id AND t.active
-			JOIN organizations o ON o.id = t.organization_id AND o.active
-			JOIN organization_memberships om
-			  ON om.organization_id = o.id AND om.user_id = tm.user_id AND om.active
-			JOIN users recipient ON recipient.id = tm.user_id AND recipient.status = 'active'
-			LEFT JOIN notification_preferences preferences ON preferences.user_id = tm.user_id
-			WHERE tm.team_id = $1
-			  AND tm.active
-			  AND COALESCE(preferences.in_app_enabled, true)
-			  AND COALESCE(preferences.team_enabled, true)
-		`, scope.TeamID)
-		if err != nil {
-			return nil, fmt.Errorf("list team notification recipients: %w", err)
-		}
-		return scanNotificationRecipients(rows)
-	}
-	if scope.Kind == "organization" || scope.RepositoryID == "" {
-		rows, err := transaction.Query(ctx, `
-			SELECT DISTINCT members.user_id::text
-			FROM organizations o
-			JOIN organization_memberships members ON members.organization_id = o.id
-			JOIN users recipient ON recipient.id = members.user_id AND recipient.status = 'active'
-			LEFT JOIN notification_preferences preferences ON preferences.user_id = members.user_id
-			WHERE o.id = $1 AND o.active
-			  AND members.active
-			  AND COALESCE(preferences.in_app_enabled, true)
-		`, scope.OrganizationID)
-		if err != nil {
-			return nil, fmt.Errorf("list organization notification recipients: %w", err)
-		}
-		return scanNotificationRecipients(rows)
-	}
-	rows, err := transaction.Query(ctx, `
-		WITH eligible AS (
-			SELECT members.user_id
-			FROM organization_memberships members
-			JOIN organizations o ON o.id = members.organization_id AND o.active
-			JOIN users recipient ON recipient.id = members.user_id AND recipient.status = 'active'
-			WHERE members.organization_id = $1
-			  AND members.active
-			  AND ($3 = 'internal' OR ($3 = 'private' AND members.role = 'owner'))
-			UNION
-			SELECT repository_members.user_id
-			FROM repository_memberships repository_members
-			JOIN repositories r ON r.id = repository_members.repository_id
-			  AND r.organization_id = $1 AND r.lifecycle_state = 'active'
-			JOIN organizations o ON o.id = r.organization_id AND o.active
-			JOIN users recipient ON recipient.id = repository_members.user_id
-			WHERE repository_members.repository_id = $2
-			  AND repository_members.active
-			  AND recipient.status = 'active'
-			  AND $3 IN ('public', 'internal', 'private')
-			UNION
-			SELECT team_members.user_id
-			FROM team_memberships team_members
-			JOIN team_repository_roles team_repositories
-			  ON team_repositories.team_id = team_members.team_id
-			 AND team_repositories.active
-			JOIN teams t ON t.id = team_members.team_id AND t.active AND t.organization_id = $1
-			JOIN organizations o ON o.id = t.organization_id AND o.active
-			JOIN organization_memberships team_org_member
-			  ON team_org_member.organization_id = o.id
-			 AND team_org_member.user_id = team_members.user_id
-			 AND team_org_member.active
-			JOIN users recipient ON recipient.id = team_members.user_id
-			WHERE team_repositories.repository_id = $2
-			  AND team_members.active
-			  AND recipient.status = 'active'
-			  AND $3 IN ('public', 'internal', 'private')
-			UNION
-			SELECT watches.user_id
-			FROM repository_watches watches
-			JOIN repositories r ON r.id = watches.repository_id
-			  AND r.organization_id = $1 AND r.lifecycle_state = 'active'
-			JOIN organizations o ON o.id = r.organization_id AND o.active
-			JOIN users recipient ON recipient.id = watches.user_id AND recipient.status = 'active'
-			WHERE watches.repository_id = $2
-		)
-		SELECT DISTINCT eligible.user_id::text
-		FROM eligible
-		LEFT JOIN notification_preferences preferences ON preferences.user_id = eligible.user_id
-		WHERE COALESCE(preferences.in_app_enabled, true)
-		  AND COALESCE(preferences.repository_enabled, true)
-	`, scope.OrganizationID, scope.RepositoryID, scope.Visibility)
-	if err != nil {
-		return nil, fmt.Errorf("list notification recipients: %w", err)
-	}
-	return scanNotificationRecipients(rows)
-}
-
-func reviewRequestNotificationRecipients(
-	ctx context.Context,
-	transaction pgx.Tx,
-	event notificationEvent,
-) ([]string, error) {
-	eventID, valid := notificationEventID(event)
-	if !valid {
-		return nil, nil
-	}
-	rows, err := transaction.Query(ctx, `
-		SELECT DISTINCT recipient.id::text
-		FROM merge_request_review_requests request
-		JOIN users recipient
-		  ON recipient.id = request.reviewer_user_id AND recipient.status = 'active'
-		LEFT JOIN notification_preferences preferences ON preferences.user_id = recipient.id
-		WHERE request.id = $1 AND request.removed_at IS NULL
-		  AND COALESCE(preferences.in_app_enabled, true)
-		UNION
-		SELECT DISTINCT recipient.id::text
-		FROM merge_request_review_requests request
-		JOIN teams team ON team.id = request.reviewer_team_id AND team.active
-		JOIN team_memberships membership ON membership.team_id = team.id AND membership.active
-		JOIN organization_memberships organization_member
-		  ON organization_member.organization_id = request.organization_id
-		 AND organization_member.user_id = membership.user_id AND organization_member.active
-		JOIN users recipient ON recipient.id = membership.user_id AND recipient.status = 'active'
-		LEFT JOIN notification_preferences preferences ON preferences.user_id = recipient.id
-		WHERE request.id = $1 AND request.removed_at IS NULL
-		  AND COALESCE(preferences.in_app_enabled, true)
-		  AND COALESCE(preferences.team_enabled, true)
-	`, eventID)
-	if err != nil {
-		return nil, fmt.Errorf("list review request notification recipients: %w", err)
-	}
-	return scanNotificationRecipients(rows)
-}
-
-func scanNotificationRecipients(rows pgx.Rows) ([]string, error) {
-	defer rows.Close()
-	recipients := make([]string, 0)
-	for rows.Next() {
-		var recipient string
-		if err := rows.Scan(&recipient); err != nil {
-			return nil, fmt.Errorf("scan notification recipient: %w", err)
-		}
-		recipients = append(recipients, recipient)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate notification recipients: %w", err)
-	}
-	return recipients, nil
-}
-
-type notificationText struct {
-	title string
-	body  string
-	href  string
-}
-
-func notificationMessage(event notificationEvent, scope notificationScope) notificationText {
-	var fields map[string]any
-	_ = json.Unmarshal(event.Payload, &fields)
-	title := scope.Title
-	if value, ok := fields["title"].(string); ok && strings.TrimSpace(value) != "" {
-		title = value
-	}
-	if strings.TrimSpace(title) == "" {
-		title = strings.ReplaceAll(event.Topic, ".", " ")
-	}
-	body, _ := fields["body"].(string)
-	if comment, ok := fields["comment"].(map[string]any); ok {
-		if commentBody, ok := comment["body"].(string); ok {
-			body = commentBody
-		}
-	}
-	if len([]rune(body)) > 500 {
-		body = string([]rune(body)[:500])
-	}
-	return notificationText{title: title, body: body, href: scope.Href}
-}
-
-func notificationHref(scope notificationScope) string {
-	if scope.RepositorySlug != "" && scope.Revision != "" {
-		return "/" + scope.OrganizationSlug + "/" + scope.RepositorySlug +
-			"/commit?revision=" + url.QueryEscape(scope.Revision)
-	}
-	if scope.RepositorySlug != "" && scope.DiscussionNumber != nil {
-		return "/" + scope.OrganizationSlug + "/" + scope.RepositorySlug +
-			"/discussions/" + fmt.Sprint(*scope.DiscussionNumber)
-	}
-	if scope.RepositorySlug != "" && scope.IssueNumber != nil {
-		return "/" + scope.OrganizationSlug + "/" + scope.RepositorySlug +
-			"/issues/" + fmt.Sprint(*scope.IssueNumber)
-	}
-	if scope.RepositorySlug != "" && scope.MergeRequestNumber != nil {
-		return "/" + scope.OrganizationSlug + "/" + scope.RepositorySlug +
-			"/pulls/" + fmt.Sprint(*scope.MergeRequestNumber)
-	}
-	if scope.RepositorySlug != "" {
-		return "/" + scope.OrganizationSlug + "/" + scope.RepositorySlug
-	}
-	if scope.OrganizationSlug != "" {
-		return "/organizations/" + scope.OrganizationSlug
-	}
-	return "/notifications"
 }
 
 func scanNotifications(rows pgx.Rows) ([]Notification, error) {

@@ -55,11 +55,13 @@ export function NotificationSettingsForm({ dictionary, preferences, session }: N
       <label className={styles.checkbox}>
         <input
           checked={values.emailEnabled}
+          disabled={!values.emailAvailable}
           onChange={(event) => setValue("emailEnabled", event.target.checked)}
           type="checkbox"
         />
         <span>{dictionary.accountSettings.email}</span>
       </label>
+      {!values.emailAvailable && <p>{dictionary.accountSettings.emailUnavailable}</p>}
       <label className={styles.checkbox}>
         <input
           checked={values.mentionEnabled}

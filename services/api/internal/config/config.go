@@ -336,6 +336,9 @@ func LoadFor(command string) (Config, error) {
 		DevActionsJobToken:                os.Getenv("LOREHUB_DEV_ACTIONS_JOB_TOKEN"),
 		DevActionsJobTokenFallback:        devActionsJobTokenFallback,
 	}
+	if err := applyNotificationEmailConfig(&config, command); err != nil {
+		return Config{}, err
+	}
 
 	if err := validateWebhookConfig(config, command); err != nil {
 		return Config{}, err

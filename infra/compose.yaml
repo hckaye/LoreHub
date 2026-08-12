@@ -38,6 +38,22 @@ services:
       - postgres-data:/var/lib/postgresql
     restart: unless-stopped
 
+  mailpit:
+    image: axllent/mailpit:v1.30.7
+    environment:
+      MP_DATABASE: /data/mailpit.db
+      MP_MAX_MESSAGES: 500
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:8025/readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "127.0.0.1:${MAILPIT_HOST_PORT:-8025}:8025"
+    volumes:
+      - mailpit-data:/data
+    restart: unless-stopped
+
   lore:
     platform: linux/amd64
     build:
@@ -131,6 +147,18 @@ services:
       LOREHUB_WEBHOOK_REQUEST_TIMEOUT: ${LOREHUB_WEBHOOK_REQUEST_TIMEOUT:-10s}
       LOREHUB_WEBHOOK_LEASE_DURATION: ${LOREHUB_WEBHOOK_LEASE_DURATION:-30s}
       LOREHUB_WEBHOOK_ALLOW_PRIVATE_TARGETS: ${LOREHUB_WEBHOOK_ALLOW_PRIVATE_TARGETS:-false}
+      LOREHUB_NOTIFICATION_EMAIL_ENABLED: ${LOREHUB_NOTIFICATION_EMAIL_ENABLED:-true}
+      LOREHUB_NOTIFICATION_EMAIL_POLL_PERIOD: ${LOREHUB_NOTIFICATION_EMAIL_POLL_PERIOD:-2s}
+      LOREHUB_NOTIFICATION_EMAIL_SEND_TIMEOUT: ${LOREHUB_NOTIFICATION_EMAIL_SEND_TIMEOUT:-10s}
+      LOREHUB_NOTIFICATION_EMAIL_LEASE_DURATION: ${LOREHUB_NOTIFICATION_EMAIL_LEASE_DURATION:-30s}
+      LOREHUB_NOTIFICATION_EMAIL_MAX_ATTEMPTS: ${LOREHUB_NOTIFICATION_EMAIL_MAX_ATTEMPTS:-8}
+      LOREHUB_SMTP_HOST: ${LOREHUB_SMTP_HOST:-mailpit}
+      LOREHUB_SMTP_PORT: ${LOREHUB_SMTP_PORT:-1025}
+      LOREHUB_SMTP_USERNAME: ${LOREHUB_SMTP_USERNAME:-}
+      LOREHUB_SMTP_PASSWORD: ${LOREHUB_SMTP_PASSWORD:-}
+      LOREHUB_SMTP_FROM_ADDRESS: ${LOREHUB_SMTP_FROM_ADDRESS:-notifications@lorehub.localhost}
+      LOREHUB_SMTP_FROM_NAME: ${LOREHUB_SMTP_FROM_NAME:-LoreHub}
+      LOREHUB_SMTP_TLS_MODE: ${LOREHUB_SMTP_TLS_MODE:-none}
       LOREHUB_REPOSITORY_DELETION_RETENTION: ${LOREHUB_REPOSITORY_DELETION_RETENTION:-720h}
       LOREHUB_REPOSITORY_DELETION_POLL_PERIOD: ${LOREHUB_REPOSITORY_DELETION_POLL_PERIOD:-30s}
       LOREHUB_REPOSITORY_DELETION_TIMEOUT: ${LOREHUB_REPOSITORY_DELETION_TIMEOUT:-90s}
@@ -175,6 +203,8 @@ services:
       LOREHUB_IDP_X_CLIENT_SECRET: ${LOREHUB_IDP_X_CLIENT_SECRET:-}
     depends_on:
       postgres:
+        condition: service_healthy
+      mailpit:
         condition: service_healthy
       keycloak:
         condition: service_healthy
@@ -574,6 +604,7 @@ volumes:
   runner-engine-client-certs:
   keycloak-postgres-data:
   keycloak-data:
+  mailpit-data:
 
 networks:
   runner-data:

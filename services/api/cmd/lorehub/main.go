@@ -25,6 +25,7 @@ import (
 	"github.com/lorehub/lorehub/services/api/internal/loreauth"
 	epic_urc "github.com/lorehub/lorehub/services/api/internal/loreauth/epic_urc"
 	"github.com/lorehub/lorehub/services/api/internal/milestones"
+	"github.com/lorehub/lorehub/services/api/internal/notificationemail"
 	"github.com/lorehub/lorehub/services/api/internal/platform"
 	"github.com/lorehub/lorehub/services/api/internal/projects"
 	"github.com/lorehub/lorehub/services/api/internal/releases"
@@ -74,7 +75,7 @@ func run(logger *slog.Logger) error {
 		logger.Info("PostgreSQL migrations are current")
 		return nil
 	}
-	store := platform.NewStore(pool)
+	store := platform.NewStoreWithNotificationEmail(pool, settings.NotificationEmailEnabled)
 	keyProvider, err := newSigningKeyProvider(settings)
 	if err != nil {
 		return err
@@ -231,6 +232,37 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	var notificationEmailWorker *notificationemail.Worker
+	if settings.NotificationEmailEnabled {
+		sender, err := notificationemail.NewSMTPSender(notificationemail.SMTPConfig{
+			Host:        settings.SMTPHost,
+			Port:        settings.SMTPPort,
+			Username:    settings.SMTPUsername,
+			Password:    settings.SMTPPassword,
+			FromAddress: settings.SMTPFromAddress,
+			FromName:    settings.SMTPFromName,
+			TLSMode:     settings.SMTPTLSMode,
+			Timeout:     settings.NotificationEmailSendTimeout,
+		})
+		if err != nil {
+			return err
+		}
+		notificationEmailWorker, err = notificationemail.NewWorker(
+			store,
+			sender,
+			notificationemail.Config{
+				PollPeriod:   settings.NotificationEmailPollPeriod,
+				Lease:        settings.NotificationEmailLeaseDuration,
+				SendTimeout:  settings.NotificationEmailSendTimeout,
+				MaxAttempts:  settings.NotificationEmailMaxAttempts,
+				PublicOrigin: settings.PublicOrigin,
+			},
+			logger,
+		)
+		if err != nil {
+			return err
+		}
+	}
 	collaborationStore := collab.NewStore(pool)
 	handler := httpapi.New(
 		store,
@@ -348,7 +380,11 @@ func run(logger *slog.Logger) error {
 		logger,
 		settings.RunnerPlatformImages,
 	)
-	serverErrors := make(chan error, 5+len(authListeners))
+	workerCount := 5
+	if notificationEmailWorker != nil {
+		workerCount++
+	}
+	serverErrors := make(chan error, workerCount+len(authListeners))
 	go func() {
 		logger.Info("LoreHub API listening", "address", settings.HTTPAddress)
 		serverErrors <- server.ListenAndServe()
@@ -372,6 +408,11 @@ func run(logger *slog.Logger) error {
 	go func() {
 		serverErrors <- repositoryDeletionWorker.Run(rootContext)
 	}()
+	if notificationEmailWorker != nil {
+		go func() {
+			serverErrors <- notificationEmailWorker.Run(rootContext)
+		}()
+	}
 
 	select {
 	case <-rootContext.Done():

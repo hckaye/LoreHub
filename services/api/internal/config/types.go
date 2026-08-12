@@ -53,6 +53,18 @@ type Config struct {
 	WebhookRequestTimeout             time.Duration
 	WebhookLeaseDuration              time.Duration
 	WebhookAllowPrivateTargets        bool
+	NotificationEmailEnabled          bool
+	NotificationEmailPollPeriod       time.Duration
+	NotificationEmailSendTimeout      time.Duration
+	NotificationEmailLeaseDuration    time.Duration
+	NotificationEmailMaxAttempts      int
+	SMTPHost                          string
+	SMTPPort                          int
+	SMTPUsername                      string
+	SMTPPassword                      string
+	SMTPFromAddress                   string
+	SMTPFromName                      string
+	SMTPTLSMode                       string
 	RepositoryDeletionRetention       time.Duration
 	RepositoryDeletionPollPeriod      time.Duration
 	RepositoryDeletionTimeout         time.Duration

@@ -881,13 +881,10 @@ const ja = {
     profileTitle: "プロフィール情報",
     profileBody: "このLoreHubで使うプロフィール情報を確認します。",
     notificationTitle: "通知設定",
-    // prettier-ignore
-    notificationBody: concat(
-      "アカウント、チーム、リポジトリのイベントを、",
-      "通知一覧に表示するか選択します。",
-    ),
+    notificationBody: "アカウント、チーム、リポジトリの通知方法を選択します。",
     inApp: "アプリ内通知",
     email: "メール通知",
+    emailUnavailable: "このLoreHubではメール送信が設定されていません。",
     mentions: "メンション",
     teamEvents: "チームのイベント",
     repositoryEvents: "リポジトリのイベント",
