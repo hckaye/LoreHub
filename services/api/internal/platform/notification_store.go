@@ -318,7 +318,8 @@ func (store *Store) syncNotifications(ctx context.Context, transaction pgx.Tx) (
 			  ON ledger.source_event_id = events.id
 			WHERE events.topic IN (
 			    'organization.created', 'organization.updated', 'repository.registered',
-			    'repository.settings_updated', 'issue.created', 'issue.updated',
+			    'repository.settings_updated', 'repository.invitation.created',
+			    'issue.created', 'issue.updated',
 			    'issue_comment.created', 'issue_comment.updated', 'issue_comment.deleted',
 			    'discussion.created', 'discussion.updated', 'discussion.comment.created',
 			    'discussion.comment.updated', 'discussion.comment.deleted',
@@ -388,7 +389,6 @@ func (store *Store) syncNotifications(ctx context.Context, transaction pgx.Tx) (
 			sort.Slice(preferences, func(left, right int) bool {
 				return preferences[left].ID < preferences[right].ID
 			})
-			message := notificationMessage(event, scope)
 			for _, recipient := range preferences {
 				if !recipient.InAppEnabled && !(store.notificationEmailAvailable && recipient.EmailEnabled) {
 					continue
@@ -404,6 +404,7 @@ func (store *Store) syncNotifications(ctx context.Context, transaction pgx.Tx) (
 				}
 				emailEnabled := store.notificationEmailAvailable && recipient.EmailEnabled &&
 					strings.TrimSpace(email) != ""
+				message := notificationMessage(event, scope, recipient.Locale)
 				var notificationID string
 				err := transaction.QueryRow(ctx, `
 					INSERT INTO notifications (
@@ -466,6 +467,8 @@ func (store *Store) resolveNotificationScope(
 	switch {
 	case strings.HasPrefix(event.Topic, "revision_comment."):
 		return store.resolveRevisionCommentNotificationScope(ctx, transaction, event)
+	case event.Topic == "repository.invitation.created":
+		return resolveRepositoryInvitationNotificationScope(ctx, transaction, event)
 	case strings.HasPrefix(event.Topic, "organization."):
 		err = transaction.QueryRow(ctx, `
 			SELECT id, '', slug, '', NULL, NULL, display_name
@@ -760,6 +763,41 @@ func (store *Store) resolveRevisionCommentNotificationScope(
 	scope.Title = "Revision " + payload.Comment.Revision[:12]
 	scope.Href = notificationHref(scope)
 	return scope, true, nil
+}
+
+func resolveRepositoryInvitationNotificationScope(
+	ctx context.Context,
+	transaction pgx.Tx,
+	event notificationEvent,
+) (notificationScope, bool, error) {
+	eventID, valid := notificationEventID(event)
+	if !valid {
+		return notificationScope{}, false, nil
+	}
+	var owner, repository, displayName string
+	err := transaction.QueryRow(ctx, `
+		SELECT organization.slug, repository.slug, repository.display_name
+		FROM repository_invitations invitation
+		JOIN organizations organization ON organization.id = invitation.organization_id
+		JOIN repositories repository ON repository.id = invitation.repository_id
+		  AND repository.organization_id = invitation.organization_id
+		WHERE invitation.id = $1
+	`, eventID).Scan(&owner, &repository, &displayName)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return notificationScope{}, false, nil
+	}
+	if err != nil {
+		return notificationScope{}, false, fmt.Errorf("resolve repository invitation notification: %w", err)
+	}
+	title := owner + "/" + repository
+	if strings.TrimSpace(displayName) != "" {
+		title = displayName
+	}
+	return notificationScope{
+		Kind:  "user",
+		Title: title,
+		Href:  "/settings#repository-invitations",
+	}, true, nil
 }
 
 func validNotificationRevision(value string) bool {

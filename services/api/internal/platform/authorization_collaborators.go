@@ -102,3 +102,146 @@ func (store *Store) SetRepositoryCollaborator(
 	return Collaborator{UserID: userID, Username: strings.ToLower(strings.TrimSpace(input.Username)),
 		Role: input.Role, Active: input.Active, Source: "direct"}, nil
 }
+
+func (store *Store) UpdateRepositoryCollaboratorRole(
+	ctx context.Context,
+	actor User,
+	owner string,
+	repositorySlug string,
+	username string,
+	role string,
+) (Collaborator, error) {
+	username = strings.ToLower(strings.TrimSpace(username))
+	if !validInvitationUsername(username) || !validRepositoryRole(role) {
+		return Collaborator{}, ErrInvalidInput
+	}
+	transaction, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return Collaborator{}, fmt.Errorf("begin collaborator role update: %w", err)
+	}
+	defer func() { _ = transaction.Rollback(context.WithoutCancel(ctx)) }()
+	boundary, err := repositoryInvitationAdminBoundary(
+		ctx,
+		transaction,
+		actor.ID,
+		owner,
+		repositorySlug,
+	)
+	if err != nil {
+		return Collaborator{}, err
+	}
+	var collaborator Collaborator
+	err = transaction.QueryRow(ctx, `
+		UPDATE repository_memberships membership
+		SET role = $1
+		FROM users collaborator
+		WHERE membership.repository_id = $2
+		  AND membership.user_id = collaborator.id
+		  AND membership.active
+		  AND collaborator.username = $3
+		  AND collaborator.status = 'active'
+		RETURNING collaborator.id::text, collaborator.username, collaborator.display_name,
+		          membership.role, membership.active
+	`, role, boundary.RepositoryID, username).Scan(
+		&collaborator.UserID,
+		&collaborator.Username,
+		&collaborator.DisplayName,
+		&collaborator.Role,
+		&collaborator.Active,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Collaborator{}, fmt.Errorf("%w: collaborator must accept an invitation first", ErrConflict)
+	}
+	if err != nil {
+		return Collaborator{}, fmt.Errorf("update repository collaborator role: %w", err)
+	}
+	collaborator.Source = "direct"
+	if err := insertAuditDetails(
+		ctx,
+		transaction,
+		actor.ID,
+		boundary.OrganizationID,
+		boundary.RepositoryID,
+		"repository.collaborator.role_updated",
+		"user",
+		collaborator.UserID,
+		map[string]any{"role": role},
+	); err != nil {
+		return Collaborator{}, err
+	}
+	if err := transaction.Commit(ctx); err != nil {
+		return Collaborator{}, fmt.Errorf("commit collaborator role update: %w", err)
+	}
+	return collaborator, nil
+}
+
+func (store *Store) RevokeRepositoryCollaborator(
+	ctx context.Context,
+	actor User,
+	owner string,
+	repositorySlug string,
+	username string,
+) (Collaborator, error) {
+	username = strings.ToLower(strings.TrimSpace(username))
+	if !validInvitationUsername(username) {
+		return Collaborator{}, ErrInvalidInput
+	}
+	transaction, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return Collaborator{}, fmt.Errorf("begin collaborator revocation: %w", err)
+	}
+	defer func() { _ = transaction.Rollback(context.WithoutCancel(ctx)) }()
+	boundary, err := repositoryInvitationAdminBoundary(
+		ctx,
+		transaction,
+		actor.ID,
+		owner,
+		repositorySlug,
+	)
+	if err != nil {
+		return Collaborator{}, err
+	}
+	var collaborator Collaborator
+	err = transaction.QueryRow(ctx, `
+		UPDATE repository_memberships membership
+		SET active = false
+		FROM users collaborator
+		WHERE membership.repository_id = $1
+		  AND membership.user_id = collaborator.id
+		  AND membership.active
+		  AND collaborator.username = $2
+		  AND collaborator.status = 'active'
+		RETURNING collaborator.id::text, collaborator.username, collaborator.display_name,
+		          membership.role, membership.active
+	`, boundary.RepositoryID, username).Scan(
+		&collaborator.UserID,
+		&collaborator.Username,
+		&collaborator.DisplayName,
+		&collaborator.Role,
+		&collaborator.Active,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Collaborator{}, ErrNotFound
+	}
+	if err != nil {
+		return Collaborator{}, fmt.Errorf("revoke repository collaborator: %w", err)
+	}
+	collaborator.Source = "direct"
+	if err := insertAuditDetails(
+		ctx,
+		transaction,
+		actor.ID,
+		boundary.OrganizationID,
+		boundary.RepositoryID,
+		"repository.collaborator.revoked",
+		"user",
+		collaborator.UserID,
+		map[string]any{"role": collaborator.Role},
+	); err != nil {
+		return Collaborator{}, err
+	}
+	if err := transaction.Commit(ctx); err != nil {
+		return Collaborator{}, fmt.Errorf("commit collaborator revocation: %w", err)
+	}
+	return collaborator, nil
+}

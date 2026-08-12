@@ -150,7 +150,7 @@ export default async function RepositorySettingsPage({ params }: RepositorySetti
             description={dictionary.settingsPage.accessDescription}
             title={dictionary.settingsPage.accessTitle}
           >
-            <RepositoryAccessSettings dictionary={dictionary} repository={data} session={session} />
+            <RepositoryAccessSettings dictionary={dictionary} locale={locale} repository={data} session={session} />
           </RepositoryPanel>
           <RepositoryPanel
             description={dictionary.actionsEnvironments.description}

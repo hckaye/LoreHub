@@ -99,8 +99,24 @@ type AuthorizationStore interface {
 	) (platform.TeamRepositoryRole, error)
 	DeleteTeamRepositoryRole(context.Context, platform.User, string, string, string, string) error
 	ListRepositoryCollaborators(context.Context, platform.User, string, string) ([]platform.Collaborator, error)
-	SetRepositoryCollaborator(
-		context.Context, platform.User, string, string, platform.SetCollaboratorInput,
+	ListRepositoryInvitations(
+		context.Context, platform.User, string, string, int, int,
+	) (platform.RepositoryInvitationPage, error)
+	ListRepositoryInvitationsForUser(
+		context.Context, platform.User, int, int,
+	) (platform.RepositoryInvitationPage, error)
+	CreateRepositoryInvitation(
+		context.Context, platform.User, string, string, platform.CreateRepositoryInvitationInput,
+	) (platform.RepositoryInvitation, error)
+	RevokeRepositoryInvitation(context.Context, platform.User, string, string, string) error
+	RespondRepositoryInvitation(
+		context.Context, platform.User, string, bool,
+	) (platform.RepositoryInvitation, error)
+	RevokeRepositoryCollaborator(
+		context.Context, platform.User, string, string, string,
+	) (platform.Collaborator, error)
+	UpdateRepositoryCollaboratorRole(
+		context.Context, platform.User, string, string, string, string,
 	) (platform.Collaborator, error)
 	SetRepositoryPolicy(
 		context.Context, platform.User, string, string, platform.SetRepositoryPolicyInput,

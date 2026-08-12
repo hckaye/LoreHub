@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/lorehub/lorehub/services/api/internal/authz"
@@ -34,6 +35,21 @@ func registerAuthorizationRoutes(mux *http.ServeMux, api *API) {
 	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/collaborators", api.listCollaborators)
 	mux.HandleFunc("PUT /api/v1/repositories/{owner}/{repository}/collaborators/{username}", api.setCollaborator)
 	mux.HandleFunc("DELETE /api/v1/repositories/{owner}/{repository}/collaborators/{username}", api.removeCollaborator)
+	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/invitations", api.listRepositoryInvitations)
+	mux.HandleFunc("POST /api/v1/repositories/{owner}/{repository}/invitations", api.createRepositoryInvitation)
+	mux.HandleFunc(
+		"DELETE /api/v1/repositories/{owner}/{repository}/invitations/{invitationID}",
+		api.revokeRepositoryInvitation,
+	)
+	mux.HandleFunc("GET /api/v1/account/repository-invitations", api.listAccountRepositoryInvitations)
+	mux.HandleFunc(
+		"POST /api/v1/account/repository-invitations/{invitationID}/accept",
+		api.acceptRepositoryInvitation,
+	)
+	mux.HandleFunc(
+		"POST /api/v1/account/repository-invitations/{invitationID}/decline",
+		api.declineRepositoryInvitation,
+	)
 	mux.HandleFunc("GET /api/v1/repositories/{owner}/{repository}/policy", api.getRepositoryPolicy)
 	mux.HandleFunc("PUT /api/v1/repositories/{owner}/{repository}/policy", api.setRepositoryPolicy)
 	mux.HandleFunc("PUT /api/v1/repositories/{owner}/{repository}/obliterate/{username}", api.setObliterateGrant)
@@ -264,6 +280,127 @@ func (api *API) listCollaborators(writer http.ResponseWriter, request *http.Requ
 	writeJSON(writer, http.StatusOK, map[string]any{"collaborators": users})
 }
 
+func (api *API) listRepositoryInvitations(writer http.ResponseWriter, request *http.Request) {
+	actor, ok := api.actor(writer, request)
+	if !ok {
+		return
+	}
+	page, perPage, valid := repositoryInvitationPagination(request)
+	if !valid {
+		writeProblem(writer, http.StatusBadRequest, "invalid_input", "Invitation pagination is invalid")
+		return
+	}
+	invitations, err := api.authorization.ListRepositoryInvitations(
+		request.Context(),
+		actor,
+		request.PathValue("owner"),
+		request.PathValue("repository"),
+		page,
+		perPage,
+	)
+	if err != nil {
+		api.platformError(writer, request, "list repository invitations", err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, invitations)
+}
+
+func (api *API) createRepositoryInvitation(writer http.ResponseWriter, request *http.Request) {
+	actor, ok := api.actor(writer, request)
+	if !ok {
+		return
+	}
+	var input struct {
+		Username string `json:"username"`
+		Role     string `json:"role"`
+	}
+	if !decodeJSON(writer, request, &input) || strings.TrimSpace(input.Username) == "" || input.Role == "" {
+		writeProblem(writer, http.StatusBadRequest, "invalid_input", "Invitation fields are invalid")
+		return
+	}
+	invitation, err := api.authorization.CreateRepositoryInvitation(
+		request.Context(),
+		actor,
+		request.PathValue("owner"),
+		request.PathValue("repository"),
+		platform.CreateRepositoryInvitationInput{Username: input.Username, Role: input.Role},
+	)
+	if err != nil {
+		api.platformError(writer, request, "create repository invitation", err)
+		return
+	}
+	writeJSON(writer, http.StatusCreated, invitation)
+}
+
+func (api *API) revokeRepositoryInvitation(writer http.ResponseWriter, request *http.Request) {
+	actor, ok := api.actor(writer, request)
+	if !ok {
+		return
+	}
+	err := api.authorization.RevokeRepositoryInvitation(
+		request.Context(),
+		actor,
+		request.PathValue("owner"),
+		request.PathValue("repository"),
+		request.PathValue("invitationID"),
+	)
+	if err != nil {
+		api.platformError(writer, request, "revoke repository invitation", err)
+		return
+	}
+	writer.WriteHeader(http.StatusNoContent)
+}
+
+func (api *API) listAccountRepositoryInvitations(writer http.ResponseWriter, request *http.Request) {
+	actor, ok := api.actor(writer, request)
+	if !ok {
+		return
+	}
+	page, perPage, valid := repositoryInvitationPagination(request)
+	if !valid {
+		writeProblem(writer, http.StatusBadRequest, "invalid_input", "Invitation pagination is invalid")
+		return
+	}
+	invitations, err := api.authorization.ListRepositoryInvitationsForUser(
+		request.Context(), actor, page, perPage,
+	)
+	if err != nil {
+		api.platformError(writer, request, "list account repository invitations", err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, invitations)
+}
+
+func (api *API) acceptRepositoryInvitation(writer http.ResponseWriter, request *http.Request) {
+	api.respondRepositoryInvitation(writer, request, true)
+}
+
+func (api *API) declineRepositoryInvitation(writer http.ResponseWriter, request *http.Request) {
+	api.respondRepositoryInvitation(writer, request, false)
+}
+
+func (api *API) respondRepositoryInvitation(
+	writer http.ResponseWriter,
+	request *http.Request,
+	accept bool,
+) {
+	actor, ok := api.actor(writer, request)
+	if !ok {
+		return
+	}
+	if !decodeJSON(writer, request, &struct{}{}) {
+		return
+	}
+	invitation, err := api.authorization.RespondRepositoryInvitation(
+		request.Context(), actor, request.PathValue("invitationID"), accept,
+	)
+	if err != nil {
+		api.platformError(writer, request, "respond to repository invitation", err)
+		return
+	}
+	writeJSON(writer, http.StatusOK, invitation)
+}
+
 func (api *API) setCollaborator(writer http.ResponseWriter, request *http.Request) {
 	actor, ok := api.actor(writer, request)
 	if !ok {
@@ -273,14 +410,18 @@ func (api *API) setCollaborator(writer http.ResponseWriter, request *http.Reques
 		Role   string `json:"role"`
 		Active bool   `json:"active"`
 	}
-	if !decodeJSON(writer, request, &input) || input.Role == "" {
+	if !decodeJSON(writer, request, &input) || input.Role == "" || !input.Active {
 		writeProblem(writer, http.StatusBadRequest, "invalid_input", "Collaborator fields are invalid")
 		return
 	}
-	collaborator, err := api.authorization.SetRepositoryCollaborator(request.Context(), actor, request.PathValue("owner"),
-		request.PathValue("repository"), platform.SetCollaboratorInput{
-			Username: request.PathValue("username"), Role: input.Role, Active: input.Active,
-		})
+	collaborator, err := api.authorization.UpdateRepositoryCollaboratorRole(
+		request.Context(),
+		actor,
+		request.PathValue("owner"),
+		request.PathValue("repository"),
+		request.PathValue("username"),
+		input.Role,
+	)
 	if err != nil {
 		api.platformError(writer, request, "set collaborator", err)
 		return
@@ -288,15 +429,48 @@ func (api *API) setCollaborator(writer http.ResponseWriter, request *http.Reques
 	writeJSON(writer, http.StatusOK, collaborator)
 }
 
+func repositoryInvitationPagination(request *http.Request) (int, int, bool) {
+	query, err := url.ParseQuery(request.URL.RawQuery)
+	if err != nil {
+		return 0, 0, false
+	}
+	for key, values := range query {
+		if (key != "page" && key != "per_page") || len(values) != 1 {
+			return 0, 0, false
+		}
+	}
+	page := 1
+	perPage := 20
+	if value := query.Get("page"); value != "" {
+		page, err = strconv.Atoi(value)
+		if err != nil {
+			return 0, 0, false
+		}
+	}
+	if value := query.Get("per_page"); value != "" {
+		perPage, err = strconv.Atoi(value)
+		if err != nil {
+			return 0, 0, false
+		}
+	}
+	if page < 1 || page > 100_000 || perPage < 1 || perPage > 50 {
+		return 0, 0, false
+	}
+	return page, perPage, true
+}
+
 func (api *API) removeCollaborator(writer http.ResponseWriter, request *http.Request) {
 	actor, ok := api.actor(writer, request)
 	if !ok {
 		return
 	}
-	collaborator, err := api.authorization.SetRepositoryCollaborator(request.Context(), actor, request.PathValue("owner"),
-		request.PathValue("repository"), platform.SetCollaboratorInput{
-			Username: request.PathValue("username"), Role: "read", Active: false,
-		})
+	collaborator, err := api.authorization.RevokeRepositoryCollaborator(
+		request.Context(),
+		actor,
+		request.PathValue("owner"),
+		request.PathValue("repository"),
+		request.PathValue("username"),
+	)
 	if err != nil {
 		api.platformError(writer, request, "remove collaborator", err)
 		return

@@ -183,6 +183,34 @@ type Collaborator struct {
 	Source      string `json:"source"`
 }
 
+type RepositoryInvitation struct {
+	ID                    string     `json:"id"`
+	OrganizationID        string     `json:"organizationId"`
+	RepositoryID          string     `json:"repositoryId"`
+	Owner                 string     `json:"owner"`
+	Repository            string     `json:"repository"`
+	RepositoryDisplayName string     `json:"repositoryDisplayName"`
+	InviteeUserID         string     `json:"inviteeUserId"`
+	InviteeUsername       string     `json:"inviteeUsername"`
+	InviteeDisplayName    string     `json:"inviteeDisplayName"`
+	InvitedByUserID       string     `json:"invitedByUserId"`
+	InvitedByUsername     string     `json:"invitedByUsername"`
+	InvitedByDisplayName  string     `json:"invitedByDisplayName"`
+	Role                  string     `json:"role"`
+	Status                string     `json:"status"`
+	ExpiresAt             time.Time  `json:"expiresAt"`
+	RespondedAt           *time.Time `json:"respondedAt"`
+	CreatedAt             time.Time  `json:"createdAt"`
+	UpdatedAt             time.Time  `json:"updatedAt"`
+}
+
+type RepositoryInvitationPage struct {
+	Invitations []RepositoryInvitation `json:"invitations"`
+	Total       int64                  `json:"total"`
+	Page        int                    `json:"page"`
+	PerPage     int                    `json:"perPage"`
+}
+
 type OrganizationMember struct {
 	UserID      string    `json:"userId"`
 	Username    string    `json:"username"`
@@ -228,6 +256,11 @@ type SetCollaboratorInput struct {
 	Username string
 	Role     string
 	Active   bool
+}
+
+type CreateRepositoryInvitationInput struct {
+	Username string
+	Role     string
 }
 
 type SetRepositoryPolicyInput struct {

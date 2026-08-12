@@ -3,23 +3,17 @@
 import { FormEvent, useEffect, useState } from "react";
 
 import type { Dictionary } from "@/i18n";
+import type { Locale } from "@/i18n/config";
 import type { AuthSession, Repository } from "@/lib/api-types";
 
 import styles from "./repository-access-settings.module.css";
+import { RepositoryCollaboratorSettings } from "./repository-collaborator-settings";
 
 type RepositoryAccessSettingsProps = {
   repository: Repository;
   session: Extract<AuthSession, { status: "authenticated" }>;
   dictionary: Dictionary;
-};
-
-type Collaborator = {
-  userId: string;
-  username: string;
-  displayName: string;
-  role: string;
-  active: boolean;
-  source: string;
+  locale: Locale;
 };
 
 type Team = { id: string; slug: string; displayName: string };
@@ -29,14 +23,11 @@ type MutationResult<T> = { ok: boolean; data?: T };
 
 const roles = ["admin", "maintain", "write", "triage", "read"];
 
-export function RepositoryAccessSettings({ repository, session, dictionary }: RepositoryAccessSettingsProps) {
+export function RepositoryAccessSettings({ repository, session, dictionary, locale }: RepositoryAccessSettingsProps) {
   const copy = dictionary.settingsPage;
-  const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [links, setLinks] = useState<Link[]>([]);
   const [policy, setPolicy] = useState<Policy>({ allowCrossRepositoryLinks: false, obliterateEnabled: false });
-  const [username, setUsername] = useState("");
-  const [role, setRole] = useState("read");
   const [team, setTeam] = useState("");
   const [teamRole, setTeamRole] = useState("read");
   const [grantUser, setGrantUser] = useState("");
@@ -55,7 +46,6 @@ export function RepositoryAccessSettings({ repository, session, dictionary }: Re
     async function load() {
       try {
         const responses = await Promise.all([
-          fetch(`${base}/collaborators`, { credentials: "include" }),
           fetch(`${base}/links`, { credentials: "include" }),
           fetch(`/api/v1/organizations/${encodeURIComponent(repository.owner)}/teams`, { credentials: "include" }),
           fetch(`${base}/policy`, { credentials: "include" }),
@@ -63,15 +53,13 @@ export function RepositoryAccessSettings({ repository, session, dictionary }: Re
         if (responses.some((response) => !response.ok)) {
           throw new Error("load_failed");
         }
-        const [collaboratorResponse, linkResponse, teamResponse, policyResponse] = responses;
-        const [collaboratorData, linkData, teamData, policyData] = await Promise.all([
-          collaboratorResponse.json() as Promise<{ collaborators: Collaborator[] }>,
+        const [linkResponse, teamResponse, policyResponse] = responses;
+        const [linkData, teamData, policyData] = await Promise.all([
           linkResponse.json() as Promise<{ links: Link[] }>,
           teamResponse.json() as Promise<{ teams: Team[] }>,
           policyResponse.json() as Promise<Policy>,
         ]);
         if (!active) return;
-        setCollaborators(collaboratorData.collaborators);
         setLinks(linkData.links);
         setTeams(teamData.teams);
         setTeam(teamData.teams[0]?.slug ?? "");
@@ -108,31 +96,6 @@ export function RepositoryAccessSettings({ repository, session, dictionary }: Re
       return { ok: false };
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function saveCollaborator(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const trimmed = username.trim();
-    if (!trimmed) return;
-    const result = await mutate<Collaborator>(`${base}/collaborators/${encodeURIComponent(trimmed)}`, "PUT", {
-      role,
-      active: true,
-    });
-    if (result.ok && result.data) {
-      setCollaborators((current) => [
-        ...current.filter((item) => item.username !== trimmed),
-        result.data as Collaborator,
-      ]);
-      setUsername("");
-    }
-  }
-
-  async function removeCollaborator(item: Collaborator) {
-    if ((await mutate<Collaborator>(`${base}/collaborators/${encodeURIComponent(item.username)}`, "DELETE")).ok) {
-      setCollaborators((current) =>
-        current.map((value) => (value.username === item.username ? { ...value, active: false } : value)),
-      );
     }
   }
 
@@ -195,7 +158,7 @@ export function RepositoryAccessSettings({ repository, session, dictionary }: Re
   }
 
   if (loading) return <p className={styles.muted}>{dictionary.common.loading}</p>;
-  if (error && collaborators.length === 0 && teams.length === 0) {
+  if (error && teams.length === 0) {
     return <p className={styles.error}>{error}</p>;
   }
 
@@ -204,72 +167,15 @@ export function RepositoryAccessSettings({ repository, session, dictionary }: Re
       {error && <p className={styles.error}>{error}</p>}
       {notice && <p className={styles.success}>{notice}</p>}
       <section>
-        <h3>{copy.accessTitle}</h3>
-        <p className={styles.muted}>{copy.accessDescription}</p>
-        <form className={styles.form} onSubmit={saveCollaborator}>
-          <div className={styles.fields}>
-            <div className={styles.field}>
-              <label htmlFor="collaborator-username">{copy.username}</label>
-              <input
-                id="collaborator-username"
-                onChange={(event) => setUsername(event.target.value)}
-                value={username}
-              />
-            </div>
-            <div className={styles.field}>
-              <label htmlFor="collaborator-role">{copy.role}</label>
-              <select id="collaborator-role" onChange={(event) => setRole(event.target.value)} value={role}>
-                {roles.map((value) => (
-                  <option key={value} value={value}>
-                    {value}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <button className={styles.button} disabled={saving || !username.trim()} type="submit">
-              {copy.addCollaborator}
-            </button>
-          </div>
-        </form>
-        <table className={styles.table}>
-          <thead>
-            <tr>
-              <th>{copy.username}</th>
-              <th>{copy.role}</th>
-              <th>{copy.source}</th>
-              <th>{copy.active}</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {collaborators.map((item) => (
-              <tr key={`${item.source}-${item.username}`}>
-                <td>
-                  {item.displayName || item.username}
-                  <br />
-                  <small>{item.username}</small>
-                </td>
-                <td>
-                  <span className={styles.tag}>{item.role}</span>
-                </td>
-                <td>{item.source}</td>
-                <td>{item.active ? "✓" : "—"}</td>
-                <td>
-                  {item.source === "direct" && item.active && (
-                    <button
-                      className={styles.secondaryButton}
-                      disabled={saving}
-                      onClick={() => void removeCollaborator(item)}
-                      type="button"
-                    >
-                      {copy.removeCollaborator}
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <h3>{dictionary.repositoryInvitations.administratorTitle}</h3>
+        <p className={styles.muted}>{dictionary.repositoryInvitations.administratorDescription}</p>
+        <RepositoryCollaboratorSettings
+          dictionary={dictionary}
+          locale={locale}
+          owner={repository.owner}
+          repository={repository.slug}
+          session={session}
+        />
       </section>
 
       <section>

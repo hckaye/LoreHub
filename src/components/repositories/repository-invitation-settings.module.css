@@ -1,0 +1,179 @@
+.settings {
+  display: grid;
+  gap: 14px;
+}
+
+.settings p {
+  margin: 0;
+}
+
+.form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(140px, 0.4fr) auto;
+  align-items: end;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: var(--surface-muted);
+}
+
+.form label {
+  display: grid;
+  gap: 5px;
+  color: var(--fg-muted);
+  font-size: 0.76rem;
+  font-weight: 650;
+}
+
+.form input,
+.form select {
+  min-height: 36px;
+  padding: 6px 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--surface-raised);
+  color: var(--fg-default);
+}
+
+.primaryButton,
+.secondaryButton,
+.dangerButton {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--surface-raised);
+  color: var(--fg-default);
+  cursor: pointer;
+  font-size: 0.76rem;
+  font-weight: 650;
+}
+
+.primaryButton {
+  border-color: var(--accent-emphasis);
+  background: var(--accent-emphasis);
+  color: var(--fg-on-emphasis);
+}
+
+.dangerButton {
+  color: var(--danger-fg);
+}
+
+.primaryButton:disabled,
+.secondaryButton:disabled,
+.dangerButton:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.list {
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  margin: 0;
+  list-style: none;
+}
+
+.list > li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 13px 14px;
+  border-bottom: 1px solid var(--border-default);
+}
+
+.list > li:last-child {
+  border-bottom: 0;
+}
+
+.details {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.heading,
+.actions,
+.pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.heading a {
+  color: var(--fg-default);
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.heading a:hover {
+  text-decoration: underline;
+}
+
+.status {
+  padding: 1px 7px;
+  border: 1px solid var(--border-default);
+  border-radius: 20px;
+  color: var(--fg-muted);
+  font-size: 0.7rem;
+  font-weight: 650;
+}
+
+.status[data-status="pending"] {
+  border-color: var(--accent-border);
+  color: var(--accent-fg);
+}
+
+.metadata,
+.empty,
+.loading {
+  color: var(--fg-muted);
+  font-size: 0.76rem;
+}
+
+.error {
+  color: var(--danger-fg);
+  font-size: 0.78rem;
+}
+
+.success {
+  color: var(--success-fg, var(--accent-fg));
+  font-size: 0.78rem;
+}
+
+.roleSelect {
+  min-height: 32px;
+  padding: 4px 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--surface-raised);
+  color: var(--fg-default);
+}
+
+.pagination {
+  justify-content: space-between;
+}
+
+.pagination span {
+  color: var(--fg-muted);
+  font-size: 0.76rem;
+}
+
+@media (max-width: 680px) {
+  .form {
+    grid-template-columns: 1fr;
+  }
+
+  .list > li {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

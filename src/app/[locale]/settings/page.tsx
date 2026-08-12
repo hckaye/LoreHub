@@ -3,6 +3,7 @@ import { KeyRound, Languages, Settings2 } from "lucide-react";
 import { NotificationSettingsForm } from "@/components/account/notification-settings-form";
 import { PersonalAccessTokenSettings } from "@/components/account/personal-access-token-settings";
 import { ProfileSettingsForm } from "@/components/account/profile-settings-form";
+import { RepositoryInvitationSettings } from "@/components/account/repository-invitation-settings";
 import { AuthRequired } from "@/components/auth/auth-required";
 import { RepositoryPanel, RepositorySection } from "@/components/repositories/repository-section";
 import { getDictionary } from "@/i18n";
@@ -61,6 +62,12 @@ export default async function AccountSettingsPage({ params }: AccountSettingsPag
             {dictionary.common.readOnly}
           </div>
         )}
+      </RepositoryPanel>
+      <RepositoryPanel
+        description={dictionary.repositoryInvitations.description}
+        title={dictionary.repositoryInvitations.title}
+      >
+        <RepositoryInvitationSettings dictionary={dictionary} locale={locale} session={session} />
       </RepositoryPanel>
       <RepositoryPanel
         description={dictionary.personalAccessTokens.description}

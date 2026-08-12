@@ -32,6 +32,11 @@ and membership settings but receive no repository permission automatically.
 | maintain     | read, write        |
 | admin        | read, write, admin |
 
+Adding a direct collaborator sends a repository invitation that expires after seven days. The invitee receives no
+repository permission until accepting it from account settings. Only the invited account can accept or decline the
+invitation, and a repository administrator can revoke it while it is pending. Role changes for existing collaborators
+take effect immediately. Removing an existing collaborator revokes access immediately.
+
 `obliterate` is a separate high-risk permission. It requires both an enabled repository policy and an explicit user
 grant. A broader organization role cannot widen the scope requested by a token.
 
@@ -39,8 +44,8 @@ Anonymous reads of public repositories use an `anonymous_reader` service princip
 resource. A suspended user or a user removed from the organization is denied instead of being retried as anonymous.
 Unauthorized private repository requests return `404`.
 
-Role, team, collaborator, policy, Link, obliterate, and provisioning changes write their audit and outbox records in the
-same PostgreSQL transaction.
+Invitation, role, team, collaborator, policy, Link, obliterate, and provisioning changes write their audit and outbox
+records in the same PostgreSQL transaction.
 
 ## UCS authentication and tokens
 

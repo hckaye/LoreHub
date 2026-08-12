@@ -12,6 +12,7 @@ import (
 
 type notificationRecipient struct {
 	ID           string
+	Locale       string
 	InAppEnabled bool
 	EmailEnabled bool
 }
@@ -22,6 +23,9 @@ func (store *Store) notificationRecipients(
 	scope notificationScope,
 	event notificationEvent,
 ) ([]notificationRecipient, error) {
+	if event.Topic == "repository.invitation.created" {
+		return repositoryInvitationNotificationRecipients(ctx, transaction, event)
+	}
 	if strings.HasPrefix(event.Topic, "merge_request_review_request.") {
 		return reviewRequestNotificationRecipients(ctx, transaction, event)
 	}
@@ -41,6 +45,7 @@ func (store *Store) teamNotificationRecipients(
 ) ([]notificationRecipient, error) {
 	rows, err := transaction.Query(ctx, `
 		SELECT DISTINCT tm.user_id::text,
+		       CASE WHEN recipient.locale = 'ja' THEN 'ja' ELSE 'en' END,
 		       COALESCE(preferences.in_app_enabled, true),
 		       COALESCE(preferences.email_enabled, false)
 		FROM team_memberships tm
@@ -71,6 +76,7 @@ func (store *Store) organizationNotificationRecipients(
 ) ([]notificationRecipient, error) {
 	rows, err := transaction.Query(ctx, `
 		SELECT DISTINCT members.user_id::text,
+		       CASE WHEN recipient.locale = 'ja' THEN 'ja' ELSE 'en' END,
 		       COALESCE(preferences.in_app_enabled, true),
 		       COALESCE(preferences.email_enabled, false)
 		FROM organizations o
@@ -141,9 +147,11 @@ func (store *Store) repositoryNotificationRecipients(
 			WHERE watches.repository_id = $2
 		)
 		SELECT DISTINCT eligible.user_id::text,
+		       CASE WHEN recipient.locale = 'ja' THEN 'ja' ELSE 'en' END,
 		       COALESCE(preferences.in_app_enabled, true),
 		       COALESCE(preferences.email_enabled, false)
 		FROM eligible
+		JOIN users recipient ON recipient.id = eligible.user_id AND recipient.status = 'active'
 		LEFT JOIN notification_preferences preferences ON preferences.user_id = eligible.user_id
 		WHERE COALESCE(preferences.repository_enabled, true)
 		  AND (
@@ -168,6 +176,7 @@ func reviewRequestNotificationRecipients(
 	}
 	rows, err := transaction.Query(ctx, `
 		SELECT DISTINCT recipient.id::text,
+		       CASE WHEN recipient.locale = 'ja' THEN 'ja' ELSE 'en' END,
 		       COALESCE(preferences.in_app_enabled, true),
 		       COALESCE(preferences.email_enabled, false)
 		FROM merge_request_review_requests request
@@ -181,6 +190,7 @@ func reviewRequestNotificationRecipients(
 		  )
 		UNION
 		SELECT DISTINCT recipient.id::text,
+		       CASE WHEN recipient.locale = 'ja' THEN 'ja' ELSE 'en' END,
 		       COALESCE(preferences.in_app_enabled, true),
 		       COALESCE(preferences.email_enabled, false)
 		FROM merge_request_review_requests request
@@ -204,12 +214,49 @@ func reviewRequestNotificationRecipients(
 	return scanNotificationRecipients(rows)
 }
 
+func repositoryInvitationNotificationRecipients(
+	ctx context.Context,
+	transaction pgx.Tx,
+	event notificationEvent,
+) ([]notificationRecipient, error) {
+	eventID, valid := notificationEventID(event)
+	if !valid {
+		return nil, nil
+	}
+	rows, err := transaction.Query(ctx, `
+		SELECT invitee.id::text,
+		       CASE WHEN invitee.locale = 'ja' THEN 'ja' ELSE 'en' END,
+		       COALESCE(preferences.in_app_enabled, true),
+		       COALESCE(preferences.email_enabled, false)
+		FROM repository_invitations invitation
+		JOIN users invitee ON invitee.id = invitation.invitee_user_id AND invitee.status = 'active'
+		LEFT JOIN notification_preferences preferences ON preferences.user_id = invitee.id
+		WHERE invitation.id = $1
+		  AND invitation.status = 'pending'
+		  AND invitation.expires_at > now()
+		  AND COALESCE(preferences.repository_enabled, true)
+		  AND (
+		      COALESCE(preferences.in_app_enabled, true)
+		      OR COALESCE(preferences.email_enabled, false)
+		  )
+	`, eventID)
+	if err != nil {
+		return nil, fmt.Errorf("list repository invitation notification recipient: %w", err)
+	}
+	return scanNotificationRecipients(rows)
+}
+
 func scanNotificationRecipients(rows pgx.Rows) ([]notificationRecipient, error) {
 	defer rows.Close()
 	recipients := make([]notificationRecipient, 0)
 	for rows.Next() {
 		var recipient notificationRecipient
-		if err := rows.Scan(&recipient.ID, &recipient.InAppEnabled, &recipient.EmailEnabled); err != nil {
+		if err := rows.Scan(
+			&recipient.ID,
+			&recipient.Locale,
+			&recipient.InAppEnabled,
+			&recipient.EmailEnabled,
+		); err != nil {
 			return nil, fmt.Errorf("scan notification recipient: %w", err)
 		}
 		recipients = append(recipients, recipient)
@@ -226,17 +273,28 @@ type notificationText struct {
 	href  string
 }
 
-func notificationMessage(event notificationEvent, scope notificationScope) notificationText {
+func notificationMessage(event notificationEvent, scope notificationScope, locale string) notificationText {
 	var fields map[string]any
 	_ = json.Unmarshal(event.Payload, &fields)
 	title := scope.Title
-	if value, ok := fields["title"].(string); ok && strings.TrimSpace(value) != "" {
+	titleKey := "titleEn"
+	bodyKey := "bodyEn"
+	if locale == "ja" {
+		titleKey = "titleJa"
+		bodyKey = "bodyJa"
+	}
+	if value, ok := fields[titleKey].(string); ok && strings.TrimSpace(value) != "" {
+		title = value
+	} else if value, ok := fields["title"].(string); ok && strings.TrimSpace(value) != "" {
 		title = value
 	}
 	if strings.TrimSpace(title) == "" {
 		title = strings.ReplaceAll(event.Topic, ".", " ")
 	}
-	body, _ := fields["body"].(string)
+	body, _ := fields[bodyKey].(string)
+	if strings.TrimSpace(body) == "" {
+		body, _ = fields["body"].(string)
+	}
 	if comment, ok := fields["comment"].(map[string]any); ok {
 		if commentBody, ok := comment["body"].(string); ok {
 			body = commentBody

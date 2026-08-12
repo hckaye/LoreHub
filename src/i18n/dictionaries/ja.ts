@@ -14,6 +14,7 @@ import { personalAccessTokens } from "./personal-access-tokens";
 import { pullRequestDrafts } from "./pull-request-drafts";
 import { pullRequestMetadata } from "./pull-request-metadata";
 import { releases } from "./releases";
+import { repositoryInvitations } from "./repository-invitations";
 import { repositoryLifecycle } from "./repository-lifecycle";
 import { revisionComments } from "./revision-comments";
 import { search } from "./search";
@@ -40,6 +41,7 @@ const ja = {
   fileLocks: fileLocks.ja,
   globalWorkItems: globalWorkItems.ja,
   repositoryLifecycle: repositoryLifecycle.ja,
+  repositoryInvitations: repositoryInvitations.ja,
   revisionComments: revisionComments.ja,
   searchPage: search.ja,
   metadata: metadata.ja,
