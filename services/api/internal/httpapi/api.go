@@ -138,6 +138,7 @@ type PersonalAccessTokenStore interface {
 type API struct {
 	store                   Store
 	actions                 ActionsStore
+	actionsEnvironments     ActionsEnvironmentStore
 	actionsExecutionContext ActionsExecutionContextStore
 	actionsSecurity         ActionsSecurityStore
 	actionsJobTokens        runner.JobTokenVerifier
@@ -263,6 +264,10 @@ func WithActionsSecurity(store ActionsSecurityStore, verifier runner.JobTokenVer
 
 func WithActionsExecutionContext(store ActionsExecutionContextStore) Option {
 	return func(api *API) { api.actionsExecutionContext = store }
+}
+
+func WithActionsEnvironments(store ActionsEnvironmentStore) Option {
+	return func(api *API) { api.actionsEnvironments = store }
 }
 
 func WithPersonalAccessTokens(store PersonalAccessTokenStore, secrets *auth.SecretCodec) Option {

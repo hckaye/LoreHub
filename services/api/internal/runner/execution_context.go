@@ -23,6 +23,7 @@ type ExecutionContextRequest struct {
 	Principal      CredentialPrincipal
 	RepositoryID   string
 	OrganizationID string
+	JobID          string
 	Environment    string
 	RequestedScope string
 }

@@ -493,6 +493,7 @@ func encodeTriggerConfig(
 	pullRequest *PullRequestTrigger,
 	schedules []ScheduleTrigger,
 	repositoryDispatch *RepositoryDispatchTrigger,
+	environment string,
 ) (json.RawMessage, error) {
 	config := make(map[string]any, 5)
 	if push != nil {
@@ -509,6 +510,9 @@ func encodeTriggerConfig(
 	}
 	if dispatch {
 		config["workflow_dispatch"] = WorkflowDispatchConfig{Inputs: dispatchInputs}
+	}
+	if environment != "" {
+		config["environment"] = environment
 	}
 	encoded, err := json.Marshal(config)
 	if err != nil {

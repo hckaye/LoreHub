@@ -110,6 +110,11 @@ func (api *API) registerRepositoryRoutes(mux *http.ServeMux) {
 func (api *API) registerActionsRoutes(mux *http.ServeMux) {
 	base := "/api/v1/repositories/{owner}/{repository}/actions"
 	mux.HandleFunc("GET "+base+"/runs", api.listCIRuns)
+	mux.HandleFunc("GET "+base+"/deployments", api.listDeployments)
+	mux.HandleFunc("POST "+base+"/deployments/{deploymentID}/reviews", api.reviewDeployment)
+	mux.HandleFunc("GET "+base+"/environments", api.listActionEnvironments)
+	mux.HandleFunc("PUT "+base+"/environments/{environment}", api.upsertActionEnvironment)
+	mux.HandleFunc("DELETE "+base+"/environments/{environment}", api.deleteActionEnvironment)
 	mux.HandleFunc("GET "+base+"/settings", api.listRepositoryActionsSettings)
 	mux.HandleFunc("PUT "+base+"/settings/{scopeKind}/{valueKind}/{name}",
 		api.upsertRepositoryActionsSetting)

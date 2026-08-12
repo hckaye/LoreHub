@@ -350,7 +350,8 @@ func (store *Store) DispatchWorkflow(
 	}
 	runID, err := store.enqueueRun(ctx, transaction, Repository{
 		ID: access.ID, Owner: access.Owner, Slug: access.Slug, LoreURL: access.LoreURL,
-	}, workflowID, nil, workflowName, workflowPath, "workflow_dispatch", branch, revision, payload, actorID, nil)
+	}, workflowID, nil, workflowName, workflowPath, "workflow_dispatch", branch, revision, payload,
+		definition.Environment, actorID, nil)
 	if err != nil {
 		return RunRecord{}, err
 	}
@@ -412,6 +413,13 @@ func (store *Store) CancelActionRun(
 		`, runID); err != nil {
 			return RunRecord{}, fmt.Errorf("cancel run jobs: %w", err)
 		}
+		if _, err := transaction.Exec(ctx, `
+			UPDATE deployments
+			SET status = 'cancelled', completed_at = COALESCE(completed_at, now()), updated_at = now()
+			WHERE run_id = $1 AND status IN ('pending', 'waiting', 'queued', 'in_progress')
+		`, runID); err != nil {
+			return RunRecord{}, fmt.Errorf("cancel run deployments: %w", err)
+		}
 		if err := recordActionEvent(ctx, transaction, access, actorID, "actions.run.cancelled", runID,
 			map[string]any{"run_number": runNumber}); err != nil {
 			return RunRecord{}, err
@@ -440,22 +448,25 @@ func (store *Store) RerunActionRun(
 		return RunRecord{}, fmt.Errorf("begin run rerun: %w", err)
 	}
 	defer func() { _ = transaction.Rollback(context.WithoutCancel(ctx)) }()
-	var originalID, workflowID, workflowRevisionID, workflowName, workflowPath, eventName, branch, revision, status string
+	var originalID, workflowID, workflowRevisionID, workflowName, workflowPath string
+	var eventName, branch, revision, status, environment string
 	var payload []byte
 	err = transaction.QueryRow(ctx, `
 		SELECT run.id, COALESCE(run.workflow_id::text, ''), COALESCE(run.workflow_revision_id::text, ''),
 		       COALESCE(workflow.name, revision_workflow.name), COALESCE(workflow.path, revision_workflow.path),
 		       run.event_name, run.branch,
-		       run.revision, run.status, run.event_payload
+		       run.revision, run.status, run.event_payload,
+		       COALESCE(deployment.environment_name, '')
 		FROM ci_runs run
 		LEFT JOIN ci_workflows workflow ON workflow.id = run.workflow_id
 		LEFT JOIN ci_workflow_revisions revision_workflow ON revision_workflow.id = run.workflow_revision_id
+		LEFT JOIN deployments deployment ON deployment.run_id = run.id
 		WHERE run.repository_id = $1
 		  AND (run.workflow_id IS NOT NULL OR run.workflow_revision_id IS NOT NULL)
 		  AND run.run_number = $2
 		FOR UPDATE OF run
 	`, access.ID, runNumber).Scan(&originalID, &workflowID, &workflowRevisionID, &workflowName, &workflowPath,
-		&eventName, &branch, &revision, &status, &payload)
+		&eventName, &branch, &revision, &status, &payload, &environment)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return RunRecord{}, ErrActionNotFound
 	}
@@ -477,7 +488,7 @@ func (store *Store) RerunActionRun(
 	newID, err := store.enqueueRun(ctx, transaction, Repository{
 		ID: access.ID, Owner: access.Owner, Slug: access.Slug, LoreURL: access.LoreURL,
 	}, workflowID, revisionWorkflowID, workflowName, workflowPath, eventName, branch, revision, payload,
-		actorID, &rerunID)
+		environment, actorID, &rerunID)
 	if err != nil {
 		return RunRecord{}, err
 	}

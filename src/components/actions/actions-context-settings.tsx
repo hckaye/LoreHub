@@ -27,11 +27,18 @@ type ActionsContextSettingsProps = {
   locale: string;
   session: Extract<AuthSession, { status: "authenticated" }>;
   target: ActionsContextTarget;
+  environmentNames?: string[];
 };
 
 type LoadState = "loading" | "ready" | "environment-required" | "forbidden" | "unavailable";
 
-export function ActionsContextSettings({ dictionary, locale, session, target }: ActionsContextSettingsProps) {
+export function ActionsContextSettings({
+  dictionary,
+  environmentNames = [],
+  locale,
+  session,
+  target,
+}: ActionsContextSettingsProps) {
   const copy = dictionary.actionsSettings;
   const [scopeKind, setScopeKind] = useState<"repository" | "environment">("repository");
   const [environmentDraft, setEnvironmentDraft] = useState("");
@@ -178,6 +185,7 @@ export function ActionsContextSettings({ dictionary, locale, session, target }: 
               <label>
                 <span>{copy.environmentName}</span>
                 <input
+                  list="actions-environment-names"
                   disabled={pending}
                   maxLength={128}
                   onChange={(event) => setEnvironmentDraft(event.target.value)}
@@ -185,6 +193,11 @@ export function ActionsContextSettings({ dictionary, locale, session, target }: 
                   required
                   value={environmentDraft}
                 />
+                <datalist id="actions-environment-names">
+                  {environmentNames.map((name) => (
+                    <option key={name} value={name} />
+                  ))}
+                </datalist>
               </label>
               <button className={styles.secondaryButton} disabled={pending || !environmentDraft.trim()} type="submit">
                 {copy.loadEnvironment}

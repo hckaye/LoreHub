@@ -337,10 +337,14 @@ func (worker *Worker) runJob(ctx context.Context, job Job, logKey string) (strin
 	if err != nil {
 		return logKey, nil, err
 	}
+	if workflowEnvironment != job.Environment {
+		return logKey, nil, errors.New("workflow environment does not match its approved deployment")
+	}
 	execution, err := resolveExecutionContext(ctx, worker.config.ExecutionResolver, ExecutionContextRequest{
 		Principal:      worker.config.CredentialPrincipal,
 		RepositoryID:   job.RepositoryID,
 		OrganizationID: job.OrganizationID,
+		JobID:          job.ID,
 		Environment:    workflowEnvironment,
 		RequestedScope: "actions:execute",
 	})

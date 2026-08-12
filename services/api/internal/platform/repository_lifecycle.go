@@ -163,6 +163,14 @@ func updateRepositoryArchive(
 
 func cancelRepositoryRuns(ctx context.Context, transaction pgx.Tx, repositoryID string) error {
 	_, err := transaction.Exec(ctx, `
+		UPDATE deployments
+		SET status = 'cancelled', completed_at = COALESCE(completed_at, now()), updated_at = now()
+		WHERE repository_id = $1 AND status IN ('pending', 'waiting', 'queued', 'in_progress')
+	`, repositoryID)
+	if err != nil {
+		return fmt.Errorf("cancel repository deployments: %w", err)
+	}
+	_, err = transaction.Exec(ctx, `
 		UPDATE ci_jobs job
 		SET status = 'cancelled', conclusion = 'cancelled',
 		    completed_at = COALESCE(job.completed_at, now()),

@@ -98,6 +98,39 @@ jobs:
 	}
 }
 
+func TestDiscoverWorkflowsPreservesDeploymentEnvironment(t *testing.T) {
+	workspace := t.TempDir()
+	workflowDirectory := filepath.Join(workspace, ".github", "workflows")
+	if err := os.MkdirAll(workflowDirectory, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	contents := `name: Deploy
+on: push
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: Production
+`
+	if err := os.WriteFile(filepath.Join(workflowDirectory, "deploy.yml"), []byte(contents), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	workflows, err := DiscoverWorkflows(workspace)
+	if err != nil || len(workflows) != 1 || workflows[0].Environment != "Production" {
+		t.Fatalf("deployment environment was not discovered: %#v, %v", workflows, err)
+	}
+	restored, err := workflowFromTriggerConfig(
+		workflows[0].Path,
+		workflows[0].Name,
+		workflows[0].Enabled,
+		workflows[0].State,
+		workflows[0].TriggerConfig,
+	)
+	if err != nil || restored.Environment != "Production" {
+		t.Fatalf("deployment environment was not persisted: %#v, %v", restored, err)
+	}
+}
+
 func TestDiscoverWorkflowsAcceptsAllSupportedEvents(t *testing.T) {
 	workspace := t.TempDir()
 	workflowDirectory := filepath.Join(workspace, ".github", "workflows")

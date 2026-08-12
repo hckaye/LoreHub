@@ -1,8 +1,11 @@
+import { actionsEnvironments } from "./actions-environments";
+import { actionsSettings } from "./actions-settings";
 import { assignees } from "./assignees";
 import { auditLog } from "./audit-log";
 import { fileLocks } from "./file-locks";
 import { globalWorkItems } from "./global-work-items";
 import { insights } from "./insights";
+import { metadata } from "./metadata";
 import { milestones } from "./milestones";
 import { personalAccessTokens } from "./personal-access-tokens";
 import { pullRequestDrafts } from "./pull-request-drafts";
@@ -13,6 +16,8 @@ import { webhooks } from "./webhooks";
 import { wiki } from "./wiki";
 
 const en = {
+  actionsEnvironments: actionsEnvironments.en,
+  actionsSettings: actionsSettings.en,
   auditLog: auditLog.en,
   insightsPage: insights.en,
   webhookSettings: webhooks.en,
@@ -23,10 +28,7 @@ const en = {
   fileLocks: fileLocks.en,
   globalWorkItems: globalWorkItems.en,
   repositoryLifecycle: repositoryLifecycle.en,
-  metadata: {
-    title: "LoreHub · Collaboration for Lore repositories",
-    description: "Review, issues, permissions, and GitHub Actions-compatible CI for Lore.",
-  },
+  metadata: metadata.en,
   common: {
     productName: "LoreHub",
     explore: "Explore",
@@ -695,52 +697,6 @@ const en = {
     loadFailed: "Organization team settings could not be loaded.",
     saveFailed: "The team setting could not be saved.",
     saved: "Saved.",
-  },
-  actionsSettings: {
-    title: "Actions variables and secrets",
-    organizationDescription: "Set values shared by Actions workflows in every repository in this organization.",
-    repositoryDescription: "Set repository values or values limited to a named deployment environment.",
-    scope: "Scope",
-    repositoryScope: "Repository",
-    environmentScope: "Environment",
-    environmentName: "Environment name",
-    environmentPlaceholder: "For example, production",
-    loadEnvironment: "Load environment",
-    environmentRequiredTitle: "Choose an environment",
-    environmentRequired: "Enter an environment name to view and manage its variables and secrets.",
-    name: "Name",
-    type: "Type",
-    value: "Value",
-    variable: "Variable",
-    secret: "Secret",
-    createTitle: "Create a variable or secret",
-    overwriteTitle: "Overwrite a variable or secret",
-    variableValueHelp: "Variable values can be viewed by repository administrators and are passed to workflows.",
-    secretValueHelp: "Secret values are accepted once and are never returned by the API or shown again.",
-    saveVariable: "Save variable",
-    saveSecret: "Save secret",
-    saving: "Saving…",
-    cancel: "Cancel",
-    overwrite: "Overwrite",
-    delete: "Delete",
-    deleteConfirm: "Delete {name}? Workflows that use it may fail.",
-    updated: "Updated",
-    keyId: "Encryption key",
-    secretStored: "Secret value hidden",
-    actions: "Actions",
-    emptyTitle: "No variables or secrets",
-    emptyBody: "Create a variable or secret for this scope. Higher and lower scopes remain separate.",
-    loading: "Loading Actions variables and secrets…",
-    forbiddenTitle: "Administrator access is required",
-    forbiddenBody: "Only an organization owner or an eligible repository administrator can manage these values.",
-    unavailableTitle: "Actions settings are unavailable",
-    unavailableBody: "The settings service could not be reached. Existing workflows are not changed.",
-    retry: "Try again",
-    mutationForbidden: "Your account does not have permission to change this Actions setting.",
-    mutationUnavailable: "The Actions setting could not be changed. Try again when the service is available.",
-    invalid: "Check the name and value. Reserved Actions and runner names cannot be used.",
-    saved: "Actions setting saved.",
-    deleted: "Actions setting deleted.",
   },
   profile: {
     title: "Profile",

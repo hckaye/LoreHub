@@ -2,6 +2,7 @@ import { Archive, LockKeyhole, ServerOff } from "lucide-react";
 import { notFound } from "next/navigation";
 
 import { ActionsContextSettings } from "@/components/actions/actions-context-settings";
+import { ActionsEnvironmentSettings } from "@/components/actions/actions-environment-settings";
 import { AuthRequired } from "@/components/auth/auth-required";
 import { RepositoryAccessSettings } from "@/components/repositories/repository-access-settings";
 import { RepositoryDeleteSettings } from "@/components/repositories/repository-delete-settings";
@@ -13,7 +14,7 @@ import { RepositoryWebhookSettings } from "@/components/webhooks/repository-webh
 import { getDictionary } from "@/i18n";
 import { isLocale } from "@/i18n/config";
 import { getAuthSession } from "@/lib/auth-api";
-import { getOrganization, getRepositorySettings } from "@/lib/lorehub-api";
+import { getActionsEnvironments, getOrganization, getRepositorySettings } from "@/lib/lorehub-api";
 import { repositoryPath } from "@/lib/routes";
 
 import styles from "@/components/repositories/repository-detail.module.css";
@@ -62,7 +63,10 @@ export default async function RepositorySettingsPage({ params }: RepositorySetti
     );
   }
   const data = repositoryResult.data;
-  const organizationResult = await getOrganization(data.owner);
+  const [organizationResult, environmentsResult] = await Promise.all([
+    getOrganization(data.owner),
+    getActionsEnvironments(data.owner, data.slug),
+  ]);
   const canDelete = organizationResult.ok && organizationResult.data.role === "owner";
   return (
     <RepositorySection description={dictionary.settingsPage.description} title={dictionary.settingsPage.title}>
@@ -134,11 +138,28 @@ export default async function RepositorySettingsPage({ params }: RepositorySetti
             <RepositoryAccessSettings dictionary={dictionary} repository={data} session={session} />
           </RepositoryPanel>
           <RepositoryPanel
+            description={dictionary.actionsEnvironments.description}
+            title={dictionary.actionsEnvironments.title}
+          >
+            {environmentsResult.ok ? (
+              <ActionsEnvironmentSettings
+                dictionary={dictionary}
+                environments={environmentsResult.data}
+                owner={data.owner}
+                repository={data.slug}
+                session={session}
+              />
+            ) : (
+              <p>{dictionary.actionsEnvironments.unavailable}</p>
+            )}
+          </RepositoryPanel>
+          <RepositoryPanel
             description={dictionary.actionsSettings.repositoryDescription}
             title={dictionary.actionsSettings.title}
           >
             <ActionsContextSettings
               dictionary={dictionary}
+              environmentNames={environmentsResult.ok ? environmentsResult.data.map((item) => item.name) : []}
               locale={locale}
               session={session}
               target={{ kind: "repository", owner: data.owner, repository: data.slug }}

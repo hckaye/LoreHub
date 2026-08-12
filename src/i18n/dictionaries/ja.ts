@@ -1,8 +1,11 @@
+import { actionsEnvironments } from "./actions-environments";
+import { actionsSettings } from "./actions-settings";
 import { assignees } from "./assignees";
 import { auditLog } from "./audit-log";
 import { fileLocks } from "./file-locks";
 import { globalWorkItems } from "./global-work-items";
 import { insights } from "./insights";
+import { metadata } from "./metadata";
 import { milestones } from "./milestones";
 import { personalAccessTokens } from "./personal-access-tokens";
 import { pullRequestDrafts } from "./pull-request-drafts";
@@ -15,6 +18,8 @@ import { wiki } from "./wiki";
 const concat = (...parts: string[]) => parts.join("");
 
 const ja = {
+  actionsEnvironments: actionsEnvironments.ja,
+  actionsSettings: actionsSettings.ja,
   auditLog: auditLog.ja,
   insightsPage: insights.ja,
   webhookSettings: webhooks.ja,
@@ -25,10 +30,7 @@ const ja = {
   fileLocks: fileLocks.ja,
   globalWorkItems: globalWorkItems.ja,
   repositoryLifecycle: repositoryLifecycle.ja,
-  metadata: {
-    title: "LoreHub · Loreリポジトリの共同開発基盤",
-    description: "Loreにレビュー、Issue、権限管理、GitHub Actions互換CIを追加します。",
-  },
+  metadata: metadata.ja,
   common: {
     productName: "LoreHub",
     explore: "探す",
@@ -91,14 +93,22 @@ const ja = {
   home: {
     eyebrow: "Loreの共同開発",
     title: "Loreリポジトリで共同開発する",
-    intro: "変更のレビュー、Issueの管理、アクセス権の設定、Actionsワークフローの実行ができます。",
+    // prettier-ignore
+    intro: concat(
+      "変更のレビュー、Issueの管理、アクセス権の設定、",
+      "Actionsワークフローの実行ができます。",
+    ),
     architecture: "アーキテクチャを読む",
     repositories: "公開リポジトリ",
     repositoriesDescription: "このLoreHubが誰でも閲覧できるようにしているリポジトリです。",
     searchResults: "検索結果",
     searchResultsDescription: "検索に一致した公開リポジトリです。",
     emptyTitle: "公開リポジトリはまだありません",
-    emptyBody: "組織の所有者は「リポジトリを登録」画面からLoreリポジトリを登録できます。",
+    // prettier-ignore
+    emptyBody: concat(
+      "組織の所有者は「リポジトリを登録」画面から",
+      "Loreリポジトリを登録できます。",
+    ),
     searchEmptyTitle: "一致するリポジトリはありません",
     searchEmptyBody: "所有者名、リポジトリ名、説明を変えて試してください。",
     apiUnavailableTitle: "LoreHub APIを利用できません",
@@ -126,7 +136,11 @@ const ja = {
     activityEmptyBody: "このアカウントの活動はまだありません。",
     discoverTitle: "公開リポジトリを探す",
     discoverDescription: "公開されているLoreリポジトリを閲覧します。",
-    publicDashboardNote: "ログインすると、アクセスできる非公開リポジトリも表示されます。",
+    // prettier-ignore
+    publicDashboardNote: concat(
+      "ログインすると、アクセスできる",
+      "非公開リポジトリも表示されます。",
+    ),
   },
   repository: {
     codeTitle: "コード",
@@ -173,7 +187,11 @@ const ja = {
     title: "ブランチ",
     description: "Loreのブランチ作成とアーカイブ、保護ルールの設定を行います。",
     createTitle: "ブランチを作成",
-    createDescription: concat("作成元ブランチに現在表示されているリビジョンから", "新しいブランチを作成します。"),
+    // prettier-ignore
+    createDescription: concat(
+      "作成元ブランチに現在表示されているリビジョンから",
+      "新しいブランチを作成します。",
+    ),
     name: "ブランチ名",
     namePlaceholder: "feature/ブランチ名",
     category: "カテゴリー",
@@ -185,21 +203,37 @@ const ja = {
     listTitle: "有効なブランチ",
     listDescription: "Loreから直接取得したブランチの指し先です。",
     noBranches: "有効なブランチはありません",
-    noBranchesDescription: concat("このリポジトリについて、Loreから有効なブランチが", "返されませんでした。"),
+    // prettier-ignore
+    noBranchesDescription: concat(
+      "このリポジトリについて、Loreから有効なブランチが",
+      "返されませんでした。",
+    ),
     defaultBranch: "既定",
     protectedBranch: "保護対象",
     createdBy: "作成者: {creator}",
     archive: "アーカイブ",
     archiving: "アーカイブ中…",
     archived: "Loreのブランチをアーカイブしました。",
-    archiveConfirm: concat("{branch}をアーカイブしますか？ ", "有効なブランチの一覧から削除されます。"),
+    // prettier-ignore
+    archiveConfirm: concat(
+      "{branch}をアーカイブしますか？ ",
+      "有効なブランチの一覧から削除されます。",
+    ),
     signInRequired: concat(
       "ブランチを作成またはアーカイブするには、",
       "書き込み権限のあるアカウントでログインしてください。",
     ),
-    writeRequired: concat("ブランチを作成またはアーカイブするには、", "リポジトリへの書き込み権限が必要です。"),
+    // prettier-ignore
+    writeRequired: concat(
+      "ブランチを作成またはアーカイブするには、",
+      "リポジトリへの書き込み権限が必要です。",
+    ),
     protectionTitle: "ブランチ保護ルール",
-    protectionDescription: concat("一致するブランチにレビューやCIを必須とし、", "直接pushを禁止できます。"),
+    // prettier-ignore
+    protectionDescription: concat(
+      "一致するブランチにレビューやCIを必須とし、",
+      "直接pushを禁止できます。",
+    ),
     pattern: "パターン",
     approvals: "承認数",
     requireCi: "CIを必須にする",
@@ -388,14 +422,22 @@ const ja = {
     saving: "保存中",
     cancel: "キャンセル",
     delete: "削除",
-    confirmDelete: "ラベル「{name}」を削除しますか？ すべてのIssueからこのラベルが外れます。",
+    // prettier-ignore
+    confirmDelete: concat(
+      "ラベル「{name}」を削除しますか？ ",
+      "すべてのIssueからこのラベルが外れます。",
+    ),
     created: "ラベルを作成しました。",
     updated: "ラベルを更新しました。",
     deleted: "ラベルを削除しました。",
     emptyTitle: "ラベルはありません",
     emptyBody: "リポジトリのIssueを分類するラベルを作成できます。",
     unavailableTitle: "ラベルを取得できません",
-    unavailableBody: "このリポジトリのラベルを取得できませんでした。時間を置いてもう一度試してください。",
+    // prettier-ignore
+    unavailableBody: concat(
+      "このリポジトリのラベルを取得できませんでした。",
+      "時間を置いてもう一度試してください。",
+    ),
     forbiddenTitle: "ラベルを表示できません",
     forbiddenBody: "このリポジトリのラベルを表示する権限がありません。",
   },
@@ -607,7 +649,11 @@ const ja = {
     forbiddenTitle: "プロジェクトを閲覧できません",
     forbiddenBody: "プロジェクトの閲覧にはリポジトリの読み取り権限が必要です。",
     unavailableTitle: "プロジェクトを利用できません",
-    unavailableBody: concat("プロジェクトを取得できませんでした。", "サービスが復旧してから再読み込みしてください。"),
+    // prettier-ignore
+    unavailableBody: concat(
+      "プロジェクトを取得できませんでした。",
+      "サービスが復旧してから再読み込みしてください。",
+    ),
     board: {
       editProject: "プロジェクトを編集",
       saveProject: "変更を保存",
@@ -619,7 +665,11 @@ const ja = {
       renameColumn: "列名を変更",
       saveColumn: "列名を保存",
       deleteColumn: "列を削除",
-      columnNotEmpty: concat("この列を削除する前に、すべてのカードを", "移動または削除してください。"),
+      // prettier-ignore
+      columnNotEmpty: concat(
+        "この列を削除する前に、すべてのカードを",
+        "移動または削除してください。",
+      ),
       addCard: "カードを追加",
       cardType: "カードの種類",
       issue: "Issue",
@@ -695,9 +745,17 @@ const ja = {
     displayName: "表示名",
     descriptionLabel: "説明",
     topics: "トピック",
-    topicsHelp: "20件までカンマで区切って入力します。小文字の英数字とハイフンを使用できます。",
+    // prettier-ignore
+    topicsHelp: concat(
+      "20件までカンマで区切って入力します。",
+      "小文字の英数字とハイフンを使用できます。",
+    ),
     topicsPlaceholder: "例: game-development, unreal-engine",
-    topicsInvalid: "トピックは20件までです。小文字の英数字とハイフンだけを使用してください。",
+    // prettier-ignore
+    topicsInvalid: concat(
+      "トピックは20件までです。",
+      "小文字の英数字とハイフンだけを使用してください。",
+    ),
     visibility: "公開範囲",
     loreRepositoryId: "LoreリポジトリID",
     loreUrl: "Lore URL",
@@ -722,7 +780,11 @@ const ja = {
     obliterateEnabled: "明示したLore obliterate権限を有効化",
     savePolicy: "方針を保存",
     highRiskTitle: "明示的なobliterate権限",
-    highRiskDescription: "データの完全削除には、通常の管理権限とは別の明示的な許可が必要です。",
+    // prettier-ignore
+    highRiskDescription: concat(
+      "データの完全削除には、通常の管理権限とは別の",
+      "明示的な許可が必要です。",
+    ),
     grantObliterate: "obliterate権限を付与",
     revokeObliterate: "obliterate権限を取り消す",
     linksTitle: "Lore Linksの宣言",
@@ -735,7 +797,11 @@ const ja = {
     loadFailed: "アクセス設定を読み込めませんでした。",
     saveFailed: "設定を保存できませんでした。",
     saved: "保存しました。",
-    notAuthorized: "情報は表示できますが、アクセス設定を変更できるのは権限を持つ管理者だけです。",
+    // prettier-ignore
+    notAuthorized: concat(
+      "情報は表示できますが、アクセス設定を変更できるのは",
+      "権限を持つ管理者だけです。",
+    ),
     saveSettings: "設定を保存",
     settingsSaved: "設定を保存しました。",
   },
@@ -772,96 +838,6 @@ const ja = {
     loadFailed: "組織のチーム設定を読み込めませんでした。",
     saveFailed: "チーム設定を保存できませんでした。",
     saved: "保存しました。",
-  },
-  actionsSettings: {
-    title: "Actionsの変数とシークレット",
-    // prettier-ignore
-    organizationDescription: concat(
-      "組織内の全リポジトリでActionsワークフローが",
-      "共有する値を設定します。",
-    ),
-    // prettier-ignore
-    repositoryDescription: concat(
-      "リポジトリ全体、または指定したデプロイ環境だけで",
-      "使う値を設定します。",
-    ),
-    scope: "適用範囲",
-    repositoryScope: "リポジトリ",
-    environmentScope: "環境",
-    environmentName: "環境名",
-    environmentPlaceholder: "例: production",
-    loadEnvironment: "環境を読み込む",
-    environmentRequiredTitle: "環境を選択してください",
-    // prettier-ignore
-    environmentRequired: concat(
-      "環境名を入力すると、その環境の変数とシークレットを",
-      "表示・管理できます。",
-    ),
-    name: "名前",
-    type: "種類",
-    value: "値",
-    variable: "変数",
-    secret: "シークレット",
-    createTitle: "変数またはシークレットを作成",
-    overwriteTitle: "変数またはシークレットを上書き",
-    // prettier-ignore
-    variableValueHelp: concat(
-      "変数の値はリポジトリ管理者が確認でき、",
-      "ワークフローへ渡されます。",
-    ),
-    // prettier-ignore
-    secretValueHelp: concat(
-      "シークレットの値は一度だけ受け取り、APIから返したり、",
-      "画面へ再表示したりしません。",
-    ),
-    saveVariable: "変数を保存",
-    saveSecret: "シークレットを保存",
-    saving: "保存中…",
-    cancel: "キャンセル",
-    overwrite: "上書き",
-    delete: "削除",
-    // prettier-ignore
-    deleteConfirm: concat(
-      "{name}を削除しますか？ この値を使うワークフローが",
-      "失敗する可能性があります。",
-    ),
-    updated: "更新日時",
-    keyId: "暗号鍵",
-    secretStored: "シークレットの値は非表示です",
-    actions: "操作",
-    emptyTitle: "変数とシークレットはありません",
-    // prettier-ignore
-    emptyBody: concat(
-      "この適用範囲に変数またはシークレットを作成できます。",
-      "別の適用範囲の値は変更しません。",
-    ),
-    loading: "Actionsの変数とシークレットを読み込んでいます…",
-    forbiddenTitle: "管理者権限が必要です",
-    // prettier-ignore
-    forbiddenBody: concat(
-      "組織の所有者、または条件を満たすリポジトリ管理者だけが",
-      "値を管理できます。",
-    ),
-    unavailableTitle: "Actions設定を利用できません",
-    // prettier-ignore
-    unavailableBody: concat(
-      "設定サービスに接続できませんでした。",
-      "既存のワークフロー設定は変更されていません。",
-    ),
-    retry: "再試行",
-    mutationForbidden: "このActions設定を変更する権限がありません。",
-    // prettier-ignore
-    mutationUnavailable: concat(
-      "Actions設定を変更できませんでした。",
-      "サービスの復旧後にもう一度お試しください。",
-    ),
-    // prettier-ignore
-    invalid: concat(
-      "名前と値を確認してください。",
-      "Actionsとrunnerが予約している名前は使用できません。",
-    ),
-    saved: "Actions設定を保存しました。",
-    deleted: "Actions設定を削除しました。",
   },
   profile: {
     title: "プロフィール",

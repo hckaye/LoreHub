@@ -44,6 +44,7 @@ type Job struct {
 	Branch           string
 	EventName        string
 	EventPayload     json.RawMessage
+	Environment      string
 }
 
 type Artifact struct {
@@ -194,7 +195,7 @@ func (store *Store) EnqueueScheduledRuns(
 			}
 			runID, err := store.enqueueRun(
 				ctx, transaction, repository, row.id, nil, row.name, row.path, "schedule",
-				repository.DefaultBranch, revision, payload, "", nil,
+				repository.DefaultBranch, revision, payload, definition.Environment, "", nil,
 			)
 			if err != nil {
 				return nil, err
@@ -391,7 +392,7 @@ func (store *Store) enqueueCanonicalEvent(
 		}
 		runID, err := store.enqueueRun(
 			ctx, transaction, repository, workflow.id, nil, workflow.name, workflow.path, eventName,
-			branch, revision, payload, actorID, nil,
+			branch, revision, payload, definition.Environment, actorID, nil,
 		)
 		if err != nil {
 			return nil, err
@@ -413,6 +414,7 @@ func (store *Store) enqueueRun(
 	branch string,
 	revision string,
 	payload []byte,
+	environment string,
 	actorID string,
 	rerunOf *string,
 ) (uuid.UUID, error) {
@@ -447,12 +449,20 @@ func (store *Store) enqueueRun(
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("enqueue CI run: %w", err)
 	}
+	jobID := uuid.New()
 	_, err = transaction.Exec(ctx, `
 		INSERT INTO ci_jobs (id, run_id, name, status)
 		VALUES ($1, $2, $3, 'queued')
-	`, uuid.New(), runID, workflowName)
+	`, jobID, runID, workflowName)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("enqueue CI job: %w", err)
+	}
+	if environment != "" {
+		if err := store.enqueueDeployment(
+			ctx, transaction, repository, runID, jobID, environment, actorID, branch, revision,
+		); err != nil {
+			return uuid.Nil, err
+		}
 	}
 	return runID, nil
 }
@@ -469,8 +479,21 @@ func (store *Store) ClaimJob(ctx context.Context, workerID string, lease time.Du
 		SELECT j.id
 		FROM ci_runs run
 		JOIN ci_jobs j ON j.run_id = run.id
+		LEFT JOIN deployments deployment ON deployment.job_id = j.id
 		WHERE run.status IN ('queued', 'in_progress')
 		  AND run.cancel_requested = false
+		  AND (
+		    deployment.id IS NULL
+		    OR (
+		      deployment.status IN ('queued', 'waiting')
+		      AND deployment.wait_until <= now()
+		    )
+		    OR (
+		      deployment.status = 'in_progress'
+		      AND j.status = 'in_progress'
+		      AND j.lease_expires_at < now()
+		    )
+		  )
 		  AND (j.status = 'queued' OR (j.status = 'in_progress' AND j.lease_expires_at < now()))
 		ORDER BY j.queued_at
 		FOR UPDATE OF run SKIP LOCKED
@@ -501,19 +524,28 @@ func (store *Store) ClaimJob(ctx context.Context, workerID string, lease time.Du
 	if commandTag.RowsAffected() != 1 {
 		return nil, errors.New("CI job was no longer claimable")
 	}
+	if _, err := transaction.Exec(ctx, `
+		UPDATE deployments
+		SET status = 'in_progress', started_at = COALESCE(started_at, now()), updated_at = now()
+		WHERE job_id = $1 AND status IN ('queued', 'waiting') AND wait_until <= now()
+	`, jobID); err != nil {
+		return nil, fmt.Errorf("start deployment: %w", err)
+	}
 
 	var job Job
 	err = transaction.QueryRow(ctx, `
 		SELECT j.id, j.attempt, run.id, COALESCE(run.actor_id::text, ''),
 		       COALESCE(workflow.path, workflow_revision.path, ''), r.id,
 		       o.id, o.slug, r.slug, r.lore_repository_id, r.lore_url,
-		       run.revision, run.branch, run.event_name, run.event_payload
+		       run.revision, run.branch, run.event_name, run.event_payload,
+		       COALESCE(deployment.environment_name, '')
 		FROM ci_jobs j
 		JOIN ci_runs run ON run.id = j.run_id
 		LEFT JOIN ci_workflows workflow ON workflow.id = run.workflow_id
 		LEFT JOIN ci_workflow_revisions workflow_revision ON workflow_revision.id = run.workflow_revision_id
 		JOIN repositories r ON r.id = run.repository_id
 		JOIN organizations o ON o.id = r.organization_id
+		LEFT JOIN deployments deployment ON deployment.job_id = j.id
 		WHERE j.id = $1
 	`, jobID).Scan(
 		&job.ID,
@@ -531,6 +563,7 @@ func (store *Store) ClaimJob(ctx context.Context, workerID string, lease time.Du
 		&job.Branch,
 		&job.EventName,
 		&job.EventPayload,
+		&job.Environment,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("load claimed CI job: %w", err)
@@ -654,6 +687,17 @@ func (store *Store) CompleteJob(
 	}
 	if commandTag.RowsAffected() != 1 {
 		return errors.New("CI job lease was lost before completion")
+	}
+	deploymentConclusion := conclusion
+	if deploymentConclusion != "success" && deploymentConclusion != "cancelled" {
+		deploymentConclusion = "failure"
+	}
+	if _, err := transaction.Exec(ctx, `
+		UPDATE deployments
+		SET status = $2, completed_at = now(), updated_at = now()
+		WHERE job_id = $1 AND status = 'in_progress'
+	`, job.ID, deploymentConclusion); err != nil {
+		return fmt.Errorf("complete deployment: %w", err)
 	}
 	for _, artifact := range artifacts {
 		_, err = transaction.Exec(ctx, `

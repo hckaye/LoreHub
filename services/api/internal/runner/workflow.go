@@ -58,6 +58,7 @@ type WorkflowDefinition struct {
 	RepositoryDispatch *RepositoryDispatchTrigger
 	WorkflowDispatch   bool
 	DispatchInputs     map[string]WorkflowDispatchInput
+	Environment        string
 	TriggerConfig      json.RawMessage
 }
 
@@ -163,6 +164,7 @@ func workflowFromTriggerConfig(
 		PullRequest        *PullRequestTrigger        `json:"pull_request"`
 		Schedules          []ScheduleTrigger          `json:"schedule"`
 		RepositoryDispatch *RepositoryDispatchTrigger `json:"repository_dispatch"`
+		Environment        string                     `json:"environment"`
 	}
 	if len(triggerConfig) > 0 && string(triggerConfig) != "null" {
 		if err := json.Unmarshal(triggerConfig, &config); err != nil {
@@ -179,7 +181,8 @@ func workflowFromTriggerConfig(
 			return config.WorkflowDispatch.Inputs
 		}(),
 		PullRequest: config.PullRequest, Schedules: config.Schedules,
-		RepositoryDispatch: config.RepositoryDispatch, TriggerConfig: triggerConfig,
+		RepositoryDispatch: config.RepositoryDispatch, Environment: config.Environment,
+		TriggerConfig: triggerConfig,
 	}, nil
 }
 
@@ -293,6 +296,10 @@ func parseWorkflowFile(
 	if err := validateJobRuntimeDefinitions(jobs); err != nil {
 		return workflow, err
 	}
+	workflow.Environment, err = workflowEnvironmentFromJobs(jobs)
+	if err != nil {
+		return workflow, err
+	}
 	if err := validateWorkflowRunnerLabels(filePath, platformImages); err != nil {
 		return workflow, err
 	}
@@ -312,6 +319,7 @@ func parseWorkflowFile(
 	workflow.RepositoryDispatch = repositoryDispatch
 	workflow.TriggerConfig, err = encodeTriggerConfig(
 		push, dispatch, dispatchInputs, pullRequest, schedules, repositoryDispatch,
+		workflow.Environment,
 	)
 	if err != nil {
 		return workflow, err

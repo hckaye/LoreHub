@@ -6,7 +6,7 @@ import { FormEvent, useMemo, useState } from "react";
 
 import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
-import type { AuthSession, CIRun, CIWorkflow, CIWorkflowDispatchInput } from "@/lib/api-types";
+import type { AuthSession, CIRun, CIWorkflow, CIWorkflowDispatchInput, Deployment } from "@/lib/api-types";
 import { postJson } from "@/lib/auth-client";
 import { mutationFailureMessage } from "@/lib/mutation-messages";
 import { actionsAPIPath, repositoryPath } from "@/lib/routes";
@@ -24,6 +24,8 @@ type ActionsDashboardProps = {
   canWrite: boolean;
   session: AuthSession;
   dictionary: Dictionary;
+  deployments: Deployment[];
+  deploymentsAvailable: boolean;
 };
 
 export function ActionsDashboard({
@@ -35,6 +37,8 @@ export function ActionsDashboard({
   canWrite,
   session,
   dictionary,
+  deployments,
+  deploymentsAvailable,
 }: ActionsDashboardProps) {
   const router = useRouter();
   const [selectedWorkflow, setSelectedWorkflow] = useState(workflows.find(isDispatchable)?.id ?? "");
@@ -105,6 +109,34 @@ export function ActionsDashboard({
     <div className={styles.dashboard}>
       <ActionsNotices failure={failure} requiresLogin={requiresLogin} dictionary={dictionary} />
       <WorkflowSection workflows={workflows} dictionary={dictionary} />
+      <DeploymentSection
+        deployments={deployments}
+        available={deploymentsAvailable}
+        dictionary={dictionary}
+        locale={locale}
+        onReview={async (deployment, state) => {
+          if (session.status !== "authenticated") {
+            setRequiresLogin(true);
+            return;
+          }
+          setPending(true);
+          setFailure(null);
+          const result = await postJson<Deployment>(
+            actionsAPIPath(owner, repository, "deployments", deployment.id, "reviews"),
+            { state },
+            session.csrfToken,
+          );
+          setPending(false);
+          if (!result.ok) {
+            setFailure(mutationFailureMessage(result.kind, dictionary));
+            return;
+          }
+          router.refresh();
+        }}
+        owner={owner}
+        pending={pending}
+        repository={repository}
+      />
       {canWrite && authenticated && dispatchableWorkflows.length > 0 ? (
         <DispatchSection
           workflows={dispatchableWorkflows}
@@ -135,6 +167,79 @@ export function ActionsDashboard({
       />
     </div>
   );
+}
+
+function DeploymentSection({
+  available,
+  deployments,
+  dictionary,
+  locale,
+  onReview,
+  owner,
+  pending,
+  repository,
+}: {
+  available: boolean;
+  deployments: Deployment[];
+  dictionary: Dictionary;
+  locale: Locale;
+  onReview: (deployment: Deployment, state: "approved" | "rejected") => Promise<void>;
+  owner: string;
+  pending: boolean;
+  repository: string;
+}) {
+  const copy = dictionary.actionsEnvironments;
+  const actionsBase = repositoryPath(locale, owner, repository, "actions");
+  return (
+    <section className={styles.section}>
+      <div className={styles.heading}>
+        <div>
+          <h2>{copy.deploymentsTitle}</h2>
+          <p>{copy.deploymentsDescription}</p>
+        </div>
+      </div>
+      {!available ? (
+        <p className={styles.empty}>{copy.deploymentsUnavailable}</p>
+      ) : deployments.length === 0 ? (
+        <p className={styles.empty}>{copy.noDeployments}</p>
+      ) : (
+        <div className={styles.runList}>
+          {deployments.map((deployment) => (
+            <div className={styles.run} key={deployment.id}>
+              <div className={styles.runMain}>
+                <Link href={`${actionsBase}/${deployment.runNumber}`}>
+                  {deployment.environmentName} · #{deployment.runNumber}
+                </Link>
+                <p>
+                  {deployment.workflowName} · {deployment.branch} · {deployment.revision.slice(0, 12)}
+                </p>
+              </div>
+              <StatusBadge tone={deploymentTone(deployment.status)}>
+                {copy.deploymentStatuses[deployment.status]}
+              </StatusBadge>
+              {deployment.canReview && (
+                <div className={styles.deploymentActions}>
+                  <button disabled={pending} onClick={() => void onReview(deployment, "approved")} type="button">
+                    {copy.approve}
+                  </button>
+                  <button disabled={pending} onClick={() => void onReview(deployment, "rejected")} type="button">
+                    {copy.reject}
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function deploymentTone(status: Deployment["status"]): "success" | "warning" | "danger" | "neutral" {
+  if (status === "success") return "success";
+  if (status === "failure" || status === "rejected") return "danger";
+  if (status === "pending" || status === "waiting" || status === "queued") return "warning";
+  return "neutral";
 }
 
 function ActionsNotices({

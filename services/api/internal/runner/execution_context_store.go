@@ -95,6 +95,7 @@ type validatedExecutionContextRequest struct {
 	principalSubject string
 	repositoryID     uuid.UUID
 	organizationID   uuid.UUID
+	jobID            uuid.UUID
 	environment      string
 }
 
@@ -126,10 +127,15 @@ func validateProductionExecutionContextRequest(
 	if request.Environment != strings.TrimSpace(request.Environment) || hasControlCharacter(request.Environment) {
 		return validatedExecutionContextRequest{}, invalidExecutionContext("environment is invalid")
 	}
+	jobID, err := uuid.Parse(request.JobID)
+	if err != nil {
+		return validatedExecutionContextRequest{}, invalidExecutionContext("job ID is invalid")
+	}
 	return validatedExecutionContextRequest{
 		principalSubject: subject,
 		repositoryID:     repositoryID,
 		organizationID:   organizationID,
+		jobID:            jobID,
 		environment:      request.Environment,
 	}, nil
 }
@@ -160,8 +166,39 @@ func authorizeExecutionContext(
 			  AND principal.kind = 'ci_runner'
 			  AND (principal.name = $3 OR principal.id::text = $3)
 			  AND 'read' = ANY(service_grant.permissions)
+			  AND EXISTS (
+			    SELECT 1
+			    FROM ci_jobs job
+			    JOIN ci_runs run
+			      ON run.id = job.run_id
+			     AND run.repository_id = repository.id
+			     AND run.status = 'in_progress'
+			     AND NOT run.cancel_requested
+			    LEFT JOIN deployments deployment ON deployment.job_id = job.id
+			    WHERE job.id = $5
+			      AND job.status = 'in_progress'
+			      AND job.lease_expires_at > now()
+			      AND (
+			        ($4 = '' AND deployment.id IS NULL)
+			        OR (
+			          $4 <> ''
+			          AND lower(deployment.environment_name) = lower($4)
+			          AND deployment.status = 'in_progress'
+			        )
+			      )
+			  )
+			  AND (
+			    $4 = ''
+			    OR EXISTS (
+			      SELECT 1 FROM repository_environments environment
+			      WHERE environment.repository_id = repository.id
+			        AND lower(environment.name) = lower($4)
+			        AND environment.active
+			    )
+			  )
 		)
-	`, request.repositoryID, request.organizationID, request.principalSubject).Scan(&authorized)
+	`, request.repositoryID, request.organizationID, request.principalSubject, request.environment,
+		request.jobID).Scan(&authorized)
 	if err != nil {
 		return fmt.Errorf("authorize Actions execution context: %w", err)
 	}

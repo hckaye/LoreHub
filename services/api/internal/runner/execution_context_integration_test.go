@@ -25,6 +25,35 @@ func TestPostgresExecutionContextResolverIntegration(t *testing.T) {
 	defer deleteExecutionContextAudits(t, pool, fixture.userID)
 	grantExecutionContextRunner(t, pool, fixture.repositoryID, fixture.userID)
 	resolver := newTestExecutionContextResolver(t, pool)
+	store := NewStore(pool)
+	access, err := store.RepositoryForActions(ctx, fixture.owner, fixture.repositorySlug, fixture.userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpsertEnvironment(ctx, access, fixture.userID, "Production", EnvironmentInput{
+		PreventSelfReview: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	repository := Repository{
+		ID: fixture.repositoryID, Owner: fixture.owner, Slug: fixture.repositorySlug,
+		LoreURL: "lore://fixture/repository", DefaultBranch: "main",
+	}
+	workflow := protectedWorkflowDefinition()
+	if _, err := store.ObserveBranch(ctx, repository, ObservedBranch{
+		ID: "context-main", Name: "main", LatestRevision: "context-rev-1",
+	}, workflow); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ObserveBranch(ctx, repository, ObservedBranch{
+		ID: "context-main", Name: "main", LatestRevision: "context-rev-2",
+	}, workflow); err != nil {
+		t.Fatal(err)
+	}
+	job, err := store.ClaimJob(ctx, "context-worker", time.Minute)
+	if err != nil || job == nil {
+		t.Fatalf("claim execution context job: %#v, %v", job, err)
+	}
 
 	organizationScope := ExecutionContextScope{
 		Kind: executionContextScopeOrganization, OrganizationID: fixture.organizationID,
@@ -94,6 +123,7 @@ func TestPostgresExecutionContextResolverIntegration(t *testing.T) {
 		Principal:      CredentialPrincipal{Kind: "service", Subject: "lorehub-ci-runner"},
 		RepositoryID:   fixture.repositoryID,
 		OrganizationID: fixture.organizationID,
+		JobID:          job.ID,
 		Environment:    "production",
 		RequestedScope: "actions:execute",
 	}

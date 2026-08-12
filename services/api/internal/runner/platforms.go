@@ -129,7 +129,10 @@ func workflowEnvironmentName(workflowPath string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	jobs := mappingValue(root, "jobs")
+	return workflowEnvironmentFromJobs(mappingValue(root, "jobs"))
+}
+
+func workflowEnvironmentFromJobs(jobs *yaml.Node) (string, error) {
 	if jobs == nil || jobs.Kind != yaml.MappingNode {
 		return "", errors.New("workflow jobs are required for environment resolution")
 	}
@@ -147,10 +150,10 @@ func workflowEnvironmentName(workflowPath string) (string, error) {
 			node = mappingValue(node, "name")
 		}
 		value, valueErr := scalarString(node, "job environment")
-		if valueErr != nil || strings.Contains(value, "${{") {
+		if valueErr != nil || strings.Contains(value, "${{") || !validActionsEnvironmentName(value) {
 			return "", errors.New("job environment must be one literal name")
 		}
-		if environment != "" && environment != value {
+		if environment != "" && !strings.EqualFold(environment, value) {
 			return "", errors.New("multiple job environments are not supported by one act execution")
 		}
 		environment = value

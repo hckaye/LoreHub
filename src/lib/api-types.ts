@@ -739,8 +739,43 @@ export type CIWorkflow = {
     schedule?: { cron: string }[];
     repository_dispatch?: { types?: string[] };
     workflow_dispatch?: { inputs?: Record<string, CIWorkflowDispatchInput> };
+    environment?: string;
   };
   updatedAt: string;
+};
+
+export type ActionsEnvironmentReviewer = {
+  userId: string;
+  username: string;
+  displayName: string;
+};
+
+export type ActionsEnvironment = {
+  id: string;
+  name: string;
+  waitTimerMinutes: number;
+  preventSelfReview: boolean;
+  reviewers: ActionsEnvironmentReviewer[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type Deployment = {
+  id: string;
+  environmentName: string;
+  runNumber: number;
+  workflowName: string;
+  branch: string;
+  revision: string;
+  status: "pending" | "waiting" | "queued" | "in_progress" | "success" | "failure" | "cancelled" | "rejected";
+  actorUsername?: string;
+  reviewedUsername?: string;
+  canReview: boolean;
+  waitUntil: string;
+  reviewedAt: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
 };
 
 export type CIWorkflowPage = {

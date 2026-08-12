@@ -102,6 +102,11 @@
   cursor: pointer;
 }
 
+.deploymentActions {
+  display: flex;
+  gap: 6px;
+}
+
 .run button:hover,
 .dispatchForm button:hover {
   background: var(--canvas-subtle);

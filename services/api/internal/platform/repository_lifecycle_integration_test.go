@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -23,6 +24,8 @@ func TestRepositoryArchiveLifecycleIsReadOnlyAndAudited(t *testing.T) {
 	workflowID := uuid.NewString()
 	runID := uuid.NewString()
 	jobID := uuid.NewString()
+	environmentID := uuid.NewString()
+	deploymentID := uuid.NewString()
 	organizationSlug := "archive-org-" + suffix
 	repositorySlug := "archive-repository-" + suffix
 	for _, user := range []User{owner, writer} {
@@ -67,6 +70,16 @@ func TestRepositoryArchiveLifecycleIsReadOnlyAndAudited(t *testing.T) {
 		INSERT INTO ci_jobs (id, run_id, name, status, lease_owner, lease_expires_at)
 		VALUES ($1, $2, 'test', 'in_progress', 'runner-1', now() + interval '5 minutes')
 	`, jobID, runID)
+	mustIdentityExec(t, pool, `
+		INSERT INTO repository_environments (id, repository_id, name, created_by)
+		VALUES ($1, $2, 'Production', $3)
+	`, environmentID, repositoryID, owner.ID)
+	mustIdentityExec(t, pool, `
+		INSERT INTO deployments (
+			id, repository_id, environment_id, environment_name, run_id, job_id,
+			actor_id, branch, revision, status, wait_until, started_at
+		) VALUES ($1, $2, $3, 'Production', $4, $5, $6, 'main', $7, 'in_progress', now(), now())
+	`, deploymentID, repositoryID, environmentID, runID, jobID, writer.ID, strings.Repeat("a", 64))
 	t.Cleanup(func() {
 		_, _ = pool.Exec(ctx, `DELETE FROM organizations WHERE id = $1`, organizationID)
 		_, _ = pool.Exec(ctx, `DELETE FROM users WHERE id IN ($1, $2)`, owner.ID, writer.ID)
@@ -108,7 +121,7 @@ func TestRepositoryArchiveLifecycleIsReadOnlyAndAudited(t *testing.T) {
 	if err != nil || !slices.Equal(permissions.Permissions, []string{authz.PermissionRead}) {
 		t.Fatalf("archived Lore permissions = %+v, err=%v", permissions, err)
 	}
-	assertArchivedRunCancelled(t, pool, runID, jobID)
+	assertArchivedRunCancelled(t, pool, runID, jobID, deploymentID)
 	assertRepositoryArchiveEvents(t, pool, repositoryID, "repository.archive", "repository.archived")
 
 	if _, err := store.SetRepositoryArchived(
@@ -129,7 +142,13 @@ func TestRepositoryArchiveLifecycleIsReadOnlyAndAudited(t *testing.T) {
 	assertRepositoryArchiveEvents(t, pool, repositoryID, "repository.unarchive", "repository.unarchived")
 }
 
-func assertArchivedRunCancelled(t *testing.T, pool *pgxpool.Pool, runID string, jobID string) {
+func assertArchivedRunCancelled(
+	t *testing.T,
+	pool *pgxpool.Pool,
+	runID string,
+	jobID string,
+	deploymentIDs ...string,
+) {
 	t.Helper()
 	var runStatus, runConclusion string
 	var cancelRequested bool
@@ -150,6 +169,19 @@ func assertArchivedRunCancelled(t *testing.T, pool *pgxpool.Pool, runID string, 
 	}
 	if jobStatus != "cancelled" || jobConclusion != "cancelled" || leaseOwner != nil {
 		t.Fatalf("archived job state = %s/%s lease=%v", jobStatus, jobConclusion, leaseOwner)
+	}
+	if len(deploymentIDs) == 0 {
+		return
+	}
+	var deploymentStatus string
+	var deploymentCompletedAt *time.Time
+	if err := pool.QueryRow(context.Background(), `
+		SELECT status, completed_at FROM deployments WHERE id = $1
+	`, deploymentIDs[0]).Scan(&deploymentStatus, &deploymentCompletedAt); err != nil {
+		t.Fatalf("read archived deployment: %v", err)
+	}
+	if deploymentStatus != "cancelled" || deploymentCompletedAt == nil {
+		t.Fatalf("archived deployment state = %s completed=%v", deploymentStatus, deploymentCompletedAt)
 	}
 }
 

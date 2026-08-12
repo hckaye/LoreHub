@@ -388,6 +388,15 @@ func authorizeExecutionContextManagement(
 				WHERE actor.id = $1
 				  AND actor.status = 'active'
 				  AND (
+				    $4::text IS NULL
+				    OR EXISTS (
+				      SELECT 1 FROM repository_environments environment
+				      WHERE environment.repository_id = repository.id
+				        AND lower(environment.name) = lower($4::text)
+				        AND environment.active
+				    )
+				  )
+				  AND (
 					EXISTS (
 						SELECT 1
 						FROM organization_memberships membership
@@ -425,7 +434,7 @@ func authorizeExecutionContextManagement(
 					)
 				  )
 			)
-		`, actorID, scope.repositoryArgument(), scope.organizationID).Scan(&authorized)
+		`, actorID, scope.repositoryArgument(), scope.organizationID, scope.environmentArgument()).Scan(&authorized)
 	}
 	if err != nil {
 		return fmt.Errorf("authorize Actions execution context management: %w", err)

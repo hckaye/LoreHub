@@ -326,7 +326,8 @@ func (store *Store) enqueuePushes(
 			revisionWorkflowID = &id
 		}
 		if _, err := store.enqueueRun(ctx, transaction, repository, workflowID, revisionWorkflowID,
-			workflow.Name, workflow.Path, "push", branch.Name, branch.LatestRevision, payload, "", nil); err != nil {
+			workflow.Name, workflow.Path, "push", branch.Name, branch.LatestRevision, payload,
+			workflow.Environment, "", nil); err != nil {
 			return err
 		}
 	}

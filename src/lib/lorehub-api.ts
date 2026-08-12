@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 
 import type {
   APIResult,
+  ActionsEnvironment,
   AssigneePage,
   AuditLogPage,
   Branch,
@@ -16,6 +17,7 @@ import type {
   CodeScanningAlert,
   DashboardData,
   DeletedRepository,
+  Deployment,
   FileHistoryEntry,
   Issue,
   IssueComment,
@@ -229,6 +231,23 @@ export async function getActionWorkflows(owner: string, repository: string): Pro
 
 export async function getActionRuns(owner: string, repository: string): Promise<APIResult<CIRunPage>> {
   return request(repositoryPath(owner, repository, "/actions/runs?per_page=50"));
+}
+
+export async function getDeployments(owner: string, repository: string): Promise<APIResult<Deployment[]>> {
+  const result = await request<{ deployments: Deployment[] }>(
+    repositoryPath(owner, repository, "/actions/deployments?limit=50"),
+  );
+  return result.ok ? { ok: true, data: result.data.deployments } : result;
+}
+
+export async function getActionsEnvironments(
+  owner: string,
+  repository: string,
+): Promise<APIResult<ActionsEnvironment[]>> {
+  const result = await request<{ environments: ActionsEnvironment[] }>(
+    repositoryPath(owner, repository, "/actions/environments"),
+  );
+  return result.ok ? { ok: true, data: result.data.environments } : result;
 }
 
 export function getActionRun(owner: string, repository: string, runNumber: number): Promise<APIResult<CIRunDetail>> {
