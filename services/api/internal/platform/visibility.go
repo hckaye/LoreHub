@@ -75,6 +75,7 @@ func repositoryAccessClause(repositoryAlias, viewerParam string) string {
 
 // notificationCurrentAccessClause applies current authorization to materialized notification rows.
 func notificationCurrentAccessClause(notificationAlias, viewerParam string) string {
+	repositoryAccess := repositoryAccessClause("current_repository", viewerParam)
 	return fmt.Sprintf(`(
 		EXISTS (
 			SELECT 1
@@ -101,56 +102,7 @@ func notificationCurrentAccessClause(notificationAlias, viewerParam string) stri
 					 AND current_organization.active
 					WHERE current_repository.id = %[1]s.scope_repository_id
 					  AND %[1]s.scope_organization_id = current_repository.organization_id
-					  AND current_repository.lifecycle_state = 'active'
-						AND (
-							current_repository.visibility = 'public'
-						OR (
-							current_repository.visibility = 'internal'
-							AND EXISTS (
-								SELECT 1
-								FROM organization_memberships organization_member
-								WHERE organization_member.organization_id = current_repository.organization_id
-								  AND organization_member.user_id = NULLIF(%[2]s::text, '')::uuid
-								  AND organization_member.active
-							)
-						)
-						OR (
-							current_repository.visibility = 'private'
-							AND (
-								EXISTS (
-									SELECT 1
-									FROM repository_memberships repository_grant
-									WHERE repository_grant.repository_id = current_repository.id
-									  AND repository_grant.user_id = NULLIF(%[2]s::text, '')::uuid
-									  AND repository_grant.active
-								)
-								OR EXISTS (
-									SELECT 1
-									FROM team_repository_roles team_grant
-									JOIN teams current_team ON current_team.id = team_grant.team_id
-									 AND current_team.organization_id = current_repository.organization_id
-									 AND current_team.active
-								JOIN team_memberships team_member ON team_member.team_id = current_team.id
-								 AND team_member.user_id = NULLIF(%[2]s::text, '')::uuid
-								 AND team_member.active
-								JOIN organization_memberships team_org_member
-								 ON team_org_member.organization_id = current_team.organization_id
-								AND team_org_member.user_id = team_member.user_id
-								AND team_org_member.active
-								WHERE team_grant.repository_id = current_repository.id
-									  AND team_grant.active
-								)
-								OR EXISTS (
-									SELECT 1
-									FROM organization_memberships owner_membership
-									WHERE owner_membership.organization_id = current_repository.organization_id
-									  AND owner_membership.user_id = NULLIF(%[2]s::text, '')::uuid
-									  AND owner_membership.role = 'owner'
-									  AND owner_membership.active
-								)
-							)
-						)
-					)
+					  AND %[3]s
 				)
 			)
 			OR (
@@ -192,5 +144,5 @@ func notificationCurrentAccessClause(notificationAlias, viewerParam string) stri
 				)
 			)
 		)
-	)`, notificationAlias, viewerParam)
+	)`, notificationAlias, viewerParam, repositoryAccess)
 }

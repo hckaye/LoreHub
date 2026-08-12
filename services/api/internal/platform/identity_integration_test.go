@@ -406,7 +406,7 @@ func TestIdentityNotificationsRespectRepositoryVisibilityAndActiveRecipients(t *
 		INSERT INTO organizations (id, slug, display_name, visibility, created_by)
 		VALUES ($1, $2, 'Notification organization', 'public', $3)
 	`, orgID, orgSlug, owner.ID)
-	for _, userID := range []string{owner.ID, member.ID, grantee.ID, teamUser.ID, suspended.ID} {
+	for _, userID := range []string{owner.ID, member.ID, teamUser.ID, suspended.ID} {
 		mustIdentityExec(t, pool, `
 			INSERT INTO organization_memberships (organization_id, user_id, role) VALUES ($1, $2, 'member')
 		`, orgID, userID)

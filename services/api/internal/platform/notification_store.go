@@ -748,7 +748,7 @@ func (store *Store) notificationRecipients(
 			WHERE repository_members.repository_id = $2
 			  AND repository_members.active
 			  AND recipient.status = 'active'
-			  AND $3 IN ('public', 'private')
+			  AND $3 IN ('public', 'internal', 'private')
 			UNION
 			SELECT team_members.user_id
 			FROM team_memberships team_members
@@ -765,7 +765,7 @@ func (store *Store) notificationRecipients(
 			WHERE team_repositories.repository_id = $2
 			  AND team_members.active
 			  AND recipient.status = 'active'
-			  AND $3 IN ('public', 'private')
+			  AND $3 IN ('public', 'internal', 'private')
 			UNION
 			SELECT watches.user_id
 			FROM repository_watches watches
