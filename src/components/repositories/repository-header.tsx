@@ -3,10 +3,12 @@
 import {
   Archive,
   BarChart3,
+  Bell,
+  BookMarked,
   BookOpenText,
-  Box,
   CircleDot,
-  Eye,
+  Code2,
+  Ellipsis,
   GitPullRequest,
   LockKeyhole,
   MessageSquare,
@@ -29,7 +31,6 @@ import { mutationFailureMessage } from "@/lib/mutation-messages";
 import { brandedAuthUrl, repositoryPath } from "@/lib/routes";
 
 import styles from "./repository-header.module.css";
-import { RepositoryTopicList } from "./repository-topic-list";
 
 type RepositoryHeaderProps = {
   repository: Repository;
@@ -39,18 +40,20 @@ type RepositoryHeaderProps = {
 };
 
 const tabs = [
-  ["code", Box],
-  ["locks", LockKeyhole],
+  ["code", Code2],
   ["issues", CircleDot],
-  ["discussions", MessageSquare],
   ["pulls", GitPullRequest],
+  ["discussions", MessageSquare],
   ["actions", PlayCircle],
   ["projects", Workflow],
-  ["wiki", BookOpenText],
-  ["releases", Tags],
   ["security", ShieldCheck],
   ["insights", BarChart3],
-  ["settings", Settings],
+] as const;
+
+const moreTabs = [
+  ["locks", LockKeyhole],
+  ["wiki", BookOpenText],
+  ["releases", Tags],
 ] as const;
 
 export function RepositoryHeader({ repository, locale, dictionary, session }: RepositoryHeaderProps) {
@@ -88,7 +91,7 @@ export function RepositoryHeader({ repository, locale, dictionary, session }: Re
   return (
     <div className={styles.wrapper}>
       <div className={styles.summary}>
-        <Box aria-hidden="true" className={styles.icon} size={25} />
+        <BookMarked aria-hidden="true" className={styles.icon} size={17} />
         <div className={styles.summaryDetails}>
           <div className={styles.path}>
             <Link href={`/${locale}`}>{repository.owner}</Link>
@@ -105,13 +108,6 @@ export function RepositoryHeader({ repository, locale, dictionary, session }: Re
               </span>
             )}
           </div>
-          <p>{repository.description || dictionary.common.noDescription}</p>
-          <RepositoryTopicList
-            className={styles.topics}
-            label={dictionary.settingsPage.topics}
-            locale={locale}
-            topics={repository.topics}
-          />
         </div>
         <RepositoryEngagementActions
           basePath={basePath}
@@ -153,6 +149,21 @@ export function RepositoryHeader({ repository, locale, dictionary, session }: Re
             </Link>
           );
         })}
+        <RepositoryMoreMenu
+          basePath={basePath}
+          dictionary={dictionary}
+          locale={locale}
+          pathname={pathname}
+          repository={repository}
+        />
+        {session.status === "authenticated" && (
+          <RepositoryTab
+            active={pathname.startsWith(repositoryPath(locale, repository.owner, repository.slug, "settings"))}
+            href={repositoryPath(locale, repository.owner, repository.slug, "settings")}
+            icon={Settings}
+            label={dictionary.common.settings}
+          />
+        )}
       </nav>
     </div>
   );
@@ -184,7 +195,7 @@ function RepositoryEngagementActions({
       count: engagement.watcherCount,
       activeLabel: labels.unwatch,
       inactiveLabel: labels.watch,
-      Icon: Eye,
+      Icon: Bell,
     },
     {
       kind: "star" as const,
@@ -233,5 +244,56 @@ function RepositoryEngagementActions({
         );
       })}
     </div>
+  );
+}
+
+function RepositoryMoreMenu({
+  basePath,
+  dictionary,
+  locale,
+  pathname,
+  repository,
+}: {
+  basePath: string;
+  dictionary: Dictionary;
+  locale: Locale;
+  pathname: string;
+  repository: Repository;
+}) {
+  const active = moreTabs.some(([section]) => pathname.startsWith(`${basePath}/${section}`));
+  return (
+    <details className={styles.moreMenu}>
+      <summary className={active ? styles.active : ""}>
+        <Ellipsis aria-hidden="true" size={16} />
+        {dictionary.common.more}
+      </summary>
+      <div className={styles.moreDropdown}>
+        {moreTabs.map(([section, Icon]) => (
+          <Link href={repositoryPath(locale, repository.owner, repository.slug, section)} key={section}>
+            <Icon aria-hidden="true" size={16} />
+            {dictionary.common[section]}
+          </Link>
+        ))}
+      </div>
+    </details>
+  );
+}
+
+function RepositoryTab({
+  active,
+  href,
+  icon: Icon,
+  label,
+}: {
+  active: boolean;
+  href: string;
+  icon: typeof Settings;
+  label: string;
+}) {
+  return (
+    <Link aria-current={active ? "page" : undefined} className={active ? styles.active : ""} href={href}>
+      <Icon aria-hidden="true" size={16} />
+      {label}
+    </Link>
   );
 }

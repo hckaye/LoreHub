@@ -30,14 +30,8 @@ export function SiteHeader({ locale, dictionary, session, unreadNotifications }:
   const isAuthenticated = session.status === "authenticated";
 
   return (
-    <header className={styles.header}>
+    <header className={styles.header} data-authenticated={isAuthenticated}>
       <div className={styles.inner}>
-        <Link className={styles.brand} href={`/${locale}`} onClick={() => setNavigationOpen(false)}>
-          <span aria-hidden="true" className={styles.mark}>
-            L
-          </span>
-          <span>{dictionary.common.productName}</span>
-        </Link>
         <button
           aria-controls="primary-navigation"
           aria-expanded={navigationOpen}
@@ -46,8 +40,19 @@ export function SiteHeader({ locale, dictionary, session, unreadNotifications }:
           onClick={() => setNavigationOpen((open) => !open)}
           type="button"
         >
-          {navigationOpen ? <X aria-hidden="true" size={19} /> : <Menu aria-hidden="true" size={19} />}
+          {navigationOpen ? <X aria-hidden="true" size={18} /> : <Menu aria-hidden="true" size={18} />}
         </button>
+        <Link
+          aria-label={dictionary.common.productName}
+          className={styles.brand}
+          href={`/${locale}`}
+          onClick={() => setNavigationOpen(false)}
+        >
+          <span aria-hidden="true" className={styles.mark}>
+            L
+          </span>
+          <span className={styles.brandName}>{dictionary.common.productName}</span>
+        </Link>
         <nav
           aria-label={dictionary.common.primaryNavigation}
           className={`${styles.navigation} ${navigationOpen ? styles.navigationOpen : ""}`}
@@ -59,15 +64,19 @@ export function SiteHeader({ locale, dictionary, session, unreadNotifications }:
           </Link>
           {isAuthenticated && (
             <>
-              <Link href={`/${locale}/issues`} onClick={() => setNavigationOpen(false)}>
+              <Link className={styles.mobileOnly} href={`/${locale}/issues`} onClick={() => setNavigationOpen(false)}>
                 <CircleDot aria-hidden="true" size={16} />
                 {dictionary.common.issues}
               </Link>
-              <Link href={`/${locale}/pulls`} onClick={() => setNavigationOpen(false)}>
+              <Link className={styles.mobileOnly} href={`/${locale}/pulls`} onClick={() => setNavigationOpen(false)}>
                 <GitPullRequest aria-hidden="true" size={16} />
                 {dictionary.common.pullRequests}
               </Link>
-              <Link href={`/${locale}/notifications`} onClick={() => setNavigationOpen(false)}>
+              <Link
+                className={styles.mobileOnly}
+                href={`/${locale}/notifications`}
+                onClick={() => setNavigationOpen(false)}
+              >
                 <Bell aria-hidden="true" size={16} />
                 {dictionary.common.notifications}
                 {unreadNotifications > 0 && <span className={styles.notificationCount}>{unreadNotifications}</span>}
@@ -95,7 +104,32 @@ export function SiteHeader({ locale, dictionary, session, unreadNotifications }:
         <div className={styles.actions}>
           {isAuthenticated ? (
             <>
-              <CreateMenu dictionary={dictionary} locale={locale} />
+              <Link
+                aria-label={dictionary.common.issues}
+                className={styles.iconAction}
+                href={`/${locale}/issues`}
+                title={dictionary.common.issues}
+              >
+                <CircleDot aria-hidden="true" size={16} />
+              </Link>
+              <Link
+                aria-label={dictionary.common.pullRequests}
+                className={styles.iconAction}
+                href={`/${locale}/pulls`}
+                title={dictionary.common.pullRequests}
+              >
+                <GitPullRequest aria-hidden="true" size={16} />
+              </Link>
+              <Link
+                aria-label={dictionary.common.notifications}
+                className={styles.iconAction}
+                href={`/${locale}/notifications`}
+                title={dictionary.common.notifications}
+              >
+                <Bell aria-hidden="true" size={16} />
+                {unreadNotifications > 0 && <span className={styles.notificationDot}>{unreadNotifications}</span>}
+              </Link>
+              <CreateMenu compact dictionary={dictionary} locale={locale} />
               <AccountMenu dictionary={dictionary} locale={locale} session={session} />
             </>
           ) : (
@@ -106,7 +140,9 @@ export function SiteHeader({ locale, dictionary, session, unreadNotifications }:
               </Link>
             </div>
           )}
-          <LocaleSwitcher dictionary={dictionary} locale={locale} />
+          <span className={styles.localeAction}>
+            <LocaleSwitcher dictionary={dictionary} locale={locale} />
+          </span>
         </div>
       </div>
     </header>

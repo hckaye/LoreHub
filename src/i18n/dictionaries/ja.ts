@@ -77,6 +77,7 @@ const ja = {
     security: "セキュリティ",
     insights: "分析",
     settings: "設定",
+    more: "その他",
     branches: "ブランチ",
     locks: "ロック",
     branch: "ブランチ",
@@ -106,6 +107,7 @@ const ja = {
     localeJapanese: "日本語",
   },
   home: {
+    homeTitle: "ホーム",
     eyebrow: "Loreの共同開発",
     title: "Loreリポジトリで共同開発する",
     // prettier-ignore
@@ -158,6 +160,9 @@ const ja = {
     ),
   },
   repository: {
+    about: "概要",
+    stars: "スター",
+    watching: "ウォッチ中",
     codeTitle: "コード",
     codeDescription: "Loreから取得したリポジトリ情報とブランチの指し先です。",
     repositorySummary: "リポジトリの概要",

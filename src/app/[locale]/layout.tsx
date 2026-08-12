@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
@@ -11,16 +10,6 @@ import { isLocale, locales, type Locale } from "@/i18n/config";
 import { getAuthSession, getUnreadNotificationCount } from "@/lib/auth-api";
 
 import "./globals.css";
-
-const geistSans = Geist({
-  variable: "--font-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-mono",
-  subsets: ["latin"],
-});
 
 type LayoutProps = {
   children: ReactNode;
@@ -53,7 +42,7 @@ export default async function LocaleLayout({ children, params }: LayoutProps) {
     session.status === "authenticated" ? await getUnreadNotificationCount() : { ok: false as const };
   return (
     <html lang={value}>
-      <body className={`${geistSans.variable} ${geistMono.variable}`}>
+      <body>
         <div className="site-shell">
           <SiteHeader
             dictionary={dictionary}

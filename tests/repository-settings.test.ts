@@ -50,7 +50,7 @@ test("repository settings use effective admin access and the production form", a
     readFile("src/app/[locale]/search/page.tsx", "utf8"),
     readFile("src/components/repositories/repository-settings-form.tsx", "utf8"),
     readFile("src/components/repositories/repository-card.tsx", "utf8"),
-    readFile("src/components/repositories/repository-header.tsx", "utf8"),
+    readFile("src/components/repositories/repository-about.tsx", "utf8"),
     readFile("src/components/repositories/repository-topic-list.tsx", "utf8"),
     readFile("src/i18n/dictionaries/en.ts", "utf8"),
     readFile("src/i18n/dictionaries/ja.ts", "utf8"),

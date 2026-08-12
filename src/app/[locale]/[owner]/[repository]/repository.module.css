@@ -1,87 +1,18 @@
 .content {
   display: grid;
+  align-items: start;
+  gap: 32px;
+  grid-template-columns: minmax(0, 1fr) 296px;
+}
+
+.codeColumn {
+  display: grid;
+  min-width: 0;
   gap: 24px;
 }
 
-.overviewGrid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.3fr) minmax(260px, 0.7fr);
-  gap: 12px;
-}
-
-.panel {
-  min-width: 0;
-}
-
-.panelHeading {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 12px;
-}
-
-.panelHeading h2 {
-  margin: 0 0 4px;
-  font-size: 1rem;
-}
-
-.panelHeading p {
-  margin: 0;
-  color: var(--fg-muted);
-  font-size: 0.82rem;
-  line-height: 1.5;
-}
-
-.details {
-  display: grid;
-  gap: 0;
-  margin: 0;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface);
-}
-
-.details div {
-  display: grid;
-  grid-template-columns: minmax(140px, 0.6fr) minmax(0, 1.4fr);
-  gap: 12px;
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--border-muted);
-}
-
-.details div:last-child {
-  border-bottom: 0;
-}
-
-.details dt {
-  color: var(--fg-muted);
-  font-size: 0.78rem;
-}
-
-.details dd {
-  min-width: 0;
-  margin: 0;
-  color: var(--fg-default);
-  font-size: 0.8rem;
-}
-
-.details code {
-  overflow-wrap: anywhere;
-  color: var(--accent-fg);
-  font-family: var(--font-mono);
-  font-size: 0.74rem;
-}
-
-@media (max-width: 760px) {
-  .overviewGrid {
+@media (max-width: 900px) {
+  .content {
     grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 520px) {
-  .details div {
-    grid-template-columns: 1fr;
-    gap: 4px;
   }
 }

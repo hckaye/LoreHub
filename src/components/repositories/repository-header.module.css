@@ -1,25 +1,64 @@
 .wrapper {
   border-bottom: 1px solid var(--border);
-  background: var(--surface);
+  background: var(--canvas-subtle);
 }
 
 .summary {
   display: flex;
-  width: min(1180px, calc(100% - 32px));
-  align-items: flex-start;
-  gap: 13px;
+  width: min(1280px, calc(100% - 64px));
+  min-height: 64px;
+  align-items: center;
+  gap: 9px;
   margin: 0 auto;
-  padding: 25px 0 20px;
+  padding: 14px 0 12px;
 }
 
 .icon {
   flex: 0 0 auto;
-  margin-top: 3px;
   color: var(--fg-muted);
 }
 
 .summaryDetails {
   min-width: 0;
+}
+
+.path {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  color: var(--fg-muted);
+  font-size: 1.25rem;
+  font-weight: 400;
+}
+
+.path a,
+.path strong {
+  color: var(--accent-fg);
+  text-decoration: none;
+}
+
+.path a:hover,
+.path strong:hover {
+  text-decoration: underline;
+}
+
+.path strong {
+  font-weight: 600;
+}
+
+.visibility,
+.archived {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--fg-muted);
+  font-size: 0.68rem;
+  font-weight: 500;
 }
 
 .engagementActions {
@@ -32,13 +71,14 @@
 .engagementActions button,
 .engagementActions a {
   display: inline-flex;
-  min-height: 32px;
+  min-height: 28px;
   align-items: center;
   gap: 6px;
   padding: 0 10px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: var(--canvas-subtle);
+  background: var(--canvas-default);
+  box-shadow: 0 1px 0 rgb(31 35 40 / 4%);
   color: var(--fg-default);
   font: inherit;
   font-size: 0.75rem;
@@ -66,9 +106,8 @@
 }
 
 .engagementMessage {
-  width: min(1180px, calc(100% - 32px));
-  min-height: 0;
-  margin: -14px auto 10px;
+  width: min(1280px, calc(100% - 64px));
+  margin: -9px auto 8px;
   color: var(--danger-fg);
   font-size: 0.75rem;
   text-align: right;
@@ -78,128 +117,117 @@
   display: none;
 }
 
-.path {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 7px;
-  color: var(--fg-muted);
-  font-size: 1.16rem;
-}
-
-.path a {
-  color: var(--accent-fg);
-  text-decoration: none;
-}
-
-.path a:hover {
-  text-decoration: underline;
-}
-
-.path strong {
-  color: var(--fg-default);
-  font-weight: 650;
-}
-
-.visibility {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-left: 4px;
-  padding: 2px 7px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  color: var(--fg-muted);
-  font-size: 0.68rem;
-  font-weight: 500;
-}
-
-.archived {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 7px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  color: var(--fg-muted);
-  font-size: 0.68rem;
-  font-weight: 500;
-}
-
 .archiveBanner {
   display: flex;
-  width: min(1180px, calc(100% - 32px));
+  width: min(1280px, calc(100% - 64px));
   align-items: center;
   gap: 8px;
-  margin: 0 auto 14px;
+  margin: 0 auto 12px;
   padding: 9px 11px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: var(--canvas-subtle);
+  background: var(--canvas-default);
   color: var(--fg-muted);
   font-size: 0.8rem;
-}
-
-.summary p {
-  max-width: 780px;
-  margin: 6px 0 0;
-  color: var(--fg-muted);
-  font-size: 0.86rem;
-  line-height: 1.5;
-}
-
-.topics {
-  margin-top: 9px;
 }
 
 .navigation {
   display: flex;
-  width: min(1180px, calc(100% - 32px));
+  width: 100%;
+  min-height: 48px;
   overflow-x: auto;
-  gap: 2px;
-  margin: 0 auto;
+  align-items: stretch;
+  gap: 0;
+  padding: 0 32px;
 }
 
-.navigation a {
+.navigation > a,
+.moreMenu > summary {
   display: inline-flex;
-  min-height: 44px;
+  min-height: 48px;
   align-items: center;
   gap: 7px;
-  padding: 0 10px;
+  padding: 0 14px;
+  border: 0;
   border-bottom: 2px solid transparent;
-  color: var(--fg-muted);
-  font-size: 0.8rem;
-  font-weight: 600;
+  background: transparent;
+  color: var(--fg-default);
+  font-size: 0.82rem;
+  font-weight: 500;
   text-decoration: none;
   white-space: nowrap;
 }
 
-.navigation a:hover {
-  color: var(--fg-default);
+.navigation > a:hover,
+.moreMenu > summary:hover {
+  border-radius: 6px 6px 0 0;
+  background: var(--border-muted);
 }
 
-.navigation .active {
-  border-bottom-color: var(--accent-fg);
-  color: var(--fg-default);
+.navigation > .active,
+.moreMenu > summary.active {
+  border-bottom-color: var(--nav-active-border);
+  font-weight: 600;
 }
 
 .navigation span {
+  min-width: 20px;
   padding: 1px 6px;
   border-radius: 999px;
-  background: var(--canvas-subtle);
+  background: var(--border-muted);
   color: var(--fg-muted);
   font-size: 0.69rem;
+  text-align: center;
 }
 
-@media (max-width: 640px) {
-  .summary,
-  .navigation,
-  .archiveBanner {
-    width: min(100% - 20px, 1180px);
-  }
+.moreMenu {
+  position: relative;
+  display: inline-flex;
+}
 
-  .path {
-    font-size: 1rem;
+.moreMenu > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.moreMenu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.moreDropdown {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 4px);
+  right: 0;
+  display: grid;
+  min-width: 180px;
+  padding: 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-popover);
+}
+
+.moreDropdown a {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 9px;
+  border-radius: 4px;
+  color: var(--fg-default);
+  font-size: 0.8rem;
+  text-decoration: none;
+}
+
+.moreDropdown a:hover {
+  background: var(--canvas-subtle);
+}
+
+@media (max-width: 760px) {
+  .summary,
+  .engagementMessage,
+  .archiveBanner {
+    width: min(100% - 32px, 1280px);
   }
 
   .summary {
@@ -207,12 +235,34 @@
   }
 
   .summaryDetails {
-    flex: 1 1 calc(100% - 44px);
+    flex: 1 1 calc(100% - 30px);
   }
 
   .engagementActions {
     width: 100%;
-    justify-content: flex-end;
+    flex-basis: 100%;
+    justify-content: flex-start;
     margin-left: 0;
+  }
+
+  .engagementActions button,
+  .engagementActions a {
+    flex: 1 1 0;
+    justify-content: center;
+  }
+
+  .navigation {
+    padding: 0 16px;
+  }
+}
+
+@media (max-width: 520px) {
+  .path {
+    font-size: 1rem;
+  }
+
+  .navigation > a,
+  .moreMenu > summary {
+    padding-inline: 10px;
   }
 }

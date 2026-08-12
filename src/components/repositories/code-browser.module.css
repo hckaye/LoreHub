@@ -1,125 +1,254 @@
 .browser {
   display: grid;
-  gap: 1rem;
+  min-width: 0;
+  gap: 16px;
+}
+
+.toolbar,
+.branchControls,
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }
 
 .toolbar {
-  align-items: end;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1rem;
   justify-content: space-between;
 }
 
 .branchBox {
-  display: grid;
-  gap: 0.35rem;
-  min-width: min(100%, 18rem);
-}
-
-.branchBox label {
-  color: var(--fg-muted);
-  font-size: 0.8rem;
-  font-weight: 650;
+  display: flex;
+  min-width: 160px;
+  min-height: 32px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--canvas-subtle);
+  box-shadow: 0 1px 0 rgb(31 35 40 / 4%);
+  color: var(--fg-default);
 }
 
 .branchBox select {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 0.45rem;
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
   color: var(--fg-default);
-  min-height: 2.35rem;
-  padding: 0.35rem 0.6rem;
+  font-size: 0.8rem;
+  font-weight: 600;
 }
 
-.links {
+.toolbarLink {
+  display: inline-flex;
+  min-height: 32px;
   align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
+  gap: 6px;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--fg-muted);
+  font-size: 0.8rem;
+  text-decoration: none;
 }
 
-.links a {
-  color: var(--accent-fg);
-  font-size: 0.9rem;
+.toolbarLink:hover {
+  border-color: var(--border);
+  background: var(--canvas-subtle);
+  color: var(--fg-default);
+}
+
+.tableWrap {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--canvas-default);
+}
+
+.pathBar {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border-muted);
 }
 
 .breadcrumb {
-  align-items: center;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35rem;
-  list-style: none;
+  align-items: center;
+  gap: 6px;
   margin: 0;
   padding: 0;
+  font-size: 0.84rem;
+  list-style: none;
+}
+
+.breadcrumb li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .breadcrumb a {
   color: var(--accent-fg);
+  text-decoration: none;
+}
+
+.breadcrumb a:hover {
+  text-decoration: underline;
 }
 
 .breadcrumb span {
   color: var(--fg-muted);
 }
 
-.revision {
+.revisionBar {
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--canvas-subtle);
   color: var(--fg-muted);
-  font-size: 0.8rem;
-  overflow-wrap: anywhere;
+  font-size: 0.78rem;
 }
 
-.tableWrap {
-  border: 1px solid var(--border);
-  border-radius: 0.65rem;
-  overflow-x: auto;
+.revisionBar strong {
+  color: var(--fg-default);
+  font-weight: 600;
+}
+
+.revisionBar code {
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.revisionBar a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  color: var(--fg-muted);
+  text-decoration: none;
+}
+
+.revisionBar a:hover {
+  color: var(--accent-fg);
 }
 
 .table {
-  border-collapse: collapse;
-  min-width: 36rem;
   width: 100%;
+  border-collapse: collapse;
 }
 
-.table th,
+.table thead {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
 .table td {
-  border-bottom: 1px solid var(--border);
-  padding: 0.7rem 0.9rem;
-  text-align: left;
-}
-
-.table th {
-  background: var(--canvas-subtle);
+  padding: 7px 16px;
+  border-bottom: 1px solid var(--border-muted);
   color: var(--fg-muted);
   font-size: 0.8rem;
-  font-weight: 650;
+  text-align: left;
 }
 
 .table tr:last-child td {
   border-bottom: 0;
 }
 
+.table td:last-child {
+  width: 110px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.table tbody tr:hover {
+  background: var(--canvas-subtle);
+}
+
 .entry {
-  align-items: center;
   display: flex;
-  gap: 0.55rem;
+  min-width: 0;
+  align-items: center;
+  gap: 9px;
+}
+
+.entry svg {
+  flex: 0 0 auto;
+  color: var(--accent-fg);
 }
 
 .entry a {
+  overflow: hidden;
   color: var(--fg-default);
-  font-weight: 600;
+  font-weight: 500;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .entry a:hover {
   color: var(--accent-fg);
-}
-
-.kind {
-  color: var(--fg-muted);
-  font-size: 0.85rem;
+  text-decoration: underline;
 }
 
 .empty {
+  margin: 0;
+  padding: 32px 16px;
   color: var(--fg-muted);
-  padding: 1.5rem;
   text-align: center;
+}
+
+.revision {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 0.78rem;
+}
+
+@media (max-width: 640px) {
+  .toolbar,
+  .branchControls,
+  .links {
+    align-items: stretch;
+  }
+
+  .branchControls {
+    width: 100%;
+  }
+
+  .branchBox {
+    flex: 1;
+  }
+
+  .links {
+    width: 100%;
+  }
+
+  .toolbarLink {
+    justify-content: center;
+  }
+
+  .revisionBar strong {
+    display: none;
+  }
+
+  .table td {
+    padding-inline: 10px;
+  }
+
+  .table td:last-child {
+    width: auto;
+  }
 }

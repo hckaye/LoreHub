@@ -1,66 +1,53 @@
 .page {
+  width: min(1012px, calc(100% - 64px));
   min-height: 100%;
-}
-
-.hero {
-  border-bottom: 1px solid var(--border);
-  background: var(--canvas-subtle);
-}
-
-.hero > div,
-.repositories {
-  width: min(1180px, calc(100% - 32px));
   margin: 0 auto;
+  padding: 32px 0 72px;
 }
 
-.hero > div {
-  padding: 56px 0 42px;
+.heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--border);
 }
 
-.eyebrow {
-  margin: 0 0 12px;
-  color: var(--accent-fg);
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.hero h1 {
-  max-width: 820px;
+.heading h1 {
   margin: 0;
-  font-size: clamp(2rem, 4vw, 3.45rem);
-  letter-spacing: -0.045em;
-  line-height: 1.06;
+  font-size: 1.5rem;
+  font-weight: 500;
 }
 
-.hero p:not(.eyebrow) {
-  max-width: 700px;
-  margin: 18px 0 0;
+.heading p {
+  margin: 6px 0 0;
   color: var(--fg-muted);
-  font-size: 1rem;
-  line-height: 1.65;
+  font-size: 0.82rem;
 }
 
 .architectureLink {
   display: inline-flex;
+  flex: 0 0 auto;
+  min-height: 32px;
   align-items: center;
   gap: 7px;
-  width: min(1180px, calc(100% - 32px));
-  margin: 0 auto;
-  padding-bottom: 30px;
-  color: var(--accent-fg);
-  font-size: 0.84rem;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--canvas-subtle);
+  color: var(--fg-default);
+  font-size: 0.78rem;
   font-weight: 600;
   text-decoration: none;
 }
 
 .architectureLink:hover {
-  text-decoration: underline;
+  background: var(--border-muted);
 }
 
 .repositories {
-  padding: 36px 0 72px;
+  padding-top: 24px;
 }
 
 .sectionHeading {
@@ -68,18 +55,18 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 18px;
+  margin-bottom: 4px;
 }
 
 .sectionHeading h2 {
   margin: 0 0 5px;
-  font-size: 1.2rem;
+  font-size: 1rem;
 }
 
 .sectionHeading p {
   margin: 0;
   color: var(--fg-muted);
-  font-size: 0.84rem;
+  font-size: 0.78rem;
 }
 
 .headingIcon {
@@ -87,13 +74,13 @@
 }
 
 @media (max-width: 640px) {
-  .hero > div,
-  .repositories,
-  .architectureLink {
-    width: min(100% - 20px, 1180px);
+  .page {
+    width: min(100% - 32px, 1012px);
+    padding-top: 24px;
   }
 
-  .hero > div {
-    padding-top: 40px;
+  .heading {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }

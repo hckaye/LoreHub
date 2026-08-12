@@ -1,4 +1,4 @@
-import { Activity, Bell, BookOpenText, ServerOff } from "lucide-react";
+import { Activity, Bell, BookOpenText, Package, Plus } from "lucide-react";
 import Link from "next/link";
 
 import type { Dictionary } from "@/i18n";
@@ -19,45 +19,21 @@ type DashboardProps = {
 };
 
 export function Dashboard({ dashboard, locale, dictionary, unavailable, userName }: DashboardProps) {
-  const greeting = dictionary.home.dashboardGreeting.replace("{name}", userName);
   return (
     <div className={styles.page}>
-      <div className={styles.heading}>
-        <div>
-          <p className={styles.eyebrow}>{dictionary.home.dashboardTitle}</p>
-          <h1>{greeting}</h1>
-          <p>{dictionary.home.dashboardDescription}</p>
-        </div>
-        <Link className={styles.docsLink} href="https://github.com/EpicGames/lore" rel="noreferrer" target="_blank">
-          <BookOpenText aria-hidden="true" size={17} />
-          {dictionary.home.architecture}
-        </Link>
-      </div>
       <div className={styles.layout}>
-        <DashboardSidebar dashboard={dashboard} dictionary={dictionary} locale={locale} unavailable={unavailable} />
+        <DashboardSidebar
+          dashboard={dashboard}
+          dictionary={dictionary}
+          locale={locale}
+          unavailable={unavailable}
+          userName={userName}
+        />
         <div className={styles.main}>
+          <h1>{dictionary.home.homeTitle}</h1>
           <DashboardActivity dashboard={dashboard} dictionary={dictionary} unavailable={unavailable} />
-          <section>
-            <div className={styles.sectionTitle}>
-              <h2>{dictionary.home.discoverTitle}</h2>
-              <span>{dictionary.home.publicDashboardNote}</span>
-            </div>
-            {unavailable ? (
-              <EmptyState
-                body={dictionary.home.apiUnavailableBody}
-                icon={<ServerOff aria-hidden="true" />}
-                title={dictionary.home.apiUnavailableTitle}
-                tone="warning"
-              />
-            ) : (
-              <div className={styles.cards}>
-                {(dashboard?.repositories ?? []).map((repository) => (
-                  <RepositoryCard dictionary={dictionary} key={repository.id} locale={locale} repository={repository} />
-                ))}
-              </div>
-            )}
-          </section>
         </div>
+        <DashboardExplore dashboard={dashboard} dictionary={dictionary} locale={locale} unavailable={unavailable} />
       </div>
     </div>
   );
@@ -68,57 +44,51 @@ type DashboardSidebarProps = {
   dictionary: Dictionary;
   locale: Locale;
   unavailable: boolean;
+  userName: string;
 };
 
-function DashboardSidebar({ dashboard, dictionary, locale, unavailable }: DashboardSidebarProps) {
-  const organizations = dashboard?.organizations ?? [];
-  const repositories = dashboard?.repositories ?? [];
-  let content = null;
-  if (organizations.length > 0) {
-    content = (
-      <ul className={styles.repositoryList}>
-        {organizations.map((organization) => (
-          <li key={organization.id}>
-            <Link href={`/${locale}/organizations/${encodeURIComponent(organization.slug)}`}>
-              <strong>{organization.displayName}</strong>
-              <span>{organization.slug}</span>
-            </Link>
-          </li>
-        ))}
-      </ul>
-    );
-  } else if (repositories.length > 0) {
-    content = (
-      <ul className={styles.repositoryList}>
-        {repositories.map((repository) => (
-          <li key={repository.id}>
-            <Link href={repositoryPath(locale, repository.owner, repository.slug)}>
-              <strong>{repository.displayName}</strong>
-              <span>{repository.owner}</span>
-            </Link>
-          </li>
-        ))}
-      </ul>
-    );
-  } else {
-    content = (
-      <EmptyState
-        body={unavailable ? dictionary.home.apiUnavailableBody : dictionary.home.availablePublicRepositoriesEmptyBody}
-        icon={<ServerOff aria-hidden="true" />}
-        title={
-          unavailable ? dictionary.home.apiUnavailableTitle : dictionary.home.availablePublicRepositoriesEmptyTitle
-        }
-        tone={unavailable ? "warning" : "neutral"}
-      />
-    );
-  }
+function DashboardSidebar(props: DashboardSidebarProps) {
+  const repositories = props.dashboard?.repositories ?? [];
+  const organizations = props.dashboard?.organizations ?? [];
   return (
     <aside className={styles.sidebar}>
+      <p className={styles.identity}>{props.userName}</p>
       <div className={styles.sidebarHeading}>
-        <h2>{dictionary.common.organizations}</h2>
-        <p>{dictionary.home.dashboardDescription}</p>
+        <h2>{props.dictionary.common.repositories}</h2>
+        <Link href={`/${props.locale}/repositories/new`}>
+          <Plus aria-hidden="true" size={15} />
+          {props.dictionary.common.newRepository}
+        </Link>
       </div>
-      {content}
+      {repositories.length > 0 ? (
+        <ul className={styles.repositoryList}>
+          {repositories.slice(0, 12).map((repository) => (
+            <li key={repository.id}>
+              <Link href={repositoryPath(props.locale, repository.owner, repository.slug)}>
+                <Package aria-hidden="true" size={16} />
+                <span>{repository.owner}</span>/<strong>{repository.slug}</strong>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className={styles.sidebarEmpty}>
+          {props.unavailable
+            ? props.dictionary.home.apiUnavailableBody
+            : props.dictionary.home.availablePublicRepositoriesEmptyBody}
+        </p>
+      )}
+      <h2 className={styles.organizationsTitle}>{props.dictionary.common.organizations}</h2>
+      <ul className={styles.organizationList}>
+        {organizations.map((organization) => (
+          <li key={organization.id}>
+            <Link href={`/${props.locale}/organizations/${encodeURIComponent(organization.slug)}`}>
+              <span aria-hidden="true">{organization.displayName.slice(0, 1).toLocaleUpperCase()}</span>
+              {organization.displayName}
+            </Link>
+          </li>
+        ))}
+      </ul>
     </aside>
   );
 }
@@ -131,37 +101,62 @@ type DashboardActivityProps = {
 
 function DashboardActivity({ dashboard, dictionary, unavailable }: DashboardActivityProps) {
   const notifications = dashboard?.notifications ?? [];
-  let content = null;
-  if (notifications.length > 0) {
-    content = (
-      <ul className={styles.notificationList}>
-        {notifications.map((notification) => (
-          <li data-unread={!notification.readAt} key={notification.id}>
-            <Link href={notification.href}>
-              <strong>{notification.title}</strong>
-              <span>{notification.body || notification.topic}</span>
-            </Link>
-          </li>
-        ))}
-      </ul>
-    );
-  } else {
-    content = (
-      <EmptyState
-        body={unavailable ? dictionary.home.apiUnavailableBody : dictionary.home.activityEmptyBody}
-        icon={<Activity aria-hidden="true" />}
-        title={unavailable ? dictionary.home.apiUnavailableTitle : dictionary.home.activityEmptyTitle}
-        tone={unavailable ? "warning" : "neutral"}
-      />
-    );
-  }
   return (
     <section className={styles.activity}>
       <div className={styles.sectionTitle}>
         <Bell aria-hidden="true" size={18} />
         <h2>{dictionary.home.activityTitle}</h2>
       </div>
-      {content}
+      {notifications.length > 0 ? (
+        <ul className={styles.notificationList}>
+          {notifications.map((notification) => (
+            <li data-unread={!notification.readAt} key={notification.id}>
+              <Link href={notification.href}>
+                <strong>{notification.title}</strong>
+                <span>{notification.body || notification.topic}</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <EmptyState
+          body={unavailable ? dictionary.home.apiUnavailableBody : dictionary.home.activityEmptyBody}
+          icon={<Activity aria-hidden="true" />}
+          title={unavailable ? dictionary.home.apiUnavailableTitle : dictionary.home.activityEmptyTitle}
+          tone={unavailable ? "warning" : "neutral"}
+        />
+      )}
     </section>
+  );
+}
+
+type DashboardExploreProps = {
+  dashboard: DashboardData | null;
+  dictionary: Dictionary;
+  locale: Locale;
+  unavailable: boolean;
+};
+
+function DashboardExplore({ dashboard, dictionary, locale, unavailable }: DashboardExploreProps) {
+  const repositories = dashboard?.repositories.filter((repository) => repository.visibility === "public") ?? [];
+  return (
+    <aside className={styles.explore}>
+      <div className={styles.sectionTitle}>
+        <h2>{dictionary.home.discoverTitle}</h2>
+      </div>
+      {unavailable ? (
+        <p className={styles.sidebarEmpty}>{dictionary.home.apiUnavailableBody}</p>
+      ) : (
+        <div className={styles.cards}>
+          {repositories.slice(0, 4).map((repository) => (
+            <RepositoryCard dictionary={dictionary} key={repository.id} locale={locale} repository={repository} />
+          ))}
+        </div>
+      )}
+      <a className={styles.docsLink} href="https://github.com/EpicGames/lore" rel="noreferrer" target="_blank">
+        <BookOpenText aria-hidden="true" size={16} />
+        {dictionary.home.architecture}
+      </a>
+    </aside>
   );
 }

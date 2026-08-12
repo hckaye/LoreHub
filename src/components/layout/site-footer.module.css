@@ -1,24 +1,19 @@
 .footer {
   margin-top: auto;
   border-top: 1px solid var(--border);
-  background: var(--canvas-subtle);
+  background: var(--canvas-default);
 }
 
 .inner {
   display: flex;
-  width: min(1120px, calc(100% - 40px));
-  min-height: 78px;
+  width: min(1012px, calc(100% - 64px));
+  min-height: 92px;
   align-items: center;
   justify-content: space-between;
   gap: 24px;
   margin: 0 auto;
   color: var(--fg-muted);
   font-size: 0.82rem;
-}
-
-.inner span {
-  color: var(--fg-default);
-  font-weight: 700;
 }
 
 .inner p {
@@ -28,7 +23,7 @@
 
 @media (max-width: 640px) {
   .inner {
-    width: min(100% - 28px, 1120px);
+    width: min(100% - 32px, 1012px);
     align-items: flex-start;
     flex-direction: column;
     gap: 6px;

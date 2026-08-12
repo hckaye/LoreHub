@@ -3,6 +3,8 @@
   overflow-x: auto;
   gap: 2px;
   border-bottom: 1px solid var(--border);
+  background: var(--canvas-subtle);
+  padding: 0 8px;
 }
 
 .tabs a {

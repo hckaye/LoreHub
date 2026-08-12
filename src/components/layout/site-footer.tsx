@@ -10,8 +10,10 @@ export function SiteFooter({ dictionary }: SiteFooterProps) {
   return (
     <footer className={styles.footer}>
       <div className={styles.inner}>
-        <span>{dictionary.common.productName}</span>
-        <p>{dictionary.footer.sourceOfTruth}</p>
+        <span>
+          © {new Date().getFullYear()} {dictionary.common.productName}
+        </span>
+        <p>MIT License</p>
       </div>
     </footer>
   );

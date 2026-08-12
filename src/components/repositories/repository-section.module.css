@@ -1,6 +1,19 @@
 .page {
   display: grid;
-  gap: 22px;
+  gap: 16px;
+}
+
+.workItemList {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--canvas-default);
+}
+
+.workItemList > div:last-child {
+  border: 0;
+  border-radius: 0;
 }
 
 .panel {
@@ -48,13 +61,13 @@
 }
 
 .primaryButton {
-  border: 1px solid var(--accent-border);
-  background: var(--accent-emphasis);
+  border: 1px solid var(--success-border);
+  background: var(--success-border);
   color: var(--fg-on-emphasis);
 }
 
 .primaryButton:hover {
-  background: var(--accent-emphasis-hover);
+  background: var(--success-fg);
 }
 
 .secondaryButton {

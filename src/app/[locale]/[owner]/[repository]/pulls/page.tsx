@@ -2,7 +2,7 @@ import { CircleAlert, ServerOff } from "lucide-react";
 import Link from "next/link";
 
 import { MergeRequestList } from "@/components/repositories/merge-request-list";
-import { RepositoryPanel, RepositorySection } from "@/components/repositories/repository-section";
+import { RepositorySection } from "@/components/repositories/repository-section";
 import { WorkItemListPagination } from "@/components/repositories/work-item-list-pagination";
 import { WorkItemListToolbar } from "@/components/repositories/work-item-list-toolbar";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -51,7 +51,6 @@ export default async function PullRequestsPage({ params, searchParams }: PullReq
           </Link>
         )
       }
-      description={dictionary.pullRequestsPage.description}
       title={dictionary.pullRequestsPage.title}
     >
       {query.created === "1" && (
@@ -69,41 +68,38 @@ export default async function PullRequestsPage({ params, searchParams }: PullReq
         query={filters}
         totalCount={mergeRequests.ok ? mergeRequests.data.totalCount : undefined}
       />
-      <FilterTabs
-        label={dictionary.pullRequestsPage.filterLabel}
-        tabs={[
-          {
-            active: state === "open",
-            count: mergeRequests.ok ? mergeRequests.data.openCount : undefined,
-            href: stateHref(basePath, filters, "open"),
-            label: dictionary.common.open,
-          },
-          {
-            active: state === "closed",
-            count: mergeRequests.ok ? mergeRequests.data.closedCount : undefined,
-            href: stateHref(basePath, filters, "closed"),
-            label: dictionary.common.closed,
-          },
-          {
-            active: state === "merged",
-            count: mergeRequests.ok ? mergeRequests.data.mergedCount : undefined,
-            href: stateHref(basePath, filters, "merged"),
-            label: dictionary.common.merged,
-          },
-          {
-            active: state === "all",
-            count: mergeRequests.ok
-              ? mergeRequests.data.openCount + mergeRequests.data.closedCount + mergeRequests.data.mergedCount
-              : undefined,
-            href: stateHref(basePath, filters, "all"),
-            label: dictionary.common.all,
-          },
-        ]}
-      />
-      <RepositoryPanel
-        description={dictionary.repository.pullRequestsDescription}
-        title={dictionary.repository.pullRequestsTitle}
-      >
+      <div className={styles.workItemList}>
+        <FilterTabs
+          label={dictionary.pullRequestsPage.filterLabel}
+          tabs={[
+            {
+              active: state === "open",
+              count: mergeRequests.ok ? mergeRequests.data.openCount : undefined,
+              href: stateHref(basePath, filters, "open"),
+              label: dictionary.common.open,
+            },
+            {
+              active: state === "closed",
+              count: mergeRequests.ok ? mergeRequests.data.closedCount : undefined,
+              href: stateHref(basePath, filters, "closed"),
+              label: dictionary.common.closed,
+            },
+            {
+              active: state === "merged",
+              count: mergeRequests.ok ? mergeRequests.data.mergedCount : undefined,
+              href: stateHref(basePath, filters, "merged"),
+              label: dictionary.common.merged,
+            },
+            {
+              active: state === "all",
+              count: mergeRequests.ok
+                ? mergeRequests.data.openCount + mergeRequests.data.closedCount + mergeRequests.data.mergedCount
+                : undefined,
+              href: stateHref(basePath, filters, "all"),
+              label: dictionary.common.all,
+            },
+          ]}
+        />
         {mergeRequests.ok ? (
           <MergeRequestList
             dictionary={dictionary}
@@ -120,7 +116,7 @@ export default async function PullRequestsPage({ params, searchParams }: PullReq
             tone="warning"
           />
         )}
-      </RepositoryPanel>
+      </div>
       {mergeRequests.ok && (
         <WorkItemListPagination
           basePath={basePath}

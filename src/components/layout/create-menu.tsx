@@ -1,4 +1,4 @@
-import { Plus } from "lucide-react";
+import { ChevronDown, Plus } from "lucide-react";
 import Link from "next/link";
 
 import type { Dictionary } from "@/i18n";
@@ -9,14 +9,16 @@ import styles from "./create-menu.module.css";
 type CreateMenuProps = {
   locale: Locale;
   dictionary: Dictionary;
+  compact?: boolean;
 };
 
-export function CreateMenu({ locale, dictionary }: CreateMenuProps) {
+export function CreateMenu({ locale, dictionary, compact = false }: CreateMenuProps) {
   return (
     <details className={styles.menu}>
       <summary aria-label={dictionary.common.create} className={styles.summary}>
         <Plus aria-hidden="true" size={17} />
-        <span>{dictionary.common.create}</span>
+        {!compact && <span>{dictionary.common.create}</span>}
+        {compact && <ChevronDown aria-hidden="true" size={12} />}
       </summary>
       <div className={styles.dropdown}>
         <Link href={`/${locale}/issues/new`}>{dictionary.common.newIssue}</Link>

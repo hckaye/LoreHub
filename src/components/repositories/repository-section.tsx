@@ -5,7 +5,7 @@ import styles from "./repository-section.module.css";
 
 type RepositorySectionProps = {
   title: string;
-  description: string;
+  description?: string;
   actions?: ReactNode;
   children: ReactNode;
 };

@@ -2,10 +2,9 @@ import { ServerOff } from "lucide-react";
 import { notFound } from "next/navigation";
 
 import { CodeBrowser } from "@/components/repositories/code-browser";
-import { RepositoryFacts } from "@/components/repositories/repository-facts";
+import { RepositoryAbout } from "@/components/repositories/repository-about";
 import { RepositoryReadme } from "@/components/repositories/repository-readme";
 import { EmptyState } from "@/components/ui/empty-state";
-import { SectionHeading } from "@/components/ui/section-heading";
 import { getDictionary } from "@/i18n";
 import { isLocale } from "@/i18n/config";
 import { getBranches, getLoreFile, getLoreTree, getPublicRepository, getRevision } from "@/lib/lorehub-api";
@@ -48,39 +47,40 @@ export default async function RepositoryCodePage({ params, searchParams }: Repos
   const { revision, readme } = await loadTreeDetails(owner, slug, tree);
   return (
     <div className={styles.content}>
-      <SectionHeading description={dictionary.repository.codeDescription} title={dictionary.repository.codeTitle} />
-      <RepositoryFacts dictionary={dictionary} repository={repository.data} />
-      {tree.ok ? (
-        <>
-          <CodeBrowser
-            branches={branches.ok ? branches.data : []}
-            branch={branch}
-            dictionary={dictionary}
-            locale={locale}
-            owner={owner}
-            parentRevision={revision?.ok ? revision.data.parents[0] : undefined}
-            repository={slug}
-            tree={tree.data}
-          />
-          {readme?.ok && (
-            <RepositoryReadme
+      <div className={styles.codeColumn}>
+        {tree.ok ? (
+          <>
+            <CodeBrowser
+              branches={branches.ok ? branches.data : []}
+              branch={branch}
               dictionary={dictionary}
-              entries={tree.data.entries}
-              file={readme.data}
               locale={locale}
               owner={owner}
+              parentRevision={revision?.ok ? revision.data.parents[0] : undefined}
               repository={slug}
+              tree={tree.data}
             />
-          )}
-        </>
-      ) : (
-        <EmptyState
-          body={dictionary.home.apiUnavailableBody}
-          icon={<ServerOff aria-hidden="true" />}
-          title={dictionary.codeBrowser.unavailable}
-          tone="warning"
-        />
-      )}
+            {readme?.ok && (
+              <RepositoryReadme
+                dictionary={dictionary}
+                entries={tree.data.entries}
+                file={readme.data}
+                locale={locale}
+                owner={owner}
+                repository={slug}
+              />
+            )}
+          </>
+        ) : (
+          <EmptyState
+            body={dictionary.home.apiUnavailableBody}
+            icon={<ServerOff aria-hidden="true" />}
+            title={dictionary.codeBrowser.unavailable}
+            tone="warning"
+          />
+        )}
+      </div>
+      <RepositoryAbout dictionary={dictionary} locale={locale} repository={repository.data} />
     </div>
   );
 }

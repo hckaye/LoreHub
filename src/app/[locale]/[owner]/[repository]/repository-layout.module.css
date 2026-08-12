@@ -1,7 +1,7 @@
 .shell {
-  width: min(1180px, calc(100% - 32px));
+  width: min(1280px, calc(100% - 64px));
   margin: 0 auto;
-  padding: 30px 0 72px;
+  padding: 24px 0 64px;
 }
 
 .unavailable {
@@ -12,6 +12,6 @@
 @media (max-width: 640px) {
   .shell,
   .unavailable {
-    width: min(100% - 20px, 1180px);
+    width: min(100% - 32px, 1280px);
   }
 }

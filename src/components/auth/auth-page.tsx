@@ -23,18 +23,17 @@ export function AuthPage({ dictionary, locale, providers, register, returnTo }: 
     : `/${locale}/auth/register?return_to=${encodeURIComponent(safeReturnTo(returnTo))}`;
   const alternateText = register ? dictionary.authPage.alreadyHaveAccount : dictionary.authPage.needAccount;
   return (
-    <div className={styles.page}>
+    <div className={styles.page} data-auth-page>
       <section aria-labelledby="auth-title" className={styles.card}>
         <div className={styles.brand}>
           <span aria-hidden="true" className={styles.mark}>
             L
           </span>
-          <span>{dictionary.common.productName}</span>
+          <span className="visually-hidden">{dictionary.common.productName}</span>
         </div>
         <div className={styles.heading}>
-          <p className={styles.eyebrow}>{register ? dictionary.common.signUp : dictionary.common.signIn}</p>
           <h1 id="auth-title">{title}</h1>
-          <p>{copy}</p>
+          <p className="visually-hidden">{copy}</p>
         </div>
         {providers ? (
           <div aria-label={dictionary.authPage.configuredNote} className={styles.providers}>

@@ -21,11 +21,10 @@ export function PublicExplore({ locale, dictionary, repositories, query, unavail
   const hasQuery = Boolean(query.trim());
   return (
     <div className={styles.page}>
-      <section className={styles.hero}>
+      <header className={styles.heading}>
         <div>
-          <p className={styles.eyebrow}>{dictionary.home.eyebrow}</p>
-          <h1>{dictionary.home.title}</h1>
-          <p>{dictionary.home.intro}</p>
+          <h1>{dictionary.common.explore}</h1>
+          <p>{dictionary.home.repositoriesDescription}</p>
         </div>
         <Link
           className={styles.architectureLink}
@@ -36,14 +35,14 @@ export function PublicExplore({ locale, dictionary, repositories, query, unavail
           <BookOpenText aria-hidden="true" size={17} />
           {dictionary.home.architecture}
         </Link>
-      </section>
+      </header>
       <section aria-labelledby="explore-title" className={styles.repositories}>
         <div className={styles.sectionHeading}>
           <div>
             <h2 id="explore-title">{hasQuery ? dictionary.home.searchResults : dictionary.home.repositories}</h2>
             <p>{hasQuery ? dictionary.home.searchResultsDescription : dictionary.home.repositoriesDescription}</p>
           </div>
-          <Search aria-hidden="true" className={styles.headingIcon} size={19} />
+          <Search aria-hidden="true" className={styles.headingIcon} size={18} />
         </div>
         {unavailable ? (
           <EmptyState

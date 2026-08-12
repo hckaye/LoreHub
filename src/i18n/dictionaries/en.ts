@@ -75,6 +75,7 @@ const en = {
     security: "Security",
     insights: "Insights",
     settings: "Settings",
+    more: "More",
     branches: "Branches",
     locks: "Locks",
     branch: "Branch",
@@ -104,6 +105,7 @@ const en = {
     localeJapanese: "日本語",
   },
   home: {
+    homeTitle: "Home",
     eyebrow: "Collaboration for Lore",
     title: "Collaborate on Lore repositories.",
     intro: "Review changes, track issues, manage access, and run Actions workflows for Lore repositories.",
@@ -133,6 +135,9 @@ const en = {
     publicDashboardNote: "Sign in to see private repositories available to your account.",
   },
   repository: {
+    about: "About",
+    stars: "stars",
+    watching: "watching",
     codeTitle: "Code",
     codeDescription: "Repository metadata and branch pointers read from Lore.",
     repositorySummary: "Repository summary",

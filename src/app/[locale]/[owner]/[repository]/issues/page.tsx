@@ -2,7 +2,7 @@ import { CircleAlert, ServerOff } from "lucide-react";
 import Link from "next/link";
 
 import { IssueList } from "@/components/repositories/issue-list";
-import { RepositoryPanel, RepositorySection } from "@/components/repositories/repository-section";
+import { RepositorySection } from "@/components/repositories/repository-section";
 import { WorkItemListPagination } from "@/components/repositories/work-item-list-pagination";
 import { WorkItemListToolbar } from "@/components/repositories/work-item-list-toolbar";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -59,7 +59,6 @@ export default async function IssuesPage({ params, searchParams }: IssuesPagePro
           )}
         </div>
       }
-      description={dictionary.issuesPage.description}
       title={dictionary.issuesPage.title}
     >
       {query.created === "1" && (
@@ -77,30 +76,30 @@ export default async function IssuesPage({ params, searchParams }: IssuesPagePro
         query={filters}
         totalCount={issues.ok ? issues.data.totalCount : undefined}
       />
-      <FilterTabs
-        label={dictionary.issuesPage.filterLabel}
-        tabs={[
-          {
-            active: state === "open",
-            count: issues.ok ? issues.data.openCount : undefined,
-            href: stateHref(basePath, filters, "open"),
-            label: dictionary.common.open,
-          },
-          {
-            active: state === "closed",
-            count: issues.ok ? issues.data.closedCount : undefined,
-            href: stateHref(basePath, filters, "closed"),
-            label: dictionary.common.closed,
-          },
-          {
-            active: state === "all",
-            count: issues.ok ? issues.data.openCount + issues.data.closedCount : undefined,
-            href: stateHref(basePath, filters, "all"),
-            label: dictionary.common.all,
-          },
-        ]}
-      />
-      <RepositoryPanel description={dictionary.issuesPage.description} title={dictionary.repository.issuesTitle}>
+      <div className={styles.workItemList}>
+        <FilterTabs
+          label={dictionary.issuesPage.filterLabel}
+          tabs={[
+            {
+              active: state === "open",
+              count: issues.ok ? issues.data.openCount : undefined,
+              href: stateHref(basePath, filters, "open"),
+              label: dictionary.common.open,
+            },
+            {
+              active: state === "closed",
+              count: issues.ok ? issues.data.closedCount : undefined,
+              href: stateHref(basePath, filters, "closed"),
+              label: dictionary.common.closed,
+            },
+            {
+              active: state === "all",
+              count: issues.ok ? issues.data.openCount + issues.data.closedCount : undefined,
+              href: stateHref(basePath, filters, "all"),
+              label: dictionary.common.all,
+            },
+          ]}
+        />
         {issues.ok ? (
           <IssueList
             dictionary={dictionary}
@@ -117,7 +116,7 @@ export default async function IssuesPage({ params, searchParams }: IssuesPagePro
             tone="warning"
           />
         )}
-      </RepositoryPanel>
+      </div>
       {issues.ok && (
         <WorkItemListPagination
           basePath={basePath}

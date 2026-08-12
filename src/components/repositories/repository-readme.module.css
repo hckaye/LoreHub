@@ -1,7 +1,7 @@
 .panel {
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 0.65rem;
+  border-radius: 6px;
   background: var(--surface);
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { FileCode2, Folder, Link2 } from "lucide-react";
+import { FileCode2, Folder, GitBranch, GitCommitHorizontal, History, Link2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -38,27 +38,40 @@ export function CodeBrowser({
   return (
     <section aria-labelledby="code-browser-title" className={styles.browser}>
       <div className={styles.toolbar}>
-        <div className={styles.branchBox}>
-          <label htmlFor="code-branch">{dictionary.repository.branchSelector}</label>
-          <select
-            id="code-branch"
-            defaultValue={branch}
-            onChange={(event) => {
-              router.push(`${basePath}?branch=${encodeURIComponent(event.target.value)}`);
-            }}
-          >
-            {branches.map((item) => (
-              <option disabled={item.archived} key={item.id} value={item.name}>
-                {item.name}
-              </option>
-            ))}
-          </select>
+        <div className={styles.branchControls}>
+          <div className={styles.branchBox}>
+            <GitBranch aria-hidden="true" size={16} />
+            <label className="visually-hidden" htmlFor="code-branch">
+              {dictionary.repository.branchSelector}
+            </label>
+            <select
+              aria-label={dictionary.repository.branchSelector}
+              id="code-branch"
+              defaultValue={branch}
+              onChange={(event) => {
+                router.push(`${basePath}?branch=${encodeURIComponent(event.target.value)}`);
+              }}
+            >
+              {branches.map((item) => (
+                <option disabled={item.archived} key={item.id} value={item.name}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <Link className={styles.toolbarLink} href={repositoryBranchesPath(locale, owner, repository)}>
+            <GitBranch aria-hidden="true" size={16} />
+            {branches.length} {dictionary.common.branches}
+          </Link>
         </div>
         <div className={styles.links}>
-          <Link href={repositoryBranchesPath(locale, owner, repository)}>{dictionary.common.branches}</Link>
-          <Link href={commitsPath}>{dictionary.codeBrowser.history}</Link>
+          <Link className={styles.toolbarLink} href={commitsPath}>
+            <History aria-hidden="true" size={16} />
+            {dictionary.codeBrowser.history}
+          </Link>
           {parentRevision && (
             <Link
+              className={styles.toolbarLink}
               href={`${basePath}/compare?source=${encodeURIComponent(parentRevision)}&target=${encodeURIComponent(
                 tree.revision,
               )}`}
@@ -68,37 +81,43 @@ export function CodeBrowser({
           )}
         </div>
       </div>
-      <div>
-        <h2 id="code-browser-title" className="sr-only">
+      <div className={styles.tableWrap}>
+        <h2 id="code-browser-title" className="visually-hidden">
           {dictionary.codeBrowser.treeTitle}
         </h2>
-        <nav aria-label={dictionary.codeBrowser.breadcrumbLabel}>
-          <ol className={styles.breadcrumb}>
-            <li>
-              <Link href={`${basePath}?branch=${encodeURIComponent(branch)}`}>{branch}</Link>
-            </li>
-            {tree.path
-              .split("/")
-              .filter(Boolean)
-              .map((part, index, parts) => (
-                <li key={`${part}-${index}`}>
-                  <span aria-hidden="true">/</span>
-                  <Link
-                    href={`${basePath}?branch=${encodeURIComponent(branch)}&path=${encodeURIComponent(
-                      parts.slice(0, index + 1).join("/"),
-                    )}`}
-                  >
-                    {part}
-                  </Link>
-                </li>
-              ))}
-          </ol>
-        </nav>
-        <p className={styles.revision}>
-          {dictionary.codeBrowser.revision}: <code>{tree.revision}</code>
-        </p>
-      </div>
-      <div className={styles.tableWrap}>
+        {tree.path && (
+          <nav aria-label={dictionary.codeBrowser.breadcrumbLabel} className={styles.pathBar}>
+            <ol className={styles.breadcrumb}>
+              <li>
+                <Link href={`${basePath}?branch=${encodeURIComponent(branch)}`}>{repository}</Link>
+              </li>
+              {tree.path
+                .split("/")
+                .filter(Boolean)
+                .map((part, index, parts) => (
+                  <li key={`${part}-${index}`}>
+                    <span aria-hidden="true">/</span>
+                    <Link
+                      href={`${basePath}?branch=${encodeURIComponent(branch)}&path=${encodeURIComponent(
+                        parts.slice(0, index + 1).join("/"),
+                      )}`}
+                    >
+                      {part}
+                    </Link>
+                  </li>
+                ))}
+            </ol>
+          </nav>
+        )}
+        <div className={styles.revisionBar}>
+          <GitCommitHorizontal aria-hidden="true" size={17} />
+          <strong>{dictionary.repository.latestRevision}</strong>
+          <code title={tree.revision}>{shortRevision(tree.revision)}</code>
+          <Link href={commitsPath}>
+            <History aria-hidden="true" size={16} />
+            {dictionary.codeBrowser.history}
+          </Link>
+        </div>
         {tree.entries.length === 0 ? (
           <p className={styles.empty}>{dictionary.codeBrowser.emptyTree}</p>
         ) : (
@@ -106,14 +125,13 @@ export function CodeBrowser({
             <thead>
               <tr>
                 <th scope="col">{dictionary.codeBrowser.name}</th>
-                <th scope="col">{dictionary.codeBrowser.kind}</th>
                 <th scope="col">{dictionary.codeBrowser.size}</th>
               </tr>
             </thead>
             <tbody>
               {parentPath !== null && (
                 <tr>
-                  <td colSpan={3}>
+                  <td colSpan={2}>
                     <Link
                       href={`${basePath}?branch=${encodeURIComponent(branch)}&path=${encodeURIComponent(parentPath)}`}
                     >
@@ -137,7 +155,6 @@ export function CodeBrowser({
                         <Link href={href}>{entry.name}</Link>
                       </span>
                     </td>
-                    <td className={styles.kind}>{dictionary.codeBrowser.kinds[entry.kind]}</td>
                     <td>{entry.kind === "file" ? formatSize(entry.size, dictionary.codeBrowser.bytes) : "—"}</td>
                   </tr>
                 );
@@ -149,6 +166,10 @@ export function CodeBrowser({
       {tree.hasMore && <p className={styles.revision}>{dictionary.codeBrowser.treeTruncated}</p>}
     </section>
   );
+}
+
+function shortRevision(revision: string): string {
+  return revision.length > 12 ? revision.slice(0, 12) : revision;
 }
 
 function EntryIcon({ kind }: { kind: "directory" | "file" | "link" }) {
