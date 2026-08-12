@@ -49,25 +49,26 @@ type Organization struct {
 }
 
 type Repository struct {
-	ID                 string    `json:"id"`
-	OrganizationID     string    `json:"organizationId"`
-	Owner              string    `json:"owner"`
-	Slug               string    `json:"slug"`
-	DisplayName        string    `json:"displayName"`
-	Description        string    `json:"description"`
-	Visibility         string    `json:"visibility"`
-	LoreRepositoryID   string    `json:"loreRepositoryId"`
-	LoreURL            string    `json:"loreUrl"`
-	DefaultBranch      string    `json:"defaultBranch"`
-	HomepageURL        string    `json:"homepageUrl"`
-	AllowIssues        bool      `json:"allowIssues"`
-	AllowMergeRequests bool      `json:"allowMergeRequests"`
-	Topics             []string  `json:"topics"`
-	IssueCount         int64     `json:"issueCount"`
-	MergeRequestCount  int64     `json:"mergeRequestCount"`
-	LifecycleState     string    `json:"lifecycleState,omitempty"`
-	ProvisioningError  string    `json:"provisioningError,omitempty"`
-	UpdatedAt          time.Time `json:"updatedAt"`
+	ID                 string     `json:"id"`
+	OrganizationID     string     `json:"organizationId"`
+	Owner              string     `json:"owner"`
+	Slug               string     `json:"slug"`
+	DisplayName        string     `json:"displayName"`
+	Description        string     `json:"description"`
+	Visibility         string     `json:"visibility"`
+	LoreRepositoryID   string     `json:"loreRepositoryId"`
+	LoreURL            string     `json:"loreUrl"`
+	DefaultBranch      string     `json:"defaultBranch"`
+	HomepageURL        string     `json:"homepageUrl"`
+	AllowIssues        bool       `json:"allowIssues"`
+	AllowMergeRequests bool       `json:"allowMergeRequests"`
+	Topics             []string   `json:"topics"`
+	IssueCount         int64      `json:"issueCount"`
+	MergeRequestCount  int64      `json:"mergeRequestCount"`
+	ArchivedAt         *time.Time `json:"archivedAt"`
+	LifecycleState     string     `json:"lifecycleState,omitempty"`
+	ProvisioningError  string     `json:"provisioningError,omitempty"`
+	UpdatedAt          time.Time  `json:"updatedAt"`
 }
 
 type Issue struct {

@@ -193,17 +193,21 @@ func (s *store) checkIssueMutation(
 	number int64,
 ) (bool, string, error) {
 	var orgID, authorID string
+	var archived bool
 	err := s.pool.QueryRow(ctx, `
-		SELECT r.organization_id, i.author_id
+		SELECT r.organization_id, i.author_id, r.archived_at IS NOT NULL
 		FROM issues i
 		JOIN repositories r ON r.id = i.repository_id
 		WHERE i.repository_id = $1 AND i.number = $2
-	`, repoID, number).Scan(&orgID, &authorID)
+	`, repoID, number).Scan(&orgID, &authorID, &archived)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, "", platform.ErrNotFound
 	}
 	if err != nil {
 		return false, "", fmt.Errorf("find issue for mutation: %w", err)
+	}
+	if archived {
+		return false, orgID, nil
 	}
 	if actor.ID == authorID {
 		return true, orgID, nil

@@ -313,7 +313,7 @@ func (store *Store) ExploreRepositories(ctx context.Context, limit int) ([]Repos
 		limit = 30
 	}
 	rows, err := store.pool.Query(ctx, repositorySelect+`
-		WHERE r.visibility = 'public' AND r.archived_at IS NULL AND r.lifecycle_state = 'active'
+		WHERE r.visibility = 'public' AND r.lifecycle_state = 'active'
 		GROUP BY r.id, o.slug
 		ORDER BY r.updated_at DESC
 		LIMIT $1
@@ -328,7 +328,7 @@ func (store *Store) ExploreRepositories(ctx context.Context, limit int) ([]Repos
 func (store *Store) PublicRepository(ctx context.Context, owner string, slug string) (Repository, error) {
 	row := store.pool.QueryRow(ctx, repositorySelect+`
 		WHERE o.slug = $1 AND r.slug = $2 AND o.active
-		  AND r.visibility = 'public' AND r.archived_at IS NULL
+		  AND r.visibility = 'public'
 		  AND r.lifecycle_state = 'active'
 		GROUP BY r.id, o.slug
 	`, owner, slug)
@@ -353,7 +353,7 @@ func (store *Store) RepositoryForRead(
 	}
 	row := store.pool.QueryRow(ctx, repositorySelect+`
 		JOIN users actor_user ON actor_user.id = $3 AND actor_user.status = 'active'
-		WHERE o.slug = $1 AND r.slug = $2 AND r.archived_at IS NULL
+		WHERE o.slug = $1 AND r.slug = $2
 		  AND r.lifecycle_state = 'active'
 			AND (
 			      r.visibility = 'public'

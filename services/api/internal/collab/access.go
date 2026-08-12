@@ -85,11 +85,11 @@ func lookupRepository(
 		           SELECT 1 FROM repository_watches watch
 		           WHERE watch.repository_id = r.id AND watch.user_id = $3
 		       ),
-		       r.updated_at
+		       r.archived_at, r.updated_at
 		FROM repositories r
 		JOIN organizations o ON o.id = r.organization_id AND o.active
 		JOIN users actor_user ON actor_user.id = $3 AND actor_user.status = 'active'
-		WHERE o.slug = $1 AND r.slug = $2 AND r.archived_at IS NULL AND r.lifecycle_state = 'active'
+		WHERE o.slug = $1 AND r.slug = $2 AND r.lifecycle_state = 'active'
 		  AND (
 		      r.visibility = 'public'
 		      OR (
@@ -153,10 +153,10 @@ func lookupPublicRepository(
 		           JOIN users watcher ON watcher.id = watch.user_id AND watcher.status = 'active'
 		           WHERE watch.repository_id = r.id
 		       ),
-		       false, false, r.updated_at
+		       false, false, r.archived_at, r.updated_at
 		FROM repositories r
 		JOIN organizations o ON o.id = r.organization_id AND o.active
-		WHERE o.slug = $1 AND r.slug = $2 AND r.archived_at IS NULL AND r.lifecycle_state = 'active'
+		WHERE o.slug = $1 AND r.slug = $2 AND r.lifecycle_state = 'active'
 		  AND r.visibility = 'public'
 	`, owner, slug)
 	repo, err := scanRepositoryRow(row)
@@ -188,7 +188,7 @@ func repositoryPermission(
 		    ON rm.repository_id = r.id AND rm.user_id = $3 AND rm.active
 		LEFT JOIN organization_memberships om
 		    ON om.organization_id = o.id AND om.user_id = $3 AND om.active
-		WHERE r.id = $1 AND o.id = $2 AND r.archived_at IS NULL AND r.lifecycle_state = 'active'
+		WHERE r.id = $1 AND o.id = $2 AND r.lifecycle_state = 'active'
 	`, repo.ID, repo.OrganizationID, actor.ID).Scan(&repoRole, &orgRole)
 	if err != nil {
 		return Access{}, fmt.Errorf("compute repository permission: %w", err)
@@ -234,6 +234,9 @@ func repositoryPermission(
 	}
 	if team := rolePermission(teamRole); team > access.Permission {
 		access.Permission = team
+	}
+	if repo.ArchivedAt != nil && access.Permission > PermRead {
+		access.Permission = PermRead
 	}
 	return access, nil
 }
@@ -309,6 +312,7 @@ func scanRepositoryRow(row pgx.Row) (Repository, error) {
 		&repo.WatcherCount,
 		&repo.ViewerHasStarred,
 		&repo.ViewerIsWatching,
+		&repo.ArchivedAt,
 		&repo.UpdatedAt,
 	)
 	if err == nil {

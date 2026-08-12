@@ -141,7 +141,7 @@ func (store *Store) claimDelivery(
 			JOIN repository_webhooks webhook ON webhook.id = delivery.webhook_id AND webhook.active
 			JOIN repositories repository
 			  ON repository.id = webhook.repository_id
-			 AND repository.lifecycle_state = 'active' AND repository.archived_at IS NULL
+			 AND repository.lifecycle_state = 'active'
 			JOIN organizations organization
 			  ON organization.id = repository.organization_id AND organization.active
 			WHERE (

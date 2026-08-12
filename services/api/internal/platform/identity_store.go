@@ -240,7 +240,7 @@ func (store *Store) listOrganizationViews(
 		  ON members.organization_id = o.id AND members.active
 		LEFT JOIN users member_user ON member_user.id = members.user_id AND member_user.status = 'active'
 		LEFT JOIN repositories r ON r.organization_id = o.id
-		  AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
+		  AND r.lifecycle_state = 'active'
 		LEFT JOIN teams t ON t.organization_id = o.id AND t.active
 		WHERE o.active AND (o.visibility = 'public' OR viewer.user_id IS NOT NULL)
 		GROUP BY o.id, viewer.role
@@ -262,8 +262,7 @@ func (store *Store) searchRepositories(
 	limit int,
 ) ([]Repository, error) {
 	rows, err := store.pool.Query(ctx, repositorySelect+`
-		WHERE r.archived_at IS NULL
-		  AND (
+		WHERE (
 		      to_tsvector(
 		          'simple'::regconfig,
 		          COALESCE(r.slug, '') || ' ' || COALESCE(r.display_name, '') || ' ' || COALESCE(r.description, '')
@@ -313,7 +312,7 @@ func (store *Store) searchOrganizations(
 		  ON members.organization_id = o.id AND members.active
 		LEFT JOIN users member_user ON member_user.id = members.user_id AND member_user.status = 'active'
 		LEFT JOIN repositories r ON r.organization_id = o.id
-		  AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
+		  AND r.lifecycle_state = 'active'
 		LEFT JOIN teams t ON t.organization_id = o.id AND t.active
 		WHERE (
 		    to_tsvector(

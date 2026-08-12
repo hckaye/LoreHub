@@ -426,7 +426,7 @@ func (store *Store) resolveNotificationScope(
 			SELECT r.organization_id, r.id, o.slug, r.slug, r.visibility, NULL, NULL, r.display_name
 			FROM repositories r JOIN organizations o ON o.id = r.organization_id AND o.active
 			WHERE r.id = split_part($1, ':', 1)::uuid
-			  AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
+			  AND r.lifecycle_state = 'active'
 		`, eventID).Scan(&scope.OrganizationID, &scope.RepositoryID, &scope.OrganizationSlug,
 			&scope.RepositorySlug, &scope.Visibility, &scope.IssueNumber, &scope.MergeRequestNumber,
 			&scope.Title)
@@ -436,7 +436,7 @@ func (store *Store) resolveNotificationScope(
 			FROM issue_comments c
 			JOIN issues i ON i.id = c.issue_id
 			JOIN repositories r ON r.id = i.repository_id
-			  AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
+			  AND r.lifecycle_state = 'active'
 			JOIN organizations o ON o.id = r.organization_id AND o.active
 			WHERE c.id = split_part($1, ':', 1)::uuid
 		`, eventID).Scan(&scope.OrganizationID, &scope.RepositoryID, &scope.OrganizationSlug,
@@ -446,7 +446,7 @@ func (store *Store) resolveNotificationScope(
 		err = transaction.QueryRow(ctx, `
 			SELECT r.organization_id, r.id, o.slug, r.slug, r.visibility, i.number, NULL, i.title
 			FROM issues i JOIN repositories r ON r.id = i.repository_id
-			  AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
+			  AND r.lifecycle_state = 'active'
 			JOIN organizations o ON o.id = r.organization_id AND o.active
 			WHERE i.id = split_part($1, ':', 1)::uuid
 		`, eventID).Scan(&scope.OrganizationID, &scope.RepositoryID, &scope.OrganizationSlug,
@@ -458,7 +458,7 @@ func (store *Store) resolveNotificationScope(
 			FROM merge_request_comments comment
 			JOIN merge_requests mr ON mr.id = comment.merge_request_id
 			JOIN repositories r ON r.id = mr.repository_id
-			  AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
+			  AND r.lifecycle_state = 'active'
 			JOIN organizations o ON o.id = r.organization_id AND o.active
 			WHERE comment.id = split_part($1, ':', 1)::uuid
 		`, eventID).Scan(&scope.OrganizationID, &scope.RepositoryID, &scope.OrganizationSlug,
@@ -470,7 +470,7 @@ func (store *Store) resolveNotificationScope(
 			FROM merge_request_review_requests request
 			JOIN merge_requests mr ON mr.id = request.merge_request_id
 			JOIN repositories r ON r.id = request.repository_id
-			  AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
+			  AND r.lifecycle_state = 'active'
 			JOIN organizations o ON o.id = request.organization_id AND o.active
 			WHERE request.id = split_part($1, ':', 1)::uuid
 		`, eventID).Scan(&scope.OrganizationID, &scope.RepositoryID, &scope.OrganizationSlug,
@@ -482,7 +482,7 @@ func (store *Store) resolveNotificationScope(
 			FROM merge_request_reviews review
 			JOIN merge_requests mr ON mr.id = review.merge_request_id
 			JOIN repositories r ON r.id = mr.repository_id
-			  AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
+			  AND r.lifecycle_state = 'active'
 			JOIN organizations o ON o.id = r.organization_id AND o.active
 			WHERE review.id = split_part($1, ':', 1)::uuid
 		`, eventID).Scan(&scope.OrganizationID, &scope.RepositoryID, &scope.OrganizationSlug,
@@ -495,7 +495,7 @@ func (store *Store) resolveNotificationScope(
 			FROM merge_request_review_threads thread
 			JOIN merge_requests mr ON mr.id = thread.merge_request_id
 			JOIN repositories r ON r.id = mr.repository_id
-			  AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
+			  AND r.lifecycle_state = 'active'
 			JOIN organizations o ON o.id = r.organization_id AND o.active
 			WHERE thread.id = split_part($1, ':', 1)::uuid
 		`, eventID).Scan(&scope.OrganizationID, &scope.RepositoryID, &scope.OrganizationSlug,
@@ -505,7 +505,7 @@ func (store *Store) resolveNotificationScope(
 		err = transaction.QueryRow(ctx, `
 			SELECT r.organization_id, r.id, o.slug, r.slug, r.visibility, NULL, mr.number, mr.title
 			FROM merge_requests mr JOIN repositories r ON r.id = mr.repository_id
-			  AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
+			  AND r.lifecycle_state = 'active'
 			JOIN organizations o ON o.id = r.organization_id AND o.active
 			WHERE mr.id = split_part($1, ':', 1)::uuid
 		`, eventID).Scan(&scope.OrganizationID, &scope.RepositoryID, &scope.OrganizationSlug,
@@ -515,7 +515,7 @@ func (store *Store) resolveNotificationScope(
 		err = transaction.QueryRow(ctx, `
 			SELECT r.organization_id, r.id, o.slug, r.slug, r.visibility, NULL, NULL, l.name
 			FROM labels l JOIN repositories r ON r.id = l.repository_id
-			  AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
+			  AND r.lifecycle_state = 'active'
 			JOIN organizations o ON o.id = r.organization_id AND o.active
 			WHERE l.id = split_part($1, ':', 1)::uuid
 		`, eventID).Scan(&scope.OrganizationID, &scope.RepositoryID, &scope.OrganizationSlug,
@@ -525,7 +525,7 @@ func (store *Store) resolveNotificationScope(
 		err = transaction.QueryRow(ctx, `
 			SELECT r.organization_id, r.id, o.slug, r.slug, r.visibility, NULL, NULL, br.pattern
 			FROM branch_rules br JOIN repositories r ON r.id = br.repository_id
-			  AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
+			  AND r.lifecycle_state = 'active'
 			JOIN organizations o ON o.id = r.organization_id AND o.active
 			WHERE br.id = split_part($1, ':', 1)::uuid
 		`, eventID).Scan(&scope.OrganizationID, &scope.RepositoryID, &scope.OrganizationSlug,
@@ -583,7 +583,7 @@ func (store *Store) resolveDeletedNotificationScope(
 		err := transaction.QueryRow(ctx, `
 			SELECT r.organization_id, r.id, o.slug, r.slug, r.visibility, i.number, NULL, i.title
 			FROM issues i JOIN repositories r ON r.id = i.repository_id
-			  AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
+			  AND r.lifecycle_state = 'active'
 			JOIN organizations o ON o.id = r.organization_id AND o.active
 			WHERE i.id = $1
 		`, payload.IssueID).Scan(&scope.OrganizationID, &scope.RepositoryID, &scope.OrganizationSlug,
@@ -603,7 +603,7 @@ func (store *Store) resolveDeletedNotificationScope(
 		err := transaction.QueryRow(ctx, `
 			SELECT r.organization_id, r.id, o.slug, r.slug, r.visibility, NULL, mr.number, mr.title
 			FROM merge_requests mr JOIN repositories r ON r.id = mr.repository_id
-			  AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
+			  AND r.lifecycle_state = 'active'
 			JOIN organizations o ON o.id = r.organization_id AND o.active
 			WHERE mr.id = $1
 		`, payload.MergeRequestID).Scan(&scope.OrganizationID, &scope.RepositoryID,
@@ -624,7 +624,7 @@ func (store *Store) resolveDeletedNotificationScope(
 		err := transaction.QueryRow(ctx, `
 			SELECT r.organization_id, r.id, o.slug, r.slug, r.visibility
 			FROM repositories r JOIN organizations o ON o.id = r.organization_id AND o.active
-			WHERE r.id = $1 AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
+			WHERE r.id = $1 AND r.lifecycle_state = 'active'
 		`, payload.RepositoryID).Scan(&scope.OrganizationID, &scope.RepositoryID, &scope.OrganizationSlug,
 			&scope.RepositorySlug, &scope.Visibility)
 		if err != nil {
@@ -713,7 +713,7 @@ func (store *Store) notificationRecipients(
 			SELECT repository_members.user_id
 			FROM repository_memberships repository_members
 			JOIN repositories r ON r.id = repository_members.repository_id
-			  AND r.organization_id = $1 AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
+			  AND r.organization_id = $1 AND r.lifecycle_state = 'active'
 			JOIN organizations o ON o.id = r.organization_id AND o.active
 			JOIN users recipient ON recipient.id = repository_members.user_id
 			WHERE repository_members.repository_id = $2
@@ -741,7 +741,7 @@ func (store *Store) notificationRecipients(
 			SELECT watches.user_id
 			FROM repository_watches watches
 			JOIN repositories r ON r.id = watches.repository_id
-			  AND r.organization_id = $1 AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
+			  AND r.organization_id = $1 AND r.lifecycle_state = 'active'
 			JOIN organizations o ON o.id = r.organization_id AND o.active
 			JOIN users recipient ON recipient.id = watches.user_id AND recipient.status = 'active'
 			WHERE watches.repository_id = $2

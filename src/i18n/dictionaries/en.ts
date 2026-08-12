@@ -8,6 +8,7 @@ import { personalAccessTokens } from "./personal-access-tokens";
 import { pullRequestDrafts } from "./pull-request-drafts";
 import { pullRequestMetadata } from "./pull-request-metadata";
 import { releases } from "./releases";
+import { repositoryLifecycle } from "./repository-lifecycle";
 import { webhooks } from "./webhooks";
 import { wiki } from "./wiki";
 
@@ -21,6 +22,7 @@ const en = {
   personalAccessTokens: personalAccessTokens.en,
   fileLocks: fileLocks.en,
   globalWorkItems: globalWorkItems.en,
+  repositoryLifecycle: repositoryLifecycle.en,
   metadata: {
     title: "LoreHub · Collaboration for Lore repositories",
     description: "Review, issues, permissions, and GitHub Actions-compatible CI for Lore.",

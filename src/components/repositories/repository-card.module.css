@@ -59,12 +59,15 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  margin-left: auto;
   padding: 3px 7px;
   border: 1px solid var(--border);
   border-radius: 999px;
   color: var(--fg-muted);
   font-size: 0.7rem;
+}
+
+.heading > .visibility:first-of-type {
+  margin-left: auto;
 }
 
 .description {

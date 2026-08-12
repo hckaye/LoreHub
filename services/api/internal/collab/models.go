@@ -13,24 +13,25 @@ import "time"
 // identifiers needed by collaboration endpoints without exposing persistence
 // details.
 type Repository struct {
-	ID                string    `json:"id"`
-	OrganizationID    string    `json:"organizationId"`
-	Owner             string    `json:"owner"`
-	Slug              string    `json:"slug"`
-	DisplayName       string    `json:"displayName"`
-	Description       string    `json:"description"`
-	Visibility        string    `json:"visibility"`
-	LoreRepositoryID  string    `json:"loreRepositoryId"`
-	LoreURL           string    `json:"loreUrl"`
-	DefaultBranch     string    `json:"defaultBranch"`
-	Topics            []string  `json:"topics"`
-	IssueCount        int64     `json:"issueCount"`
-	MergeRequestCount int64     `json:"mergeRequestCount"`
-	StarCount         int64     `json:"starCount"`
-	WatcherCount      int64     `json:"watcherCount"`
-	ViewerHasStarred  bool      `json:"viewerHasStarred"`
-	ViewerIsWatching  bool      `json:"viewerIsWatching"`
-	UpdatedAt         time.Time `json:"updatedAt"`
+	ID                string     `json:"id"`
+	OrganizationID    string     `json:"organizationId"`
+	Owner             string     `json:"owner"`
+	Slug              string     `json:"slug"`
+	DisplayName       string     `json:"displayName"`
+	Description       string     `json:"description"`
+	Visibility        string     `json:"visibility"`
+	LoreRepositoryID  string     `json:"loreRepositoryId"`
+	LoreURL           string     `json:"loreUrl"`
+	DefaultBranch     string     `json:"defaultBranch"`
+	Topics            []string   `json:"topics"`
+	IssueCount        int64      `json:"issueCount"`
+	MergeRequestCount int64      `json:"mergeRequestCount"`
+	StarCount         int64      `json:"starCount"`
+	WatcherCount      int64      `json:"watcherCount"`
+	ViewerHasStarred  bool       `json:"viewerHasStarred"`
+	ViewerIsWatching  bool       `json:"viewerIsWatching"`
+	ArchivedAt        *time.Time `json:"archivedAt"`
+	UpdatedAt         time.Time  `json:"updatedAt"`
 }
 
 type RepositoryEngagement struct {

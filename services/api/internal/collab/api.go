@@ -95,6 +95,10 @@ func (api *API) requireMutationActor(
 	if !ok {
 		return platform.User{}, Repository{}, false
 	}
+	if repo.ArchivedAt != nil {
+		writeProblem(writer, http.StatusForbidden, "repository_archived", "The repository is read-only")
+		return platform.User{}, Repository{}, false
+	}
 	return actor, repo, true
 }
 

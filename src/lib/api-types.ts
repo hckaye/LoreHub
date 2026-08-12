@@ -19,6 +19,7 @@ export type Repository = {
   watcherCount?: number;
   viewerHasStarred?: boolean;
   viewerIsWatching?: boolean;
+  archivedAt: string | null;
   updatedAt: string;
 };
 

@@ -1,4 +1,4 @@
-import { CircleDot, GitPullRequest, LockKeyhole, PackageOpen } from "lucide-react";
+import { Archive, CircleDot, GitPullRequest, LockKeyhole, PackageOpen } from "lucide-react";
 import Link from "next/link";
 
 import type { Dictionary } from "@/i18n";
@@ -33,6 +33,12 @@ export function RepositoryCard({ repository, locale, dictionary }: RepositoryCar
           {repository.visibility !== "public" && <LockKeyhole aria-hidden="true" size={12} />}
           {visibilityLabel}
         </span>
+        {repository.archivedAt && (
+          <span className={styles.visibility}>
+            <Archive aria-hidden="true" size={12} />
+            {dictionary.repositoryLifecycle.badge}
+          </span>
+        )}
       </div>
       <p className={styles.description}>{repository.description || dictionary.common.noDescription}</p>
       <RepositoryTopicList

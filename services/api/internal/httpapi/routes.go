@@ -88,6 +88,8 @@ func (api *API) registerRepositoryRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+base, api.publicRepository)
 	mux.HandleFunc("GET "+base+"/settings", api.repositorySettings)
 	mux.HandleFunc("PATCH "+base+"/settings", api.updateRepositorySettings)
+	mux.HandleFunc("PUT "+base+"/archive", api.archiveRepository)
+	mux.HandleFunc("DELETE "+base+"/archive", api.unarchiveRepository)
 	mux.HandleFunc("GET "+base+"/insights", api.repositoryInsights)
 	mux.HandleFunc("GET "+base+"/branches", api.repositoryBranches)
 	mux.HandleFunc("GET "+base+"/issues", api.listIssues)

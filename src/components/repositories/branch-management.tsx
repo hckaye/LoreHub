@@ -34,7 +34,8 @@ export function BranchManagement(props: BranchManagementProps) {
   const [archiving, setArchiving] = useState<string | null>(null);
   const router = useRouter();
   const copy = props.dictionary.branchManagement;
-  const authenticated = props.session.status === "authenticated" ? props.session : null;
+  const readOnly = Boolean(props.repository.archivedAt);
+  const authenticated = props.session.status === "authenticated" && !readOnly ? props.session : null;
   const protectedBranches = useMemo(
     () => new Set(branches.filter((branch) => branchProtected(rules, branch.name)).map((branch) => branch.id)),
     [branches, rules],
@@ -160,7 +161,7 @@ export function BranchManagement(props: BranchManagementProps) {
           <ShieldCheck aria-hidden="true" size={20} />
         </div>
         <BranchRuleEditor
-          canManage={props.overview.viewerCanManageRules}
+          canManage={props.overview.viewerCanManageRules && !readOnly}
           dictionary={props.dictionary}
           initialRules={rules}
           onMessage={showMessage}

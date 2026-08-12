@@ -119,7 +119,6 @@ func authorizeRepositoryEngagement(
 		  ON organization.id = repository.organization_id AND organization.active
 		JOIN users actor_user ON actor_user.id = $2 AND actor_user.status = 'active'
 		WHERE repository.id = $1
-		  AND repository.archived_at IS NULL
 		  AND repository.lifecycle_state = 'active'
 		  AND (
 		      repository.visibility = 'public'

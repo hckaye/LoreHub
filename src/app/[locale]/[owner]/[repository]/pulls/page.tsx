@@ -8,7 +8,7 @@ import { FilterTabs } from "@/components/ui/filter-tabs";
 import { FlashNotice } from "@/components/ui/flash-notice";
 import { getDictionary } from "@/i18n";
 import { isLocale } from "@/i18n/config";
-import { getMergeRequests, type MergeRequestFilter } from "@/lib/lorehub-api";
+import { getMergeRequests, getPublicRepository, type MergeRequestFilter } from "@/lib/lorehub-api";
 import { repositoryPath } from "@/lib/routes";
 
 import styles from "@/components/repositories/repository-section.module.css";
@@ -25,17 +25,21 @@ export default async function PullRequestsPage({ params, searchParams }: PullReq
   const locale = isLocale(value) ? value : "en";
   const query = await searchParams;
   const state = parseMergeRequestFilter(query.state);
-  const [dictionary, mergeRequests] = await Promise.all([
+  const [dictionary, mergeRequests, repositoryResult] = await Promise.all([
     getDictionary(locale),
     getMergeRequests(owner, repository, state),
+    getPublicRepository(owner, repository),
   ]);
+  const archived = repositoryResult.ok && repositoryResult.data.archivedAt !== null;
   const basePath = repositoryPath(locale, owner, repository, "pulls");
   return (
     <RepositorySection
       actions={
-        <Link className={styles.primaryButton} href={`${basePath}/new`}>
-          {dictionary.pullRequestsPage.newPullRequest}
-        </Link>
+        archived ? undefined : (
+          <Link className={styles.primaryButton} href={`${basePath}/new`}>
+            {dictionary.pullRequestsPage.newPullRequest}
+          </Link>
+        )
       }
       description={dictionary.pullRequestsPage.description}
       title={dictionary.pullRequestsPage.title}

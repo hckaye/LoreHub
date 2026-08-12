@@ -173,6 +173,32 @@ func TestIntegrationRepositoryPermission(t *testing.T) {
 	if carolAccess.Permission != PermNone {
 		t.Errorf("carol (org member) permission = %v, want PermNone", carolAccess.Permission)
 	}
+	mustExec(t, ctx, pool, `
+		UPDATE repositories SET archived_at = now(), archived_by = $2 WHERE id = $1
+	`, fix.repoID, fix.alice.ID)
+	repo, err = s.LookupRepository(ctx, &fix.bob, fix.ownerSlug, fix.repoSlug)
+	if err != nil || repo.ArchivedAt == nil {
+		t.Fatalf("lookup archived repository = %+v, err=%v", repo, err)
+	}
+	bobAccess, err = s.RepositoryPermission(ctx, fix.bob, repo)
+	if err != nil || bobAccess.Permission != PermRead {
+		t.Fatalf("archived repository permission = %+v, err=%v", bobAccess, err)
+	}
+	issueID := uuidNew()
+	mustExec(t, ctx, pool, `
+		INSERT INTO issues (id, repository_id, number, title, author_id)
+		VALUES ($1, $2, 1, 'Archived issue', $3)
+	`, issueID, fix.repoID, fix.bob.ID)
+	if _, err := s.CreateIssueComment(ctx, fix.bob, fix.repoID, 1, "comment"); !errors.Is(err, platform.ErrForbidden) {
+		t.Fatalf("archived repository comment error = %v", err)
+	}
+	updatedTitle := "Changed"
+	_, err = s.UpdateIssue(
+		ctx, fix.bob, fix.repoID, 1, UpdateIssueInput{Title: &updatedTitle},
+	)
+	if !errors.Is(err, platform.ErrForbidden) {
+		t.Fatalf("archived repository issue update error = %v", err)
+	}
 }
 
 func TestIntegrationOutsideDirectCollaboratorAccess(t *testing.T) {

@@ -49,11 +49,12 @@ func (api *API) listThreads(writer http.ResponseWriter, request *http.Request) {
 			return
 		}
 		for index := range threads {
-			threads[index].ViewerCanResolve = threads[index].createdByID == actor.ID ||
-				threads[index].mergeAuthorID == actor.ID || access.AtLeast(collab.PermWrite)
+			threads[index].ViewerCanResolve = repository.ArchivedAt == nil &&
+				(threads[index].createdByID == actor.ID || threads[index].mergeAuthorID == actor.ID ||
+					access.AtLeast(collab.PermWrite))
 			for commentIndex := range threads[index].Comments {
 				comment := &threads[index].Comments[commentIndex]
-				comment.ViewerCanUpdate = !comment.Deleted &&
+				comment.ViewerCanUpdate = repository.ArchivedAt == nil && !comment.Deleted &&
 					(comment.authorID == actor.ID || access.AtLeast(collab.PermWrite))
 			}
 		}

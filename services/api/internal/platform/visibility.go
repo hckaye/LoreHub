@@ -6,7 +6,6 @@ import "fmt"
 func repositoryAccessClause(repositoryAlias, viewerParam string) string {
 	return fmt.Sprintf(`(
 		%s.lifecycle_state = 'active'
-		AND %s.archived_at IS NULL
 		AND EXISTS (
 			SELECT 1
 			FROM organizations repository_org
@@ -96,7 +95,7 @@ func repositoryAccessClause(repositoryAlias, viewerParam string) string {
 				)
 			)
 		)
-	)`, repositoryAlias, repositoryAlias, repositoryAlias, viewerParam, viewerParam, repositoryAlias,
+	)`, repositoryAlias, repositoryAlias, viewerParam, viewerParam, repositoryAlias,
 		viewerParam, viewerParam, repositoryAlias, repositoryAlias, viewerParam, repositoryAlias,
 		repositoryAlias, viewerParam, repositoryAlias, viewerParam, repositoryAlias, repositoryAlias,
 		viewerParam)
@@ -131,7 +130,6 @@ func notificationCurrentAccessClause(notificationAlias, viewerParam string) stri
 					WHERE current_repository.id = %[1]s.scope_repository_id
 					  AND %[1]s.scope_organization_id = current_repository.organization_id
 					  AND current_repository.lifecycle_state = 'active'
-					  AND current_repository.archived_at IS NULL
 						AND (
 							current_repository.visibility = 'public'
 						OR (

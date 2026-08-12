@@ -202,7 +202,6 @@ func loadEventRepository(
 		JOIN organizations organization
 		  ON organization.id = repository.organization_id AND organization.active
 		WHERE repository.id = $1 AND repository.lifecycle_state = 'active'
-		  AND repository.archived_at IS NULL
 	`, repositoryID).Scan(
 		&reference.ID, &reference.OrganizationID, &reference.Owner, &reference.Slug,
 	)

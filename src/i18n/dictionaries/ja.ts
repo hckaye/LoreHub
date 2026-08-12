@@ -8,6 +8,7 @@ import { personalAccessTokens } from "./personal-access-tokens";
 import { pullRequestDrafts } from "./pull-request-drafts";
 import { pullRequestMetadata } from "./pull-request-metadata";
 import { releases } from "./releases";
+import { repositoryLifecycle } from "./repository-lifecycle";
 import { webhooks } from "./webhooks";
 import { wiki } from "./wiki";
 
@@ -23,6 +24,7 @@ const ja = {
   personalAccessTokens: personalAccessTokens.ja,
   fileLocks: fileLocks.ja,
   globalWorkItems: globalWorkItems.ja,
+  repositoryLifecycle: repositoryLifecycle.ja,
   metadata: {
     title: "LoreHub · Loreリポジトリの共同開発基盤",
     description: "Loreにレビュー、Issue、権限管理、GitHub Actions互換CIを追加します。",

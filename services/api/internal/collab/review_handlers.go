@@ -39,9 +39,10 @@ func (api *API) getMergeRequest(writer http.ResponseWriter, request *http.Reques
 		if !ok {
 			return
 		}
-		mr.ViewerCanUpdate = mr.State != "merged" &&
+		mr.ViewerCanUpdate = repo.ArchivedAt == nil && mr.State != "merged" &&
 			(mr.AuthorID == actor.ID || access.AtLeast(PermTriage))
-		mr.ViewerCanReview = mr.AuthorID != actor.ID && access.AtLeast(PermRead) && mr.State == "open"
+		mr.ViewerCanReview = repo.ArchivedAt == nil && mr.AuthorID != actor.ID &&
+			access.AtLeast(PermRead) && mr.State == "open"
 	}
 	writeJSON(writer, http.StatusOK, mr)
 }

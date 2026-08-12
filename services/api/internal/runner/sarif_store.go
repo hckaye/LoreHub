@@ -188,7 +188,7 @@ func (store *Store) ListSARIFUploads(
 	}
 	rows, err := store.pool.Query(ctx, sarifMetadataQuery+`
 		WHERE upload.repository_id = $1 AND organization.slug = $2 AND repository.slug = $3
-		  AND repository.archived_at IS NULL AND repository.lifecycle_state = 'active'
+		  AND repository.lifecycle_state = 'active'
 		  AND organization.active
 		ORDER BY upload.created_at DESC, upload.id DESC
 		LIMIT $4
@@ -227,7 +227,7 @@ func (store *Store) GetSARIFUpload(
 	upload, err := scanSARIFUploadMetadata(store.pool.QueryRow(ctx, sarifMetadataQuery+`
 		WHERE upload.id = $1 AND upload.repository_id = $2
 		  AND organization.slug = $3 AND repository.slug = $4
-		  AND repository.archived_at IS NULL AND repository.lifecycle_state = 'active'
+		  AND repository.lifecycle_state = 'active'
 		  AND organization.active
 	`, uploadUUID, selector.RepositoryID, selector.Owner, selector.Repository))
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -272,7 +272,7 @@ func (store *Store) ListCodeScanningAlerts(
 		JOIN organizations organization ON organization.id = repository.organization_id
 		WHERE alert.repository_id = $1 AND organization.slug = $2 AND repository.slug = $3
 		  AND ($4::uuid IS NULL OR alert.upload_id = $4)
-		  AND repository.archived_at IS NULL AND repository.lifecycle_state = 'active'
+		  AND repository.lifecycle_state = 'active'
 		  AND organization.active
 		ORDER BY alert.created_at DESC, alert.id DESC
 		LIMIT $5

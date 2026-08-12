@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/lorehub/lorehub/services/api/internal/platform"
 )
@@ -13,6 +14,31 @@ type fakeEngagementStore struct {
 	Store
 	star  func(platform.User, string, bool) (RepositoryEngagement, error)
 	watch func(platform.User, string, bool) (RepositoryEngagement, error)
+}
+
+func TestRepositoryEngagementAllowsArchivedRepositories(t *testing.T) {
+	base := &fakeStore{
+		user: alice(),
+		lookupRepo: func(_ *platform.User, owner string, slug string) (Repository, error) {
+			repository := repoFor(owner, slug)
+			archivedAt := time.Now()
+			repository.ArchivedAt = &archivedAt
+			return repository, nil
+		},
+	}
+	called := false
+	store := &fakeEngagementStore{
+		Store: base,
+		star: func(platform.User, string, bool) (RepositoryEngagement, error) {
+			called = true
+			return RepositoryEngagement{ViewerHasStarred: true}, nil
+		},
+	}
+	recorder := doRequest(newTestAPI(store), http.MethodPut,
+		"/api/v1/repositories/acme/lore/star", "", "Authorization", "Bearer alice")
+	if recorder.Code != http.StatusOK || !called {
+		t.Fatalf("response = %d %s, called = %t", recorder.Code, recorder.Body.String(), called)
+	}
 }
 
 func (store *fakeEngagementStore) SetRepositoryStar(

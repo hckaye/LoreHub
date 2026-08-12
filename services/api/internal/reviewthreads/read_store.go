@@ -22,7 +22,7 @@ func (store *store) List(ctx context.Context, repositoryID string, number int64)
 		JOIN merge_requests request ON request.id = thread.merge_request_id
 		  AND request.repository_id = thread.repository_id
 		JOIN repositories repository ON repository.id = request.repository_id
-		  AND repository.archived_at IS NULL AND repository.lifecycle_state = 'active'
+		  AND repository.lifecycle_state = 'active'
 		JOIN organizations organization ON organization.id = repository.organization_id AND organization.active
 		JOIN users creator ON creator.id = thread.created_by
 		LEFT JOIN users resolver ON resolver.id = thread.resolved_by

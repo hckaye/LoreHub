@@ -17,6 +17,7 @@ type authorizationRepository struct {
 	LoreRepositoryID  string
 	Visibility        string
 	LifecycleState    string
+	Archived          bool
 	AllowLinks        bool
 	ObliterateEnabled bool
 }
@@ -32,18 +33,19 @@ func (store *Store) authorizationRepository(
 	var repository authorizationRepository
 	err := store.pool.QueryRow(ctx, `
 		SELECT r.id, r.organization_id, r.lore_repository_id, r.visibility,
-		       r.lifecycle_state,
+		       r.lifecycle_state, r.archived_at IS NOT NULL,
 		       p.allow_cross_repository_links, p.obliterate_enabled
 		FROM repositories r
 		JOIN organizations o ON o.id = r.organization_id AND o.active
 		JOIN repository_policies p ON p.repository_id = r.id
-		WHERE r.lore_repository_id = $1 AND r.archived_at IS NULL
+		WHERE r.lore_repository_id = $1
 	`, loreID).Scan(
 		&repository.ID,
 		&repository.OrganizationID,
 		&repository.LoreRepositoryID,
 		&repository.Visibility,
 		&repository.LifecycleState,
+		&repository.Archived,
 		&repository.AllowLinks,
 		&repository.ObliterateEnabled,
 	)
@@ -81,7 +83,6 @@ func (store *Store) EffectivePermissions(
 		 AND granted_organization.active
 		JOIN repository_policies policy ON policy.repository_id = granted_repository.id
 		WHERE principal.id = $1 AND principal.active AND spg.repository_id = $2
-		  AND granted_repository.archived_at IS NULL
 		  AND (
 			granted_repository.lifecycle_state = 'active'
 			OR (
@@ -97,10 +98,14 @@ func (store *Store) EffectivePermissions(
 	`, userID, repository.ID).Scan(&serviceKind, &serviceVisibility,
 		&serviceObliterateEnabled, &servicePermissions)
 	if err == nil {
+		permissions := policyServicePermissions(servicePermissions, serviceKind, serviceVisibility,
+			serviceObliterateEnabled)
+		if repository.Archived {
+			permissions = archivedPermissionList(permissions)
+		}
 		return authz.ResourcePermissions{
-			ResourceID: resourceID,
-			Permissions: policyServicePermissions(servicePermissions, serviceKind, serviceVisibility,
-				serviceObliterateEnabled),
+			ResourceID:  resourceID,
+			Permissions: permissions,
 		}, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
@@ -199,6 +204,11 @@ func (store *Store) EffectivePermissions(
 		return authz.ResourcePermissions{}, fmt.Errorf("iterate team repository roles: %w", err)
 	}
 	rows.Close()
+	if repository.Archived {
+		return authz.ResourcePermissions{
+			ResourceID: resourceID, Permissions: archivedPermissionMap(permissions),
+		}, nil
+	}
 	if repository.ObliterateEnabled {
 		var granted bool
 		err = store.pool.QueryRow(ctx, `
@@ -216,6 +226,22 @@ func (store *Store) EffectivePermissions(
 		ResourceID:  resourceID,
 		Permissions: authz.PermissionList(permissions),
 	}, nil
+}
+
+func archivedPermissionList(permissions []string) []string {
+	for _, permission := range permissions {
+		if permission == authz.PermissionRead {
+			return []string{authz.PermissionRead}
+		}
+	}
+	return []string{}
+}
+
+func archivedPermissionMap(permissions map[string]bool) []string {
+	if permissions[authz.PermissionRead] {
+		return []string{authz.PermissionRead}
+	}
+	return []string{}
 }
 
 func mergePermissions(destination map[string]bool, source map[string]bool) {
@@ -260,7 +286,7 @@ func (store *Store) ListResourcePermissions(
 		FROM repositories r
 		JOIN organizations o ON o.id = r.organization_id AND o.active
 		JOIN users u ON u.id = $1 AND u.status = 'active'
-		WHERE r.archived_at IS NULL AND r.lifecycle_state = 'active'
+		WHERE r.lifecycle_state = 'active'
 		  AND (
 				 r.visibility = 'public'
 			  OR (

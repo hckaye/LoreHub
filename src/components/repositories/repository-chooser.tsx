@@ -28,7 +28,8 @@ export function RepositoryChooser({ locale, dictionary, repositories, unavailabl
       />
     );
   }
-  if (!repositories || repositories.length === 0) {
+  const writableRepositories = repositories?.filter((repository) => !repository.archivedAt);
+  if (!writableRepositories || writableRepositories.length === 0) {
     return (
       <EmptyState
         body={dictionary.forms.chooseRepositoryBody}
@@ -39,7 +40,7 @@ export function RepositoryChooser({ locale, dictionary, repositories, unavailabl
   }
   return (
     <div className={styles.list}>
-      {repositories.map((repository) => {
+      {writableRepositories.map((repository) => {
         const href = `${repositoryPath(locale, repository.owner, repository.slug, section)}/new`;
         return (
           <Link className={styles.item} href={href} key={repository.id}>

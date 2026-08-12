@@ -326,8 +326,8 @@ func TestExecutionContextManagementAuthorizationIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(ctx, `
-		UPDATE repositories SET archived_at = now() WHERE id = $1
-	`, fixture.repositoryID); err != nil {
+		UPDATE repositories SET archived_at = now(), archived_by = $2 WHERE id = $1
+	`, fixture.repositoryID, fixture.userID); err != nil {
 		t.Fatal(err)
 	}
 	_, err = resolver.ListExecutionContextEntries(ctx, fixture.userID, repositoryScope)
@@ -335,7 +335,7 @@ func TestExecutionContextManagementAuthorizationIntegration(t *testing.T) {
 		t.Fatalf("archived repository was manageable: %v", err)
 	}
 	if _, err := pool.Exec(ctx, `
-		UPDATE repositories SET archived_at = NULL WHERE id = $1
+		UPDATE repositories SET archived_at = NULL, archived_by = NULL WHERE id = $1
 	`, fixture.repositoryID); err != nil {
 		t.Fatal(err)
 	}

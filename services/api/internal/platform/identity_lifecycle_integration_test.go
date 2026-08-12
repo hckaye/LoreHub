@@ -59,10 +59,12 @@ func TestIdentityCanonicalLifecycleBoundary(t *testing.T) {
 	`, teamID, teamUser.ID)
 	for visibility, repositoryID := range repositoryIDs {
 		archivedAt := any(nil)
+		archivedBy := any(nil)
 		lifecycle := "active"
 		storedVisibility := visibility
 		if visibility == "archived" {
 			archivedAt = time.Now().UTC()
+			archivedBy = owner.ID
 			storedVisibility = "public"
 		} else if visibility == "inactive" {
 			storedVisibility = "private"
@@ -70,11 +72,11 @@ func TestIdentityCanonicalLifecycleBoundary(t *testing.T) {
 		repositorySlug := "lifecycle-" + visibility + "-" + suffix
 		mustIdentityExec(t, pool, `
 			INSERT INTO repositories (
-				id, organization_id, slug, display_name, visibility, lifecycle_state, archived_at,
+				id, organization_id, slug, display_name, visibility, lifecycle_state, archived_at, archived_by,
 				lore_repository_id, lore_url, default_branch, created_by
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'main', $10)
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'main', $11)
 		`, repositoryID, orgID, repositorySlug, "Lifecycle "+visibility, storedVisibility, lifecycle,
-			archivedAt, canonicalTestLoreID(repositoryID), "lore://"+repositorySlug, owner.ID)
+			archivedAt, archivedBy, canonicalTestLoreID(repositoryID), "lore://"+repositorySlug, owner.ID)
 		mustIdentityExec(t, pool, `INSERT INTO repository_counters (repository_id) VALUES ($1)`, repositoryID)
 	}
 	mustIdentityExec(t, pool, `
@@ -114,22 +116,22 @@ func TestIdentityCanonicalLifecycleBoundary(t *testing.T) {
 			}
 		}
 	}
-	assertSearch("anonymous", nil, "public")
-	assertSearch("maintainer", &maintainer, "public", "internal")
-	assertSearch("direct grant", &direct, "public", "private")
-	assertSearch("team grant", &teamUser, "public", "private", "internal")
-	assertSearch("owner", &owner, "public", "internal", "private")
+	assertSearch("anonymous", nil, "public", "archived")
+	assertSearch("maintainer", &maintainer, "public", "internal", "archived")
+	assertSearch("direct grant", &direct, "public", "private", "archived")
+	assertSearch("team grant", &teamUser, "public", "private", "internal", "archived")
+	assertSearch("owner", &owner, "public", "internal", "private", "archived")
 	assertSearch("suspended owner", &suspendedOwner)
 
 	mustIdentityExec(t, pool, `UPDATE team_repository_roles SET active = false WHERE team_id = $1`, teamID)
-	assertSearch("inactive team grant", &teamUser, "public", "internal")
+	assertSearch("inactive team grant", &teamUser, "public", "internal", "archived")
 	mustIdentityExec(t, pool, `
 		UPDATE organization_memberships SET active = false WHERE organization_id = $1 AND user_id = $2
 	`, orgID, maintainer.ID)
-	assertSearch("inactive organization membership", &maintainer, "public")
+	assertSearch("inactive organization membership", &maintainer, "public", "archived")
 	mustIdentityExec(t, pool, `UPDATE repository_memberships SET active = false WHERE repository_id = $1 AND user_id = $2`,
 		repositoryIDs["private"], direct.ID)
-	assertSearch("inactive direct grant", &direct, "public")
+	assertSearch("inactive direct grant", &direct, "public", "archived")
 	mustIdentityExec(t, pool, `UPDATE organizations SET active = false WHERE id = $1`, orgID)
 	assertSearch("inactive organization", &owner)
 }

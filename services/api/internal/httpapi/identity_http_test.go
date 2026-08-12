@@ -127,10 +127,33 @@ func pointerToString(value string) *string {
 
 type repositorySettingsHTTPIdentityStore struct {
 	IdentityStore
-	err         error
-	repository  platform.Repository
-	calledActor platform.User
-	input       platform.UpdateRepositorySettingsInput
+	err                 error
+	repository          platform.Repository
+	calledActor         platform.User
+	input               platform.UpdateRepositorySettingsInput
+	archiveOwner        string
+	archiveRepository   string
+	archiveConfirmation string
+	archiveState        bool
+}
+
+func (store *repositorySettingsHTTPIdentityStore) SetRepositoryArchived(
+	_ context.Context,
+	actor platform.User,
+	owner string,
+	repository string,
+	archived bool,
+	confirmation string,
+) (platform.Repository, error) {
+	store.calledActor = actor
+	store.archiveOwner = owner
+	store.archiveRepository = repository
+	store.archiveState = archived
+	store.archiveConfirmation = confirmation
+	if store.err != nil {
+		return platform.Repository{}, store.err
+	}
+	return store.repository, nil
 }
 
 func (store *repositorySettingsHTTPIdentityStore) RepositoryForSettings(
@@ -253,5 +276,62 @@ func TestRepositorySettingsHTTPPreservesRBACDenialAndSuccess(t *testing.T) {
 	response = readFor(allowedStore)
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "repository-1") {
 		t.Fatalf("allowed repository settings read = %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestRepositoryArchiveHTTPRequiresSessionCSRFAndConfirmation(t *testing.T) {
+	codec, err := auth.NewSecretCodec("repository archive HTTP test secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	authenticationStore := &fakeAuthenticationStore{}
+	identityStore := &repositorySettingsHTTPIdentityStore{
+		repository: platform.Repository{ID: "repository-1", Owner: "acme", Slug: "lore"},
+	}
+	handler := New(
+		fakeStore{user: platform.User{ID: "user-1", Username: "alice"}},
+		fakeLore{}, auth.DisabledAuthenticator{}, healthy{}, "",
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		WithAuthentication(AuthOptions{
+			SessionStore: authenticationStore,
+			Secrets:      codec,
+			PublicOrigin: "https://app.example",
+			SessionCookie: SessionCookieOptions{
+				Name: "lorehub_session", Path: "/", Secure: true,
+			},
+		}),
+		WithIdentityStore(identityStore),
+	)
+	requestFor := func(method string, body string, withCSRF bool) *httptest.ResponseRecorder {
+		cookie, csrf := prepareSessionCookie(t, authenticationStore, codec)
+		request := httptest.NewRequest(method, "/api/v1/repositories/acme/lore/archive", strings.NewReader(body))
+		request.Header.Set("Content-Type", "application/json")
+		if withCSRF {
+			request.Header.Set("X-CSRF-Token", csrf)
+		}
+		request.AddCookie(cookie)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		return response
+	}
+	response := requestFor(http.MethodPut, `{"confirmation":"acme/lore"}`, false)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("archive without CSRF = %d %s", response.Code, response.Body.String())
+	}
+	response = requestFor(http.MethodPut, `{"confirmation":"acme/lore","extra":true}`, true)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("archive with unknown JSON field = %d %s", response.Code, response.Body.String())
+	}
+	response = requestFor(http.MethodPut, `{"confirmation":"acme/lore"}`, true)
+	if response.Code != http.StatusOK || !identityStore.archiveState {
+		t.Fatalf("archive response = %d %s", response.Code, response.Body.String())
+	}
+	if identityStore.calledActor.ID != "user-1" || identityStore.archiveOwner != "acme" ||
+		identityStore.archiveRepository != "lore" || identityStore.archiveConfirmation != "acme/lore" {
+		t.Fatalf("archive request = %+v", identityStore)
+	}
+	response = requestFor(http.MethodDelete, `{"confirmation":"acme/lore"}`, true)
+	if response.Code != http.StatusOK || identityStore.archiveState {
+		t.Fatalf("unarchive response = %d %s", response.Code, response.Body.String())
 	}
 }

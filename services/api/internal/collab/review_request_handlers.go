@@ -40,7 +40,7 @@ func (api *API) listReviewRequests(writer http.ResponseWriter, request *http.Req
 		if !ok {
 			return
 		}
-		summary.ViewerCanManage = mergeRequest.State == "open" &&
+		summary.ViewerCanManage = repo.ArchivedAt == nil && mergeRequest.State == "open" &&
 			(access.AtLeast(PermTriage) || mergeRequest.AuthorID == actor.ID && access.AtLeast(PermRead))
 	}
 	writeJSON(writer, http.StatusOK, summary)

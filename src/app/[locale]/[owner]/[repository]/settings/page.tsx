@@ -1,9 +1,10 @@
-import { LockKeyhole, ServerOff } from "lucide-react";
+import { Archive, LockKeyhole, ServerOff } from "lucide-react";
 import { notFound } from "next/navigation";
 
 import { ActionsContextSettings } from "@/components/actions/actions-context-settings";
 import { AuthRequired } from "@/components/auth/auth-required";
 import { RepositoryAccessSettings } from "@/components/repositories/repository-access-settings";
+import { RepositoryLifecycleSettings } from "@/components/repositories/repository-lifecycle-settings";
 import { RepositoryPanel, RepositorySection } from "@/components/repositories/repository-section";
 import { RepositorySettingsForm } from "@/components/repositories/repository-settings-form";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -62,12 +63,21 @@ export default async function RepositorySettingsPage({ params }: RepositorySetti
   const data = repositoryResult.data;
   return (
     <RepositorySection description={dictionary.settingsPage.description} title={dictionary.settingsPage.title}>
-      <RepositoryPanel
-        description={dictionary.settingsPage.generalDescription}
-        title={dictionary.settingsPage.generalTitle}
-      >
-        <RepositorySettingsForm dictionary={dictionary} repository={data} session={session} />
-      </RepositoryPanel>
+      {data.archivedAt ? (
+        <EmptyState
+          body={dictionary.repositoryLifecycle.archivedSettings}
+          icon={<Archive aria-hidden="true" />}
+          title={dictionary.repositoryLifecycle.banner}
+          tone="warning"
+        />
+      ) : (
+        <RepositoryPanel
+          description={dictionary.settingsPage.generalDescription}
+          title={dictionary.settingsPage.generalTitle}
+        >
+          <RepositorySettingsForm dictionary={dictionary} repository={data} session={session} />
+        </RepositoryPanel>
+      )}
       <RepositoryPanel title={dictionary.settingsPage.repositoryIdentity}>
         <dl className={styles.details}>
           <div>
@@ -112,31 +122,44 @@ export default async function RepositorySettingsPage({ params }: RepositorySetti
           </div>
         </dl>
       </RepositoryPanel>
+      {!data.archivedAt && (
+        <>
+          <RepositoryPanel
+            description={dictionary.settingsPage.accessDescription}
+            title={dictionary.settingsPage.accessTitle}
+          >
+            <RepositoryAccessSettings dictionary={dictionary} repository={data} session={session} />
+          </RepositoryPanel>
+          <RepositoryPanel
+            description={dictionary.actionsSettings.repositoryDescription}
+            title={dictionary.actionsSettings.title}
+          >
+            <ActionsContextSettings
+              dictionary={dictionary}
+              locale={locale}
+              session={session}
+              target={{ kind: "repository", owner: data.owner, repository: data.slug }}
+            />
+          </RepositoryPanel>
+          <RepositoryPanel
+            description={dictionary.webhookSettings.description}
+            title={dictionary.webhookSettings.title}
+          >
+            <RepositoryWebhookSettings
+              dictionary={dictionary}
+              locale={locale}
+              owner={data.owner}
+              repository={data.slug}
+              session={session}
+            />
+          </RepositoryPanel>
+        </>
+      )}
       <RepositoryPanel
-        description={dictionary.settingsPage.accessDescription}
-        title={dictionary.settingsPage.accessTitle}
+        description={dictionary.repositoryLifecycle.settingsDescription}
+        title={dictionary.repositoryLifecycle.settingsTitle}
       >
-        <RepositoryAccessSettings dictionary={dictionary} repository={data} session={session} />
-      </RepositoryPanel>
-      <RepositoryPanel
-        description={dictionary.actionsSettings.repositoryDescription}
-        title={dictionary.actionsSettings.title}
-      >
-        <ActionsContextSettings
-          dictionary={dictionary}
-          locale={locale}
-          session={session}
-          target={{ kind: "repository", owner: data.owner, repository: data.slug }}
-        />
-      </RepositoryPanel>
-      <RepositoryPanel description={dictionary.webhookSettings.description} title={dictionary.webhookSettings.title}>
-        <RepositoryWebhookSettings
-          dictionary={dictionary}
-          locale={locale}
-          owner={data.owner}
-          repository={data.slug}
-          session={session}
-        />
+        <RepositoryLifecycleSettings dictionary={dictionary} repository={data} session={session} />
       </RepositoryPanel>
     </RepositorySection>
   );

@@ -39,7 +39,7 @@ func (store *Store) Organization(
 		LEFT JOIN organization_memberships member_org
 		  ON member_org.organization_id = o.id AND member_org.user_id = members.user_id AND member_org.active
 		LEFT JOIN repositories r ON r.organization_id = o.id
-		  AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
+		  AND r.lifecycle_state = 'active'
 		LEFT JOIN teams t ON t.organization_id = o.id AND t.active
 		WHERE o.slug = $1 AND o.active AND (o.visibility = 'public' OR viewer.user_id IS NOT NULL)
 		GROUP BY o.id, viewer.role
@@ -65,7 +65,7 @@ func (store *Store) OrganizationRepositories(
 		viewerID = viewer.ID
 	}
 	rows, err := store.pool.Query(ctx, repositorySelect+`
-		WHERE o.slug = $1 AND o.active AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
+		WHERE o.slug = $1 AND o.active AND r.lifecycle_state = 'active'
 		  AND (
 		      o.visibility = 'public'
 		      OR ($2 <> '' AND EXISTS (
@@ -494,7 +494,7 @@ func (store *Store) repositoryManager(
 ) (Repository, string, error) {
 	row := store.pool.QueryRow(ctx, repositorySelect+`
 		WHERE o.slug = $1 AND r.slug = $2 AND o.active
-		  AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
+		  AND r.lifecycle_state = 'active'
 		  AND (
 		      EXISTS (
 		          SELECT 1 FROM repository_memberships rm

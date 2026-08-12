@@ -42,10 +42,10 @@ func TestGlobalIssuesRespectAccessScopeSearchAndCursor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list involved issues: %v", err)
 	}
-	assertGlobalWorkItemIDs(t, page.Items,
-		fixture.issueIDs["public"], fixture.issueIDs["internal"], fixture.issueIDs["team"])
+	assertGlobalWorkItemIDs(t, page.Items, fixture.issueIDs["public"], fixture.issueIDs["internal"],
+		fixture.issueIDs["team"], fixture.issueIDs["archived"])
 	for _, item := range page.Items {
-		if item.Repository.ID == fixture.hiddenRepository || item.Repository.ID == fixture.archivedRepo {
+		if item.Repository.ID == fixture.hiddenRepository {
 			t.Fatalf("inaccessible issue leaked from repository %s", item.Repository.ID)
 		}
 	}
@@ -56,7 +56,7 @@ func TestGlobalIssuesRespectAccessScopeSearchAndCursor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list created issues: %v", err)
 	}
-	assertGlobalWorkItemIDs(t, created.Items, fixture.issueIDs["public"])
+	assertGlobalWorkItemIDs(t, created.Items, fixture.issueIDs["public"], fixture.issueIDs["archived"])
 
 	searched, err := fixture.store.ListGlobalIssues(ctx, fixture.viewer, GlobalWorkItemFilter{
 		State: "open", Scope: "all", Query: "renderer crash", Limit: 25,
@@ -192,21 +192,23 @@ func seedGlobalWorkItems(t *testing.T) globalWorkItemFixture {
 	for name, repositoryID := range repositories {
 		visibility := name
 		archivedAt := any(nil)
+		archivedBy := any(nil)
 		if name == "team" || name == "hidden" {
 			visibility = "private"
 		}
 		if name == "archived" {
 			visibility = "public"
 			archivedAt = time.Now().UTC()
+			archivedBy = owner.ID
 		}
 		slug := "work-" + name + "-" + suffix
 		mustIdentityExec(t, pool, `
 			INSERT INTO repositories (
-				id, organization_id, slug, display_name, visibility, archived_at,
+				id, organization_id, slug, display_name, visibility, archived_at, archived_by,
 				lore_repository_id, lore_url, default_branch, created_by
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'main', $9)
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'main', $10)
 		`, repositoryID, organizationID, slug, "Work "+name, visibility, archivedAt,
-			canonicalTestLoreID(repositoryID), "lore://"+slug, owner.ID)
+			archivedBy, canonicalTestLoreID(repositoryID), "lore://"+slug, owner.ID)
 		mustIdentityExec(t, pool, `INSERT INTO repository_counters (repository_id) VALUES ($1)`, repositoryID)
 	}
 	mustIdentityExec(t, pool, `

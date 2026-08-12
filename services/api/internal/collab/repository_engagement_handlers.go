@@ -41,7 +41,11 @@ func (api *API) setRepositoryEngagement(
 	if !ok {
 		return
 	}
-	actor, repository, ok := api.requireMutationActor(writer, request)
+	actor, ok := api.actor(writer, request)
+	if !ok {
+		return
+	}
+	repository, ok := api.lookup(writer, request, &actor)
 	if !ok {
 		return
 	}

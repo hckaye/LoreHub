@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Archive,
   BarChart3,
   BookOpenText,
   Box,
@@ -95,6 +96,12 @@ export function RepositoryHeader({ repository, locale, dictionary, session }: Re
               {repository.visibility !== "public" && <LockKeyhole aria-hidden="true" size={12} />}
               {dictionary.common[repository.visibility]}
             </span>
+            {repository.archivedAt && (
+              <span className={styles.archived}>
+                <Archive aria-hidden="true" size={12} />
+                {dictionary.repositoryLifecycle.badge}
+              </span>
+            )}
           </div>
           <p>{repository.description || dictionary.common.noDescription}</p>
           <RepositoryTopicList
@@ -117,6 +124,12 @@ export function RepositoryHeader({ repository, locale, dictionary, session }: Re
       <p className={styles.engagementMessage} role="status">
         {message}
       </p>
+      {repository.archivedAt && (
+        <div className={styles.archiveBanner} role="status">
+          <Archive aria-hidden="true" size={16} />
+          {dictionary.repositoryLifecycle.banner}
+        </div>
+      )}
       <nav aria-label={dictionary.common.repositoryNavigation} className={styles.navigation}>
         {tabs.map(([section, Icon]) => {
           const href = repositoryPath(locale, repository.owner, repository.slug, section);

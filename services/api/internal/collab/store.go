@@ -133,16 +133,20 @@ func (s *store) permFromRef(
 	repoID, orgID string,
 ) (Access, error) {
 	var visibility string
+	var archived bool
 	err := s.pool.QueryRow(ctx, `
-		SELECT visibility
+		SELECT visibility, archived_at IS NOT NULL
 		FROM repositories
 		WHERE id = $1 AND organization_id = $2
-	`, repoID, orgID).Scan(&visibility)
+	`, repoID, orgID).Scan(&visibility, &archived)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Access{}, platform.ErrNotFound
 	}
 	if err != nil {
 		return Access{}, fmt.Errorf("find repository for permission: %w", err)
+	}
+	if archived {
+		return Access{}, nil
 	}
 	return s.RepositoryPermission(ctx, actor, Repository{
 		ID: repoID, OrganizationID: orgID, Visibility: visibility,

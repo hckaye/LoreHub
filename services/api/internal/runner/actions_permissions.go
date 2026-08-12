@@ -17,6 +17,7 @@ type RepositoryAccess struct {
 	LoreURL        string
 	DefaultBranch  string
 	Visibility     string
+	Archived       bool
 	CanRead        bool
 	CanWrite       bool
 }
@@ -35,6 +36,7 @@ func (store *Store) RepositoryForActions(
 	var repository RepositoryAccess
 	err := store.pool.QueryRow(ctx, `
 		SELECT r.id, r.organization_id, o.slug, r.slug, r.lore_url, r.default_branch, r.visibility,
+		       r.archived_at IS NOT NULL,
 		       ($3 = '' AND r.visibility = 'public')
 		       OR ($3 <> '' AND EXISTS (
 		           SELECT 1
@@ -102,7 +104,7 @@ func (store *Store) RepositoryForActions(
 		       )
 		FROM repositories r
 		JOIN organizations o ON o.id = r.organization_id
-		WHERE o.slug = $1 AND r.slug = $2 AND r.archived_at IS NULL AND o.active
+		WHERE o.slug = $1 AND r.slug = $2 AND r.lifecycle_state = 'active' AND o.active
 	`, owner, slug, actorID).Scan(
 		&repository.ID,
 		&repository.OrganizationID,
@@ -111,6 +113,7 @@ func (store *Store) RepositoryForActions(
 		&repository.LoreURL,
 		&repository.DefaultBranch,
 		&repository.Visibility,
+		&repository.Archived,
 		&repository.CanRead,
 		&repository.CanWrite,
 	)
@@ -122,6 +125,9 @@ func (store *Store) RepositoryForActions(
 	}
 	if !repository.CanRead {
 		return RepositoryAccess{}, ErrActionNotFound
+	}
+	if repository.Archived {
+		repository.CanWrite = false
 	}
 	return repository, nil
 }

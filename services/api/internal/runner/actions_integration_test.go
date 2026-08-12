@@ -739,6 +739,20 @@ func TestActionsPermissionMatrixPostgres(t *testing.T) {
 		}
 	}
 	if _, err := pool.Exec(ctx, `
+		UPDATE repositories SET archived_at = now(), archived_by = $2 WHERE id = $1
+	`, fixture.repositoryID, fixture.userID); err != nil {
+		t.Fatal(err)
+	}
+	access, err := store.RepositoryForActions(ctx, fixture.owner, fixture.repositorySlug, writeUser)
+	if err != nil || !access.CanRead || access.CanWrite || !access.Archived {
+		t.Fatalf("archived repository Actions access was wrong: %#v, %v", access, err)
+	}
+	if _, err := pool.Exec(ctx, `
+		UPDATE repositories SET archived_at = NULL, archived_by = NULL WHERE id = $1
+	`, fixture.repositoryID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `
 		UPDATE organizations SET created_by = $2 WHERE id = $1
 	`, fixture.organizationID, creatorOnlyUser); err != nil {
 		t.Fatal(err)
@@ -773,7 +787,7 @@ func TestActionsPermissionMatrixPostgres(t *testing.T) {
 		"lore://"+internalID, fixture.userID); err != nil {
 		t.Fatal(err)
 	}
-	access, err := store.RepositoryForActions(ctx, fixture.owner, internalSlug, "")
+	access, err = store.RepositoryForActions(ctx, fixture.owner, internalSlug, "")
 	if !errors.Is(err, ErrActionNotFound) || access.CanRead {
 		t.Fatalf("anonymous internal repository was readable: %#v, %v", access, err)
 	}

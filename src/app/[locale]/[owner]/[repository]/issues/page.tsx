@@ -8,7 +8,7 @@ import { FilterTabs } from "@/components/ui/filter-tabs";
 import { FlashNotice } from "@/components/ui/flash-notice";
 import { getDictionary } from "@/i18n";
 import { isLocale } from "@/i18n/config";
-import { getIssues, type IssueFilter } from "@/lib/lorehub-api";
+import { getIssues, getPublicRepository, type IssueFilter } from "@/lib/lorehub-api";
 import { repositoryMilestonesPath, repositoryPath } from "@/lib/routes";
 
 import styles from "@/components/repositories/repository-section.module.css";
@@ -25,7 +25,12 @@ export default async function IssuesPage({ params, searchParams }: IssuesPagePro
   const locale = isLocale(value) ? value : "en";
   const query = await searchParams;
   const state = parseIssueFilter(query.state);
-  const [dictionary, issues] = await Promise.all([getDictionary(locale), getIssues(owner, repository, state)]);
+  const [dictionary, issues, repositoryResult] = await Promise.all([
+    getDictionary(locale),
+    getIssues(owner, repository, state),
+    getPublicRepository(owner, repository),
+  ]);
+  const archived = repositoryResult.ok && repositoryResult.data.archivedAt !== null;
   return (
     <RepositorySection
       actions={
@@ -36,9 +41,11 @@ export default async function IssuesPage({ params, searchParams }: IssuesPagePro
           <Link className={styles.secondaryButton} href={repositoryMilestonesPath(locale, owner, repository)}>
             {dictionary.milestonesPage.milestonesLink}
           </Link>
-          <Link className={styles.primaryButton} href={`${repositoryPath(locale, owner, repository, "issues")}/new`}>
-            {dictionary.issuesPage.newIssue}
-          </Link>
+          {!archived && (
+            <Link className={styles.primaryButton} href={`${repositoryPath(locale, owner, repository, "issues")}/new`}>
+              {dictionary.issuesPage.newIssue}
+            </Link>
+          )}
         </div>
       }
       description={dictionary.issuesPage.description}
