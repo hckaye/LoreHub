@@ -11,7 +11,7 @@ test("Lore integration reuses the GitHub Actions cache and loaded images", async
   assert.match(workflow, /name: Build Lore client integration image[\s\S]*load: true/);
   assert.match(workflow, /scope=lore-policy-server/);
   assert.match(workflow, /scope=lore-policy-client/);
-  assert.match(workflow, /timeout-minutes: 60/);
+  assert.match(workflow, /timeout-minutes: 75/);
   assert.match(workflow, /scope=lore-policy-server,ignore-error=true,timeout=20m/);
   assert.match(workflow, /LORE_TEST_SERVER_IMAGE: lorehub\/lore-integration-server:ci/);
   assert.match(workflow, /LORE_TEST_CLIENT_IMAGE: lorehub\/lore-integration-client:ci/);
