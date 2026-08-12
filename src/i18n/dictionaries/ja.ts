@@ -237,6 +237,7 @@ const ja = {
     fileHistory: "ファイル履歴",
     binary: "バイナリ内容は表示しません。",
     tooLarge: "安全なブラウザー上限を超えるファイルです。",
+    emptyReadme: "READMEは空です。",
     bytes: "バイト",
     actions: {
       added: "追加",

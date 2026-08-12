@@ -3,11 +3,13 @@ import { notFound } from "next/navigation";
 
 import { CodeBrowser } from "@/components/repositories/code-browser";
 import { RepositoryFacts } from "@/components/repositories/repository-facts";
+import { RepositoryReadme } from "@/components/repositories/repository-readme";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { getDictionary } from "@/i18n";
 import { isLocale } from "@/i18n/config";
-import { getBranches, getLoreTree, getPublicRepository, getRevision } from "@/lib/lorehub-api";
+import { getBranches, getLoreFile, getLoreTree, getPublicRepository, getRevision } from "@/lib/lorehub-api";
+import { findRepositoryReadme } from "@/lib/repository-readme";
 
 import styles from "./repository.module.css";
 
@@ -43,22 +45,34 @@ export default async function RepositoryCodePage({ params, searchParams }: Repos
     revision: query.revision,
     path: query.path,
   });
-  const revision = tree.ok ? await getRevision(owner, slug, tree.data.revision) : null;
+  const { revision, readme } = await loadTreeDetails(owner, slug, tree);
   return (
     <div className={styles.content}>
       <SectionHeading description={dictionary.repository.codeDescription} title={dictionary.repository.codeTitle} />
       <RepositoryFacts dictionary={dictionary} repository={repository.data} />
       {tree.ok ? (
-        <CodeBrowser
-          branches={branches.ok ? branches.data : []}
-          branch={branch}
-          dictionary={dictionary}
-          locale={locale}
-          owner={owner}
-          parentRevision={revision?.ok ? revision.data.parents[0] : undefined}
-          repository={slug}
-          tree={tree.data}
-        />
+        <>
+          <CodeBrowser
+            branches={branches.ok ? branches.data : []}
+            branch={branch}
+            dictionary={dictionary}
+            locale={locale}
+            owner={owner}
+            parentRevision={revision?.ok ? revision.data.parents[0] : undefined}
+            repository={slug}
+            tree={tree.data}
+          />
+          {readme?.ok && (
+            <RepositoryReadme
+              dictionary={dictionary}
+              entries={tree.data.entries}
+              file={readme.data}
+              locale={locale}
+              owner={owner}
+              repository={slug}
+            />
+          )}
+        </>
       ) : (
         <EmptyState
           body={dictionary.home.apiUnavailableBody}
@@ -69,4 +83,18 @@ export default async function RepositoryCodePage({ params, searchParams }: Repos
       )}
     </div>
   );
+}
+
+async function loadTreeDetails(owner: string, repository: string, tree: Awaited<ReturnType<typeof getLoreTree>>) {
+  if (!tree.ok) {
+    return { revision: null, readme: null };
+  }
+  const readmeEntry = findRepositoryReadme(tree.data.entries);
+  const [revision, readme] = await Promise.all([
+    getRevision(owner, repository, tree.data.revision),
+    readmeEntry
+      ? getLoreFile(owner, repository, { revision: tree.data.revision, path: readmeEntry.path })
+      : Promise.resolve(null),
+  ]);
+  return { revision, readme };
 }

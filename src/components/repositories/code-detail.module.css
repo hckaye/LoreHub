@@ -63,50 +63,6 @@
   white-space: pre;
 }
 
-.readme {
-  border: 1px solid var(--border);
-  border-radius: 0.65rem;
-  padding: clamp(1rem, 3vw, 2rem);
-}
-
-.readme h1,
-.readme h2,
-.readme h3 {
-  line-height: 1.25;
-  margin: 1.5rem 0 0.75rem;
-}
-
-.readme h1:first-child,
-.readme h2:first-child,
-.readme h3:first-child {
-  margin-top: 0;
-}
-
-.readme p {
-  line-height: 1.65;
-  white-space: pre-wrap;
-}
-
-.readme ul {
-  line-height: 1.65;
-  padding-left: 1.5rem;
-}
-
-.readme code {
-  background: var(--canvas-subtle);
-  border-radius: 0.25rem;
-  padding: 0.1rem 0.25rem;
-}
-
-.readme pre {
-  background: var(--canvas-subtle);
-  border: 1px solid var(--border-muted);
-  border-radius: 0.45rem;
-  overflow-x: auto;
-  padding: 0.8rem;
-  white-space: pre-wrap;
-}
-
 .tableWrap {
   border: 1px solid var(--border);
   border-radius: 0.65rem;

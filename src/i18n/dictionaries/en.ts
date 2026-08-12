@@ -217,6 +217,7 @@ const en = {
     fileHistory: "File history",
     binary: "Binary content is not rendered.",
     tooLarge: "This file is larger than the safe browser limit.",
+    emptyReadme: "This README is empty.",
     bytes: "bytes",
     actions: {
       added: "Added",

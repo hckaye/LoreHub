@@ -3,11 +3,12 @@ import { notFound } from "next/navigation";
 
 import { FileHistory } from "@/components/repositories/file-history";
 import { RepositoryPanel } from "@/components/repositories/repository-section";
-import { SafeReadme } from "@/components/repositories/safe-readme";
 import { EmptyState } from "@/components/ui/empty-state";
+import { MarkdownContent } from "@/components/wiki/markdown-content";
 import { getDictionary } from "@/i18n";
 import { isLocale } from "@/i18n/config";
 import { getFileHistory, getLoreFile, getPublicRepository } from "@/lib/lorehub-api";
+import { createRepositoryReadmeURLTransform } from "@/lib/repository-readme";
 
 import styles from "@/components/repositories/code-detail.module.css";
 
@@ -46,7 +47,7 @@ export default async function FilePage({ params, searchParams }: FilePageProps) 
   }
   const rawQuery = new URLSearchParams({ revision: file.data.revision, path: file.data.path }).toString();
   const rawPath = `/api/v1/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/raw?${rawQuery}`;
-  const readme = /(^|\/)readme(?:\.md)?$/i.test(file.data.path);
+  const readme = /(^|\/)readme(?:\.md|\.markdown)?$/i.test(file.data.path);
   const history =
     file.data.kind === "file"
       ? await getFileHistory(owner, slug, { revision: file.data.revision, path: file.data.path })
@@ -73,7 +74,17 @@ export default async function FilePage({ params, searchParams }: FilePageProps) 
         ) : file.data.binary ? (
           <div className={styles.status}>{dictionary.codeBrowser.binary}</div>
         ) : readme ? (
-          <SafeReadme content={file.data.content ?? ""} label={dictionary.codeBrowser.fileTitle} />
+          <MarkdownContent
+            body={file.data.content ?? ""}
+            urlTransform={createRepositoryReadmeURLTransform({
+              locale,
+              owner,
+              repository: slug,
+              revision: file.data.revision,
+              readmePath: file.data.path,
+              entries: [],
+            })}
+          />
         ) : (
           <div className={styles.source}>
             <pre>{file.data.content ?? ""}</pre>

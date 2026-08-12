@@ -23,6 +23,7 @@ test("wiki storage preserves history and checks repository boundaries", async ()
 test("wiki Markdown rendering does not enable raw HTML", async () => {
   const markdown = await readFile("src/components/wiki/markdown-content.tsx", "utf8");
   assert.match(markdown, /remarkGfm/);
+  assert.match(markdown, /skipHtml/);
   assert.doesNotMatch(markdown, /rehypeRaw|dangerouslySetInnerHTML/);
 });
 
