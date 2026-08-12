@@ -77,6 +77,12 @@ import {
   type RepositoryIssueQuery,
   type RepositoryMergeRequestQuery,
 } from "./repository-work-item-query";
+import {
+  parseRevisionCommentPage,
+  revisionCommentPageSize,
+  revisionCommentsAPIPath,
+  type RevisionCommentPage,
+} from "./revision-comments";
 import { parseSearchResults, searchPageSize, type SearchResults, type SearchType } from "./search";
 
 export type {
@@ -583,6 +589,19 @@ export async function getRevisionStatuses(
     repositoryPath(owner, repository, `/revisions/${encodeURIComponent(revision)}/statuses`),
   );
   return parseRevisionStatusResponse(result);
+}
+
+export async function getRevisionComments(
+  owner: string,
+  repository: string,
+  revision: string,
+  page: number,
+): Promise<APIResult<RevisionCommentPage>> {
+  const query = new URLSearchParams({ page: String(page), perPage: String(revisionCommentPageSize) });
+  const result = await request<unknown>(`${revisionCommentsAPIPath(owner, repository, revision)}?${query}`);
+  if (!result.ok) return result;
+  const comments = parseRevisionCommentPage(result.data, revision);
+  return comments ? { ok: true, data: comments } : { ok: false, reason: "unavailable" };
 }
 
 export function getLoreDiff(

@@ -14,6 +14,7 @@ import (
 	projectsapi "github.com/lorehub/lorehub/services/api/internal/projects"
 	releasesapi "github.com/lorehub/lorehub/services/api/internal/releases"
 	reviewthreadsapi "github.com/lorehub/lorehub/services/api/internal/reviewthreads"
+	revisioncommentsapi "github.com/lorehub/lorehub/services/api/internal/revisioncomments"
 	statusesapi "github.com/lorehub/lorehub/services/api/internal/statuses"
 	webhooksapi "github.com/lorehub/lorehub/services/api/internal/webhooks"
 	wikiapi "github.com/lorehub/lorehub/services/api/internal/wiki"
@@ -182,6 +183,12 @@ func (api *API) registerFeatureRoutes(mux *http.ServeMux) {
 		if codeClient, ok := api.lore.(loreclient.CodeClient); ok {
 			codeapi.Register(mux, api.collabStore, api.lore, codeClient, api, api.loreCredentials,
 				api.serviceSubjects.PublicReader, api.logger)
+			if comments, ok := api.collabStore.(collab.RevisionCommentStore); ok {
+				revisioncommentsapi.Register(
+					mux, comments, api.collabStore, api, codeClient, api.loreCredentials,
+					api.serviceSubjects.PublicReader, api.logger,
+				)
+			}
 			if api.reviewThreadsStore != nil {
 				reviewthreadsapi.Register(
 					mux, api.reviewThreadsStore, api.collabStore, api, codeClient,
