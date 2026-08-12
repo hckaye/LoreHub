@@ -27,6 +27,7 @@ import (
 	"github.com/lorehub/lorehub/services/api/internal/platform"
 	"github.com/lorehub/lorehub/services/api/internal/projects"
 	"github.com/lorehub/lorehub/services/api/internal/releases"
+	"github.com/lorehub/lorehub/services/api/internal/repodeletion"
 	"github.com/lorehub/lorehub/services/api/internal/reviewthreads"
 	"github.com/lorehub/lorehub/services/api/internal/runner"
 	"github.com/lorehub/lorehub/services/api/internal/webhooks"
@@ -78,24 +79,21 @@ func run(logger *slog.Logger) error {
 	}
 	var lore *loreclient.SDKClient
 	if settings.Environment == "local-insecure" {
-		if command == "runner" {
-			lore, err = loreclient.NewDevelopmentSDKClientWithEndpoint(
-				settings.LoreCacheDir,
-				settings.LoreInternalURL,
-			)
-		} else {
-			lore, err = loreclient.NewDevelopmentSDKClient(settings.LoreCacheDir)
-		}
-	} else if command == "runner" {
+		lore, err = loreclient.NewDevelopmentSDKClientWithEndpoint(
+			settings.LoreCacheDir,
+			settings.LoreInternalURL,
+		)
+	} else {
 		lore, err = loreclient.NewSDKClientWithEndpoints(
 			settings.LoreCacheDir,
 			settings.LoreAuthAuthority,
 			settings.LoreInternalURL,
 		)
-	} else {
-		lore, err = loreclient.NewSDKClientWithAuthAuthority(settings.LoreCacheDir, settings.LoreAuthAuthority)
 	}
 	if err != nil {
+		return err
+	}
+	if err := lore.ConfigureBinary(settings.LoreBinary); err != nil {
 		return err
 	}
 	if command == "runner" {
@@ -216,6 +214,21 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	repositoryDeletionWorker, err := repodeletion.NewWorker(
+		store,
+		lore,
+		loreCredentials,
+		repodeletion.Config{
+			PollPeriod:       settings.RepositoryDeletionPollPeriod,
+			OperationTimeout: settings.RepositoryDeletionTimeout,
+			LeaseDuration:    settings.RepositoryDeletionLeaseDuration,
+			ServiceSubject:   settings.LoreRepositoryLifecycleSubject,
+		},
+		logger,
+	)
+	if err != nil {
+		return err
+	}
 	collaborationStore := collab.NewStore(pool)
 	handler := httpapi.New(
 		store,
@@ -262,6 +275,7 @@ func run(logger *slog.Logger) error {
 		httpapi.WithLorePublicURL(settings.LorePublicURL),
 		httpapi.WithLegacyLoreIdentityAllowed(settings.AllowLegacyLoreIdentity),
 		httpapi.WithLoreCredentials(loreCredentials),
+		httpapi.WithRepositoryDeletion(settings.RepositoryDeletionRetention),
 		httpapi.WithLoreServiceSubjects(loreclient.ServiceSubjects{
 			PublicReader:           settings.LorePublicReaderSubject,
 			ActionsRunner:          settings.LoreActionsRunnerSubject,
@@ -329,7 +343,7 @@ func run(logger *slog.Logger) error {
 		logger,
 		settings.RunnerPlatformImages,
 	)
-	serverErrors := make(chan error, 4+len(authListeners))
+	serverErrors := make(chan error, 5+len(authListeners))
 	go func() {
 		logger.Info("LoreHub API listening", "address", settings.HTTPAddress)
 		serverErrors <- server.ListenAndServe()
@@ -350,6 +364,9 @@ func run(logger *slog.Logger) error {
 	go func() {
 		serverErrors <- webhookWorker.Run(rootContext)
 	}()
+	go func() {
+		serverErrors <- repositoryDeletionWorker.Run(rootContext)
+	}()
 
 	select {
 	case <-rootContext.Done():
@@ -367,7 +384,7 @@ func run(logger *slog.Logger) error {
 		authGRPC.Stop()
 		_ = policyServer.Shutdown(context.Background())
 		_ = server.Shutdown(context.Background())
-		if errors.Is(err, http.ErrServerClosed) {
+		if err == nil || errors.Is(err, http.ErrServerClosed) {
 			return nil
 		}
 		return fmt.Errorf("serve HTTP: %w", err)

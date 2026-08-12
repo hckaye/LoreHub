@@ -71,6 +71,14 @@ func (api *API) registerOrganizationRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/v1/organizations/{organization}/actions/settings/{valueKind}/{name}",
 		api.deleteOrganizationActionsSetting)
 	mux.HandleFunc("GET /api/v1/organizations/{organization}/repositories", api.organizationRepositories)
+	mux.HandleFunc(
+		"GET /api/v1/organizations/{organization}/deleted-repositories",
+		api.listDeletedRepositories,
+	)
+	mux.HandleFunc(
+		"POST /api/v1/organizations/{organization}/deleted-repositories/{repository}/restore",
+		api.restoreRepository,
+	)
 	mux.HandleFunc("GET /api/v1/organizations/{organization}/teams/{team}", api.team)
 	mux.HandleFunc("PATCH /api/v1/organizations/{organization}/teams/{team}/settings", api.updateIdentityTeam)
 	mux.HandleFunc("POST /api/v1/organizations/{organization}/teams/{team}/members", api.addTeamMember)
@@ -90,6 +98,7 @@ func (api *API) registerRepositoryRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PATCH "+base+"/settings", api.updateRepositorySettings)
 	mux.HandleFunc("PUT "+base+"/archive", api.archiveRepository)
 	mux.HandleFunc("DELETE "+base+"/archive", api.unarchiveRepository)
+	mux.HandleFunc("DELETE "+base, api.scheduleRepositoryDeletion)
 	mux.HandleFunc("GET "+base+"/insights", api.repositoryInsights)
 	mux.HandleFunc("GET "+base+"/branches", api.repositoryBranches)
 	mux.HandleFunc("GET "+base+"/issues", api.listIssues)

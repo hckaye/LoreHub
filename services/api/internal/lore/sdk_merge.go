@@ -27,7 +27,11 @@ func (client *SDKClient) operationPath(repository RepositoryRef, operationID str
 	if _, err := client.cachePath(repository.CacheKey); err != nil {
 		return "", err
 	}
-	return filepath.Join(client.cacheDirectory, "operations", repository.CacheKey, operationID), nil
+	endpointKey := "repository"
+	if client.dataPlaneOrigin != "" {
+		endpointKey = fmt.Sprintf("endpoint-%x", client.dataPlaneOrigin)
+	}
+	return filepath.Join(client.cacheDirectory, "operations", repository.CacheKey, endpointKey, operationID), nil
 }
 
 func (client *SDKClient) workspaceExists(repository RepositoryRef, operationID string) (bool, error) {
@@ -77,6 +81,10 @@ func (client *SDKClient) cloneWorkspace(
 	targetRevision string,
 	credential Credential,
 ) error {
+	repository, err := client.transportRepositoryRef(repository)
+	if err != nil {
+		return err
+	}
 	globals, cleanupGlobals := types.NewLoreGlobalArgs(types.LoreGlobalArgs{
 		RepositoryPath: path,
 		Identity:       credential.Identity,
@@ -103,6 +111,10 @@ func (client *SDKClient) withWorkspace(
 	credential Credential,
 	fn func(string) error,
 ) error {
+	repository, err := client.transportRepositoryRef(repository)
+	if err != nil {
+		return err
+	}
 	path, err := client.operationPath(repository, operationID)
 	if err != nil {
 		return err
@@ -176,6 +188,10 @@ func (client *SDKClient) EnsureMergeWorkspace(
 		return errors.New("Lore merge workspace requires a repository read or write credential")
 	}
 	if err := ValidateCredential(repository, credential, credential.Scope); err != nil {
+		return err
+	}
+	repository, err := client.transportRepositoryRef(repository)
+	if err != nil {
 		return err
 	}
 	path, err := client.operationPath(repository, operationID)
@@ -562,6 +578,10 @@ func (client *SDKClient) RestartMerge(
 		return MergeStartResult{}, err
 	}
 	if err := client.CleanupMergeWorkspace(ctx, repository, operationID); err != nil {
+		return MergeStartResult{}, err
+	}
+	repository, err := client.transportRepositoryRef(repository)
+	if err != nil {
 		return MergeStartResult{}, err
 	}
 	path, err := client.operationPath(repository, operationID)

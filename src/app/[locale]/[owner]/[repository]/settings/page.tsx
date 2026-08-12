@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { ActionsContextSettings } from "@/components/actions/actions-context-settings";
 import { AuthRequired } from "@/components/auth/auth-required";
 import { RepositoryAccessSettings } from "@/components/repositories/repository-access-settings";
+import { RepositoryDeleteSettings } from "@/components/repositories/repository-delete-settings";
 import { RepositoryLifecycleSettings } from "@/components/repositories/repository-lifecycle-settings";
 import { RepositoryPanel, RepositorySection } from "@/components/repositories/repository-section";
 import { RepositorySettingsForm } from "@/components/repositories/repository-settings-form";
@@ -12,7 +13,7 @@ import { RepositoryWebhookSettings } from "@/components/webhooks/repository-webh
 import { getDictionary } from "@/i18n";
 import { isLocale } from "@/i18n/config";
 import { getAuthSession } from "@/lib/auth-api";
-import { getRepositorySettings } from "@/lib/lorehub-api";
+import { getOrganization, getRepositorySettings } from "@/lib/lorehub-api";
 import { repositoryPath } from "@/lib/routes";
 
 import styles from "@/components/repositories/repository-detail.module.css";
@@ -61,6 +62,8 @@ export default async function RepositorySettingsPage({ params }: RepositorySetti
     );
   }
   const data = repositoryResult.data;
+  const organizationResult = await getOrganization(data.owner);
+  const canDelete = organizationResult.ok && organizationResult.data.role === "owner";
   return (
     <RepositorySection description={dictionary.settingsPage.description} title={dictionary.settingsPage.title}>
       {data.archivedAt ? (
@@ -161,6 +164,14 @@ export default async function RepositorySettingsPage({ params }: RepositorySetti
       >
         <RepositoryLifecycleSettings dictionary={dictionary} repository={data} session={session} />
       </RepositoryPanel>
+      {canDelete && (
+        <RepositoryPanel
+          description={dictionary.repositoryLifecycle.deleteSettingsDescription}
+          title={dictionary.repositoryLifecycle.deleteTitle}
+        >
+          <RepositoryDeleteSettings dictionary={dictionary} locale={locale} repository={data} session={session} />
+        </RepositoryPanel>
+      )}
     </RepositorySection>
   );
 }

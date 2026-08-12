@@ -1,15 +1,18 @@
 package lore
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	loresdk "github.com/EpicGames/lore-go"
 	"github.com/EpicGames/lore-go/types"
@@ -20,6 +23,7 @@ type SDKClient struct {
 	allowInsecureDevelopment bool
 	expectedAuthHost         string
 	dataPlaneOrigin          string
+	binary                   string
 	authLock                 sync.Mutex
 	locks                    sync.Map
 }
@@ -75,7 +79,22 @@ func newSDKClient(
 		allowInsecureDevelopment: allowInsecureDevelopment,
 		expectedAuthHost:         expectedAuthHost,
 		dataPlaneOrigin:          normalizedOrigin,
+		binary:                   "lore",
 	}, nil
+}
+
+func (client *SDKClient) ConfigureBinary(binary string) error {
+	binary = strings.TrimSpace(binary)
+	if binary == "" || strings.IndexFunc(binary, func(character rune) bool {
+		return unicode.IsControl(character) || unicode.IsSpace(character)
+	}) >= 0 {
+		return errors.New("Lore binary is invalid")
+	}
+	if strings.ContainsRune(binary, filepath.Separator) && !filepath.IsAbs(binary) {
+		return errors.New("Lore binary path must be absolute")
+	}
+	client.binary = binary
+	return nil
 }
 
 func normalizeDataPlaneOrigin(value string, allowPlain bool) (string, error) {
@@ -104,6 +123,15 @@ func (client *SDKClient) transportRepositoryURL(repositoryURL string) (string, e
 	return client.dataPlaneOrigin + "/" + parsed.Partition, nil
 }
 
+func (client *SDKClient) transportRepositoryRef(repository RepositoryRef) (RepositoryRef, error) {
+	transportURL, err := client.transportRepositoryURL(repository.URL)
+	if err != nil {
+		return RepositoryRef{}, err
+	}
+	repository.URL = transportURL
+	return repository, nil
+}
+
 func (client *SDKClient) RepositoryInfo(
 	ctx context.Context,
 	repositoryURL string,
@@ -119,12 +147,16 @@ func (client *SDKClient) RepositoryInfo(
 	if err := ValidateCredential(repositoryRef, credential, ScopeRead); err != nil {
 		return Repository{}, err
 	}
+	transportURL, err := client.transportRepositoryURL(repositoryURL)
+	if err != nil {
+		return Repository{}, err
+	}
 	workspace, err := os.MkdirTemp(client.cacheDirectory, "info-"+credential.Partition+"-")
 	if err != nil {
 		return Repository{}, fmt.Errorf("create Lore information workspace: %w", err)
 	}
 	defer func() { _ = os.RemoveAll(workspace) }()
-	if err := client.authenticate(ctx, workspace, repositoryURL, credential); err != nil {
+	if err := client.authenticate(ctx, workspace, transportURL, credential); err != nil {
 		return Repository{}, err
 	}
 	globals, cleanupGlobals := types.NewLoreGlobalArgs(types.LoreGlobalArgs{
@@ -135,7 +167,7 @@ func (client *SDKClient) RepositoryInfo(
 	})
 	defer cleanupGlobals()
 	args, cleanupArgs := types.NewLoreRepositoryInfoArgs(types.LoreRepositoryInfoArgs{
-		RepositoryUrl: repositoryURL,
+		RepositoryUrl: transportURL,
 	})
 	defer cleanupArgs()
 
@@ -175,6 +207,10 @@ func (client *SDKClient) Branches(
 		return nil, err
 	}
 	if err := ValidateCredential(repository, credential, ScopeRead); err != nil {
+		return nil, err
+	}
+	repository, err := client.transportRepositoryRef(repository)
+	if err != nil {
 		return nil, err
 	}
 	cachePath, err := client.credentialCachePath(repository, credential)
@@ -260,6 +296,10 @@ func (client *SDKClient) CloneRevision(
 	}
 	if err := os.MkdirAll(destination, 0o750); err != nil {
 		return fmt.Errorf("create Lore revision workspace: %w", err)
+	}
+	repository, err := client.transportRepositoryRef(repository)
+	if err != nil {
+		return err
 	}
 	globals, cleanupGlobals := types.NewLoreGlobalArgs(types.LoreGlobalArgs{
 		RepositoryPath: destination,
@@ -355,12 +395,16 @@ func (client *SDKClient) CreateRepositoryWithCredential(
 		ScopeWrite); err != nil {
 		return err
 	}
+	transportURL, err := client.transportRepositoryURL(repositoryURL)
+	if err != nil {
+		return err
+	}
 	workspace, err := os.MkdirTemp(client.cacheDirectory, "provision-"+repositoryID+"-")
 	if err != nil {
 		return fmt.Errorf("create Lore provisioning workspace: %w", err)
 	}
 	defer func() { _ = os.RemoveAll(workspace) }()
-	if err := client.authenticateResourceToken(ctx, workspace, repositoryURL, credential); err != nil {
+	if err := client.authenticateResourceToken(ctx, workspace, transportURL, credential); err != nil {
 		return err
 	}
 	globals, cleanupGlobals := types.NewLoreGlobalArgs(types.LoreGlobalArgs{
@@ -368,13 +412,150 @@ func (client *SDKClient) CreateRepositoryWithCredential(
 	})
 	defer cleanupGlobals()
 	args, cleanupArgs := types.NewLoreRepositoryCreateArgs(types.LoreRepositoryCreateArgs{
-		RepositoryUrl: repositoryURL, Description: description, Id: repositoryID, UseSharedStore: true,
+		RepositoryUrl: transportURL, Description: description, Id: repositoryID, UseSharedStore: true,
 	})
 	defer cleanupArgs()
 	if _, err := loresdk.RepositoryCreate(&globals, &args).Wait(); err != nil {
 		return fmt.Errorf("create Lore repository %q: %w", name, err)
 	}
 	return nil
+}
+
+func (client *SDKClient) DeleteRepositoryWithCredential(
+	ctx context.Context,
+	repository RepositoryRef,
+	credential Credential,
+) error {
+	if err := client.validateRepository(repository); err != nil {
+		return err
+	}
+	if err := ValidateCredential(repository, credential, ScopeObliterate); err != nil {
+		return err
+	}
+	transportURL, err := client.transportRepositoryURL(repository.URL)
+	if err != nil {
+		return err
+	}
+	workspace, err := os.MkdirTemp(client.cacheDirectory, "delete-"+credential.Partition+"-")
+	if err != nil {
+		return fmt.Errorf("create Lore deletion workspace: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(workspace) }()
+	if err := client.authenticateResourceToken(ctx, workspace, transportURL, credential); err != nil {
+		return err
+	}
+	return client.deleteRepositoryCommand(ctx, workspace, credential.Identity, transportURL)
+}
+
+func (client *SDKClient) deleteRepositoryCommand(
+	ctx context.Context,
+	workspace string,
+	identity string,
+	repositoryURL string,
+) error {
+	if validPrincipalValue(identity) == "" {
+		return errors.New("Lore deletion identity is invalid")
+	}
+	command := exec.CommandContext(
+		ctx,
+		client.binary,
+		"--repository",
+		workspace,
+		"--identity",
+		identity,
+		"--remote",
+		"--non-interactive",
+		"--force",
+		"repository",
+		"delete",
+		repositoryURL,
+	)
+	output := limitedCommandOutput{remaining: 64 << 10}
+	command.Stdout = &output
+	command.Stderr = &output
+	err := command.Run()
+	message := strings.TrimSpace(output.String())
+	if err == nil && !loreCommandReportedError(message) {
+		return nil
+	}
+	if loreRepositoryNotFound(message) {
+		return nil
+	}
+	if errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return ctx.Err()
+	}
+	message = safeLoreCommandMessage(message)
+	if message == "" {
+		message = "Lore repository deletion failed"
+	}
+	if err == nil {
+		return errors.New(message)
+	}
+	return fmt.Errorf("%s: %w", message, err)
+}
+
+type limitedCommandOutput struct {
+	mutex     sync.Mutex
+	buffer    bytes.Buffer
+	remaining int
+}
+
+func (output *limitedCommandOutput) Write(value []byte) (int, error) {
+	output.mutex.Lock()
+	defer output.mutex.Unlock()
+	written := len(value)
+	if output.remaining <= 0 {
+		return written, nil
+	}
+	if len(value) > output.remaining {
+		value = value[:output.remaining]
+	}
+	output.remaining -= len(value)
+	_, _ = output.buffer.Write(value)
+	return written, nil
+}
+
+func (output *limitedCommandOutput) String() string {
+	output.mutex.Lock()
+	defer output.mutex.Unlock()
+	return output.buffer.String()
+}
+
+func loreCommandReportedError(output string) bool {
+	for _, line := range strings.Split(output, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "[Error]") {
+			return true
+		}
+	}
+	return false
+}
+
+func loreRepositoryNotFound(output string) bool {
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "[Error]") {
+			continue
+		}
+		line = strings.TrimSpace(strings.TrimPrefix(line, "[Error]"))
+		if strings.EqualFold(line, "Not found") || strings.EqualFold(line, "Repository not found") {
+			return true
+		}
+	}
+	return false
+}
+
+func safeLoreCommandMessage(output string) string {
+	output = strings.Map(func(character rune) rune {
+		if character == '\n' || character == '\t' || !unicode.IsControl(character) {
+			return character
+		}
+		return -1
+	}, output)
+	characters := []rune(strings.TrimSpace(output))
+	if len(characters) > 4096 {
+		characters = characters[:4096]
+	}
+	return string(characters)
 }
 
 func (client *SDKClient) ensureBareClone(
@@ -488,7 +669,11 @@ func (client *SDKClient) credentialCachePath(
 	if key == "" {
 		return "", ErrInvalidPrincipal
 	}
-	return filepath.Join(base, "principals", key), nil
+	endpointKey := "repository"
+	if client.dataPlaneOrigin != "" {
+		endpointKey = hex.EncodeToString([]byte(client.dataPlaneOrigin))
+	}
+	return filepath.Join(base, "endpoints", endpointKey, "principals", key), nil
 }
 
 func (client *SDKClient) authenticate(

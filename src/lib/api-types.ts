@@ -23,6 +23,18 @@ export type Repository = {
   updatedAt: string;
 };
 
+export type DeletedRepository = {
+  id: string;
+  organizationId: string;
+  owner: string;
+  slug: string;
+  displayName: string;
+  requestedBy: string;
+  requestedAt: string;
+  purgeAfter: string;
+  purging: boolean;
+};
+
 export type RepositoryEngagement = {
   starCount: number;
   watcherCount: number;

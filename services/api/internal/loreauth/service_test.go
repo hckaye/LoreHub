@@ -295,6 +295,38 @@ func TestCredentialIssuerProducesRepositoryAdminCredential(t *testing.T) {
 	}
 }
 
+func TestCredentialIssuerProducesRepositoryObliterateCredential(t *testing.T) {
+	policy := testPolicy()
+	policy.serviceUsers["lorehub-repository-lifecycle"] = authz.UserInfo{
+		ID: "repository-lifecycle-subject", Username: "lorehub-repository-lifecycle",
+	}
+	policy.serviceResources["lorehub-repository-lifecycle"] = map[string][]string{
+		testResource: {authz.PermissionObliterate},
+	}
+	service, _ := newTestService(t, policy, &fakeSessions{sessions: make(map[string]*fakeSession)})
+	issuer, err := NewCredentialIssuer(service)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := loreclient.RepositoryRef{LoreRepositoryID: "0123456789abcdef0123456789abcdef"}
+	principal := loreclient.ServicePrincipal(
+		loreclient.ServicePurposeRepositoryLifecycle,
+		"repository-lifecycle-subject",
+	)
+	credential, err := issuer.IssueCredential(context.Background(), loreclient.CredentialRequest{
+		Principal: principal, Repository: repository,
+		Partition: repository.LoreRepositoryID, Scope: loreclient.ScopeObliterate,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if credential.Scope != loreclient.ScopeObliterate || credential.Principal != principal ||
+		len(credential.GrantedScopes) != 1 ||
+		credential.GrantedScopes[0] != string(loreclient.ScopeObliterate) {
+		t.Fatalf("obliterate credential = %#v", credential)
+	}
+}
+
 func bearerContext(raw string) context.Context {
 	return metadata.NewIncomingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+raw))
 }

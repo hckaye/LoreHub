@@ -18,6 +18,8 @@ const observerPrincipalID = "00000000-0000-4000-8000-000000000003"
 
 const provisionerPrincipalID = "00000000-0000-4000-8000-000000000004"
 
+const repositoryLifecyclePrincipalID = "00000000-0000-4000-8000-000000000005"
+
 func addAnonymousReaderGrant(
 	ctx context.Context,
 	transaction pgx.Tx,
@@ -113,6 +115,31 @@ func addProvisionerGrant(
 			authz.PermissionAdmin}, "active": true})
 }
 
+func addRepositoryLifecycleGrant(
+	ctx context.Context,
+	transaction pgx.Tx,
+	actorID string,
+	organizationID string,
+	repositoryID string,
+) error {
+	_, err := transaction.Exec(ctx, `
+		INSERT INTO service_principal_repository_grants (
+			principal_id, repository_id, permissions, active, created_by
+		) VALUES ($1, $2, ARRAY['obliterate']::varchar[], true, $3)
+		ON CONFLICT (principal_id, repository_id) DO UPDATE SET
+			permissions = ARRAY['obliterate']::varchar[], active = true,
+			updated_at = now(), created_by = EXCLUDED.created_by
+	`, repositoryLifecyclePrincipalID, repositoryID, actorID)
+	if err != nil {
+		return fmt.Errorf("grant repository lifecycle principal: %w", err)
+	}
+	return insertAuditDetails(ctx, transaction, actorID, organizationID, repositoryID,
+		"service_principal.grant.repository_lifecycle", "service_principal",
+		repositoryLifecyclePrincipalID, map[string]any{
+			"permissions": []string{authz.PermissionObliterate}, "active": true,
+		})
+}
+
 func (store *Store) ServicePrincipalResource(
 	ctx context.Context,
 	name string,
@@ -136,7 +163,8 @@ func (store *Store) ServicePrincipalResource(
 		  ON repository.id = spg.repository_id
 		 AND repository.lore_repository_id = $2
 		JOIN organizations organization
-		  ON organization.id = repository.organization_id AND organization.active
+		  ON organization.id = repository.organization_id
+		 AND (organization.active OR principal.kind = 'lifecycle')
 		JOIN repository_policies policy ON policy.repository_id = repository.id
 		WHERE principal.name = $1 AND principal.active
 		  AND (
@@ -149,6 +177,10 @@ func (store *Store) ServicePrincipalResource(
 					WHERE provisioning.repository_id = repository.id
 					  AND provisioning.state IN ('pending', 'failed')
 				)
+			)
+			OR (
+				principal.kind = 'lifecycle'
+				AND repository.lifecycle_state IN ('deleting', 'purging')
 			)
 		  )
 	`, strings.TrimSpace(name), strings.TrimPrefix(resourceID, "urc-")).Scan(
@@ -164,7 +196,7 @@ func (store *Store) ServicePrincipalResource(
 	information.DisplayName = information.Username
 	information.ProviderSubject = "service:" + information.Username
 	resolved := policyServicePermissions(permissions, principalKind, visibility, obliterateEnabled)
-	if archived {
+	if archived && principalKind != "lifecycle" {
 		resolved = archivedPermissionList(resolved)
 	}
 	return information, resolved, nil
@@ -260,7 +292,7 @@ func policyServicePermissions(values []string, kind string, visibility string, o
 	for _, permission := range normalizeServicePermissions(values) {
 		permissions[permission] = true
 	}
-	if !obliterateEnabled {
+	if !obliterateEnabled && kind != "lifecycle" {
 		delete(permissions, authz.PermissionObliterate)
 	}
 	return authz.PermissionList(permissions)

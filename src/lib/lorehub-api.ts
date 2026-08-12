@@ -15,6 +15,7 @@ import type {
   CIWorkflowPage,
   CodeScanningAlert,
   DashboardData,
+  DeletedRepository,
   FileHistoryEntry,
   Issue,
   IssueComment,
@@ -160,6 +161,10 @@ export async function getOrganizationRepositories(slug: string): Promise<APIResu
     `/api/v1/organizations/${encodeURIComponent(slug)}/repositories`,
   );
   return result.ok ? { ok: true, data: result.data.repositories } : result;
+}
+
+export function getDeletedRepositories(slug: string): Promise<APIResult<DeletedRepository[]>> {
+  return request(`/api/v1/organizations/${encodeURIComponent(slug)}/deleted-repositories`);
 }
 
 export async function getTeams(slug: string): Promise<APIResult<Team[]>> {

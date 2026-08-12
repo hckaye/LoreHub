@@ -51,6 +51,7 @@ func LoadFor(command string) (Config, error) {
 	actionsRunnerSubject := os.Getenv("LOREHUB_LORE_ACTIONS_RUNNER_SUBJECT")
 	observerSubject := os.Getenv("LOREHUB_OBSERVER_SERVICE_PRINCIPAL")
 	registrationSubject := os.Getenv("LOREHUB_LORE_REPOSITORY_REGISTRATION_SUBJECT")
+	lifecycleSubject := os.Getenv("LOREHUB_LORE_REPOSITORY_LIFECYCLE_SUBJECT")
 	signingKeyPath := os.Getenv("LOREHUB_AUTH_SIGNING_KEY_PATH")
 	loreAuthTLSCert := os.Getenv("LOREHUB_LORE_AUTH_TLS_CERT")
 	loreAuthTLSKey := os.Getenv("LOREHUB_LORE_AUTH_TLS_KEY")
@@ -92,6 +93,8 @@ func LoadFor(command string) (Config, error) {
 			"00000000-0000-4000-8000-000000000003")
 		registrationSubject = defaultIfEmpty(registrationSubject,
 			"00000000-0000-4000-8000-000000000004")
+		lifecycleSubject = defaultIfEmpty(lifecycleSubject,
+			"00000000-0000-4000-8000-000000000005")
 		signingKeyPath = defaultIfEmpty(signingKeyPath, "/var/lib/lorehub/keys/lore-auth.pem")
 		loreAuthTLSCert = defaultIfEmpty(loreAuthTLSCert, "/var/lib/lorehub/tls/server.crt")
 		loreAuthTLSKey = defaultIfEmpty(loreAuthTLSKey, "/var/lib/lorehub/tls/server.key")
@@ -160,6 +163,10 @@ func LoadFor(command string) (Config, error) {
 	webhookPollPeriod := 2 * time.Second
 	webhookRequestTimeout := 10 * time.Second
 	webhookLeaseDuration := 30 * time.Second
+	repositoryDeletionRetention := 30 * 24 * time.Hour
+	repositoryDeletionPollPeriod := 30 * time.Second
+	repositoryDeletionTimeout := 90 * time.Second
+	repositoryDeletionLeaseDuration := 2 * time.Minute
 	if command == "serve" {
 		webhookAllowPrivateTargets, err = boolSetting("LOREHUB_WEBHOOK_ALLOW_PRIVATE_TARGETS", false)
 		if err != nil {
@@ -177,6 +184,34 @@ func LoadFor(command string) (Config, error) {
 			return Config{}, err
 		}
 		webhookLeaseDuration, err = durationSetting("LOREHUB_WEBHOOK_LEASE_DURATION", webhookLeaseDuration)
+		if err != nil {
+			return Config{}, err
+		}
+		repositoryDeletionRetention, err = durationSetting(
+			"LOREHUB_REPOSITORY_DELETION_RETENTION",
+			repositoryDeletionRetention,
+		)
+		if err != nil {
+			return Config{}, err
+		}
+		repositoryDeletionPollPeriod, err = durationSetting(
+			"LOREHUB_REPOSITORY_DELETION_POLL_PERIOD",
+			repositoryDeletionPollPeriod,
+		)
+		if err != nil {
+			return Config{}, err
+		}
+		repositoryDeletionTimeout, err = durationSetting(
+			"LOREHUB_REPOSITORY_DELETION_TIMEOUT",
+			repositoryDeletionTimeout,
+		)
+		if err != nil {
+			return Config{}, err
+		}
+		repositoryDeletionLeaseDuration, err = durationSetting(
+			"LOREHUB_REPOSITORY_DELETION_LEASE_DURATION",
+			repositoryDeletionLeaseDuration,
+		)
 		if err != nil {
 			return Config{}, err
 		}
@@ -236,6 +271,7 @@ func LoadFor(command string) (Config, error) {
 		LoreActionsRunnerSubject:          actionsRunnerSubject,
 		LoreObserverSubject:               observerSubject,
 		LoreRepositoryRegistrationSubject: registrationSubject,
+		LoreRepositoryLifecycleSubject:    lifecycleSubject,
 		LoreAllowDevelopmentFallback:      allowDevelopmentFallback,
 		DevLoreIdentity:                   os.Getenv("LOREHUB_DEV_LORE_IDENTITY"),
 		DevLoreIdentityFallback:           devLoreIdentityFallback,
@@ -248,6 +284,10 @@ func LoadFor(command string) (Config, error) {
 		WebhookRequestTimeout:             webhookRequestTimeout,
 		WebhookLeaseDuration:              webhookLeaseDuration,
 		WebhookAllowPrivateTargets:        webhookAllowPrivateTargets,
+		RepositoryDeletionRetention:       repositoryDeletionRetention,
+		RepositoryDeletionPollPeriod:      repositoryDeletionPollPeriod,
+		RepositoryDeletionTimeout:         repositoryDeletionTimeout,
+		RepositoryDeletionLeaseDuration:   repositoryDeletionLeaseDuration,
 		LoreAuthIssuer:                    loreAuthIssuer,
 		LoreAuthAudience:                  envOrDefault("LOREHUB_LORE_AUTH_AUDIENCE", loreRootDomain),
 		LoreRootDomain:                    loreRootDomain,
@@ -298,6 +338,9 @@ func LoadFor(command string) (Config, error) {
 	}
 
 	if err := validateWebhookConfig(config, command); err != nil {
+		return Config{}, err
+	}
+	if err := validateRepositoryDeletionConfig(config, command); err != nil {
 		return Config{}, err
 	}
 	if err := validate(config, command); err != nil {

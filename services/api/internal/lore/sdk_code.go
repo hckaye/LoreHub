@@ -758,6 +758,10 @@ func (client *SDKClient) prepareReadRepository(
 	repository RepositoryRef,
 	credential Credential,
 ) (string, error) {
+	repository, err := client.transportRepositoryRef(repository)
+	if err != nil {
+		return "", err
+	}
 	cachePath, err := client.credentialCachePath(repository, credential)
 	if err != nil {
 		return "", err

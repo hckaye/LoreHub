@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { ActionsContextSettings } from "@/components/actions/actions-context-settings";
 import { AuthRequired } from "@/components/auth/auth-required";
+import { DeletedRepositorySettings } from "@/components/organizations/deleted-repository-settings";
 import { OrganizationTeamSettings } from "@/components/organizations/organization-team-settings";
 import { RepositoryPanel, RepositorySection } from "@/components/repositories/repository-section";
 import sectionStyles from "@/components/repositories/repository-section.module.css";
@@ -10,7 +11,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { getDictionary } from "@/i18n";
 import { isLocale } from "@/i18n/config";
 import { getAuthSession } from "@/lib/auth-api";
-import { getOrganization } from "@/lib/lorehub-api";
+import { getDeletedRepositories, getOrganization } from "@/lib/lorehub-api";
 
 type OrganizationSettingsPageProps = {
   params: Promise<{ locale: string; organization: string }>;
@@ -50,6 +51,10 @@ export default async function OrganizationSettingsPage({ params }: OrganizationS
       />
     );
   }
+  const deletedResult =
+    organizationResult.ok && organizationResult.data.role === "owner"
+      ? await getDeletedRepositories(organization)
+      : null;
   return (
     <RepositorySection
       actions={
@@ -77,6 +82,28 @@ export default async function OrganizationSettingsPage({ params }: OrganizationS
         />
       </RepositoryPanel>
       <OrganizationTeamSettings dictionary={dictionary} organization={organization} session={session} />
+      {deletedResult && (
+        <RepositoryPanel
+          description={dictionary.repositoryLifecycle.deletedRepositoriesDescription}
+          title={dictionary.repositoryLifecycle.deletedRepositoriesTitle}
+        >
+          {deletedResult.ok ? (
+            <DeletedRepositorySettings
+              dictionary={dictionary}
+              locale={locale}
+              repositories={deletedResult.data}
+              session={session}
+            />
+          ) : (
+            <EmptyState
+              body={dictionary.home.apiUnavailableBody}
+              icon={<ServerOff aria-hidden="true" />}
+              title={dictionary.home.apiUnavailableTitle}
+              tone="warning"
+            />
+          )}
+        </RepositoryPanel>
+      )}
     </RepositorySection>
   );
 }

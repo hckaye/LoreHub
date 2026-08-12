@@ -1,0 +1,87 @@
+.content {
+  display: grid;
+  gap: 10px;
+}
+
+.list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  list-style: none;
+}
+
+.list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.list li:last-child {
+  border-bottom: 0;
+}
+
+.list li > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.list code,
+.list span {
+  color: var(--fg-muted);
+  font-size: 0.78rem;
+}
+
+.list button {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--fg-default);
+  font-weight: 600;
+}
+
+.list button:disabled {
+  color: var(--fg-muted);
+  cursor: not-allowed;
+}
+
+.empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--fg-muted);
+}
+
+.empty p,
+.message {
+  margin: 0;
+}
+
+.message {
+  color: var(--success-fg);
+  font-size: 0.8rem;
+}
+
+.message[data-error="true"] {
+  color: var(--danger-fg);
+}
+
+@media (max-width: 640px) {
+  .list li {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

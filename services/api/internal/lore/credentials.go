@@ -22,9 +22,10 @@ const AuthenticationTokenType = "lorehub"
 type Scope string
 
 const (
-	ScopeRead  Scope = "repository:read"
-	ScopeWrite Scope = "repository:write"
-	ScopeAdmin Scope = "repository:admin"
+	ScopeRead       Scope = "repository:read"
+	ScopeWrite      Scope = "repository:write"
+	ScopeAdmin      Scope = "repository:admin"
+	ScopeObliterate Scope = "repository:obliterate"
 )
 
 const (
@@ -32,6 +33,7 @@ const (
 	ServicePurposeActionsRunner          = "actions-runner"
 	ServicePurposeObserver               = "observer"
 	ServicePurposeRepositoryRegistration = "repository-registration"
+	ServicePurposeRepositoryLifecycle    = "repository-lifecycle"
 )
 
 // ServiceSubjects are configured JWT subjects for the service-purpose
@@ -453,7 +455,7 @@ func credentialScopeNarrowed(requested Scope, granted Scope) bool {
 }
 
 func validCredentialScope(scope Scope) bool {
-	return scope == ScopeRead || scope == ScopeWrite || scope == ScopeAdmin
+	return scope == ScopeRead || scope == ScopeWrite || scope == ScopeAdmin || scope == ScopeObliterate
 }
 
 func credentialScopePermits(granted Scope, requested Scope) bool {
@@ -461,7 +463,7 @@ func credentialScopePermits(granted Scope, requested Scope) bool {
 		return false
 	}
 	if granted == ScopeAdmin {
-		return true
+		return requested != ScopeObliterate
 	}
 	return granted == requested || granted == ScopeWrite && requested == ScopeRead
 }

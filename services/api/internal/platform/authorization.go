@@ -80,7 +80,7 @@ func (store *Store) EffectivePermissions(
 		  ON granted_repository.id = spg.repository_id
 		JOIN organizations granted_organization
 		  ON granted_organization.id = granted_repository.organization_id
-		 AND granted_organization.active
+		 AND (granted_organization.active OR principal.kind = 'lifecycle')
 		JOIN repository_policies policy ON policy.repository_id = granted_repository.id
 		WHERE principal.id = $1 AND principal.active AND spg.repository_id = $2
 		  AND (
@@ -94,13 +94,17 @@ func (store *Store) EffectivePermissions(
 					  AND provisioning.state IN ('pending', 'failed')
 				)
 			)
+			OR (
+				principal.kind = 'lifecycle'
+				AND granted_repository.lifecycle_state IN ('deleting', 'purging')
+			)
 		  )
 	`, userID, repository.ID).Scan(&serviceKind, &serviceVisibility,
 		&serviceObliterateEnabled, &servicePermissions)
 	if err == nil {
 		permissions := policyServicePermissions(servicePermissions, serviceKind, serviceVisibility,
 			serviceObliterateEnabled)
-		if repository.Archived {
+		if repository.Archived && serviceKind != "lifecycle" {
 			permissions = archivedPermissionList(permissions)
 		}
 		return authz.ResourcePermissions{

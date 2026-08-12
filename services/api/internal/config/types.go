@@ -40,6 +40,7 @@ type Config struct {
 	LoreActionsRunnerSubject          string
 	LoreObserverSubject               string
 	LoreRepositoryRegistrationSubject string
+	LoreRepositoryLifecycleSubject    string
 	LoreAllowDevelopmentFallback      bool
 	DevLoreIdentity                   string
 	DevLoreIdentityFallback           bool
@@ -52,6 +53,10 @@ type Config struct {
 	WebhookRequestTimeout             time.Duration
 	WebhookLeaseDuration              time.Duration
 	WebhookAllowPrivateTargets        bool
+	RepositoryDeletionRetention       time.Duration
+	RepositoryDeletionPollPeriod      time.Duration
+	RepositoryDeletionTimeout         time.Duration
+	RepositoryDeletionLeaseDuration   time.Duration
 	LoreAuthIssuer                    string
 	LoreAuthAudience                  string
 	LoreRootDomain                    string

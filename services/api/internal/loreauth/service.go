@@ -246,7 +246,9 @@ func (service *Service) credentialFromToken(
 		return loreclient.Credential{}, errors.New("issued Lore token has no exact resource scope")
 	}
 	scope := loreclient.ScopeRead
-	if containsPermission(permissions, authz.PermissionAdmin) {
+	if containsPermission(permissions, authz.PermissionObliterate) {
+		scope = loreclient.ScopeObliterate
+	} else if containsPermission(permissions, authz.PermissionAdmin) {
 		scope = loreclient.ScopeAdmin
 	} else if containsPermission(permissions, authz.PermissionWrite) {
 		scope = loreclient.ScopeWrite
@@ -270,7 +272,10 @@ func (service *Service) credentialFromToken(
 
 func scopeForRequested(requested []string) loreclient.Scope {
 	for _, permission := range requested {
-		if permission == authz.PermissionAdmin || permission == authz.PermissionObliterate {
+		if permission == authz.PermissionObliterate {
+			return loreclient.ScopeObliterate
+		}
+		if permission == authz.PermissionAdmin {
 			return loreclient.ScopeAdmin
 		}
 		if permission == authz.PermissionWrite {

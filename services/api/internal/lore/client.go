@@ -98,6 +98,14 @@ type ManagedRepositoryClient interface {
 	) error
 }
 
+type RepositoryDeletionClient interface {
+	DeleteRepositoryWithCredential(
+		context.Context,
+		RepositoryRef,
+		Credential,
+	) error
+}
+
 type Branch struct {
 	ID             string    `json:"id"`
 	Name           string    `json:"name"`

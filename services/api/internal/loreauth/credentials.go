@@ -32,7 +32,7 @@ func (issuer *CredentialIssuer) IssueCredential(
 		return loreclient.Credential{}, loreclient.ErrCredentialContract
 	}
 	if request.Scope != loreclient.ScopeRead && request.Scope != loreclient.ScopeWrite &&
-		request.Scope != loreclient.ScopeAdmin {
+		request.Scope != loreclient.ScopeAdmin && request.Scope != loreclient.ScopeObliterate {
 		return loreclient.Credential{}, loreclient.ErrCredentialContract
 	}
 	requested := []string{"read"}
@@ -40,6 +40,8 @@ func (issuer *CredentialIssuer) IssueCredential(
 		requested = []string{"write"}
 	} else if request.Scope == loreclient.ScopeAdmin {
 		requested = []string{"admin"}
+	} else if request.Scope == loreclient.ScopeObliterate {
+		requested = []string{"obliterate"}
 	}
 	var credential loreclient.Credential
 	if request.Principal.UserID != "" {
@@ -66,6 +68,8 @@ func servicePrincipalName(purpose string) (string, error) {
 		return "lorehub-observer", nil
 	case loreclient.ServicePurposeRepositoryRegistration:
 		return "lorehub-provisioner", nil
+	case loreclient.ServicePurposeRepositoryLifecycle:
+		return "lorehub-repository-lifecycle", nil
 	default:
 		return "", errors.New("unknown Lore service principal purpose")
 	}

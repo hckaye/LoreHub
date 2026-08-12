@@ -176,6 +176,13 @@ type API struct {
 	webhooksStore           webhooksManager
 	personalAccessTokens    PersonalAccessTokenStore
 	globalWorkItems         GlobalWorkItemStore
+	deletionRetention       time.Duration
+}
+
+func WithRepositoryDeletion(retention time.Duration) Option {
+	return func(api *API) {
+		api.deletionRetention = retention
+	}
 }
 
 func New(

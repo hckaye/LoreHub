@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lorehub/lorehub/services/api/internal/auth"
 	"github.com/lorehub/lorehub/services/api/internal/platform"
@@ -135,6 +136,57 @@ type repositorySettingsHTTPIdentityStore struct {
 	archiveRepository   string
 	archiveConfirmation string
 	archiveState        bool
+	deletionRetention   time.Duration
+	deleted             []platform.DeletedRepository
+	restored            bool
+}
+
+func (store *repositorySettingsHTTPIdentityStore) ScheduleRepositoryDeletion(
+	_ context.Context,
+	actor platform.User,
+	owner string,
+	repository string,
+	confirmation string,
+	retention time.Duration,
+) (platform.DeletedRepository, error) {
+	store.calledActor = actor
+	store.archiveOwner = owner
+	store.archiveRepository = repository
+	store.archiveConfirmation = confirmation
+	store.deletionRetention = retention
+	if store.err != nil {
+		return platform.DeletedRepository{}, store.err
+	}
+	return store.deleted[0], nil
+}
+
+func (store *repositorySettingsHTTPIdentityStore) ListDeletedRepositories(
+	_ context.Context,
+	actor platform.User,
+	owner string,
+) ([]platform.DeletedRepository, error) {
+	store.calledActor = actor
+	store.archiveOwner = owner
+	if store.err != nil {
+		return nil, store.err
+	}
+	return store.deleted, nil
+}
+
+func (store *repositorySettingsHTTPIdentityStore) RestoreRepository(
+	_ context.Context,
+	actor platform.User,
+	owner string,
+	repository string,
+) (platform.Repository, error) {
+	store.calledActor = actor
+	store.archiveOwner = owner
+	store.archiveRepository = repository
+	store.restored = true
+	if store.err != nil {
+		return platform.Repository{}, store.err
+	}
+	return store.repository, nil
 }
 
 func (store *repositorySettingsHTTPIdentityStore) SetRepositoryArchived(
@@ -333,5 +385,98 @@ func TestRepositoryArchiveHTTPRequiresSessionCSRFAndConfirmation(t *testing.T) {
 	response = requestFor(http.MethodDelete, `{"confirmation":"acme/lore"}`, true)
 	if response.Code != http.StatusOK || identityStore.archiveState {
 		t.Fatalf("unarchive response = %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestRepositoryDeletionHTTPRequiresOwnerSessionAndCSRF(t *testing.T) {
+	codec, err := auth.NewSecretCodec("repository deletion HTTP test secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	authenticationStore := &fakeAuthenticationStore{}
+	identityStore := &repositorySettingsHTTPIdentityStore{
+		repository: platform.Repository{ID: "repository-1", Owner: "acme", Slug: "lore"},
+		deleted: []platform.DeletedRepository{{
+			ID: "repository-1", Owner: "acme", Slug: "lore", RequestedBy: "alice",
+			LoreRepositoryID: "0123456789abcdef0123456789abcdef",
+			LoreURL:          "lores://internal.example/0123456789abcdef0123456789abcdef",
+			LastError:        "sensitive Lore failure",
+		}},
+	}
+	handler := New(
+		fakeStore{user: platform.User{ID: "user-1", Username: "alice"}},
+		fakeLore{}, auth.DisabledAuthenticator{}, healthy{}, "",
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		WithAuthentication(AuthOptions{
+			SessionStore: authenticationStore,
+			Secrets:      codec,
+			PublicOrigin: "https://app.example",
+			SessionCookie: SessionCookieOptions{
+				Name: "lorehub_session", Path: "/", Secure: true,
+			},
+		}),
+		WithIdentityStore(identityStore),
+		WithRepositoryDeletion(30*24*time.Hour),
+	)
+	requestFor := func(method string, path string, body string, withCSRF bool) *httptest.ResponseRecorder {
+		cookie, csrf := prepareSessionCookie(t, authenticationStore, codec)
+		request := httptest.NewRequest(method, path, strings.NewReader(body))
+		if body != "" {
+			request.Header.Set("Content-Type", "application/json")
+		}
+		if withCSRF {
+			request.Header.Set("X-CSRF-Token", csrf)
+		}
+		request.AddCookie(cookie)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		return response
+	}
+	response := requestFor(
+		http.MethodDelete,
+		"/api/v1/repositories/acme/lore",
+		`{"confirmation":"acme/lore"}`,
+		false,
+	)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("deletion without CSRF = %d %s", response.Code, response.Body.String())
+	}
+	response = requestFor(
+		http.MethodDelete,
+		"/api/v1/repositories/acme/lore",
+		`{"confirmation":"acme/lore","extra":true}`,
+		true,
+	)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("deletion with unknown input = %d %s", response.Code, response.Body.String())
+	}
+	response = requestFor(
+		http.MethodDelete,
+		"/api/v1/repositories/acme/lore",
+		`{"confirmation":"acme/lore"}`,
+		true,
+	)
+	if response.Code != http.StatusAccepted || identityStore.deletionRetention != 30*24*time.Hour {
+		t.Fatalf("schedule deletion response = %d %s", response.Code, response.Body.String())
+	}
+	response = requestFor(
+		http.MethodGet,
+		"/api/v1/organizations/acme/deleted-repositories",
+		"",
+		false,
+	)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "repository-1") ||
+		strings.Contains(response.Body.String(), "internal.example") ||
+		strings.Contains(response.Body.String(), "sensitive Lore failure") {
+		t.Fatalf("deleted repository list = %d %s", response.Code, response.Body.String())
+	}
+	response = requestFor(
+		http.MethodPost,
+		"/api/v1/organizations/acme/deleted-repositories/lore/restore",
+		"",
+		true,
+	)
+	if response.Code != http.StatusOK || !identityStore.restored {
+		t.Fatalf("restore repository response = %d %s", response.Code, response.Body.String())
 	}
 }
