@@ -322,6 +322,81 @@ export type IssueComment = {
   viewerCanUpdate: boolean;
 };
 
+export type DiscussionCategory = {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  format: "discussion" | "question" | "announcement";
+  discussionCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type DiscussionAuthor = {
+  id: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string;
+};
+
+export type DiscussionSummary = {
+  id: string;
+  number: number;
+  title: string;
+  state: "open" | "closed";
+  locked: boolean;
+  pinned: boolean;
+  answered: boolean;
+  category: DiscussionCategory;
+  author: DiscussionAuthor;
+  commentCount: number;
+  voteCount: number;
+  viewerHasVoted: boolean;
+  viewerCanVote: boolean;
+  viewerCanEdit: boolean;
+  viewerCanModerate: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type DiscussionComment = {
+  id: string;
+  parentId: string | null;
+  author: DiscussionAuthor;
+  body: string;
+  answer: boolean;
+  viewerCanEdit: boolean;
+  viewerCanDelete: boolean;
+  viewerCanMarkAnswer: boolean;
+  createdAt: string;
+  updatedAt: string;
+  editedAt: string | null;
+};
+
+export type Discussion = DiscussionSummary & {
+  body: string;
+  comments: DiscussionComment[];
+  commentPage: number;
+  commentsPerPage: number;
+  totalComments: number;
+  viewerCanComment: boolean;
+};
+
+export type DiscussionPage = {
+  discussions: DiscussionSummary[];
+  totalCount: number;
+  page: number;
+  perPage: number;
+  viewerCanCreate: boolean;
+};
+
+export type DiscussionCategoriesPage = {
+  categories: DiscussionCategory[];
+  viewerCanManage: boolean;
+  viewerCanModerate: boolean;
+};
+
 export type Label = {
   id: string;
   repositoryId: string;

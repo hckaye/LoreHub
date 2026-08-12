@@ -3,6 +3,7 @@ export type WebhookEvent =
   | "branch_rules"
   | "branches"
   | "comments"
+  | "discussions"
   | "issues"
   | "labels"
   | "milestones"
@@ -294,6 +295,7 @@ const webhookEvents = new Set<WebhookEvent>([
   "branch_rules",
   "branches",
   "comments",
+  "discussions",
   "issues",
   "labels",
   "milestones",

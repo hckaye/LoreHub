@@ -63,7 +63,7 @@ func claimSourceEvents(ctx context.Context, tx pgx.Tx) ([]sourceEvent, error) {
 			SELECT event.id, event.topic, event.event_key, event.payload, event.created_at
 			FROM outbox_events event
 			LEFT JOIN webhook_projection_ledger ledger ON ledger.source_event_id = event.id
-			WHERE event.topic ~ '^(actions|branch_rule|branch|issue_comment|issue_label|issue|label|milestone|'
+			WHERE event.topic ~ '^(actions|branch_rule|branch|discussion|issue_comment|issue_label|issue|label|milestone|'
 			    'project|merge_request_comment|merge_request_review_request|merge_request_review|'
 			    'merge_request_review_thread|'
 			    'merge_request_review_comment|merge_request|merge_operation|release|repository|wiki)\.'

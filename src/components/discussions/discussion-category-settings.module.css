@@ -1,0 +1,140 @@
+.stack {
+  display: grid;
+  gap: 12px;
+}
+
+.form {
+  display: grid;
+  gap: 9px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.7fr) minmax(160px, 1fr) minmax(140px, 0.7fr);
+  gap: 9px;
+}
+
+.field {
+  display: grid;
+  gap: 5px;
+}
+
+.field label {
+  color: var(--fg-muted);
+  font-size: 0.72rem;
+}
+
+.field input,
+.field select,
+.field textarea {
+  min-height: 32px;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--fg-default);
+  font: inherit;
+  font-size: 0.78rem;
+}
+
+.field textarea {
+  resize: vertical;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.button,
+.secondaryButton,
+.dangerButton {
+  min-height: 31px;
+  padding: 0 10px;
+  border-radius: 5px;
+  font: inherit;
+  font-size: 0.73rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.button {
+  border: 1px solid var(--accent-border);
+  background: var(--accent-emphasis);
+  color: var(--fg-on-emphasis);
+}
+
+.secondaryButton {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg-default);
+}
+
+.dangerButton {
+  border: 1px solid var(--danger-fg);
+  background: var(--surface);
+  color: var(--danger-fg);
+}
+
+.button:disabled,
+.secondaryButton:disabled,
+.dangerButton:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.list {
+  display: grid;
+  gap: 8px;
+}
+
+.item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.item strong {
+  font-size: 0.82rem;
+}
+
+.item p {
+  margin: 3px 0 0;
+  color: var(--fg-muted);
+  font-size: 0.74rem;
+}
+
+.error,
+.success {
+  margin: 0;
+  font-size: 0.76rem;
+}
+
+.error {
+  color: var(--danger-fg);
+}
+
+.success {
+  color: var(--success-fg, var(--accent-fg));
+}
+
+@media (max-width: 680px) {
+  .fields {
+    grid-template-columns: 1fr;
+  }
+
+  .item {
+    grid-template-columns: 1fr;
+  }
+}

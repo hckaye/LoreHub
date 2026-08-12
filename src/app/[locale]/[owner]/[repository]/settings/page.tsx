@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { ActionsContextSettings } from "@/components/actions/actions-context-settings";
 import { ActionsEnvironmentSettings } from "@/components/actions/actions-environment-settings";
 import { AuthRequired } from "@/components/auth/auth-required";
+import { DiscussionCategorySettings } from "@/components/discussions/discussion-category-settings";
 import { RepositoryAccessSettings } from "@/components/repositories/repository-access-settings";
 import { RepositoryDeleteSettings } from "@/components/repositories/repository-delete-settings";
 import { RepositoryLifecycleSettings } from "@/components/repositories/repository-lifecycle-settings";
@@ -13,8 +14,14 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { RepositoryWebhookSettings } from "@/components/webhooks/repository-webhook-settings";
 import { getDictionary } from "@/i18n";
 import { isLocale } from "@/i18n/config";
+import type { APIResult, AuthSession, DiscussionCategoriesPage } from "@/lib/api-types";
 import { getAuthSession } from "@/lib/auth-api";
-import { getActionsEnvironments, getOrganization, getRepositorySettings } from "@/lib/lorehub-api";
+import {
+  getActionsEnvironments,
+  getDiscussionCategories,
+  getOrganization,
+  getRepositorySettings,
+} from "@/lib/lorehub-api";
 import { repositoryPath } from "@/lib/routes";
 
 import styles from "@/components/repositories/repository-detail.module.css";
@@ -63,9 +70,10 @@ export default async function RepositorySettingsPage({ params }: RepositorySetti
     );
   }
   const data = repositoryResult.data;
-  const [organizationResult, environmentsResult] = await Promise.all([
+  const [organizationResult, environmentsResult, categoriesResult] = await Promise.all([
     getOrganization(data.owner),
     getActionsEnvironments(data.owner, data.slug),
+    getDiscussionCategories(data.owner, data.slug),
   ]);
   const canDelete = organizationResult.ok && organizationResult.data.role === "owner";
   return (
@@ -131,6 +139,13 @@ export default async function RepositorySettingsPage({ params }: RepositorySetti
       </RepositoryPanel>
       {!data.archivedAt && (
         <>
+          <DiscussionCategoryPanel
+            dictionary={dictionary}
+            owner={data.owner}
+            repository={data.slug}
+            result={categoriesResult}
+            session={session}
+          />
           <RepositoryPanel
             description={dictionary.settingsPage.accessDescription}
             title={dictionary.settingsPage.accessTitle}
@@ -194,5 +209,35 @@ export default async function RepositorySettingsPage({ params }: RepositorySetti
         </RepositoryPanel>
       )}
     </RepositorySection>
+  );
+}
+
+function DiscussionCategoryPanel({
+  dictionary,
+  owner,
+  repository,
+  result,
+  session,
+}: {
+  dictionary: Awaited<ReturnType<typeof getDictionary>>;
+  owner: string;
+  repository: string;
+  result: APIResult<DiscussionCategoriesPage>;
+  session: Extract<AuthSession, { status: "authenticated" }>;
+}) {
+  if (!result.ok || !result.data.viewerCanManage) return null;
+  return (
+    <RepositoryPanel
+      description={dictionary.discussionsPage.categoriesDescription}
+      title={dictionary.discussionsPage.categoriesTitle}
+    >
+      <DiscussionCategorySettings
+        categories={result.data.categories}
+        dictionary={dictionary}
+        owner={owner}
+        repository={repository}
+        session={session}
+      />
+    </RepositoryPanel>
   );
 }

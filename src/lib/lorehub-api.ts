@@ -18,6 +18,9 @@ import type {
   DashboardData,
   DeletedRepository,
   Deployment,
+  Discussion,
+  DiscussionCategoriesPage,
+  DiscussionPage,
   FileHistoryEntry,
   Issue,
   IssueComment,
@@ -287,6 +290,51 @@ export async function getIssues(owner: string, repository: string, state: IssueF
 
 export function getIssue(owner: string, repository: string, number: number): Promise<APIResult<Issue>> {
   return request(repositoryPath(owner, repository, `/issues/${number}`));
+}
+
+export type DiscussionState = "open" | "closed" | "all";
+export type DiscussionSort = "newest" | "oldest" | "most-commented" | "most-voted";
+
+export type DiscussionQuery = {
+  category?: string;
+  state?: DiscussionState;
+  q?: string;
+  sort?: DiscussionSort;
+  page?: number;
+  perPage?: number;
+};
+
+export function getDiscussionCategories(
+  owner: string,
+  repository: string,
+): Promise<APIResult<DiscussionCategoriesPage>> {
+  return request(repositoryPath(owner, repository, "/discussions/categories"));
+}
+
+export function getDiscussions(
+  owner: string,
+  repository: string,
+  query: DiscussionQuery = {},
+): Promise<APIResult<DiscussionPage>> {
+  const search = queryString({
+    category: query.category,
+    state: query.state,
+    q: query.q?.trim(),
+    sort: query.sort,
+    page: query.page ? String(query.page) : undefined,
+    per_page: query.perPage ? String(query.perPage) : undefined,
+  });
+  return request(repositoryPath(owner, repository, `/discussions${search ? `?${search}` : ""}`));
+}
+
+export function getDiscussion(
+  owner: string,
+  repository: string,
+  number: number,
+  commentPage = 1,
+): Promise<APIResult<Discussion>> {
+  const search = queryString({ comment_page: String(commentPage) });
+  return request(repositoryPath(owner, repository, `/discussions/${number}?${search}`));
 }
 
 export async function getIssueComments(

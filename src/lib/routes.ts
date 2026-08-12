@@ -4,6 +4,7 @@ export const repositorySections = [
   "code",
   "locks",
   "issues",
+  "discussions",
   "labels",
   "pulls",
   "actions",

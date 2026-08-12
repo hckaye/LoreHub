@@ -19,6 +19,7 @@ import (
 	"github.com/lorehub/lorehub/services/api/internal/collab"
 	"github.com/lorehub/lorehub/services/api/internal/config"
 	"github.com/lorehub/lorehub/services/api/internal/database"
+	"github.com/lorehub/lorehub/services/api/internal/discussions"
 	"github.com/lorehub/lorehub/services/api/internal/httpapi"
 	loreclient "github.com/lorehub/lorehub/services/api/internal/lore"
 	"github.com/lorehub/lorehub/services/api/internal/loreauth"
@@ -267,6 +268,7 @@ func run(logger *slog.Logger) error {
 		httpapi.WithBranchObservations(store),
 		httpapi.WithFileLocks(store, store),
 		httpapi.WithProjects(projects.NewStore(pool)),
+		httpapi.WithDiscussions(discussions.NewStore(pool)),
 		httpapi.WithReleases(releases.NewStore(pool)),
 		httpapi.WithMilestones(milestones.NewStore(pool)),
 		httpapi.WithWiki(wiki.NewStore(pool)),

@@ -29,3 +29,16 @@ func TestReviewThreadWebhookEventsUseReviewSubscriptions(t *testing.T) {
 		}
 	}
 }
+
+func TestDiscussionWebhookEventsAreSupported(t *testing.T) {
+	events, err := normalizeEvents([]string{"discussions", "issues"})
+	if err != nil {
+		t.Fatalf("normalize discussion events: %v", err)
+	}
+	if !reflect.DeepEqual(events, []string{"discussions", "issues"}) {
+		t.Fatalf("events = %v", events)
+	}
+	if kind, ok := eventKind("discussion.comment.created"); !ok || kind != "discussions" {
+		t.Fatalf("discussion event kind = %q, supported = %t", kind, ok)
+	}
+}

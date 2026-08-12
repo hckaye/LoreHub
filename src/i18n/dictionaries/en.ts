@@ -2,6 +2,7 @@ import { actionsEnvironments } from "./actions-environments";
 import { actionsSettings } from "./actions-settings";
 import { assignees } from "./assignees";
 import { auditLog } from "./audit-log";
+import { discussions } from "./discussions";
 import { fileLocks } from "./file-locks";
 import { globalWorkItems } from "./global-work-items";
 import { insights } from "./insights";
@@ -16,6 +17,7 @@ import { webhooks } from "./webhooks";
 import { wiki } from "./wiki";
 
 const en = {
+  discussionsPage: discussions.en,
   actionsEnvironments: actionsEnvironments.en,
   actionsSettings: actionsSettings.en,
   auditLog: auditLog.en,
@@ -52,6 +54,7 @@ const en = {
     repositoryNavigation: "Repository navigation",
     code: "Code",
     issues: "Issues",
+    discussions: "Discussions",
     pullRequests: "Pull requests",
     actions: "Actions",
     projects: "Projects",

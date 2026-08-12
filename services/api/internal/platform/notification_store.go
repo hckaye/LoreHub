@@ -31,6 +31,7 @@ type notificationScope struct {
 	Visibility         string
 	IssueNumber        *int64
 	MergeRequestNumber *int64
+	DiscussionNumber   *int64
 	Title              string
 	Href               string
 }
@@ -296,6 +297,9 @@ func (store *Store) syncNotifications(ctx context.Context, transaction pgx.Tx) e
 			    'organization.created', 'organization.updated', 'repository.registered',
 			    'repository.settings_updated', 'issue.created', 'issue.updated',
 			    'issue_comment.created', 'issue_comment.updated', 'issue_comment.deleted',
+			    'discussion.created', 'discussion.updated', 'discussion.comment.created',
+			    'discussion.comment.updated', 'discussion.comment.deleted',
+			    'discussion.answer.updated',
 			    'merge_request.created', 'merge_request.updated',
 			    'merge_request_comment.created', 'merge_request_comment.updated',
 			    'merge_request_comment.deleted',
@@ -452,6 +456,31 @@ func (store *Store) resolveNotificationScope(
 		`, eventID).Scan(&scope.OrganizationID, &scope.RepositoryID, &scope.OrganizationSlug,
 			&scope.RepositorySlug, &scope.Visibility, &scope.IssueNumber, &scope.MergeRequestNumber,
 			&scope.Title)
+	case strings.HasPrefix(event.Topic, "discussion.comment."):
+		err = transaction.QueryRow(ctx, `
+			SELECT r.organization_id, r.id, o.slug, r.slug, r.visibility,
+			       NULL, NULL, discussion.number, discussion.title
+			FROM discussion_comments comment
+			JOIN discussions discussion ON discussion.id = comment.discussion_id
+			JOIN repositories r ON r.id = discussion.repository_id
+			  AND r.lifecycle_state = 'active'
+			JOIN organizations o ON o.id = r.organization_id AND o.active
+			WHERE comment.id = split_part($1, ':', 1)::uuid
+		`, eventID).Scan(&scope.OrganizationID, &scope.RepositoryID, &scope.OrganizationSlug,
+			&scope.RepositorySlug, &scope.Visibility, &scope.IssueNumber, &scope.MergeRequestNumber,
+			&scope.DiscussionNumber, &scope.Title)
+	case strings.HasPrefix(event.Topic, "discussion."):
+		err = transaction.QueryRow(ctx, `
+			SELECT r.organization_id, r.id, o.slug, r.slug, r.visibility,
+			       NULL, NULL, discussion.number, discussion.title
+			FROM discussions discussion
+			JOIN repositories r ON r.id = discussion.repository_id
+			  AND r.lifecycle_state = 'active'
+			JOIN organizations o ON o.id = r.organization_id AND o.active
+			WHERE discussion.id = split_part($1, ':', 1)::uuid
+		`, eventID).Scan(&scope.OrganizationID, &scope.RepositoryID, &scope.OrganizationSlug,
+			&scope.RepositorySlug, &scope.Visibility, &scope.IssueNumber, &scope.MergeRequestNumber,
+			&scope.DiscussionNumber, &scope.Title)
 	case strings.HasPrefix(event.Topic, "merge_request_comment."):
 		err = transaction.QueryRow(ctx, `
 			SELECT r.organization_id, r.id, o.slug, r.slug, r.visibility, NULL, mr.number, mr.title
@@ -835,6 +864,10 @@ func notificationMessage(event notificationEvent, scope notificationScope) notif
 }
 
 func notificationHref(scope notificationScope) string {
+	if scope.RepositorySlug != "" && scope.DiscussionNumber != nil {
+		return "/" + scope.OrganizationSlug + "/" + scope.RepositorySlug +
+			"/discussions/" + fmt.Sprint(*scope.DiscussionNumber)
+	}
 	if scope.RepositorySlug != "" && scope.IssueNumber != nil {
 		return "/" + scope.OrganizationSlug + "/" + scope.RepositorySlug +
 			"/issues/" + fmt.Sprint(*scope.IssueNumber)

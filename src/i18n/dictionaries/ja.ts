@@ -2,6 +2,7 @@ import { actionsEnvironments } from "./actions-environments";
 import { actionsSettings } from "./actions-settings";
 import { assignees } from "./assignees";
 import { auditLog } from "./audit-log";
+import { discussions } from "./discussions";
 import { fileLocks } from "./file-locks";
 import { globalWorkItems } from "./global-work-items";
 import { insights } from "./insights";
@@ -18,6 +19,7 @@ import { wiki } from "./wiki";
 const concat = (...parts: string[]) => parts.join("");
 
 const ja = {
+  discussionsPage: discussions.ja,
   actionsEnvironments: actionsEnvironments.ja,
   actionsSettings: actionsSettings.ja,
   auditLog: auditLog.ja,
@@ -54,6 +56,7 @@ const ja = {
     repositoryNavigation: "リポジトリのナビゲーション",
     code: "コード",
     issues: "Issue",
+    discussions: "ディスカッション",
     pullRequests: "プルリクエスト",
     actions: "Actions",
     projects: "プロジェクト",

@@ -1,0 +1,90 @@
+.form {
+  display: grid;
+  gap: 16px;
+  max-width: 860px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.field label {
+  color: var(--fg-default);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.field input,
+.field select,
+.field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--fg-default);
+  font: inherit;
+  font-size: 0.84rem;
+}
+
+.field textarea {
+  min-height: 220px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.hint {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 0.75rem;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  align-items: center;
+}
+
+.submit,
+.cancel {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  border-radius: 5px;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.submit {
+  border: 1px solid var(--accent-border);
+  background: var(--accent-emphasis);
+  color: var(--fg-on-emphasis);
+  cursor: pointer;
+}
+
+.submit:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.cancel {
+  border: 1px solid var(--border);
+  color: var(--fg-default);
+}
+
+.error {
+  margin: 0;
+  color: var(--danger-fg);
+  font-size: 0.78rem;
+}

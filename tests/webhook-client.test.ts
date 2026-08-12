@@ -45,14 +45,17 @@ test("webhook paths encode repository and delivery identifiers", () => {
 
 test("webhook list validates event names and never copies a returned secret", async () => {
   const restore = stubFetch(() =>
-    Response.json({ webhooks: [webhook], availableEvents: ["issues", "reviews", "wiki"] }),
+    Response.json({
+      webhooks: [webhook],
+      availableEvents: ["discussions", "issues", "reviews", "wiki"],
+    }),
   );
   try {
     const result = await listRepositoryWebhooks("acme", "game");
     assert.equal(result.ok, true);
     if (!result.ok) return;
     assert.equal("secret" in result.data.webhooks[0], false);
-    assert.deepEqual(result.data.availableEvents, ["issues", "reviews", "wiki"]);
+    assert.deepEqual(result.data.availableEvents, ["discussions", "issues", "reviews", "wiki"]);
   } finally {
     restore();
   }

@@ -16,6 +16,7 @@ import (
 	"github.com/lorehub/lorehub/services/api/internal/authz"
 	branchesapi "github.com/lorehub/lorehub/services/api/internal/branches"
 	"github.com/lorehub/lorehub/services/api/internal/collab"
+	discussionsapi "github.com/lorehub/lorehub/services/api/internal/discussions"
 	filelocksapi "github.com/lorehub/lorehub/services/api/internal/filelocks"
 	loreclient "github.com/lorehub/lorehub/services/api/internal/lore"
 	"github.com/lorehub/lorehub/services/api/internal/loreauth"
@@ -158,6 +159,7 @@ type API struct {
 	fileLockUsers           filelocksapi.UserDirectory
 	fileLockObservations    filelocksapi.ObservationStore
 	projectsStore           projectsapi.Store
+	discussionsStore        discussionsapi.Store
 	releasesStore           releasesapi.Store
 	milestonesStore         milestonesapi.Store
 	wikiStore               wikiapi.Store

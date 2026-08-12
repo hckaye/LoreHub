@@ -20,6 +20,7 @@ var eventKinds = map[string]struct{}{
 	"branch_rules":  {},
 	"branches":      {},
 	"comments":      {},
+	"discussions":   {},
 	"issues":        {},
 	"labels":        {},
 	"milestones":    {},
@@ -131,6 +132,8 @@ func eventKind(topic string) (string, bool) {
 		return "branches", true
 	case strings.HasPrefix(topic, "issue_comment."), strings.HasPrefix(topic, "merge_request_comment."):
 		return "comments", true
+	case strings.HasPrefix(topic, "discussion."):
+		return "discussions", true
 	case strings.HasPrefix(topic, "issue_label."), strings.HasPrefix(topic, "issue."):
 		return "issues", true
 	case strings.HasPrefix(topic, "label."):

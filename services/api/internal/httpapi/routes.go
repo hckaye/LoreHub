@@ -6,6 +6,7 @@ import (
 	branchesapi "github.com/lorehub/lorehub/services/api/internal/branches"
 	codeapi "github.com/lorehub/lorehub/services/api/internal/code"
 	"github.com/lorehub/lorehub/services/api/internal/collab"
+	discussionsapi "github.com/lorehub/lorehub/services/api/internal/discussions"
 	filelocksapi "github.com/lorehub/lorehub/services/api/internal/filelocks"
 	loreclient "github.com/lorehub/lorehub/services/api/internal/lore"
 	mergeapi "github.com/lorehub/lorehub/services/api/internal/merge"
@@ -155,6 +156,9 @@ func (api *API) registerFeatureRoutes(mux *http.ServeMux) {
 		}
 		if api.projectsStore != nil {
 			projectsapi.Register(mux, api.projectsStore, api.collabStore, api, api.logger)
+		}
+		if api.discussionsStore != nil {
+			discussionsapi.Register(mux, api.discussionsStore, api.collabStore, api, api.logger)
 		}
 		if api.releasesStore != nil {
 			releasesapi.Register(
