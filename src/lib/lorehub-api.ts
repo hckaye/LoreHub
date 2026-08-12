@@ -46,6 +46,8 @@ import type {
   ReleasePage,
   Repository,
   RepositoryInsights,
+  RepositoryIssuePage,
+  RepositoryMergeRequestPage,
   ReviewCandidate,
   ReviewRequestSummary,
   ReviewSummary,
@@ -67,6 +69,21 @@ import { normalizeFileLockPage, type FileLockPage } from "./file-locks";
 import { normalizeGlobalWorkItemPage, type GlobalWorkItemPage, type GlobalWorkItemQuery } from "./global-work-items";
 import { parseMergeReadiness } from "./merge-readiness-contract";
 import { normalizePersonalAccessTokenPage } from "./personal-access-token";
+import { parseRepositoryIssuePage, parseRepositoryMergeRequestPage } from "./repository-work-item-contract";
+import {
+  repositoryWorkItemSearchParams,
+  type RepositoryIssueQuery,
+  type RepositoryMergeRequestQuery,
+} from "./repository-work-item-query";
+
+export type {
+  IssueFilter,
+  MergeRequestFilter,
+  RepositoryIssueQuery,
+  RepositoryMergeRequestQuery,
+  RepositoryWorkItemDirection,
+  RepositoryWorkItemSort,
+} from "./repository-work-item-query";
 
 const apiOrigin = process.env.LOREHUB_API_URL ?? "http://127.0.0.1:8080";
 
@@ -221,14 +238,6 @@ export async function getBranchRules(owner: string, repository: string): Promise
   return rules ? { ok: true, data: rules } : { ok: false, reason: "unavailable" };
 }
 
-export async function getOpenIssues(owner: string, repository: string): Promise<APIResult<Issue[]>> {
-  return getIssues(owner, repository, "open");
-}
-
-export async function getOpenMergeRequests(owner: string, repository: string): Promise<APIResult<MergeRequest[]>> {
-  return getMergeRequests(owner, repository, "open");
-}
-
 export async function getCIRuns(owner: string, repository: string): Promise<APIResult<CIRun[]>> {
   const result = await getActionRuns(owner, repository);
   return result.ok ? { ok: true, data: result.data.runs } : result;
@@ -280,18 +289,16 @@ export async function getCodeScanningAlerts(
   return result.ok ? { ok: true, data: result.data.alerts } : result;
 }
 
-export type IssueFilter = "open" | "closed" | "all";
-export type MergeRequestFilter = "open" | "closed" | "merged" | "all";
-
-export async function getIssues(owner: string, repository: string, state: IssueFilter): Promise<APIResult<Issue[]>> {
-  if (state === "all") {
-    return combineResults(
-      await Promise.all([getIssues(owner, repository, "open"), getIssues(owner, repository, "closed")]),
-      (items) => items.sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt)),
-    );
-  }
-  const result = await request<{ issues: Issue[] }>(repositoryPath(owner, repository, `/issues?state=${state}`));
-  return result.ok ? { ok: true, data: result.data.issues } : result;
+export async function getIssues(
+  owner: string,
+  repository: string,
+  query: RepositoryIssueQuery = {},
+): Promise<APIResult<RepositoryIssuePage>> {
+  const search = repositoryWorkItemSearchParams(query).toString();
+  const result = await request<unknown>(repositoryPath(owner, repository, `/issues${search ? `?${search}` : ""}`));
+  if (!result.ok) return result;
+  const page = parseRepositoryIssuePage(result.data);
+  return page ? { ok: true, data: page } : { ok: false, reason: "unavailable" };
 }
 
 export function getIssue(owner: string, repository: string, number: number): Promise<APIResult<Issue>> {
@@ -366,22 +373,15 @@ export function getLabelPage(owner: string, repository: string): Promise<APIResu
 export async function getMergeRequests(
   owner: string,
   repository: string,
-  state: MergeRequestFilter,
-): Promise<APIResult<MergeRequest[]>> {
-  if (state === "all") {
-    return combineResults(
-      await Promise.all([
-        getMergeRequests(owner, repository, "open"),
-        getMergeRequests(owner, repository, "closed"),
-        getMergeRequests(owner, repository, "merged"),
-      ]),
-      (items) => items.sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt)),
-    );
-  }
-  const result = await request<{ mergeRequests: MergeRequest[] }>(
-    repositoryPath(owner, repository, `/merge-requests?state=${state}`),
+  query: RepositoryMergeRequestQuery = {},
+): Promise<APIResult<RepositoryMergeRequestPage>> {
+  const search = repositoryWorkItemSearchParams(query).toString();
+  const result = await request<unknown>(
+    repositoryPath(owner, repository, `/merge-requests${search ? `?${search}` : ""}`),
   );
-  return result.ok ? { ok: true, data: result.data.mergeRequests } : result;
+  if (!result.ok) return result;
+  const page = parseRepositoryMergeRequestPage(result.data);
+  return page ? { ok: true, data: page } : { ok: false, reason: "unavailable" };
 }
 
 export function getMergeRequest(owner: string, repository: string, number: number): Promise<APIResult<MergeRequest>> {
@@ -647,12 +647,4 @@ async function readProblemCode(response: Response): Promise<string | undefined> 
   } catch {
     return undefined;
   }
-}
-
-function combineResults<T>(results: APIResult<T[]>[], combine: (items: T[]) => T[]): APIResult<T[]> {
-  const failure = results.find((result) => !result.ok);
-  if (failure && !failure.ok) {
-    return failure;
-  }
-  return { ok: true, data: combine(results.flatMap((result) => (result.ok ? result.data : []))) };
 }

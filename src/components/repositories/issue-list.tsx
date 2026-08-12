@@ -1,4 +1,4 @@
-import { CircleDot } from "lucide-react";
+import { CircleDot, MessageSquare } from "lucide-react";
 import Link from "next/link";
 
 import type { Dictionary } from "@/i18n";
@@ -32,10 +32,15 @@ export function IssueList({ issues, dictionary, locale, owner, repository }: Iss
     <div className={styles.list}>
       {issues.map((issue) => (
         <article className={styles.row} key={issue.id}>
-          <CircleDot aria-hidden="true" className={styles.stateIcon} size={18} />
+          <CircleDot aria-hidden="true" className={styles.stateIcon} data-state={issue.state} size={18} />
           <div className={styles.content}>
             <h3>
               <Link href={`${repositoryPath(locale, owner, repository, "issues")}/${issue.number}`}>{issue.title}</Link>
+              {issue.labels.map((label) => (
+                <span className={styles.label} key={label.id} style={{ borderColor: `#${label.color}` }}>
+                  {label.name}
+                </span>
+              ))}
             </h3>
             <p>
               #{issue.number} · {issue.author} · {formatDate(issue.updatedAt, locale)}
@@ -61,7 +66,12 @@ export function IssueList({ issues, dictionary, locale, owner, repository }: Iss
                 ))}
               </div>
             )}
-            {issue.commentCount > 0 && <span className={styles.comments}>{issue.commentCount}</span>}
+            {issue.commentCount > 0 && (
+              <span className={styles.comments}>
+                <MessageSquare aria-hidden="true" size={14} />
+                {issue.commentCount}
+              </span>
+            )}
           </div>
         </article>
       ))}

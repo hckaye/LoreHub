@@ -1,0 +1,134 @@
+.toolbar {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-muted);
+  font-size: 0.78rem;
+}
+
+.summary a {
+  margin-left: auto;
+  color: var(--accent-fg);
+  text-decoration: none;
+}
+
+.summary a:hover {
+  text-decoration: underline;
+}
+
+.form {
+  display: grid;
+  align-items: end;
+  gap: 10px;
+  padding: 12px;
+  grid-template-columns: minmax(220px, 2fr) repeat(auto-fit, minmax(132px, 1fr));
+}
+
+.form label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.form label > span {
+  color: var(--fg-muted);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.form input,
+.form select {
+  width: 100%;
+  min-height: 32px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--canvas-default);
+  color: var(--fg-default);
+  font: inherit;
+  font-size: 0.78rem;
+}
+
+.searchField div {
+  position: relative;
+}
+
+.searchField svg {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  color: var(--fg-muted);
+  pointer-events: none;
+}
+
+.searchField input {
+  padding-left: 30px;
+}
+
+.form button {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--accent-border);
+  border-radius: 6px;
+  background: var(--accent-emphasis);
+  color: var(--fg-on-emphasis);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+}
+
+.pagination a,
+.pagination span {
+  min-width: 72px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--accent-fg);
+  font-size: 0.78rem;
+  text-align: center;
+  text-decoration: none;
+}
+
+.pagination span {
+  color: var(--fg-muted);
+  opacity: 0.65;
+}
+
+.pagination strong {
+  color: var(--fg-muted);
+  font-size: 0.78rem;
+}
+
+@media (max-width: 720px) {
+  .form {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .searchField {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 480px) {
+  .form {
+    grid-template-columns: 1fr;
+  }
+
+  .searchField {
+    grid-column: auto;
+  }
+}

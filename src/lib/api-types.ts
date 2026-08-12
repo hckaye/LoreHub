@@ -317,6 +317,16 @@ export type Issue = {
   viewerCanManageAssignees: boolean;
 };
 
+export type RepositoryIssuePage = {
+  issues: Issue[];
+  totalCount: number;
+  openCount: number;
+  closedCount: number;
+  page: number;
+  perPage: number;
+  hasNext: boolean;
+};
+
 export type IssueComment = {
   id: string;
   issueId: string;
@@ -439,6 +449,24 @@ export type MergeRequest = {
   closedAt: string | null;
   viewerCanUpdate: boolean;
   viewerCanReview: boolean;
+};
+
+export type MergeRequestListItem = MergeRequest & {
+  labels: Label[];
+  assignees: Assignee[];
+  milestone: MilestoneSummary | null;
+  commentCount: number;
+};
+
+export type RepositoryMergeRequestPage = {
+  mergeRequests: MergeRequestListItem[];
+  totalCount: number;
+  openCount: number;
+  closedCount: number;
+  mergedCount: number;
+  page: number;
+  perPage: number;
+  hasNext: boolean;
 };
 
 export type MergeRequestComment = {

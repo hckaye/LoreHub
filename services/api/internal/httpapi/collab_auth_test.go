@@ -17,7 +17,11 @@ import (
 )
 
 type authCollabStore struct {
-	updateCalls int
+	updateCalls       int
+	issueQuery        collab.RepositoryIssueQuery
+	mergeRequestQuery collab.RepositoryMergeRequestQuery
+	issues            []collab.Issue
+	mergeRequests     []collab.MergeRequestListItem
 }
 
 func (store *authCollabStore) EnsureUser(context.Context, auth.Principal) (platform.User, error) {
@@ -43,6 +47,37 @@ func (*authCollabStore) RepositoryPermission(
 	context.Context, platform.User, collab.Repository,
 ) (collab.Access, error) {
 	return collab.Access{Permission: collab.PermWrite}, nil
+}
+
+func (store *authCollabStore) ListIssuesForRepository(
+	_ context.Context,
+	_ string,
+	query collab.RepositoryIssueQuery,
+) (collab.RepositoryIssuePage, error) {
+	store.issueQuery = query
+	return collab.RepositoryIssuePage{
+		Issues: store.issues, TotalCount: int64(len(store.issues)),
+		OpenCount: int64(len(store.issues)), Page: query.Page, PerPage: query.PerPage,
+	}, nil
+}
+
+func (store *authCollabStore) ListMergeRequestsForRepository(
+	_ context.Context,
+	_ string,
+	query collab.RepositoryMergeRequestQuery,
+) (collab.RepositoryMergeRequestPage, error) {
+	store.mergeRequestQuery = query
+	return collab.RepositoryMergeRequestPage{
+		MergeRequests: store.mergeRequests, TotalCount: int64(len(store.mergeRequests)),
+		OpenCount: int64(len(store.mergeRequests)), Page: query.Page, PerPage: query.PerPage,
+	}, nil
+}
+
+func (*authCollabStore) ListCIRunsForRepository(
+	context.Context,
+	string,
+) ([]platform.CIRun, error) {
+	return []platform.CIRun{}, nil
 }
 
 func (*authCollabStore) GetIssue(context.Context, string, int64) (collab.Issue, error) {

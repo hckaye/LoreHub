@@ -16,10 +16,12 @@ import { releases } from "./releases";
 import { repositoryLifecycle } from "./repository-lifecycle";
 import { webhooks } from "./webhooks";
 import { wiki } from "./wiki";
+import { workItemLists } from "./work-item-lists";
 
 const concat = (...parts: string[]) => parts.join("");
 
 const ja = {
+  workItemLists: workItemLists.ja,
   commitStatuses: commitStatuses.ja,
   discussionsPage: discussions.ja,
   actionsEnvironments: actionsEnvironments.ja,

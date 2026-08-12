@@ -3,19 +3,28 @@ import Link from "next/link";
 
 import { IssueList } from "@/components/repositories/issue-list";
 import { RepositoryPanel, RepositorySection } from "@/components/repositories/repository-section";
+import { WorkItemListPagination } from "@/components/repositories/work-item-list-pagination";
+import { WorkItemListToolbar } from "@/components/repositories/work-item-list-toolbar";
 import { EmptyState } from "@/components/ui/empty-state";
 import { FilterTabs } from "@/components/ui/filter-tabs";
 import { FlashNotice } from "@/components/ui/flash-notice";
 import { getDictionary } from "@/i18n";
 import { isLocale } from "@/i18n/config";
-import { getIssues, getPublicRepository, type IssueFilter } from "@/lib/lorehub-api";
+import { getIssues, getPublicRepository } from "@/lib/lorehub-api";
+import {
+  parseRepositoryIssueQuery,
+  repositoryWorkItemSearchParams,
+  type IssueFilter,
+  type RawRepositoryWorkItemSearchParams,
+  type RepositoryIssueQuery,
+} from "@/lib/repository-work-item-query";
 import { repositoryMilestonesPath, repositoryPath } from "@/lib/routes";
 
 import styles from "@/components/repositories/repository-section.module.css";
 
 type IssuesPageProps = {
   params: Promise<{ locale: string; owner: string; repository: string }>;
-  searchParams: Promise<{ state?: string; created?: string }>;
+  searchParams: Promise<RawRepositoryWorkItemSearchParams & { created?: string }>;
 };
 
 export const dynamic = "force-dynamic";
@@ -24,13 +33,15 @@ export default async function IssuesPage({ params, searchParams }: IssuesPagePro
   const { locale: value, owner, repository } = await params;
   const locale = isLocale(value) ? value : "en";
   const query = await searchParams;
-  const state = parseIssueFilter(query.state);
+  const filters = parseRepositoryIssueQuery(query);
+  const state = filters.state ?? "open";
   const [dictionary, issues, repositoryResult] = await Promise.all([
     getDictionary(locale),
-    getIssues(owner, repository, state),
+    getIssues(owner, repository, filters),
     getPublicRepository(owner, repository),
   ]);
   const archived = repositoryResult.ok && repositoryResult.data.archivedAt !== null;
+  const basePath = repositoryPath(locale, owner, repository, "issues");
   return (
     <RepositorySection
       actions={
@@ -59,22 +70,32 @@ export default async function IssuesPage({ params, searchParams }: IssuesPagePro
           tone="success"
         />
       )}
+      <WorkItemListToolbar
+        basePath={basePath}
+        dictionary={dictionary}
+        kind="issues"
+        query={filters}
+        totalCount={issues.ok ? issues.data.totalCount : undefined}
+      />
       <FilterTabs
         label={dictionary.issuesPage.filterLabel}
         tabs={[
           {
             active: state === "open",
-            href: repositoryPath(locale, owner, repository, "issues"),
+            count: issues.ok ? issues.data.openCount : undefined,
+            href: stateHref(basePath, filters, "open"),
             label: dictionary.common.open,
           },
           {
             active: state === "closed",
-            href: `${repositoryPath(locale, owner, repository, "issues")}?state=closed`,
+            count: issues.ok ? issues.data.closedCount : undefined,
+            href: stateHref(basePath, filters, "closed"),
             label: dictionary.common.closed,
           },
           {
             active: state === "all",
-            href: `${repositoryPath(locale, owner, repository, "issues")}?state=all`,
+            count: issues.ok ? issues.data.openCount + issues.data.closedCount : undefined,
+            href: stateHref(basePath, filters, "all"),
             label: dictionary.common.all,
           },
         ]}
@@ -83,7 +104,7 @@ export default async function IssuesPage({ params, searchParams }: IssuesPagePro
         {issues.ok ? (
           <IssueList
             dictionary={dictionary}
-            issues={issues.data}
+            issues={issues.data.issues}
             locale={locale}
             owner={owner}
             repository={repository}
@@ -97,10 +118,20 @@ export default async function IssuesPage({ params, searchParams }: IssuesPagePro
           />
         )}
       </RepositoryPanel>
+      {issues.ok && (
+        <WorkItemListPagination
+          basePath={basePath}
+          dictionary={dictionary}
+          hasNext={issues.data.hasNext}
+          page={issues.data.page}
+          query={filters}
+        />
+      )}
     </RepositorySection>
   );
 }
 
-function parseIssueFilter(value: string | undefined): IssueFilter {
-  return value === "closed" || value === "all" ? value : "open";
+function stateHref(basePath: string, query: RepositoryIssueQuery, state: IssueFilter): string {
+  const params = repositoryWorkItemSearchParams(query, { state, page: 1 });
+  return params.size > 0 ? `${basePath}?${params}` : basePath;
 }

@@ -54,7 +54,6 @@ type Store interface {
 		owner string,
 		slug string,
 	) (platform.Repository, error)
-	ListPublicIssues(ctx context.Context, owner string, slug string, state string) ([]platform.Issue, error)
 	CreateIssue(
 		ctx context.Context,
 		actor platform.User,
@@ -62,12 +61,6 @@ type Store interface {
 		slug string,
 		input platform.CreateIssueInput,
 	) (platform.Issue, error)
-	ListPublicMergeRequests(
-		ctx context.Context,
-		owner string,
-		slug string,
-		state string,
-	) ([]platform.MergeRequest, error)
 	CreateMergeRequest(
 		ctx context.Context,
 		actor platform.User,
@@ -517,45 +510,6 @@ func (api *API) registerRepository(writer http.ResponseWriter, request *http.Req
 	writeJSON(writer, http.StatusCreated, repository)
 }
 
-func (api *API) listIssues(writer http.ResponseWriter, request *http.Request) {
-	actor, actorOK := api.ResolveOptionalActor(writer, request)
-	if !actorOK {
-		return
-	}
-	if api.collabStore != nil {
-		if reader, ok := api.collabStore.(collab.RepositoryReadStore); ok {
-			repository, err := api.collabStore.LookupRepository(request.Context(), actor,
-				request.PathValue("owner"), request.PathValue("repository"))
-			if err != nil {
-				api.platformError(writer, request, "list issues", err)
-				return
-			}
-			issues, err := reader.ListIssuesForRepository(request.Context(), repository.ID, request.URL.Query().Get("state"))
-			if err != nil {
-				api.internalError(writer, request, "list issues", err)
-				return
-			}
-			writeJSON(writer, http.StatusOK, map[string]any{"issues": issues})
-			return
-		}
-	}
-	if err := api.authorizeFallbackRepositoryRead(request.Context(), actor, request); err != nil {
-		api.platformError(writer, request, "list issues", err)
-		return
-	}
-	issues, err := api.store.ListPublicIssues(
-		request.Context(),
-		request.PathValue("owner"),
-		request.PathValue("repository"),
-		request.URL.Query().Get("state"),
-	)
-	if err != nil {
-		api.platformError(writer, request, "list issues", err)
-		return
-	}
-	writeJSON(writer, http.StatusOK, map[string]any{"issues": issues})
-}
-
 func (api *API) createIssue(writer http.ResponseWriter, request *http.Request) {
 	actor, ok := api.actor(writer, request)
 	if !ok {
@@ -585,46 +539,6 @@ func (api *API) createIssue(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 	writeJSON(writer, http.StatusCreated, issue)
-}
-
-func (api *API) listMergeRequests(writer http.ResponseWriter, request *http.Request) {
-	actor, actorOK := api.ResolveOptionalActor(writer, request)
-	if !actorOK {
-		return
-	}
-	if api.collabStore != nil {
-		if reader, ok := api.collabStore.(collab.RepositoryReadStore); ok {
-			repository, err := api.collabStore.LookupRepository(request.Context(), actor,
-				request.PathValue("owner"), request.PathValue("repository"))
-			if err != nil {
-				api.platformError(writer, request, "list merge requests", err)
-				return
-			}
-			mergeRequests, err := reader.ListMergeRequestsForRepository(request.Context(), repository.ID,
-				request.URL.Query().Get("state"))
-			if err != nil {
-				api.internalError(writer, request, "list merge requests", err)
-				return
-			}
-			writeJSON(writer, http.StatusOK, map[string]any{"mergeRequests": mergeRequests})
-			return
-		}
-	}
-	if err := api.authorizeFallbackRepositoryRead(request.Context(), actor, request); err != nil {
-		api.platformError(writer, request, "list merge requests", err)
-		return
-	}
-	mergeRequests, err := api.store.ListPublicMergeRequests(
-		request.Context(),
-		request.PathValue("owner"),
-		request.PathValue("repository"),
-		request.URL.Query().Get("state"),
-	)
-	if err != nil {
-		api.platformError(writer, request, "list merge requests", err)
-		return
-	}
-	writeJSON(writer, http.StatusOK, map[string]any{"mergeRequests": mergeRequests})
 }
 
 func (api *API) createMergeRequest(writer http.ResponseWriter, request *http.Request) {

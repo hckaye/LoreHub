@@ -23,12 +23,30 @@
   color: var(--success-fg);
 }
 
+.icon[data-state="closed"],
+.icon[data-state="merged"] {
+  color: var(--fg-muted);
+}
+
 .details h3 {
   align-items: center;
   display: flex;
   gap: 7px;
   margin: 0 0 4px;
   font-size: 0.9rem;
+}
+
+.details h3 {
+  flex-wrap: wrap;
+}
+
+.details p a {
+  color: var(--accent-fg);
+  text-decoration: none;
+}
+
+.details p a:hover {
+  text-decoration: underline;
 }
 
 .draft {
@@ -40,11 +58,33 @@
   padding: 1px 6px;
 }
 
+.label {
+  padding: 1px 7px;
+  border: 1px solid;
+  border-radius: 2em;
+  color: var(--fg-default);
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
 .details p,
-.approvals {
+.trailing {
   margin: 0;
   color: var(--fg-muted);
   font-size: 0.74rem;
+}
+
+.trailing {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+}
+
+.trailing span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .branches {
@@ -66,7 +106,7 @@
   }
 
   .branches,
-  .approvals {
+  .trailing {
     grid-column: 2;
   }
 }

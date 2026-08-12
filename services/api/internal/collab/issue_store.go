@@ -40,7 +40,7 @@ const issueDetailQuery = `
 	           JOIN labels label ON label.id = issue_label.label_id
 	           WHERE issue_label.issue_id = i.id
 	       ), '[]'::jsonb),
-	       (SELECT COUNT(*) FROM issue_comments issue_comment WHERE issue_comment.issue_id = i.id),
+	       i.comment_count,
 	       i.created_at, i.updated_at, closed_by.username, i.closed_at
 	FROM issues i
 	JOIN users author ON author.id = i.author_id

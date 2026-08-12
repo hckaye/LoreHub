@@ -24,6 +24,10 @@
   color: var(--success-fg);
 }
 
+.stateIcon[data-state="closed"] {
+  color: var(--fg-muted);
+}
+
 .content {
   min-width: 0;
 }
@@ -55,9 +59,22 @@
 }
 
 .row h3 {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
   margin: 0 0 4px;
   color: var(--fg-default);
   font-size: 0.9rem;
+}
+
+.label {
+  padding: 1px 7px;
+  border: 1px solid;
+  border-radius: 2em;
+  color: var(--fg-default);
+  font-size: 0.68rem;
+  font-weight: 600;
 }
 
 .row h3 a {
@@ -86,6 +103,9 @@
 }
 
 .comments {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   color: var(--fg-muted);
   font-size: 0.75rem;
 }

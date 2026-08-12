@@ -438,56 +438,6 @@ func (store *Store) RepositoryForWrite(
 	return repository, nil
 }
 
-func (store *Store) ListPublicIssues(
-	ctx context.Context,
-	owner string,
-	slug string,
-	state string,
-) ([]Issue, error) {
-	if state != "open" && state != "closed" {
-		state = "open"
-	}
-	rows, err := store.pool.Query(ctx, `
-		SELECT i.id, i.number, i.title, i.body, i.state, author.username,
-		       assignee.username, COUNT(c.id), i.created_at, i.updated_at
-		FROM issues i
-		JOIN repositories r ON r.id = i.repository_id
-		JOIN organizations o ON o.id = r.organization_id AND o.active
-		JOIN users author ON author.id = i.author_id
-		LEFT JOIN LATERAL (
-			SELECT assigned_user.username
-			FROM issue_assignees assignment
-			JOIN users assigned_user ON assigned_user.id = assignment.user_id
-			WHERE assignment.issue_id = i.id
-			ORDER BY assignment.assigned_at, assigned_user.username
-			LIMIT 1
-		) assignee ON true
-		LEFT JOIN issue_comments c ON c.issue_id = i.id
-		WHERE o.slug = $1 AND r.slug = $2 AND o.active
-		  AND r.visibility = 'public' AND r.lifecycle_state = 'active' AND i.state = $3
-		GROUP BY i.id, author.username, assignee.username
-		ORDER BY i.updated_at DESC
-		LIMIT 100
-	`, owner, slug, state)
-	if err != nil {
-		return nil, fmt.Errorf("list issues: %w", err)
-	}
-	defer rows.Close()
-	issues := make([]Issue, 0)
-	for rows.Next() {
-		var issue Issue
-		if err := rows.Scan(&issue.ID, &issue.Number, &issue.Title, &issue.Body, &issue.State, &issue.Author,
-			&issue.Assignee, &issue.CommentCount, &issue.CreatedAt, &issue.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("scan issue: %w", err)
-		}
-		issues = append(issues, issue)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate issues: %w", err)
-	}
-	return issues, nil
-}
-
 func (store *Store) CreateIssue(
 	ctx context.Context,
 	actor User,
@@ -546,65 +496,6 @@ func (store *Store) CreateIssue(
 		return Issue{}, fmt.Errorf("commit issue transaction: %w", err)
 	}
 	return issue, nil
-}
-
-func (store *Store) ListPublicMergeRequests(
-	ctx context.Context,
-	owner string,
-	slug string,
-	state string,
-) ([]MergeRequest, error) {
-	if state != "open" && state != "closed" && state != "merged" {
-		state = "open"
-	}
-	rows, err := store.pool.Query(ctx, `
-		SELECT mr.id, mr.number, mr.title, mr.body, mr.state, mr.is_draft,
-		       mr.source_branch, mr.target_branch, mr.source_revision, mr.target_revision,
-		       author.username,
-		       COUNT(review.id) FILTER (WHERE review.decision = 'approved'),
-		       mr.created_at, mr.updated_at
-		FROM merge_requests mr
-		JOIN repositories r ON r.id = mr.repository_id
-		JOIN organizations o ON o.id = r.organization_id AND o.active
-		JOIN users author ON author.id = mr.author_id
-		LEFT JOIN merge_request_reviews review ON review.merge_request_id = mr.id
-		WHERE o.slug = $1 AND r.slug = $2 AND o.active
-		  AND r.visibility = 'public' AND r.lifecycle_state = 'active' AND mr.state = $3
-		GROUP BY mr.id, author.username
-		ORDER BY mr.updated_at DESC
-		LIMIT 100
-	`, owner, slug, state)
-	if err != nil {
-		return nil, fmt.Errorf("list merge requests: %w", err)
-	}
-	defer rows.Close()
-	mergeRequests := make([]MergeRequest, 0)
-	for rows.Next() {
-		var mergeRequest MergeRequest
-		if err := rows.Scan(
-			&mergeRequest.ID,
-			&mergeRequest.Number,
-			&mergeRequest.Title,
-			&mergeRequest.Body,
-			&mergeRequest.State,
-			&mergeRequest.IsDraft,
-			&mergeRequest.SourceBranch,
-			&mergeRequest.TargetBranch,
-			&mergeRequest.SourceRevision,
-			&mergeRequest.TargetRevision,
-			&mergeRequest.Author,
-			&mergeRequest.ApprovalCount,
-			&mergeRequest.CreatedAt,
-			&mergeRequest.UpdatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan merge request: %w", err)
-		}
-		mergeRequests = append(mergeRequests, mergeRequest)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate merge requests: %w", err)
-	}
-	return mergeRequests, nil
 }
 
 func (store *Store) CreateMergeRequest(

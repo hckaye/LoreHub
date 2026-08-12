@@ -16,8 +16,10 @@ import { releases } from "./releases";
 import { repositoryLifecycle } from "./repository-lifecycle";
 import { webhooks } from "./webhooks";
 import { wiki } from "./wiki";
+import { workItemLists } from "./work-item-lists";
 
 const en = {
+  workItemLists: workItemLists.en,
   commitStatuses: commitStatuses.en,
   discussionsPage: discussions.en,
   actionsEnvironments: actionsEnvironments.en,
