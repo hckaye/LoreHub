@@ -20,9 +20,17 @@ import type {
   ReviewSummary,
 } from "@/lib/api-types";
 import { deleteJson, patchJson, postJson, putJson } from "@/lib/auth-client";
+import type { CommentPage } from "@/lib/comment-page-types";
+import {
+  conversationCommentPageHref,
+  conversationCommentPageSize,
+  lastConversationCommentPage,
+} from "@/lib/comment-pagination";
 import { mutationFailureMessage } from "@/lib/mutation-messages";
+import { repositoryPath } from "@/lib/routes";
 
 import { FlashNotice } from "../ui/flash-notice";
+import { ConversationPagination } from "./conversation-pagination";
 import styles from "./pull-request-conversation.module.css";
 import { PullRequestMetadata } from "./pull-request-metadata";
 import { PullRequestReviewers } from "./pull-request-reviewers";
@@ -30,8 +38,7 @@ import { PullRequestReviewers } from "./pull-request-reviewers";
 type PullRequestConversationProps = {
   assignees: Assignee[];
   assigneesAvailable: boolean;
-  comments: MergeRequestComment[];
-  commentsAvailable: boolean;
+  comments: CommentPage<MergeRequestComment> | null;
   dictionary: Dictionary;
   locale: Locale;
   mergeRequest: MergeRequest;
@@ -56,6 +63,12 @@ export function PullRequestConversation(props: PullRequestConversationProps) {
   const labels = props.dictionary.pullRequestDetail;
   const csrfToken = props.session.status === "authenticated" ? props.session.csrfToken : "";
   const apiPath = mergeRequestAPIPath(props.owner, props.repository, props.mergeRequest.number);
+  const commentBasePath = `${repositoryPath(
+    props.locale,
+    props.owner,
+    props.repository,
+    "pulls",
+  )}/${props.mergeRequest.number}`;
 
   async function updateMergeRequest(input: Partial<Pick<MergeRequest, "title" | "body" | "state">>) {
     if (!csrfToken) return false;
@@ -75,7 +88,13 @@ export function PullRequestConversation(props: PullRequestConversationProps) {
   }
 
   async function createComment(body: string) {
-    return mutation("new-comment", () => postJson<MergeRequestComment>(`${apiPath}/comments`, { body }, csrfToken));
+    const completed = await mutation(
+      "new-comment",
+      () => postJson<MergeRequestComment>(`${apiPath}/comments`, { body }, csrfToken),
+      false,
+    );
+    if (completed) showCommentPage((props.comments?.totalCount ?? 0) + 1, true);
+    return completed;
   }
 
   async function updateComment(commentID: string, body: string) {
@@ -86,9 +105,24 @@ export function PullRequestConversation(props: PullRequestConversationProps) {
 
   async function deleteComment(commentID: string) {
     if (!window.confirm(labels.deleteCommentConfirm)) return;
-    await mutation(commentID, () =>
-      deleteJson<null>(`${apiPath}/comments/${encodeURIComponent(commentID)}`, csrfToken),
+    const completed = await mutation(
+      commentID,
+      () => deleteJson<null>(`${apiPath}/comments/${encodeURIComponent(commentID)}`, csrfToken),
+      false,
     );
+    if (completed) showCommentPage(Math.max(0, (props.comments?.totalCount ?? 1) - 1));
+  }
+
+  function showCommentPage(totalCount: number, showLastPage = false) {
+    const currentPage = props.comments?.page ?? 1;
+    const perPage = props.comments?.perPage ?? conversationCommentPageSize;
+    const lastPage = lastConversationCommentPage(totalCount, perPage);
+    const targetPage = showLastPage ? lastPage : Math.min(currentPage, lastPage);
+    if (targetPage !== currentPage) {
+      router.push(conversationCommentPageHref(commentBasePath, targetPage));
+      return;
+    }
+    router.refresh();
   }
 
   async function submitReview(decision: Review["decision"], body: string) {
@@ -122,6 +156,7 @@ export function PullRequestConversation(props: PullRequestConversationProps) {
           code: string | null;
         }
     >,
+    refresh = true,
   ) {
     if (!csrfToken) return false;
     setBusy(action);
@@ -133,7 +168,7 @@ export function PullRequestConversation(props: PullRequestConversationProps) {
       setMessage(mutationFailureMessage(result.kind, props.dictionary));
       return false;
     }
-    router.refresh();
+    if (refresh) router.refresh();
     return true;
   }
 
@@ -182,10 +217,10 @@ export function PullRequestConversation(props: PullRequestConversationProps) {
         repository={props.repository}
       />
       <div className={styles.timeline}>
-        {!props.commentsAvailable ? (
+        {!props.comments ? (
           <p className={styles.muted}>{labels.commentsUnavailable}</p>
         ) : (
-          props.comments.map((comment) => (
+          props.comments.items.map((comment) => (
             <Comment
               busy={busy === comment.id}
               comment={comment}
@@ -198,6 +233,16 @@ export function PullRequestConversation(props: PullRequestConversationProps) {
           ))
         )}
       </div>
+      {props.comments && (
+        <ConversationPagination
+          basePath={commentBasePath}
+          dictionary={props.dictionary}
+          hasNext={props.comments.hasNext}
+          page={props.comments.page}
+          perPage={props.comments.perPage}
+          totalCount={props.comments.totalCount}
+        />
+      )}
       {props.session.status === "authenticated" && (
         <CommentForm
           busy={busy === "new-comment"}

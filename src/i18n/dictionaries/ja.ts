@@ -2,6 +2,7 @@ import { actionsEnvironments } from "./actions-environments";
 import { actionsSettings } from "./actions-settings";
 import { assignees } from "./assignees";
 import { auditLog } from "./audit-log";
+import { commentPagination } from "./comment-pagination";
 import { commitStatuses } from "./commit-statuses";
 import { discussions } from "./discussions";
 import { fileLocks } from "./file-locks";
@@ -21,6 +22,7 @@ import { workItemLists } from "./work-item-lists";
 const concat = (...parts: string[]) => parts.join("");
 
 const ja = {
+  commentPagination: commentPagination.ja,
   workItemLists: workItemLists.ja,
   commitStatuses: commitStatuses.ja,
   discussionsPage: discussions.ja,

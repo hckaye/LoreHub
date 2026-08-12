@@ -29,17 +29,6 @@ func (s *store) ListMergeRequestComments(
 	number int64,
 	page Page,
 ) (Result[MergeRequestComment], error) {
-	var exists bool
-	if err := s.pool.QueryRow(ctx, `
-		SELECT EXISTS (
-			SELECT 1 FROM merge_requests WHERE repository_id = $1 AND number = $2
-		)
-	`, repoID, number).Scan(&exists); err != nil {
-		return Result[MergeRequestComment]{}, fmt.Errorf("check pull request for comments: %w", err)
-	}
-	if !exists {
-		return Result[MergeRequestComment]{}, platform.ErrNotFound
-	}
 	offset, err := pageOffset(page)
 	if err != nil {
 		return Result[MergeRequestComment]{}, err
@@ -51,7 +40,30 @@ func (s *store) ListMergeRequestComments(
 	if limit > maxPageLimit {
 		limit = maxPageLimit
 	}
-	rows, err := s.pool.Query(ctx, `
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{
+		IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly,
+	})
+	if err != nil {
+		return Result[MergeRequestComment]{}, fmt.Errorf("begin pull request comment list: %w", err)
+	}
+	defer rollback(ctx, tx)
+	var totalCount int64
+	err = tx.QueryRow(ctx, `
+		SELECT merge_request.comment_count
+		FROM merge_requests merge_request
+		JOIN repositories repository
+		  ON repository.id = merge_request.repository_id AND repository.lifecycle_state = 'active'
+		JOIN organizations organization
+		  ON organization.id = repository.organization_id AND organization.active
+		WHERE merge_request.repository_id = $1 AND merge_request.number = $2
+	`, repoID, number).Scan(&totalCount)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Result[MergeRequestComment]{}, platform.ErrNotFound
+	}
+	if err != nil {
+		return Result[MergeRequestComment]{}, fmt.Errorf("count pull request comments: %w", err)
+	}
+	rows, err := tx.Query(ctx, `
 		SELECT comment.id, comment.merge_request_id, author.username, comment.author_id,
 		       comment.body, comment.created_at, comment.edited_at
 		FROM merge_request_comments comment
@@ -79,7 +91,12 @@ func (s *store) ListMergeRequestComments(
 	if err := rows.Err(); err != nil {
 		return Result[MergeRequestComment]{}, fmt.Errorf("list pull request comments: %w", err)
 	}
-	return paginate(comments, limit, offset), nil
+	result := paginate(comments, limit, offset)
+	result.TotalCount = &totalCount
+	if err := tx.Commit(ctx); err != nil {
+		return Result[MergeRequestComment]{}, fmt.Errorf("commit pull request comment list: %w", err)
+	}
+	return result, nil
 }
 
 func (s *store) CreateMergeRequestComment(

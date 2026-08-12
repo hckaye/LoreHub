@@ -11,7 +11,8 @@ test("pull request conversation uses persisted comments and CSRF-protected mutat
     readFile(conversationPath, "utf8"),
     readFile(serverAPIPath, "utf8"),
   ]);
-  assert.match(serverAPI, /merge-requests\/\$\{number\}\/comments\?limit=100/);
+  assert.match(serverAPI, /getMergeRequestComments\([\s\S]*commentPageSearch\(page\)/u);
+  assert.match(serverAPI, /parseMergeRequestCommentPage\(result\.data, page, conversationCommentPageSize\)/u);
   assert.match(conversation, /postJson<MergeRequestComment>/);
   assert.match(conversation, /patchJson<MergeRequestComment>/);
   assert.match(conversation, /deleteJson<null>/);

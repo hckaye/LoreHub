@@ -2,6 +2,7 @@ import { actionsEnvironments } from "./actions-environments";
 import { actionsSettings } from "./actions-settings";
 import { assignees } from "./assignees";
 import { auditLog } from "./audit-log";
+import { commentPagination } from "./comment-pagination";
 import { commitStatuses } from "./commit-statuses";
 import { discussions } from "./discussions";
 import { fileLocks } from "./file-locks";
@@ -19,6 +20,7 @@ import { wiki } from "./wiki";
 import { workItemLists } from "./work-item-lists";
 
 const en = {
+  commentPagination: commentPagination.en,
   workItemLists: workItemLists.en,
   commitStatuses: commitStatuses.en,
   discussionsPage: discussions.en,

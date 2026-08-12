@@ -45,7 +45,8 @@ func TestIntegrationMergeRequestCommentsAndAuthorMutation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list comments: %v", err)
 	}
-	if len(comments.Items) != 1 || comments.Items[0].Body != "Edited comment" {
+	if comments.TotalCount == nil || *comments.TotalCount != 1 ||
+		len(comments.Items) != 1 || comments.Items[0].Body != "Edited comment" {
 		t.Fatalf("comments = %+v", comments.Items)
 	}
 
@@ -62,7 +63,7 @@ func TestIntegrationMergeRequestCommentsAndAuthorMutation(t *testing.T) {
 		t.Fatalf("organization owner delete comment: %v", err)
 	}
 	comments, err = store.ListMergeRequestComments(ctx, fixture.repoID, 1, Page{Limit: 100})
-	if err != nil || len(comments.Items) != 0 {
+	if err != nil || comments.TotalCount == nil || *comments.TotalCount != 0 || len(comments.Items) != 0 {
 		t.Fatalf("comments after delete = %+v, error = %v", comments.Items, err)
 	}
 	var auditCount int

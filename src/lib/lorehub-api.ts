@@ -64,6 +64,9 @@ import type {
   WikiRevision,
 } from "./api-types";
 import { parseBranchRuleList } from "./branch-rule-contract";
+import { parseIssueCommentPage, parseMergeRequestCommentPage } from "./comment-page-contract";
+import type { CommentPage } from "./comment-page-types";
+import { conversationCommentPageSize } from "./comment-pagination";
 import { parseRevisionStatusResponse } from "./commit-status-client";
 import { normalizeFileLockPage, type FileLockPage } from "./file-locks";
 import { normalizeGlobalWorkItemPage, type GlobalWorkItemPage, type GlobalWorkItemQuery } from "./global-work-items";
@@ -354,11 +357,13 @@ export async function getIssueComments(
   owner: string,
   repository: string,
   number: number,
-): Promise<APIResult<IssueComment[]>> {
-  const result = await request<{ items: IssueComment[] }>(
-    repositoryPath(owner, repository, `/issues/${number}/comments?limit=100`),
-  );
-  return result.ok ? { ok: true, data: result.data.items } : result;
+  page = 1,
+): Promise<APIResult<CommentPage<IssueComment>>> {
+  const search = commentPageSearch(page);
+  const result = await request<unknown>(repositoryPath(owner, repository, `/issues/${number}/comments?${search}`));
+  if (!result.ok) return result;
+  const comments = parseIssueCommentPage(result.data, page, conversationCommentPageSize);
+  return comments ? { ok: true, data: comments } : { ok: false, reason: "unavailable" };
 }
 
 export async function getLabels(owner: string, repository: string): Promise<APIResult<Label[]>> {
@@ -392,11 +397,15 @@ export async function getMergeRequestComments(
   owner: string,
   repository: string,
   number: number,
-): Promise<APIResult<MergeRequestComment[]>> {
-  const result = await request<{ items: MergeRequestComment[] }>(
-    repositoryPath(owner, repository, `/merge-requests/${number}/comments?limit=100`),
+  page = 1,
+): Promise<APIResult<CommentPage<MergeRequestComment>>> {
+  const search = commentPageSearch(page);
+  const result = await request<unknown>(
+    repositoryPath(owner, repository, `/merge-requests/${number}/comments?${search}`),
   );
-  return result.ok ? { ok: true, data: result.data.items } : result;
+  if (!result.ok) return result;
+  const comments = parseMergeRequestCommentPage(result.data, page, conversationCommentPageSize);
+  return comments ? { ok: true, data: comments } : { ok: false, reason: "unavailable" };
 }
 
 export function getProjects(owner: string, repository: string): Promise<APIResult<ProjectList>> {
@@ -583,6 +592,13 @@ export function getLoreDiff(
 
 function repositoryPath(owner: string, repository: string, suffix: string): string {
   return `/api/v1/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}${suffix}`;
+}
+
+function commentPageSearch(page: number): string {
+  return queryString({
+    limit: String(conversationCommentPageSize),
+    cursor: page > 1 ? String((page - 1) * conversationCommentPageSize) : undefined,
+  });
 }
 
 async function request<T>(path: string): Promise<APIResult<T>> {

@@ -5,13 +5,15 @@ import { FormEvent, useState } from "react";
 import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
 import type { AuthSession, Issue, IssueComment } from "@/lib/api-types";
+import type { CommentPage } from "@/lib/comment-page-types";
 
+import { ConversationPagination } from "./conversation-pagination";
 import styles from "./issue-detail.module.css";
 
 type ConversationProps = {
   busyAction: string | null;
-  comments: IssueComment[];
-  commentsAvailable: boolean;
+  basePath: string;
+  comments: CommentPage<IssueComment> | null;
   dictionary: Dictionary;
   issue: Issue;
   locale: Locale;
@@ -36,8 +38,8 @@ export function IssueConversation(props: ConversationProps) {
           onEdit={() => setEditingIssue(true)}
         />
       )}
-      {!props.commentsAvailable && <p className={styles.notice}>{props.dictionary.issueDetail.commentsUnavailable}</p>}
-      {props.comments.map((comment) => (
+      {!props.comments && <p className={styles.notice}>{props.dictionary.issueDetail.commentsUnavailable}</p>}
+      {(props.comments?.items ?? []).map((comment) => (
         <CommentCard
           busy={props.busyAction === comment.id}
           comment={comment}
@@ -48,6 +50,16 @@ export function IssueConversation(props: ConversationProps) {
           onUpdate={props.onUpdateComment}
         />
       ))}
+      {props.comments && (
+        <ConversationPagination
+          basePath={props.basePath}
+          dictionary={props.dictionary}
+          hasNext={props.comments.hasNext}
+          page={props.comments.page}
+          perPage={props.comments.perPage}
+          totalCount={props.comments.totalCount}
+        />
+      )}
       {props.session.status === "authenticated" && (
         <NewCommentForm
           busy={props.busyAction === "new-comment"}

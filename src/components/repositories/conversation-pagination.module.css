@@ -1,0 +1,40 @@
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.pagination a,
+.pagination span {
+  min-width: 116px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--accent-fg);
+  font-size: 0.78rem;
+  text-align: center;
+  text-decoration: none;
+}
+
+.pagination span {
+  color: var(--fg-muted);
+  opacity: 0.65;
+}
+
+.pagination strong {
+  color: var(--fg-muted);
+  font-size: 0.78rem;
+}
+
+@media (max-width: 520px) {
+  .pagination {
+    gap: 6px;
+  }
+
+  .pagination a,
+  .pagination span {
+    min-width: 0;
+  }
+}

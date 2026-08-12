@@ -25,6 +25,7 @@ import type {
   RevisionHistoryEntry,
 } from "@/lib/api-types";
 import { postJson } from "@/lib/auth-client";
+import type { CommentPage } from "@/lib/comment-page-types";
 
 import type { Dictionary } from "@/i18n";
 
@@ -42,8 +43,7 @@ type PullRequestDetailProps = {
   reviewRequests: ReviewRequestSummary | null;
   diff: LoreDiff | null;
   commits: RevisionHistoryEntry[];
-  comments: MergeRequestComment[];
-  commentsAvailable: boolean;
+  comments: CommentPage<MergeRequestComment> | null;
   assignees: Assignee[];
   assigneesAvailable: boolean;
   labels: Label[];
@@ -72,7 +72,6 @@ export function PullRequestDetail({
   diff,
   commits,
   comments,
-  commentsAvailable,
   assignees,
   assigneesAvailable,
   labels,
@@ -153,7 +152,6 @@ export function PullRequestDetail({
       <PullRequestTab
         commits={commits}
         comments={comments}
-        commentsAvailable={commentsAvailable}
         assignees={assignees}
         assigneesAvailable={assigneesAvailable}
         diff={diff}
@@ -213,7 +211,6 @@ function PullRequestTab({
   reviewCandidates,
   reviewRequests,
   comments,
-  commentsAvailable,
   assignees,
   assigneesAvailable,
   reviewThreads,
@@ -236,8 +233,7 @@ function PullRequestTab({
   reviews: ReviewSummary | null;
   reviewCandidates: ReviewCandidate[];
   reviewRequests: ReviewRequestSummary | null;
-  comments: MergeRequestComment[];
-  commentsAvailable: boolean;
+  comments: CommentPage<MergeRequestComment> | null;
   assignees: Assignee[];
   assigneesAvailable: boolean;
   labels: Label[];
@@ -261,7 +257,6 @@ function PullRequestTab({
         assignees={assignees}
         assigneesAvailable={assigneesAvailable}
         comments={comments}
-        commentsAvailable={commentsAvailable}
         dictionary={dictionary}
         locale={locale}
         mergeRequest={mergeRequest}

@@ -8,6 +8,12 @@ import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
 import type { Assignee, AuthSession, Issue, IssueComment, Label, Milestone } from "@/lib/api-types";
 import { deleteJson, patchJson, postJson, putJson } from "@/lib/auth-client";
+import type { CommentPage } from "@/lib/comment-page-types";
+import {
+  conversationCommentPageHref,
+  conversationCommentPageSize,
+  lastConversationCommentPage,
+} from "@/lib/comment-pagination";
 import { assignIssueUser, removeIssueUser } from "@/lib/issue-assignee-client";
 import { assignIssueMilestone, removeIssueMilestone } from "@/lib/milestone-client";
 import { mutationFailureMessage } from "@/lib/mutation-messages";
@@ -19,8 +25,7 @@ import styles from "./issue-detail.module.css";
 import { IssueSidebar } from "./issue-sidebar";
 
 type IssueDetailProps = {
-  comments: IssueComment[];
-  commentsAvailable: boolean;
+  comments: CommentPage<IssueComment> | null;
   dictionary: Dictionary;
   issue: Issue;
   labels: Label[];
@@ -36,11 +41,12 @@ type IssueDetailProps = {
 };
 
 export function IssueDetail(props: IssueDetailProps) {
-  const { comments, commentsAvailable, dictionary, issue, labels, labelsAvailable } = props;
+  const { comments, dictionary, issue, labels, labelsAvailable } = props;
   const router = useRouter();
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const apiPath = issueAPIPath(props.owner, props.repository, issue.number);
+  const returnTo = `${repositoryPath(props.locale, props.owner, props.repository, "issues")}/${issue.number}`;
   const csrfToken = props.session.status === "authenticated" ? props.session.csrfToken : "";
 
   async function updateIssue(input: Partial<Pick<Issue, "title" | "body" | "state">>): Promise<boolean> {
@@ -69,8 +75,20 @@ export function IssueDetail(props: IssueDetailProps) {
       setMessage(mutationFailureMessage(result.kind, dictionary));
       return false;
     }
-    router.refresh();
+    showCommentPage((comments?.totalCount ?? issue.commentCount) + 1, true);
     return true;
+  }
+
+  function showCommentPage(totalCount: number, showLastPage = false) {
+    const currentPage = comments?.page ?? 1;
+    const perPage = comments?.perPage ?? conversationCommentPageSize;
+    const lastPage = lastConversationCommentPage(totalCount, perPage);
+    const targetPage = showLastPage ? lastPage : Math.min(currentPage, lastPage);
+    if (targetPage !== currentPage) {
+      router.push(conversationCommentPageHref(returnTo, targetPage));
+      return;
+    }
+    router.refresh();
   }
 
   async function updateComment(commentID: string, body: string): Promise<boolean> {
@@ -101,7 +119,7 @@ export function IssueDetail(props: IssueDetailProps) {
       setMessage(mutationFailureMessage(result.kind, dictionary));
       return false;
     }
-    router.refresh();
+    showCommentPage(Math.max(0, (comments?.totalCount ?? issue.commentCount) - 1));
     return true;
   }
 
@@ -164,8 +182,6 @@ export function IssueDetail(props: IssueDetailProps) {
     issue.state === "closed" && issue.closedAt ? issue.closedAt : issue.createdAt,
     props.locale,
   );
-  const returnTo = `${repositoryPath(props.locale, props.owner, props.repository, "issues")}/${issue.number}`;
-
   return (
     <div className={styles.page}>
       <header className={styles.heading}>
@@ -190,7 +206,7 @@ export function IssueDetail(props: IssueDetailProps) {
         <IssueConversation
           busyAction={busyAction}
           comments={comments}
-          commentsAvailable={commentsAvailable}
+          basePath={returnTo}
           dictionary={dictionary}
           issue={issue}
           locale={props.locale}

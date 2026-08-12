@@ -326,4 +326,5 @@ type Result[T any] struct {
 	Items      []T    `json:"items"`
 	NextCursor string `json:"nextCursor,omitempty"`
 	HasMore    bool   `json:"hasMore"`
+	TotalCount *int64 `json:"totalCount,omitempty"`
 }
