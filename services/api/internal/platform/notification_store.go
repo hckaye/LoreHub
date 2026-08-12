@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -32,6 +33,7 @@ type notificationScope struct {
 	IssueNumber        *int64
 	MergeRequestNumber *int64
 	DiscussionNumber   *int64
+	Revision           string
 	Title              string
 	Href               string
 }
@@ -309,6 +311,7 @@ func (store *Store) syncNotifications(ctx context.Context, transaction pgx.Tx) e
 			    'merge_request_review_thread.unresolved',
 			    'merge_request_review_comment.created', 'merge_request_review_comment.updated',
 			    'merge_request_review_comment.deleted',
+			    'revision_comment.created', 'revision_comment.updated', 'revision_comment.deleted',
 			    'label.created', 'label.updated', 'label.deleted', 'branch_rule.created',
 			    'branch_rule.updated', 'branch_rule.deleted', 'team.created', 'team.updated',
 			    'team.member_added', 'team.member_removed'
@@ -419,6 +422,8 @@ func (store *Store) resolveNotificationScope(
 	}
 	var err error
 	switch {
+	case strings.HasPrefix(event.Topic, "revision_comment."):
+		return store.resolveRevisionCommentNotificationScope(ctx, transaction, event)
 	case strings.HasPrefix(event.Topic, "organization."):
 		err = transaction.QueryRow(ctx, `
 			SELECT id, '', slug, '', NULL, NULL, display_name
@@ -675,6 +680,50 @@ func (store *Store) resolveDeletedNotificationScope(
 	return scope, true, nil
 }
 
+func (store *Store) resolveRevisionCommentNotificationScope(
+	ctx context.Context,
+	transaction pgx.Tx,
+	event notificationEvent,
+) (notificationScope, bool, error) {
+	var payload struct {
+		RepositoryID string `json:"repositoryId"`
+		Comment      struct {
+			Revision string `json:"revision"`
+		} `json:"comment"`
+	}
+	if err := json.Unmarshal(event.Payload, &payload); err != nil || !validNotificationRevision(payload.Comment.Revision) {
+		return notificationScope{}, false, nil
+	}
+	if _, err := uuid.Parse(payload.RepositoryID); err != nil {
+		return notificationScope{}, false, nil
+	}
+	var scope notificationScope
+	err := transaction.QueryRow(ctx, `
+		SELECT r.organization_id, r.id, o.slug, r.slug, r.visibility
+		FROM repositories r
+		JOIN organizations o ON o.id = r.organization_id AND o.active
+		WHERE r.id = $1 AND r.lifecycle_state = 'active'
+	`, payload.RepositoryID).Scan(
+		&scope.OrganizationID, &scope.RepositoryID, &scope.OrganizationSlug,
+		&scope.RepositorySlug, &scope.Visibility,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return notificationScope{}, false, nil
+	}
+	if err != nil {
+		return notificationScope{}, false, fmt.Errorf("resolve revision comment notification scope: %w", err)
+	}
+	scope.Kind = "repository"
+	scope.Revision = payload.Comment.Revision
+	scope.Title = "Revision " + payload.Comment.Revision[:12]
+	scope.Href = notificationHref(scope)
+	return scope, true, nil
+}
+
+func validNotificationRevision(value string) bool {
+	return len(value) == 64 && strings.Trim(value, "0123456789abcdef") == ""
+}
+
 func notificationEventID(event notificationEvent) (string, bool) {
 	eventID := strings.SplitN(event.EventKey, ":", 2)[0]
 	if _, err := uuid.Parse(eventID); err != nil {
@@ -857,6 +906,11 @@ func notificationMessage(event notificationEvent, scope notificationScope) notif
 		title = strings.ReplaceAll(event.Topic, ".", " ")
 	}
 	body, _ := fields["body"].(string)
+	if comment, ok := fields["comment"].(map[string]any); ok {
+		if commentBody, ok := comment["body"].(string); ok {
+			body = commentBody
+		}
+	}
 	if len([]rune(body)) > 500 {
 		body = string([]rune(body)[:500])
 	}
@@ -864,6 +918,10 @@ func notificationMessage(event notificationEvent, scope notificationScope) notif
 }
 
 func notificationHref(scope notificationScope) string {
+	if scope.RepositorySlug != "" && scope.Revision != "" {
+		return "/" + scope.OrganizationSlug + "/" + scope.RepositorySlug +
+			"/commit?revision=" + url.QueryEscape(scope.Revision)
+	}
 	if scope.RepositorySlug != "" && scope.DiscussionNumber != nil {
 		return "/" + scope.OrganizationSlug + "/" + scope.RepositorySlug +
 			"/discussions/" + fmt.Sprint(*scope.DiscussionNumber)
