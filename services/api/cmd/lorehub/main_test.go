@@ -24,7 +24,10 @@ func TestValidatePolicyClientCertificateAcceptsLegacyAndPerServerIdentities(t *t
 func TestValidatePolicyClientCertificateRejectsUnknownIdentityAndUsage(t *testing.T) {
 	for _, certificate := range []*x509.Certificate{
 		{Subject: pkix.Name{CommonName: "unknown"}, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}},
-		{Subject: pkix.Name{CommonName: servercert.LegacyCommonName}, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}},
+		{
+			Subject:     pkix.Name{CommonName: servercert.LegacyCommonName},
+			ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		},
 	} {
 		if err := validatePolicyClientCertificate(certificate); err == nil {
 			t.Fatalf("invalid policy client certificate was accepted: %+v", certificate)
