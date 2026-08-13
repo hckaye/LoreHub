@@ -154,6 +154,20 @@ type EntitlementStore interface {
 	List(context.Context) ([]platform.Entitlement, error)
 }
 
+type RunnerStore interface {
+	CreateRegistrationToken(
+		context.Context,
+		platform.User,
+		platform.CreateRunnerRegistrationTokenInput,
+	) (platform.RunnerRegistrationToken, error)
+	ConsumeRegistrationToken(context.Context, []byte) (platform.RunnerRegistrationToken, error)
+	RegisterRunner(context.Context, platform.RegisterRunnerInput) (platform.Runner, error)
+	ListRunners(context.Context, platform.User, platform.RunnerScope) ([]platform.Runner, error)
+	RevokeRunner(context.Context, platform.User, platform.RunnerScope, string) error
+	TouchRunnerSeen(context.Context, string, time.Time) error
+	AuthenticateRunner(context.Context, []byte, string, time.Time) (platform.Runner, error)
+}
+
 type API struct {
 	store                   Store
 	actions                 ActionsStore
@@ -198,6 +212,9 @@ type API struct {
 	webhooksStore           webhooksManager
 	personalAccessTokens    PersonalAccessTokenStore
 	entitlements            EntitlementStore
+	runners                 RunnerStore
+	runnerSecrets           *auth.SecretCodec
+	runnerCredentialKeyID   string
 	instanceAdminUsernames  map[string]struct{}
 	globalWorkItems         GlobalWorkItemStore
 	deletionRetention       time.Duration
@@ -304,6 +321,14 @@ func WithPersonalAccessTokens(store PersonalAccessTokenStore, secrets *auth.Secr
 
 func WithEntitlements(store EntitlementStore) Option {
 	return func(api *API) { api.entitlements = store }
+}
+
+func WithRunners(store RunnerStore, secrets *auth.SecretCodec, credentialKeyID string) Option {
+	return func(api *API) {
+		api.runners = store
+		api.runnerSecrets = secrets
+		api.runnerCredentialKeyID = strings.TrimSpace(credentialKeyID)
+	}
 }
 
 func WithInstanceAdminUsernames(usernames []string) Option {
