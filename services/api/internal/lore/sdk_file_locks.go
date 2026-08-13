@@ -217,7 +217,7 @@ func (client *SDKClient) fileLockWorkspace(
 		return "", nil, fmt.Errorf("create Lore file lock workspace: %w", err)
 	}
 	cleanup := func() { _ = os.RemoveAll(workspace) }
-	transportURL, err := client.transportRepositoryURL(repository.URL)
+	transportURL, err := client.transportRepositoryURL(ctx, repository.URL)
 	if err != nil {
 		cleanup()
 		return "", nil, err

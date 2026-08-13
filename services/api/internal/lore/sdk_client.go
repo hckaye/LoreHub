@@ -22,54 +22,53 @@ type SDKClient struct {
 	cacheDirectory           string
 	allowInsecureDevelopment bool
 	expectedAuthHost         string
-	dataPlaneOrigin          string
+	serverResolver           ServerResolver
 	binary                   string
 	authLock                 sync.Mutex
 	locks                    sync.Map
 }
 
 func NewSDKClient(cacheDirectory string) (*SDKClient, error) {
-	return newSDKClient(cacheDirectory, false, "", "")
+	return newSDKClient(cacheDirectory, false, "", directServerResolver{})
 }
 
 func NewSDKClientWithAuthAuthority(cacheDirectory string, authority string) (*SDKClient, error) {
-	return NewSDKClientWithEndpoints(cacheDirectory, authority, "")
+	return NewSDKClientWithServerResolver(cacheDirectory, authority, directServerResolver{})
 }
 
-func NewSDKClientWithEndpoints(
+func NewSDKClientWithServerResolver(
 	cacheDirectory string,
 	authority string,
-	dataPlaneOrigin string,
+	resolver ServerResolver,
 ) (*SDKClient, error) {
 	if err := validateAuthAuthority(authority); err != nil {
 		return nil, err
 	}
-	return newSDKClient(cacheDirectory, false, authority, dataPlaneOrigin)
+	return newSDKClient(cacheDirectory, false, authority, resolver)
 }
 
 func NewDevelopmentSDKClient(cacheDirectory string) (*SDKClient, error) {
-	return newSDKClient(cacheDirectory, true, "", "")
+	return newSDKClient(cacheDirectory, true, "", directServerResolver{})
 }
 
-func NewDevelopmentSDKClientWithEndpoint(
+func NewDevelopmentSDKClientWithServerResolver(
 	cacheDirectory string,
-	dataPlaneOrigin string,
+	resolver ServerResolver,
 ) (*SDKClient, error) {
-	return newSDKClient(cacheDirectory, true, "", dataPlaneOrigin)
+	return newSDKClient(cacheDirectory, true, "", resolver)
 }
 
 func newSDKClient(
 	cacheDirectory string,
 	allowInsecureDevelopment bool,
 	expectedAuthHost string,
-	dataPlaneOrigin string,
+	resolver ServerResolver,
 ) (*SDKClient, error) {
 	if cacheDirectory == "" {
 		return nil, errors.New("Lore cache directory is required")
 	}
-	normalizedOrigin, err := normalizeDataPlaneOrigin(dataPlaneOrigin, allowInsecureDevelopment)
-	if err != nil {
-		return nil, err
+	if resolver == nil {
+		return nil, errors.New("Lore server resolver is required")
 	}
 	if err := os.MkdirAll(cacheDirectory, 0o750); err != nil {
 		return nil, fmt.Errorf("create Lore cache directory: %w", err)
@@ -78,7 +77,7 @@ func newSDKClient(
 		cacheDirectory:           cacheDirectory,
 		allowInsecureDevelopment: allowInsecureDevelopment,
 		expectedAuthHost:         expectedAuthHost,
-		dataPlaneOrigin:          normalizedOrigin,
+		serverResolver:           resolver,
 		binary:                   "lore",
 	}, nil
 }
@@ -97,38 +96,66 @@ func (client *SDKClient) ConfigureBinary(binary string) error {
 	return nil
 }
 
-func normalizeDataPlaneOrigin(value string, allowPlain bool) (string, error) {
+func normalizeTransportAuthority(value string, allowPlain bool) (string, error) {
 	if value == "" {
-		return "", nil
+		return "", errors.New("Lore transport authority is required")
 	}
 	if strings.HasSuffix(value, "/") {
-		return "", errors.New("Lore data-plane origin must not end with a slash")
+		return "", errors.New("Lore transport authority must not end with a slash")
 	}
 	const validationPartition = "00000000000000000000000000000000"
 	parsed, err := parseRepositoryURL(value+"/"+validationPartition, allowPlain)
 	if err != nil || parsed.Partition != validationPartition {
-		return "", errors.New("Lore data-plane origin must be a fixed Lore authority")
+		return "", errors.New("Lore transport authority must be a fixed Lore authority")
 	}
-	return parsed.Scheme + "://" + parsed.Authority, nil
+	return strings.ToLower(parsed.Scheme) + "://" + strings.ToLower(parsed.Authority), nil
 }
 
-func (client *SDKClient) transportRepositoryURL(repositoryURL string) (string, error) {
+func (client *SDKClient) resolveTransport(
+	ctx context.Context,
+	repositoryURL string,
+) (ServerTransport, parsedRepositoryURL, error) {
 	parsed, err := client.validateRepositoryURL(repositoryURL)
+	if err != nil {
+		return ServerTransport{}, parsedRepositoryURL{}, err
+	}
+	transport, err := client.serverResolver.ResolveTransport(ctx, repositoryURL)
+	if err != nil {
+		return ServerTransport{}, parsedRepositoryURL{}, err
+	}
+	transport.Authority, err = normalizeTransportAuthority(transport.Authority, client.allowInsecureDevelopment)
+	if err != nil {
+		return ServerTransport{}, parsedRepositoryURL{}, fmt.Errorf("resolve Lore transport: %w", err)
+	}
+	transport.ServerID = strings.TrimSpace(transport.ServerID)
+	if transport.ServerID == "" || strings.ContainsAny(transport.ServerID, "\x00\r\n") {
+		return ServerTransport{}, parsedRepositoryURL{}, errors.New("Lore server resolver returned an invalid server ID")
+	}
+	return transport, parsed, nil
+}
+
+func (client *SDKClient) transportRepositoryURL(ctx context.Context, repositoryURL string) (string, error) {
+	transport, parsed, err := client.resolveTransport(ctx, repositoryURL)
 	if err != nil {
 		return "", err
 	}
-	if client.dataPlaneOrigin == "" {
-		return repositoryURL, nil
-	}
-	return client.dataPlaneOrigin + "/" + parsed.Partition, nil
+	return transport.Authority + "/" + parsed.Partition, nil
 }
 
-func (client *SDKClient) transportRepositoryRef(repository RepositoryRef) (RepositoryRef, error) {
-	transportURL, err := client.transportRepositoryURL(repository.URL)
+func (client *SDKClient) transportRepositoryRef(
+	ctx context.Context,
+	repository RepositoryRef,
+) (RepositoryRef, error) {
+	if repository.transportServerID != "" && repository.transportAuthority != "" {
+		return repository, nil
+	}
+	transport, parsed, err := client.resolveTransport(ctx, repository.URL)
 	if err != nil {
 		return RepositoryRef{}, err
 	}
-	repository.URL = transportURL
+	repository.URL = transport.Authority + "/" + parsed.Partition
+	repository.transportServerID = transport.ServerID
+	repository.transportAuthority = transport.Authority
 	return repository, nil
 }
 
@@ -147,7 +174,7 @@ func (client *SDKClient) RepositoryInfo(
 	if err := ValidateCredential(repositoryRef, credential, ScopeRead); err != nil {
 		return Repository{}, err
 	}
-	transportURL, err := client.transportRepositoryURL(repositoryURL)
+	transportURL, err := client.transportRepositoryURL(ctx, repositoryURL)
 	if err != nil {
 		return Repository{}, err
 	}
@@ -209,7 +236,7 @@ func (client *SDKClient) Branches(
 	if err := ValidateCredential(repository, credential, ScopeRead); err != nil {
 		return nil, err
 	}
-	repository, err := client.transportRepositoryRef(repository)
+	repository, err := client.transportRepositoryRef(ctx, repository)
 	if err != nil {
 		return nil, err
 	}
@@ -297,7 +324,7 @@ func (client *SDKClient) CloneRevision(
 	if err := os.MkdirAll(destination, 0o750); err != nil {
 		return fmt.Errorf("create Lore revision workspace: %w", err)
 	}
-	repository, err := client.transportRepositoryRef(repository)
+	repository, err := client.transportRepositoryRef(ctx, repository)
 	if err != nil {
 		return err
 	}
@@ -333,7 +360,7 @@ func (client *SDKClient) CloneWithCredential(
 	if err := ValidateCredential(ref, credential, ScopeRead); err != nil {
 		return err
 	}
-	transportURL, err := client.transportRepositoryURL(repositoryURL)
+	transportURL, err := client.transportRepositoryURL(ctx, repositoryURL)
 	if err != nil {
 		return err
 	}
@@ -395,7 +422,7 @@ func (client *SDKClient) CreateRepositoryWithCredential(
 		ScopeWrite); err != nil {
 		return err
 	}
-	transportURL, err := client.transportRepositoryURL(repositoryURL)
+	transportURL, err := client.transportRepositoryURL(ctx, repositoryURL)
 	if err != nil {
 		return err
 	}
@@ -432,7 +459,7 @@ func (client *SDKClient) DeleteRepositoryWithCredential(
 	if err := ValidateCredential(repository, credential, ScopeObliterate); err != nil {
 		return err
 	}
-	transportURL, err := client.transportRepositoryURL(repository.URL)
+	transportURL, err := client.transportRepositoryURL(ctx, repository.URL)
 	if err != nil {
 		return err
 	}
@@ -669,11 +696,20 @@ func (client *SDKClient) credentialCachePath(
 	if key == "" {
 		return "", ErrInvalidPrincipal
 	}
-	endpointKey := "repository"
-	if client.dataPlaneOrigin != "" {
-		endpointKey = hex.EncodeToString([]byte(client.dataPlaneOrigin))
+	endpointKey, err := transportEndpointCacheKey(repository)
+	if err != nil {
+		return "", err
 	}
 	return filepath.Join(base, "endpoints", endpointKey, "principals", key), nil
+}
+
+func transportEndpointCacheKey(repository RepositoryRef) (string, error) {
+	if repository.transportServerID == "" || repository.transportAuthority == "" {
+		return "", errors.New("Lore repository transport is unresolved")
+	}
+	return hex.EncodeToString([]byte(
+		repository.transportServerID + "\x00" + repository.transportAuthority,
+	)), nil
 }
 
 func (client *SDKClient) authenticate(

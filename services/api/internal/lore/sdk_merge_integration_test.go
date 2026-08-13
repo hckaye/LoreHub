@@ -342,7 +342,11 @@ func testWorkspaceRecovery(
 	for _, path := range started.Conflicts {
 		workspace.Resolutions = append(workspace.Resolutions, MergeResolution{Path: path, Strategy: "theirs"})
 	}
-	path, err := client.operationPath(ref, operation)
+	transportRef, err := client.transportRepositoryRef(ctx, ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, err := client.operationPath(transportRef, operation)
 	if err != nil {
 		t.Fatal(err)
 	}

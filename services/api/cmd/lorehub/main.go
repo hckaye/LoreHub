@@ -79,21 +79,25 @@ func run(logger *slog.Logger) error {
 	if _, err := store.EnsureInstanceLoreServer(rootContext, settings.LorePublicURL); err != nil {
 		return err
 	}
+	loreTransportResolver, err := platform.NewLoreTransportResolver(store, settings.LoreInternalURL)
+	if err != nil {
+		return err
+	}
 	keyProvider, err := newSigningKeyProvider(settings)
 	if err != nil {
 		return err
 	}
 	var lore *loreclient.SDKClient
 	if settings.Environment == "local-insecure" {
-		lore, err = loreclient.NewDevelopmentSDKClientWithEndpoint(
+		lore, err = loreclient.NewDevelopmentSDKClientWithServerResolver(
 			settings.LoreCacheDir,
-			settings.LoreInternalURL,
+			loreTransportResolver,
 		)
 	} else {
-		lore, err = loreclient.NewSDKClientWithEndpoints(
+		lore, err = loreclient.NewSDKClientWithServerResolver(
 			settings.LoreCacheDir,
 			settings.LoreAuthAuthority,
-			settings.LoreInternalURL,
+			loreTransportResolver,
 		)
 	}
 	if err != nil {
