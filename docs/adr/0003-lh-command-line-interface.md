@@ -33,10 +33,23 @@ Ship an official CLI named `lh` that mirrors the `gh` command taxonomy against t
 
 - `lh auth login` stores a personal access token per host. Interactive mode prompts for the token; `--with-token`
   reads it from stdin for scripts. `lh auth logout` removes the stored token; `lh auth status` reports the host,
-  the authenticated user (via the API), and the token's permissions.
-- Hosts and tokens live in `~/.config/lh/hosts.yml` (respecting `XDG_CONFIG_HOME`), one entry per host, mode
-  0600. Environment overrides follow `gh` conventions: `LH_TOKEN` wins over the hosts file, `LH_HOST` selects
-  the host when a command is not run inside a repository context.
+  the authenticated user, and the token's permissions and expiry.
+- The API gains `GET /api/v1/account`: an endpoint that accepts personal-access-token authentication and returns
+  the authenticated user plus, when the caller is a token, that token's id, prefix, permissions, and expiry.
+  Today no endpoint does this (`/api/v1/auth/session` reads only browser cookies, and the token-management
+  endpoints reject token callers), so `auth status` and "list my repositories" are impossible without it. The
+  CLI validates logins against this endpoint.
+- Credential storage prefers the operating system credential store (Keychain, Secret Service, Windows Credential
+  Manager) and falls back to a plaintext entry in the hosts file only when no store is available, stating so at
+  login. Hosts and non-secret settings live in `~/.config/lh/hosts.yml` (respecting `XDG_CONFIG_HOME`). The
+  plaintext fallback writes the parent directory 0700, creates temp files 0600 before an atomic rename, and
+  re-tightens modes it finds loosened.
+- Hosts normalize to HTTPS with lowercase authority and no path or userinfo; sending a token over plain HTTP
+  requires an explicit `--insecure-http` at login (intended for local development). Tokens never appear in error
+  output, debug traces, or subprocess argv.
+- Host and repository precedence, most specific first: `--hostname` / a host-qualified `--repo HOST/owner/name`,
+  then `LH_REPO`, then the stored default repository, then `LH_HOST`, then the single configured host. `LH_TOKEN`
+  applies only to the explicitly selected host, never to a host derived implicitly.
 - Personal access tokens cannot manage other tokens, so `lh auth login` never creates tokens itself; it explains
   where to create one in the web UI. A future device-authorization flow can replace token pasting without
   changing the command surface.
@@ -48,17 +61,20 @@ Ship an official CLI named `lh` that mirrors the `gh` command taxonomy against t
 | `lh auth` | `login`, `logout`, `status` | token-based, per host |
 | `lh repo` | `list`, `view`, `create`, `clone` | `clone` resolves the repository's `lores://` URL, runs `lore auth login --token-type api-key` with the stored token, then `lore` clone; fails with guidance when the `lore` CLI is absent |
 | `lh issue` | `list`, `view`, `create`, `comment`, `close`, `reopen` | filters mirror the web list (state, author, assignee, label, milestone, search) |
-| `lh pr` | `list`, `view`, `create`, `merge` | `merge` drives the server-side Lore merge flow and reports blockers; local checkout is out of scope because Lore has no detached PR refs |
+| `lh pr` | `list`, `view`, `create`, `merge` | `merge` is bounded in the first iteration: it checks merge readiness, starts the server-side merge, and pushes only when the operation reaches the ready state with no conflicts; anything else prints the blockers and exits non-zero. Local checkout is out of scope because Lore has no detached PR refs |
 | `lh release` | `list`, `view`, `create` | |
 | `lh run` | `list`, `view`, `watch` | Actions workflow runs; `watch` polls until completion |
 | `lh label` | `list`, `create`, `delete` | |
 | `lh search` | `repos`, `issues`, `prs` | maps to the search API |
 | `lh api` | raw requests | `lh api repos/{owner}/{repo} --method POST --field k=v`, prints raw JSON; escape hatch for everything not yet wrapped |
 
-- Repository context: inside a directory whose repository is known (flag `--repo owner/name` always wins), the
-  CLI resolves `owner/name` the way `gh` does. Because Lore working copies are managed by the `lore` CLI, the
-  first iteration requires `--repo` or an interactive default set via `lh repo set-default`; deriving context
-  from a Lore working copy is a follow-up once the `lore` CLI exposes it.
+- Repository context: `--repo [HOST/]owner/name` always wins, then `LH_REPO`, then the default stored by
+  `lh repo set-default`. Deriving context from a Lore working copy is a follow-up once the `lore` CLI exposes
+  it. `lh repo clone` needs `read_api` for metadata plus `read_repository` (or `write_repository`) for the Lore
+  credential exchange; the command verifies both up front and says which is missing.
+- Cheap follow-up verbs that reuse the same endpoints land right after the first iteration: `issue edit`,
+  `pr comment/close/reopen/edit`, `run cancel/rerun`, `label edit`, `release edit/delete`, `completion`, and
+  `config`.
 - Output: human-readable tables on a TTY, tab-separated plain output when piped, and `--json` on list/view
   commands emitting the API response for scripting. Errors print the API problem message and exit non-zero.
 - Localization: command output starts English-only, like `gh`. The web dictionaries are not reused.
