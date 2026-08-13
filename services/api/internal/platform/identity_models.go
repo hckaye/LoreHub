@@ -47,6 +47,7 @@ type SearchResults struct {
 	Users         []UserSearchResult `json:"users"`
 	Issues        []GlobalWorkItem   `json:"issues"`
 	PullRequests  []GlobalWorkItem   `json:"pullRequests"`
+	Code          *CodeSearchResults `json:"code,omitempty"`
 	Counts        SearchCounts       `json:"counts"`
 	Page          int                `json:"page"`
 	PerPage       int                `json:"perPage"`
@@ -58,6 +59,24 @@ type SearchCounts struct {
 	Users         int64 `json:"users"`
 	Issues        int64 `json:"issues"`
 	PullRequests  int64 `json:"pullRequests"`
+	Code          int64 `json:"code"`
+}
+
+type CodeSearchResults struct {
+	Revision  string           `json:"revision"`
+	Files     []CodeSearchFile `json:"files"`
+	Truncated bool             `json:"truncated"`
+}
+
+type CodeSearchFile struct {
+	Path       string            `json:"path"`
+	MatchCount int               `json:"matchCount"`
+	Matches    []CodeSearchMatch `json:"matches"`
+}
+
+type CodeSearchMatch struct {
+	LineNumber int    `json:"lineNumber"`
+	Snippet    string `json:"snippet"`
 }
 
 type UserSearchResult struct {
