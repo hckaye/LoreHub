@@ -295,6 +295,8 @@ func run(logger *slog.Logger) error {
 		httpapi.WithIdentityStore(store),
 		httpapi.WithGlobalWorkItems(store),
 		httpapi.WithPersonalAccessTokens(store, secretCodec),
+		httpapi.WithEntitlements(store),
+		httpapi.WithInstanceAdminUsernames(settings.InstanceAdminUsernames),
 		httpapi.WithConfiguredLoginProviders(settings.IdentityProviders),
 		httpapi.WithCollaboration(collaborationStore),
 		httpapi.WithReviewThreads(reviewthreads.NewStore(pool)),
