@@ -39,13 +39,19 @@ validate_server_names
 
 if [ "$environment" = production ]; then
   rm -f /tls/ca.key /tls/ca.srl
-  for required in ca.crt server.key server.crt lore-client.key lore-client.crt; do
+  for required in ca.crt ca.key server.key server.crt lore-client.key lore-client.crt; do
     test -s "/input/${required}"
+  done
+  cp /input/ca.crt /tls/ca.crt
+  cp /input/ca.key /state/ca.key
+  for required in server.key server.crt lore-client.key lore-client.crt; do
     cp "/input/${required}" "/tls/${required}"
   done
   openssl verify -CAfile /tls/ca.crt /tls/server.crt /tls/lore-client.crt >/dev/null
   certificate_covers_server_names
   chmod 0600 /tls/*.key
+  chown 0:999 /state/ca.key
+  chmod 0640 /state/ca.key
   chmod 0644 /tls/*.crt
   chown 0:999 /tls/server.key /tls/lore-client.key
   chmod 0640 /tls/server.key /tls/lore-client.key
@@ -62,6 +68,8 @@ if [ -e /tls/ca.crt ] && [ -e /state/ca.key ] && certificate_covers_server_names
   done
   chown 0:999 /tls/server.key /tls/lore-client.key
   chmod 0640 /tls/server.key /tls/lore-client.key
+  chown 0:999 /state/ca.key
+  chmod 0640 /state/ca.key
   if [ -d /export ]; then
     cp /tls/ca.crt /export/lorehub-local-ca.crt
     chmod 0644 /export/lorehub-local-ca.crt
@@ -120,7 +128,8 @@ openssl x509 -req -in /tmp/client.csr -CA /tls/ca.crt -CAkey /state/ca.key \
   -extfile /tmp/client.ext
 
 chmod 0600 /tls/*.key
-chmod 0600 /state/ca.key
+chown 0:999 /state/ca.key
+chmod 0640 /state/ca.key
 chmod 0644 /tls/*.crt
 chown 0:999 /tls/server.key /tls/lore-client.key
 chmod 0640 /tls/server.key /tls/lore-client.key

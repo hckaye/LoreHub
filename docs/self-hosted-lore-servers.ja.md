@@ -35,6 +35,40 @@ agentの`configure`と`run`は`--lore-version`と`--hook-module-version`を受�
 `LOREHUB_LORE_VERSION`と`LOREHUB_HOOK_MODULE_VERSION`です。既定値は`0.8.6`と`1.0.0`です。Lore buildまたは
 hook moduleが別の対応versionの場合は上書きします。
 
+## hook用client証明書
+
+登録後に最初のclient証明書を取得します。
+
+```bash
+sudo -u lorehub-lores /usr/local/bin/lorehub-lores-agent renew-certificate \
+  --config-dir /var/lib/lorehub-lores-agent
+```
+
+このコマンドは保存済みの`lhss_`クレデンシャルで認証し、`POST /api/v1/lore-servers/certificate`を呼びます。
+設定directoryに`hook-client.crt`と`hook-client.key`をpermission `0600`で保存します。証明書の有効期間は30日で、
+CommonNameは`lore-server-<server-id>`です。LoreHubが保存するのはserial number、発行日時、有効期限だけです。
+
+Loreのhook設定では、生成されたfileをclient証明書とclient鍵に指定します。CA fileはLoreHubのpolicy endpointが使う
+CAを信頼する必要があります。
+
+```toml
+[hooks.lorehub_policy]
+ca_certificate = "/etc/lorehub/lorehub-ca.crt"
+client_certificate = "/var/lib/lorehub-lores-agent/hook-client.crt"
+client_key = "/var/lib/lorehub-lores-agent/hook-client.key"
+```
+
+fileのpermissionを広げずにLore processから読めるようにします。既定のpathを使う場合は、Loreを`lorehub-lores`
+accountで実行します。hookはLoreの起動時に証明書と鍵を読むため、`renew-certificate`を手動で実行した後はLoreを
+再起動します。
+
+agentはfileがない場合と、証明書の残り期間が7日以下の場合に新しい証明書を取得します。各ハートビートの前に期限を
+確認します。実行中のLoreがTLS fileを再読込しないversionの場合は、更新成功のlogを確認した後にLoreをreloadまたは
+再起動します。
+
+LoreHubはpolicyとobservationのrequestごとにserverの登録状態とリポジトリの割り当てを確認します。server証明書を
+別のserverへ割り当てたリポジトリには使えません。serverを失効させると、発行済みの証明書も直ちに拒否されます。
+
 ## agentのinstallと起動
 
 コマンドをbuildし、binaryとsystemd unitをinstallします。
@@ -64,8 +98,9 @@ sudo -u lorehub-lores /usr/local/bin/lorehub-lores-agent configure \
 sudo systemctl enable --now lorehub-lores-agent.service
 ```
 
-`run`は起動直後に最初のハートビートを送り、その後は既定で60秒ごとに送ります。間隔は`--interval 30s`のように
-変更できます。各requestにはbuild version、process ID、起動時刻、`healthMetadata`内のuptimeを含めます。
+`run`はhook証明書がなければ取得してから最初のハートビートを送り、その後は既定で60秒ごとに送ります。間隔は
+`--interval 30s`のように変更できます。各requestにはbuild version、process ID、起動時刻、`healthMetadata`内の
+uptimeを含めます。
 
 LoreHubが401を返すと、serverが失効した場合も含めて、agentは認証エラーを表示して終了します。それ以外の
 ハートビート失敗はlogに記録して再試行します。SIGTERMを受けるとエラーにせずloopを終了します。

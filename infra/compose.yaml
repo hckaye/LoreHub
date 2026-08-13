@@ -152,6 +152,8 @@ services:
       LOREHUB_LORES_TOKEN_KEY_ID: ${LOREHUB_LORES_TOKEN_KEY_ID:?LOREHUB_LORES_TOKEN_KEY_ID is required}
       LOREHUB_LORES_TOKEN_KEY: ${LOREHUB_LORES_TOKEN_KEY:?LOREHUB_LORES_TOKEN_KEY is required}
       LOREHUB_LORE_ALLOW_PRIVATE_SERVERS: ${LOREHUB_LORE_ALLOW_PRIVATE_SERVERS:-false}
+      LOREHUB_LORE_SERVER_CA_CERT: ${LOREHUB_LORE_SERVER_CA_CERT:-/var/lib/lorehub/tls/ca.crt}
+      LOREHUB_LORE_SERVER_CA_KEY: ${LOREHUB_LORE_SERVER_CA_KEY:-/var/lib/lorehub/tls-ca/ca.key}
       LOREHUB_NOTIFICATION_EMAIL_ENABLED: ${LOREHUB_NOTIFICATION_EMAIL_ENABLED:-true}
       LOREHUB_NOTIFICATION_EMAIL_POLL_PERIOD: ${LOREHUB_NOTIFICATION_EMAIL_POLL_PERIOD:-2s}
       LOREHUB_NOTIFICATION_EMAIL_SEND_TIMEOUT: ${LOREHUB_NOTIFICATION_EMAIL_SEND_TIMEOUT:-10s}
@@ -243,6 +245,7 @@ services:
       - api-data:/var/lib/lorehub
       - auth-signing:/var/lib/lorehub/keys
       - auth-tls:/var/lib/lorehub/tls:ro
+      - auth-ca-state:/var/lib/lorehub/tls-ca:ro
       - runner-data:/var/lib/lorehub/runner-data:ro
     restart: unless-stopped
 

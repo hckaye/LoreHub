@@ -3,6 +3,8 @@ package loresagent
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,8 +19,12 @@ import (
 
 const (
 	ConfigFileName       = "config.json"
+	CertificateFileName  = "hook-client.crt"
+	PrivateKeyFileName   = "hook-client.key"
 	RegistrationEndpoint = "/api/v1/lore-servers/register"
 	HeartbeatEndpoint    = "/api/v1/lore-servers/heartbeat"
+	CertificateEndpoint  = "/api/v1/lore-servers/certificate"
+	RenewalWindow        = 7 * 24 * time.Hour
 	maxResponseBytes     = 1 << 20
 )
 
@@ -61,6 +67,14 @@ type RegisterResponse struct {
 
 type HeartbeatResponse struct {
 	Server Server `json:"server"`
+}
+
+type CertificateResponse struct {
+	CertificatePEM string    `json:"certificatePem"`
+	PrivateKeyPEM  string    `json:"privateKeyPem"`
+	Serial         string    `json:"serial"`
+	IssuedAt       time.Time `json:"issuedAt"`
+	ExpiresAt      time.Time `json:"expiresAt"`
 }
 
 type APIError struct {
@@ -124,6 +138,17 @@ func (client *Client) Heartbeat(
 	var response HeartbeatResponse
 	if err := client.postJSON(ctx, HeartbeatEndpoint, credential, input, &response); err != nil {
 		return HeartbeatResponse{}, err
+	}
+	return response, nil
+}
+
+func (client *Client) RenewCertificate(
+	ctx context.Context,
+	credential string,
+) (CertificateResponse, error) {
+	var response CertificateResponse
+	if err := client.postJSON(ctx, CertificateEndpoint, credential, struct{}{}, &response); err != nil {
+		return CertificateResponse{}, err
 	}
 	return response, nil
 }
@@ -193,6 +218,14 @@ func ConfigPath(configDir string) string {
 	return filepath.Join(configDir, ConfigFileName)
 }
 
+func CertificatePath(configDir string) string {
+	return filepath.Join(configDir, CertificateFileName)
+}
+
+func PrivateKeyPath(configDir string) string {
+	return filepath.Join(configDir, PrivateKeyFileName)
+}
+
 func SaveConfig(configDir string, config Config) error {
 	if strings.TrimSpace(configDir) == "" {
 		return errors.New("config directory is required")
@@ -234,6 +267,122 @@ func SaveConfig(configDir string, config Config) error {
 		return fmt.Errorf("install config: %w", err)
 	}
 	return nil
+}
+
+func SaveCertificate(configDir string, serverID string, response CertificateResponse) error {
+	if strings.TrimSpace(configDir) == "" || strings.TrimSpace(serverID) == "" {
+		return errors.New("config directory and Lore server ID are required")
+	}
+	certificatePEM := []byte(response.CertificatePEM)
+	privateKeyPEM := []byte(response.PrivateKeyPEM)
+	pair, err := tls.X509KeyPair(certificatePEM, privateKeyPEM)
+	if err != nil {
+		return fmt.Errorf("validate Lore server hook certificate and key: %w", err)
+	}
+	if len(pair.Certificate) == 0 {
+		return errors.New("validate Lore server hook certificate: certificate is missing")
+	}
+	certificate, err := x509.ParseCertificate(pair.Certificate[0])
+	if err != nil {
+		return fmt.Errorf("parse Lore server hook certificate: %w", err)
+	}
+	if certificate.Subject.CommonName != "lore-server-"+serverID {
+		return errors.New("Lore server hook certificate identity does not match the configured server")
+	}
+	if response.Serial == "" || certificate.SerialNumber.Text(16) != response.Serial ||
+		response.IssuedAt.IsZero() || response.ExpiresAt.IsZero() ||
+		!certificate.NotAfter.Equal(response.ExpiresAt) {
+		return errors.New("Lore server hook certificate metadata is invalid")
+	}
+	clientAuth := false
+	for _, usage := range certificate.ExtKeyUsage {
+		if usage == x509.ExtKeyUsageClientAuth {
+			clientAuth = true
+			break
+		}
+	}
+	if !clientAuth {
+		return errors.New("Lore server hook certificate lacks client authentication usage")
+	}
+	if err := ensureConfigDirectory(configDir); err != nil {
+		return err
+	}
+	keyTemporary, err := writePrivateTemporary(configDir, ".hook-client-key-*.tmp", privateKeyPEM)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(keyTemporary)
+	certificateTemporary, err := writePrivateTemporary(configDir, ".hook-client-cert-*.tmp", certificatePEM)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(certificateTemporary)
+	if err := os.Rename(keyTemporary, PrivateKeyPath(configDir)); err != nil {
+		return fmt.Errorf("install Lore server hook private key: %w", err)
+	}
+	if err := os.Rename(certificateTemporary, CertificatePath(configDir)); err != nil {
+		return fmt.Errorf("install Lore server hook certificate: %w", err)
+	}
+	return nil
+}
+
+func CertificateNeedsRenewal(configDir string, serverID string, now time.Time) (bool, error) {
+	pair, err := tls.LoadX509KeyPair(CertificatePath(configDir), PrivateKeyPath(configDir))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return true, nil
+		}
+		return false, fmt.Errorf("load Lore server hook certificate: %w", err)
+	}
+	if len(pair.Certificate) == 0 {
+		return false, errors.New("load Lore server hook certificate: certificate is missing")
+	}
+	certificate, err := x509.ParseCertificate(pair.Certificate[0])
+	if err != nil {
+		return false, fmt.Errorf("parse Lore server hook certificate: %w", err)
+	}
+	if certificate.Subject.CommonName != "lore-server-"+serverID {
+		return false, errors.New("Lore server hook certificate identity does not match the configured server")
+	}
+	return !certificate.NotAfter.After(now.UTC().Add(RenewalWindow)), nil
+}
+
+func ensureConfigDirectory(configDir string) error {
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		return fmt.Errorf("create config directory: %w", err)
+	}
+	if err := os.Chmod(configDir, 0o700); err != nil {
+		return fmt.Errorf("set config directory permissions: %w", err)
+	}
+	return nil
+}
+
+func writePrivateTemporary(configDir string, pattern string, contents []byte) (string, error) {
+	temporary, err := os.CreateTemp(configDir, pattern)
+	if err != nil {
+		return "", fmt.Errorf("create temporary certificate file: %w", err)
+	}
+	temporaryPath := temporary.Name()
+	if err := temporary.Chmod(0o600); err != nil {
+		_ = temporary.Close()
+		_ = os.Remove(temporaryPath)
+		return "", fmt.Errorf("set temporary certificate file permissions: %w", err)
+	}
+	if _, err := temporary.Write(contents); err != nil {
+		_ = temporary.Close()
+		_ = os.Remove(temporaryPath)
+		return "", fmt.Errorf("write temporary certificate file: %w", err)
+	}
+	if err := temporary.Sync(); err != nil {
+		_ = temporary.Close()
+		_ = os.Remove(temporaryPath)
+		return "", fmt.Errorf("sync temporary certificate file: %w", err)
+	}
+	if err := temporary.Close(); err != nil {
+		_ = os.Remove(temporaryPath)
+		return "", fmt.Errorf("close temporary certificate file: %w", err)
+	}
+	return temporaryPath, nil
 }
 
 func LoadConfig(configDir string) (Config, error) {
