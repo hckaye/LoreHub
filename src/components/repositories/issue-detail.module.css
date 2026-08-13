@@ -98,7 +98,7 @@
   width: 2px;
 }
 
-.timelineItem:last-child::before {
+.timelineItem:not(:has(~ .timelineItem))::before {
   display: none;
 }
 
