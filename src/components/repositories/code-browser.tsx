@@ -331,7 +331,7 @@ function LatestCommitBar({
   const author = latestCommit?.author?.trim() || dictionary.codeBrowser.unknownAuthor;
   const message = latestCommit?.message?.split("\n")[0].trim() || dictionary.codeBrowser.noCommitMessage;
   return (
-    <div className={styles.revisionBar}>
+    <div aria-label={dictionary.codeBrowser.latestCommit} className={styles.revisionBar} role="group">
       <GitCommitHorizontal aria-hidden="true" size={17} />
       <div className={styles.commitSummary}>
         <strong>{author}</strong>
