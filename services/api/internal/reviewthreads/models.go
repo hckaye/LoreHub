@@ -27,6 +27,7 @@ type Comment struct {
 	Author          string     `json:"author"`
 	Body            string     `json:"body"`
 	Deleted         bool       `json:"deleted"`
+	Pending         bool       `json:"pending"`
 	Version         int        `json:"version"`
 	CreatedAt       time.Time  `json:"createdAt"`
 	UpdatedAt       time.Time  `json:"updatedAt"`
@@ -65,19 +66,55 @@ type CreateInput struct {
 	ExpectedBaseRevision string
 	ExpectedHeadRevision string
 	LineContent          string
+	PendingReviewID      string
+}
+
+// PendingReview is a review that batches inline comments until its author
+// submits a verdict. Only the author sees the comments it holds.
+type PendingReview struct {
+	ID           string    `json:"id"`
+	Author       string    `json:"author"`
+	Body         string    `json:"body"`
+	CommentCount int       `json:"commentCount"`
+	CreatedAt    time.Time `json:"createdAt"`
+}
+
+// SubmitInput publishes a pending review. Body overrides the stored draft body
+// when supplied, so the review form can submit its text in a single request.
+type SubmitInput struct {
+	Decision string
+	Body     *string
+}
+
+// SubmitResult reports the verdict recorded on the merge request and how many
+// batched comments became visible to everyone.
+type SubmitResult struct {
+	ReviewID          string    `json:"reviewId"`
+	Decision          string    `json:"decision"`
+	Body              string    `json:"body"`
+	PublishedComments int       `json:"publishedComments"`
+	SubmittedAt       time.Time `json:"submittedAt"`
 }
 
 type Store interface {
-	List(context.Context, string, int64) ([]Thread, error)
+	List(context.Context, string, int64, string) ([]Thread, error)
 	Create(context.Context, platform.User, RepositoryRef, int64, CreateInput) (Thread, error)
-	Reply(context.Context, platform.User, RepositoryRef, int64, string, string) (Comment, error)
+	Reply(context.Context, platform.User, RepositoryRef, int64, string, string, string) (Comment, error)
 	UpdateComment(
 		context.Context, platform.User, RepositoryRef, int64, string, string, string, int,
 	) (Comment, error)
 	DeleteComment(context.Context, platform.User, RepositoryRef, int64, string, string, int) error
 	SetResolved(context.Context, platform.User, RepositoryRef, int64, string, bool, int) (Thread, error)
+	PendingReview(context.Context, string, int64, string) (*PendingReview, error)
+	StartPendingReview(context.Context, platform.User, RepositoryRef, int64) (PendingReview, bool, error)
+	UpdatePendingReview(context.Context, platform.User, RepositoryRef, int64, string) (PendingReview, error)
+	SubmitPendingReview(
+		context.Context, platform.User, RepositoryRef, int64, SubmitInput,
+	) (SubmitResult, error)
+	DiscardPendingReview(context.Context, platform.User, RepositoryRef, int64) error
 }
 
 type ThreadList struct {
-	Threads []Thread `json:"threads"`
+	Threads       []Thread       `json:"threads"`
+	PendingReview *PendingReview `json:"pendingReview,omitempty"`
 }

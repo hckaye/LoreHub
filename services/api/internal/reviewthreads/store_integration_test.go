@@ -60,7 +60,7 @@ func TestPostgresReviewThreadLifecyclePermissionsAndAudit(t *testing.T) {
 	if len(thread.Comments) != 1 || thread.Comments[0].Body != input.Body || thread.Version != 1 {
 		t.Fatalf("created thread = %+v", thread)
 	}
-	reply, err := store.Reply(ctx, fixture.writer, fixture.repository, 1, thread.ID, "I will update it.")
+	reply, err := store.Reply(ctx, fixture.writer, fixture.repository, 1, thread.ID, "I will update it.", "")
 	if err != nil {
 		t.Fatalf("reply to review thread: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestPostgresReviewThreadLifecyclePermissionsAndAudit(t *testing.T) {
 	); err != nil {
 		t.Fatalf("writer delete reply: %v", err)
 	}
-	threads, err := store.List(ctx, fixture.repoID, 1)
+	threads, err := store.List(ctx, fixture.repoID, 1, fixture.author.Username)
 	if err != nil || len(threads) != 1 || len(threads[0].Comments) != 2 {
 		t.Fatalf("list review threads = %+v, error = %v", threads, err)
 	}

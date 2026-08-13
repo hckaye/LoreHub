@@ -9,7 +9,15 @@ import (
 	"github.com/lorehub/lorehub/services/api/internal/platform"
 )
 
-func (store *store) List(ctx context.Context, repositoryID string, number int64) ([]Thread, error) {
+// List returns the review threads of a pull request. Comments held by a
+// pending review stay hidden until their author submits it, so viewer is the
+// username of the reader ("" for anonymous readers).
+func (store *store) List(
+	ctx context.Context,
+	repositoryID string,
+	number int64,
+	viewer string,
+) ([]Thread, error) {
 	rows, err := store.pool.Query(ctx, `
 		SELECT thread.id, thread.path, thread.side, thread.line_number, thread.line_content,
 		       thread.base_revision, thread.head_revision,
@@ -69,16 +77,19 @@ func (store *store) List(ctx context.Context, repositoryID string, number int64)
 	}
 	commentRows, err := store.pool.Query(ctx, `
 		SELECT comment.thread_id, comment.id, author.username, comment.author_id,
-		       comment.body, comment.deleted_at IS NOT NULL, comment.version,
+		       comment.body, comment.deleted_at IS NOT NULL,
+		       comment.pending_review_id IS NOT NULL, comment.version,
 		       comment.created_at, comment.updated_at, comment.edited_at
 		FROM merge_request_review_comments comment
 		JOIN users author ON author.id = comment.author_id
 		JOIN merge_request_review_threads thread ON thread.id = comment.thread_id
+		LEFT JOIN pending_reviews pending ON pending.id = comment.pending_review_id
 		WHERE thread.merge_request_id = (
 			SELECT id FROM merge_requests WHERE repository_id = $1 AND number = $2
 		)
+		  AND (pending.id IS NULL OR ($3 <> '' AND pending.author = $3))
 		ORDER BY comment.created_at, comment.id
-	`, repositoryID, number)
+	`, repositoryID, number, viewer)
 	if err != nil {
 		return nil, fmt.Errorf("list review thread comments: %w", err)
 	}
@@ -88,7 +99,7 @@ func (store *store) List(ctx context.Context, repositoryID string, number int64)
 		var comment Comment
 		if err := commentRows.Scan(
 			&threadID, &comment.ID, &comment.Author, &comment.authorID,
-			&comment.Body, &comment.Deleted, &comment.Version,
+			&comment.Body, &comment.Deleted, &comment.Pending, &comment.Version,
 			&comment.CreatedAt, &comment.UpdatedAt, &comment.EditedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan review thread comment: %w", err)
@@ -100,5 +111,49 @@ func (store *store) List(ctx context.Context, repositoryID string, number int64)
 	if err := commentRows.Err(); err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("iterate review thread comments: %w", err)
 	}
-	return threads, nil
+	return withVisibleComments(threads), nil
+}
+
+// withVisibleComments drops threads whose comments are all held by another
+// reader's pending review, so an unsubmitted review leaves no trace.
+func withVisibleComments(threads []Thread) []Thread {
+	visible := make([]Thread, 0, len(threads))
+	for _, thread := range threads {
+		if len(thread.Comments) > 0 {
+			visible = append(visible, thread)
+		}
+	}
+	return visible
+}
+
+// PendingReview returns the unsubmitted review of author on a pull request.
+func (store *store) PendingReview(
+	ctx context.Context,
+	repositoryID string,
+	number int64,
+	author string,
+) (*PendingReview, error) {
+	if author == "" {
+		return nil, nil
+	}
+	var pending PendingReview
+	err := store.pool.QueryRow(ctx, `
+		SELECT pending.id, pending.author, pending.body, pending.created_at,
+		       (SELECT count(*) FROM merge_request_review_comments comment
+		        WHERE comment.pending_review_id = pending.id)
+		FROM pending_reviews pending
+		JOIN merge_requests request ON request.id = pending.merge_request_id
+		  AND request.repository_id = pending.repository_id
+		WHERE pending.repository_id = $1 AND request.number = $2
+		  AND pending.author = $3 AND pending.state = 'pending'
+	`, repositoryID, number, author).Scan(
+		&pending.ID, &pending.Author, &pending.Body, &pending.CreatedAt, &pending.CommentCount,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get pending review: %w", err)
+	}
+	return &pending, nil
 }

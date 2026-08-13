@@ -54,7 +54,12 @@ func (store *store) Create(
 	if err != nil {
 		return Thread{}, translate("create review thread", err)
 	}
-	comment, err := insertComment(ctx, tx, repository.ID, thread.ID, actor, input.Body, now)
+	if err := requirePendingReview(ctx, tx, repository.ID, request.id, actor, input.PendingReviewID); err != nil {
+		return Thread{}, err
+	}
+	comment, err := insertComment(
+		ctx, tx, repository.ID, thread.ID, actor, input.Body, input.PendingReviewID, now,
+	)
 	if err != nil {
 		return Thread{}, err
 	}
@@ -78,6 +83,7 @@ func (store *store) Reply(
 	number int64,
 	threadID string,
 	body string,
+	pendingReviewID string,
 ) (Comment, error) {
 	if err := validateID("thread ID", threadID); err != nil {
 		return Comment{}, err
@@ -94,7 +100,12 @@ func (store *store) Reply(
 	if err := requireThread(ctx, tx, repository.ID, request.id, threadID); err != nil {
 		return Comment{}, err
 	}
-	comment, err := insertComment(ctx, tx, repository.ID, threadID, actor, body, time.Now().UTC())
+	if err := requirePendingReview(ctx, tx, repository.ID, request.id, actor, pendingReviewID); err != nil {
+		return Comment{}, err
+	}
+	comment, err := insertComment(
+		ctx, tx, repository.ID, threadID, actor, body, pendingReviewID, time.Now().UTC(),
+	)
 	if err != nil {
 		return Comment{}, err
 	}
@@ -125,21 +136,57 @@ func insertComment(
 	threadID string,
 	actor platform.User,
 	body string,
+	pendingReviewID string,
 	now time.Time,
 ) (Comment, error) {
 	comment := Comment{
 		ID: uuid.NewString(), Author: actor.Username, Body: body, Version: 1,
-		CreatedAt: now, UpdatedAt: now, ViewerCanUpdate: true, authorID: actor.ID,
+		Pending: pendingReviewID != "", CreatedAt: now, UpdatedAt: now,
+		ViewerCanUpdate: true, authorID: actor.ID,
 	}
 	_, err := tx.Exec(ctx, `
 		INSERT INTO merge_request_review_comments (
-			id, repository_id, thread_id, author_id, body, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $6)
-	`, comment.ID, repositoryID, threadID, actor.ID, body, now)
+			id, repository_id, thread_id, author_id, body, pending_review_id, created_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, NULLIF($6, '')::uuid, $7, $7)
+	`, comment.ID, repositoryID, threadID, actor.ID, body, pendingReviewID, now)
 	if err != nil {
 		return Comment{}, translate("create review thread comment", err)
 	}
 	return comment, nil
+}
+
+// requirePendingReview locks the pending review a comment attaches to. An
+// empty ID posts the comment immediately, which is the default behaviour.
+func requirePendingReview(
+	ctx context.Context,
+	tx pgx.Tx,
+	repositoryID string,
+	requestID string,
+	actor platform.User,
+	pendingReviewID string,
+) error {
+	if pendingReviewID == "" {
+		return nil
+	}
+	if err := validateID("pending review ID", pendingReviewID); err != nil {
+		return err
+	}
+	var author string
+	err := tx.QueryRow(ctx, `
+		SELECT author FROM pending_reviews
+		WHERE id = $1 AND repository_id = $2 AND merge_request_id = $3 AND state = 'pending'
+		FOR UPDATE
+	`, pendingReviewID, repositoryID, requestID).Scan(&author)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return platform.ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("lock pending review: %w", err)
+	}
+	if author != actor.Username {
+		return platform.ErrForbidden
+	}
+	return nil
 }
 
 func (store *store) UpdateComment(
