@@ -26,10 +26,10 @@ type JobTokenRequest struct {
 }
 
 type JobToken struct {
-	RepositoryID string
-	Token        string
-	Subject      string
-	ExpiresAt    time.Time
+	RepositoryID string    `json:"repositoryId"`
+	Token        string    `json:"token"`
+	Subject      string    `json:"subject"`
+	ExpiresAt    time.Time `json:"expiresAt"`
 }
 
 type JobTokenIssuer interface {
