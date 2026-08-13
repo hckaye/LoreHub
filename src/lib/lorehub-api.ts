@@ -563,7 +563,7 @@ export function getLoreFile(
 export function getRevisionHistory(
   owner: string,
   repository: string,
-  query: { branch?: string; revision?: string },
+  query: { branch?: string; revision?: string; limit?: string },
 ): Promise<APIResult<{ revision: string; entries: RevisionHistoryEntry[]; hasMore: boolean }>> {
   return request(repositoryPath(owner, repository, `/revisions?${queryString(query)}`));
 }
