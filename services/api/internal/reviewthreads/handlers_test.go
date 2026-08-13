@@ -16,10 +16,16 @@ import (
 )
 
 type fakeReviewStore struct {
-	created CreateInput
+	created   CreateInput
+	replied   string
+	pending   *PendingReview
+	submitted SubmitInput
+	discarded bool
+	viewer    string
 }
 
-func (store *fakeReviewStore) List(context.Context, string, int64) ([]Thread, error) {
+func (store *fakeReviewStore) List(_ context.Context, _ string, _ int64, viewer string) ([]Thread, error) {
+	store.viewer = viewer
 	return []Thread{}, nil
 }
 
@@ -40,9 +46,16 @@ func (store *fakeReviewStore) Create(
 }
 
 func (store *fakeReviewStore) Reply(
-	context.Context, platform.User, RepositoryRef, int64, string, string,
+	_ context.Context,
+	_ platform.User,
+	_ RepositoryRef,
+	_ int64,
+	_ string,
+	_ string,
+	pendingReviewID string,
 ) (Comment, error) {
-	return Comment{}, nil
+	store.replied = pendingReviewID
+	return Comment{Pending: pendingReviewID != ""}, nil
 }
 
 func (store *fakeReviewStore) UpdateComment(
@@ -61,6 +74,50 @@ func (store *fakeReviewStore) SetResolved(
 	context.Context, platform.User, RepositoryRef, int64, string, bool, int,
 ) (Thread, error) {
 	return Thread{}, nil
+}
+
+func (store *fakeReviewStore) PendingReview(
+	_ context.Context, _ string, _ int64, author string,
+) (*PendingReview, error) {
+	if store.pending == nil || author != store.pending.Author {
+		return nil, nil
+	}
+	return store.pending, nil
+}
+
+func (store *fakeReviewStore) StartPendingReview(
+	_ context.Context, actor platform.User, _ RepositoryRef, _ int64,
+) (PendingReview, bool, error) {
+	if store.pending != nil {
+		return *store.pending, false, nil
+	}
+	store.pending = &PendingReview{ID: uuid.NewString(), Author: actor.Username}
+	return *store.pending, true, nil
+}
+
+func (store *fakeReviewStore) UpdatePendingReview(
+	_ context.Context, actor platform.User, _ RepositoryRef, _ int64, body string,
+) (PendingReview, error) {
+	if store.pending == nil {
+		return PendingReview{}, platform.ErrNotFound
+	}
+	store.pending.Body = body
+	store.pending.Author = actor.Username
+	return *store.pending, nil
+}
+
+func (store *fakeReviewStore) SubmitPendingReview(
+	_ context.Context, _ platform.User, _ RepositoryRef, _ int64, input SubmitInput,
+) (SubmitResult, error) {
+	store.submitted = input
+	return SubmitResult{Decision: input.Decision, PublishedComments: 2}, nil
+}
+
+func (store *fakeReviewStore) DiscardPendingReview(
+	context.Context, platform.User, RepositoryRef, int64,
+) error {
+	store.discarded = true
+	return nil
 }
 
 type fakeReviewRepositories struct{}
@@ -218,6 +275,72 @@ func TestCreateThreadRequiresAuthenticationAndStrictJSON(t *testing.T) {
 	)
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("unknown JSON field status = %d, want 400", response.Code)
+	}
+}
+
+func TestPendingReviewEndpointsBatchCommentsUntilSubmit(t *testing.T) {
+	actor := platform.User{ID: uuid.NewString(), Username: "alice"}
+	store := &fakeReviewStore{}
+	handler := reviewTestHandler(store, &fakeReviewCode{}, &actor)
+	base := "/api/v1/repositories/acme/game/merge-requests/1/reviews/pending"
+	response := performReviewRequest(handler, http.MethodPost, base, `{}`)
+	if response.Code != http.StatusCreated || store.pending == nil {
+		t.Fatalf("start pending review = %d %s", response.Code, response.Body.String())
+	}
+	if response = performReviewRequest(handler, http.MethodPost, base, `{}`); response.Code != http.StatusOK {
+		t.Fatalf("repeated start status = %d, want 200", response.Code)
+	}
+	response = performReviewRequest(
+		handler, http.MethodPost,
+		"/api/v1/repositories/acme/game/merge-requests/1/review-threads/"+uuid.NewString()+"/comments",
+		`{"body":"Batched","pendingReviewId":"`+store.pending.ID+`"}`,
+	)
+	if response.Code != http.StatusCreated || store.replied != store.pending.ID {
+		t.Fatalf("batched reply = %d, pending review = %q", response.Code, store.replied)
+	}
+	response = performReviewRequest(handler, http.MethodPatch, base, `{"body":"Looks good overall."}`)
+	if response.Code != http.StatusOK || store.pending.Body != "Looks good overall." {
+		t.Fatalf("update pending review = %d %s", response.Code, response.Body.String())
+	}
+	response = performReviewRequest(handler, http.MethodPost, base+"/submit", `{"verdict":"nope"}`)
+	if response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("invalid verdict status = %d, want 422", response.Code)
+	}
+	response = performReviewRequest(
+		handler, http.MethodPost, base+"/submit", `{"verdict":"request_changes","body":"Please fix."}`,
+	)
+	if response.Code != http.StatusOK || store.submitted.Decision != "changes_requested" {
+		t.Fatalf("submit = %d, decision = %q", response.Code, store.submitted.Decision)
+	}
+	if store.submitted.Body == nil || *store.submitted.Body != "Please fix." {
+		t.Fatalf("submitted body = %v", store.submitted.Body)
+	}
+	if response = performReviewRequest(handler, http.MethodDelete, base, `{}`); response.Code != http.StatusNoContent {
+		t.Fatalf("discard status = %d, want 204", response.Code)
+	}
+	if !store.discarded {
+		t.Fatal("discard did not reach the store")
+	}
+}
+
+func TestListThreadsReportsTheViewerPendingReview(t *testing.T) {
+	actor := platform.User{ID: uuid.NewString(), Username: "alice"}
+	store := &fakeReviewStore{pending: &PendingReview{ID: uuid.NewString(), Author: "alice", CommentCount: 3}}
+	path := "/api/v1/repositories/acme/game/merge-requests/1/review-threads"
+	response := performReviewRequest(reviewTestHandler(store, &fakeReviewCode{}, &actor), http.MethodGet, path, "")
+	if response.Code != http.StatusOK || store.viewer != "alice" {
+		t.Fatalf("list threads = %d, viewer = %q", response.Code, store.viewer)
+	}
+	if !strings.Contains(response.Body.String(), `"commentCount":3`) {
+		t.Fatalf("list body = %s", response.Body.String())
+	}
+	anonymous := &fakeReviewStore{pending: store.pending}
+	response = performReviewRequest(reviewTestHandler(anonymous, &fakeReviewCode{}, nil), http.MethodGet, path, "")
+	if response.Code != http.StatusOK || anonymous.viewer != "" {
+		t.Fatalf("anonymous list = %d, viewer = %q", response.Code, anonymous.viewer)
+	}
+	if strings.Contains(response.Body.String(), "pendingReview") {
+		t.Fatalf("anonymous list body = %s", response.Body.String())
 	}
 }
 

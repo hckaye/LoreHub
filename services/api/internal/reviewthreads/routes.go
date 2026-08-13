@@ -25,4 +25,9 @@ func Register(
 	mux.HandleFunc("POST "+base+"/{threadID}/comments", api.reply)
 	mux.HandleFunc("PATCH "+base+"/{threadID}/comments/{commentID}", api.updateComment)
 	mux.HandleFunc("DELETE "+base+"/{threadID}/comments/{commentID}", api.deleteComment)
+	pending := "/api/v1/repositories/{owner}/{repository}/merge-requests/{number}/reviews/pending"
+	mux.HandleFunc("POST "+pending, api.startPendingReview)
+	mux.HandleFunc("PATCH "+pending, api.updatePendingReview)
+	mux.HandleFunc("POST "+pending+"/submit", api.submitPendingReview)
+	mux.HandleFunc("DELETE "+pending, api.discardPendingReview)
 }

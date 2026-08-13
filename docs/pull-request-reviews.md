@@ -18,6 +18,20 @@ Open the **Conversation** tab and select **Mark ready for review** when the chan
 triage access can mark it ready or convert it back to a draft. LoreHub checks the draft state again before updating
 the target branch.
 
+## Batch comments into one review
+
+The comment form on a line offers two buttons. **Add single comment** posts the comment right away.
+**Start a review** keeps it pending: only you see it until you submit the review. Later comments show
+**Add review comment**, which adds them to the same pending review.
+
+While a review is pending, the **Files changed** tab shows how many comments it holds and a
+**Finish your review** button. The form there takes an overall comment and a verdict: comment, approve, or
+request changes. **Submit review** publishes every batched comment and records the verdict on the current
+source revision. **Abandon review** deletes the review with the comments it holds.
+
+The pull request author can batch comments too, but can only submit them as a comment. Approving or
+requesting changes on your own pull request is not possible.
+
 ## Continue a conversation
 
 Anyone who can read the repository can reply to a review conversation. The person who started the conversation, the

@@ -10,6 +10,7 @@ export type CreateReviewThreadInput = {
   body: string;
   expectedBaseRevision: string;
   expectedHeadRevision: string;
+  pendingReviewId?: string;
 };
 
 export function createReviewThread(
@@ -29,10 +30,11 @@ export function replyToReviewThread(
   threadID: string,
   body: string,
   csrfToken: string,
+  pendingReviewId?: string,
 ) {
   return postJson<ReviewThreadComment>(
     `${reviewThreadsPath(owner, repository, number)}/${encodeURIComponent(threadID)}/comments`,
-    { body },
+    pendingReviewId ? { body, pendingReviewId } : { body },
     csrfToken,
   );
 }
