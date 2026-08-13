@@ -157,6 +157,7 @@ const en = {
     about: "About",
     stars: "stars",
     watching: "watching",
+    moreReleases: "+ {count} releases",
     codeTitle: "Code",
     codeDescription: "Repository metadata and branch pointers read from Lore.",
     repositorySummary: "Repository summary",

@@ -2,15 +2,24 @@
   min-width: 0;
 }
 
-.about h2 {
+.block {
+  padding: 16px 0;
+}
+
+.block + .block {
+  border-top: 1px solid var(--border-muted);
+}
+
+.block h2 {
   margin: 0 0 16px;
-  font-size: 1rem;
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .description {
-  margin: 0 0 14px;
+  margin: 0 0 16px;
   color: var(--fg-default);
-  font-size: 0.9rem;
+  font-size: 14px;
   line-height: 1.5;
 }
 
@@ -19,9 +28,9 @@
   min-width: 0;
   align-items: center;
   gap: 7px;
-  margin-bottom: 14px;
+  margin-bottom: 16px;
   color: var(--accent-fg);
-  font-size: 0.8rem;
+  font-size: 13px;
   font-weight: 600;
   text-decoration: none;
 }
@@ -42,12 +51,11 @@
 
 .stats {
   display: grid;
-  gap: 9px;
+  gap: 8px;
   margin: 0;
-  padding: 16px 0 0;
-  border-top: 1px solid var(--border-muted);
+  padding: 0;
   color: var(--fg-muted);
-  font-size: 0.8rem;
+  font-size: 13px;
   list-style: none;
 }
 
@@ -57,13 +65,78 @@
   gap: 6px;
 }
 
+.stats svg {
+  flex: 0 0 auto;
+}
+
 .stats strong {
   color: var(--fg-default);
+  font-weight: 600;
+}
+
+.releaseItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.releaseIcon {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--fg-muted);
+}
+
+.releaseDetails {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.releaseTitle {
+  overflow: hidden;
+  color: var(--accent-fg);
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.releaseTitle:hover,
+.releaseMore:hover {
+  text-decoration: underline;
+}
+
+.releaseMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.latest {
+  padding: 1px 6px;
+  border: 1px solid var(--success-border);
+  border-radius: 999px;
+  color: var(--success-fg);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.releaseMore {
+  display: inline-block;
+  margin-top: 12px;
+  color: var(--accent-fg);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
 }
 
 @media (max-width: 900px) {
   .about {
-    padding-top: 20px;
     border-top: 1px solid var(--border-muted);
   }
 }
