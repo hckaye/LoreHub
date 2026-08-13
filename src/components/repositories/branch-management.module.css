@@ -119,6 +119,24 @@
   border-bottom: 1px solid var(--border-muted);
 }
 
+.compareLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  color: var(--fg-default);
+  font-size: 0.78rem;
+  text-decoration: none;
+}
+
+.compareLink:hover {
+  border-color: var(--accent-emphasis);
+  color: var(--accent-fg);
+}
+
 .searchField {
   display: inline-flex;
   align-items: center;

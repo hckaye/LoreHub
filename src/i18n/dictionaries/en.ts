@@ -217,6 +217,7 @@ const en = {
     noBranchesDescription: "Lore did not return an active branch for this repository.",
     noMatches: "No branches match that search.",
     searchPlaceholder: "Filter branches",
+    compareBranches: "Compare branches",
     columnBranch: "Branch",
     columnUpdated: "Updated",
     columnRevision: "Revision",

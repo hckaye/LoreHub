@@ -44,7 +44,7 @@ administrator grants explicitly.
   cross an organization boundary.
 - Registration mirrors the GitHub Actions runner flow. A settings page (repository, organization, or user) issues
   a short-lived registration token with prefix `lhrr_`. The runner host runs `lorehub-runner configure --url
-  <lorehub> --token <lhrr_...>`, which exchanges the registration token for a long-lived runner credential with
+<lorehub> --token <lhrr_...>`, which exchanges the registration token for a long-lived runner credential with
   prefix `lhr_`, stored as a SHA-256 digest exactly like personal access tokens. `lorehub-runner run` starts the
   daemon; an install script provides a systemd unit the way `svc.sh` does for GitHub's runner.
 - The daemon reuses the existing worker execution path (checkout, `act`, Docker over mTLS, log upload, job
@@ -81,12 +81,12 @@ administrator grants explicitly.
 
 ### Enforcement summary
 
-| Action | Without entitlement | With entitlement |
-| --- | --- | --- |
-| Create repository, no server registered | Rejected with guidance | Provisions on instance server |
-| Create repository, owner default server set | Provisions on that server | Same, instance server also selectable |
-| Run with `runs-on: self-hosted` | Routes to registered runners | Same |
-| Run with `runs-on: ubuntu-latest` | Fails at enqueue | Routes to managed fleet |
+| Action                                      | Without entitlement          | With entitlement                      |
+| ------------------------------------------- | ---------------------------- | ------------------------------------- |
+| Create repository, no server registered     | Rejected with guidance       | Provisions on instance server         |
+| Create repository, owner default server set | Provisions on that server    | Same, instance server also selectable |
+| Run with `runs-on: self-hosted`             | Routes to registered runners | Same                                  |
+| Run with `runs-on: ubuntu-latest`           | Fails at enqueue             | Routes to managed fleet               |
 
 ## Rejected alternatives
 

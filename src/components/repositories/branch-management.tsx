@@ -1,6 +1,6 @@
 "use client";
 
-import { GitBranch, LockKeyhole, Search, ShieldCheck, Trash2 } from "lucide-react";
+import { GitBranch, GitCompare, LockKeyhole, Search, ShieldCheck, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -115,6 +115,13 @@ export function BranchManagement(props: BranchManagementProps) {
           <strong>{branches.length}</strong>
         </div>
         <div className={styles.toolbar}>
+          <Link
+            className={styles.compareLink}
+            href={`${repositoryPath(props.locale, props.repository.owner, props.repository.slug)}/compare`}
+          >
+            <GitCompare aria-hidden="true" size={14} />
+            {copy.compareBranches}
+          </Link>
           <label className={styles.searchField}>
             <Search aria-hidden="true" size={14} />
             <input

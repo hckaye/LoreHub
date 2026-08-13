@@ -254,6 +254,7 @@ const ja = {
     ),
     noMatches: "検索条件に一致するブランチはありません。",
     searchPlaceholder: "ブランチを絞り込み",
+    compareBranches: "ブランチを比較",
     columnBranch: "ブランチ",
     columnUpdated: "更新",
     columnRevision: "リビジョン",

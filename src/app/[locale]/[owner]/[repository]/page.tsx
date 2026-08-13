@@ -67,12 +67,12 @@ export default async function RepositoryCodePage({ params, searchParams }: Repos
             <CodeBrowser
               branches={resultData(branches) ?? []}
               branch={branch}
+              cloneUrl={repository.data.loreUrl}
               currentRevision={query.revision}
               dictionary={dictionary}
               latestCommit={revisionData}
               locale={locale}
               owner={owner}
-              parentRevision={revisionData?.parents[0]}
               repository={slug}
               tags={resultData(tags) ?? []}
               tree={tree.data}
