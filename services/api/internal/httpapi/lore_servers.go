@@ -135,6 +135,46 @@ func (api *API) heartbeatLoreServer(writer http.ResponseWriter, request *http.Re
 	writeJSON(writer, http.StatusOK, map[string]any{"server": server})
 }
 
+func (api *API) issueLoreServerCertificate(writer http.ResponseWriter, request *http.Request) {
+	if api.loreServerCertificates == nil || api.loreServerCertIssuer == nil ||
+		api.loresSecrets == nil || api.loresTokenKeyID == "" {
+		writeProblem(writer, http.StatusServiceUnavailable, "lore_server_certificates_unavailable",
+			"Lore server certificate issuance is unavailable")
+		return
+	}
+	raw, ok := loreServerBearerToken(writer, request, auth.ValidLoreServerCredential)
+	if !ok {
+		return
+	}
+	now := time.Now().UTC()
+	server, err := api.loreServerCertificates.AuthenticateServer(
+		request.Context(), api.loresSecrets.Digest(raw), api.loresTokenKeyID, now,
+	)
+	if err != nil {
+		api.loreServerError(writer, request, "authenticate Lore server certificate request", err)
+		return
+	}
+	issued, err := api.loreServerCertIssuer.Issue(server.ID, now)
+	if err != nil {
+		api.internalError(writer, request, "issue Lore server certificate", err)
+		return
+	}
+	if err := api.loreServerCertificates.RecordServerCertificate(
+		request.Context(), server.ID, issued.Serial, issued.IssuedAt, issued.ExpiresAt,
+	); err != nil {
+		api.loreServerError(writer, request, "record Lore server certificate", err)
+		return
+	}
+	writer.Header().Set("Cache-Control", "no-store")
+	writeJSON(writer, http.StatusOK, map[string]any{
+		"certificatePem": string(issued.CertificatePEM),
+		"privateKeyPem":  string(issued.PrivateKeyPEM),
+		"serial":         issued.Serial,
+		"issuedAt":       issued.IssuedAt,
+		"expiresAt":      issued.ExpiresAt,
+	})
+}
+
 func (api *API) listLoreServers(writer http.ResponseWriter, request *http.Request) {
 	actor, ok := api.actor(writer, request)
 	if !ok {

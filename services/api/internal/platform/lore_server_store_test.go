@@ -275,6 +275,23 @@ func TestLoreServerRegistrationAuthenticationHeartbeatAndRevocation(t *testing.T
 		map[string]any{"state": "healthy"}); err != nil {
 		t.Fatalf("update Lore server health: %v", err)
 	}
+	issuedAt := time.Now().UTC().Truncate(time.Microsecond)
+	expiresAt := issuedAt.Add(30 * 24 * time.Hour)
+	if err := store.RecordServerCertificate(ctx, server.ID, "abcdef1234", issuedAt, expiresAt); err != nil {
+		t.Fatalf("record Lore server certificate: %v", err)
+	}
+	var recordedSerial string
+	var recordedIssuedAt, recordedExpiresAt time.Time
+	if err := pool.QueryRow(ctx, `
+		SELECT hook_certificate_serial, hook_certificate_issued_at, hook_certificate_expires_at
+		FROM lore_servers WHERE id = $1
+	`, server.ID).Scan(&recordedSerial, &recordedIssuedAt, &recordedExpiresAt); err != nil {
+		t.Fatalf("read Lore server certificate metadata: %v", err)
+	}
+	if recordedSerial != "abcdef1234" || !recordedIssuedAt.Equal(issuedAt) ||
+		!recordedExpiresAt.Equal(expiresAt) {
+		t.Fatalf("certificate metadata = %q, %v, %v", recordedSerial, recordedIssuedAt, recordedExpiresAt)
+	}
 	if err := store.RevokeServer(ctx, owner, organizationSlug, server.ID); err != nil {
 		t.Fatalf("revoke Lore server: %v", err)
 	}
@@ -283,6 +300,11 @@ func TestLoreServerRegistrationAuthenticationHeartbeatAndRevocation(t *testing.T
 	)
 	if !errors.Is(err, auth.ErrInvalidLoreServerCredential) {
 		t.Fatalf("revoked Lore server credential error = %v", err)
+	}
+	if err := store.RecordServerCertificate(
+		ctx, server.ID, "abcdef5678", issuedAt, expiresAt,
+	); !errors.Is(err, auth.ErrInvalidLoreServerCredential) {
+		t.Fatalf("revoked Lore server certificate record error = %v", err)
 	}
 }
 

@@ -126,10 +126,18 @@ read tokenによるwriteは拒否します。
 
 hookからLoreHubのpolicy endpointへは、設定したmanaged root配下の
 `https://<policy-host>:8444/internal/lore/policy`を使い、相互TLSと1秒のtimeoutを適用します。timeoutは100msから5秒の
-範囲に制限します。観測endpointも同じroot配下の固定パスにします。hookのclient証明書は専用の`lore-policy-hook`
-identityとclientAuth用途を持たなければなりません。接続失敗、証明書不正、SAN不一致、形式不正、拒否応答はすべて
-拒否にします。本番ではendpoint、root、JWKS、
-AuthURL、TLS CA、client証明書、client鍵を省略できず、サービス証明書とhook証明書を共有しません。
+範囲に制限します。観測endpointも同じroot配下の固定パスにします。instance serverは従来の`lore-policy-hook`
+client identityを使います。登録済みserverは、有効期間30日で`lore-server-<server-id>` identityを持つ証明書を使います。
+LoreHubはpolicyとobservationのrequestごとにserverがactiveであることと、対象リポジトリがそのserverへ割り当てられて
+いることを確認します。登録済みserverを失効させると、CRLを使わずに発行済み証明書も無効になります。接続失敗、
+証明書不正、SAN不一致、形式不正、拒否応答はすべて拒否にします。
+
+本番ではendpoint、root、JWKS、AuthURL、TLS CA、client証明書、client鍵を省略できず、サービス証明書とhook証明書を
+共有しません。`LOREHUB_LORE_SERVER_CA_CERT`と`LOREHUB_LORE_SERVER_CA_KEY`には、登録済みserverの証明書を発行する
+CAを指定します。`LOREHUB_POLICY_TLS_CLIENT_CA`で信頼するCAは、この発行元を信頼する必要があります。ローカルComposeは
+両方に既存のローカルCAを使います。
+本番Composeでは、`LOREHUB_TLS_SOURCE_DIR`で指定したdirectoryへ既存のTLS fileに加えて`ca.key`を配置します。APIには
+read-only volumeを通じてこの鍵を渡します。
 
 ## protected branchとmerge
 

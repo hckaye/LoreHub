@@ -124,11 +124,18 @@ Lore CLI. These certificates are for local development.
 
 Lore hooks call `https://<policy-host>:8444/internal/lore/policy` under the managed root domain. The connection uses
 mTLS and a timeout from 100 milliseconds to 5 seconds, with a default of 1 second. The observation endpoint uses another
-fixed path under the same root. The hook certificate requires the `lore-policy-hook` identity and client-auth usage.
-Connection, certificate, SAN, payload, and policy failures deny the Lore operation.
+fixed path under the same root. The managed instance keeps the `lore-policy-hook` client identity. Registered servers
+use a 30-day certificate with the `lore-server-<server-id>` identity. LoreHub checks that the server is active and that
+the requested repository is assigned to it on every policy and observation request. Revoking a registered server
+invalidates its existing certificates without a CRL. Connection, certificate, SAN, payload, and policy failures deny
+the Lore operation.
 
 Production requires the hook endpoint, managed root, JWKS, Auth URL, CA, client certificate, and client key. The hook
-client certificate is separate from service certificates.
+client certificate is separate from service certificates. `LOREHUB_LORE_SERVER_CA_CERT` and
+`LOREHUB_LORE_SERVER_CA_KEY` identify the CA used to issue registered-server certificates. The CA trusted through
+`LOREHUB_POLICY_TLS_CLIENT_CA` must trust that issuer. Local Compose uses the existing local CA for both settings.
+For production Compose, the directory selected by `LOREHUB_TLS_SOURCE_DIR` must contain `ca.key` in addition to the
+existing TLS files. The API receives that key through a read-only volume.
 
 ## Protected branches and merge
 

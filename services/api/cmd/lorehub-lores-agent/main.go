@@ -31,19 +31,55 @@ func main() {
 
 func execute(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("a subcommand is required: configure or run")
+		return errors.New("a subcommand is required: configure, renew-certificate, or run")
 	}
 	switch args[0] {
 	case "configure":
 		return configure(args[1:], stdin, stdout, stderr)
 	case "run":
 		return run(args[1:], stderr)
+	case "renew-certificate":
+		return renewCertificateCommand(args[1:], stdout, stderr)
 	case "help", "--help", "-h":
-		fmt.Fprintln(stdout, "Usage: lorehub-lores-agent <configure|run> [options]")
+		fmt.Fprintln(stdout, "Usage: lorehub-lores-agent <configure|renew-certificate|run> [options]")
 		return nil
 	default:
-		return fmt.Errorf("unknown subcommand %q: expected configure or run", args[0])
+		return fmt.Errorf("unknown subcommand %q: expected configure, renew-certificate, or run", args[0])
 	}
+}
+
+func renewCertificateCommand(args []string, stdout io.Writer, stderr io.Writer) error {
+	defaultDir, err := defaultConfigDir()
+	if err != nil {
+		return err
+	}
+	flags := flag.NewFlagSet("renew-certificate", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	configDir := flags.String("config-dir", defaultDir, "directory for the agent config")
+	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+		return err
+	}
+	config, err := loresagent.LoadConfig(*configDir)
+	if err != nil {
+		return err
+	}
+	client, err := loresagent.NewClient(config.LoreHubURL, nil)
+	if err != nil {
+		return err
+	}
+	certificate, err := requestAndSaveCertificate(context.Background(), client, config, *configDir)
+	if err != nil {
+		if loresagent.IsAuthenticationError(err) {
+			return fmt.Errorf("authentication failed: LoreHub rejected the server credential: %w", err)
+		}
+		return fmt.Errorf("renew Lore server hook certificate: %w", err)
+	}
+	fmt.Fprintf(stdout, "Lore Server hook certificate renewed through %s.\n",
+		certificate.ExpiresAt.Format(time.RFC3339))
+	return nil
 }
 
 func configure(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
@@ -147,7 +183,7 @@ func run(args []string, stderr io.Writer) error {
 	}
 	rootContext, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	return runAgent(rootContext, client, config, *interval,
+	return runAgent(rootContext, client, config, *configDir, *interval,
 		resolveLoreVersion(*loreVersion), resolveHookModuleVersion(*hookVersion), stderr)
 }
 
@@ -155,12 +191,31 @@ func runAgent(
 	ctx context.Context,
 	client *loresagent.Client,
 	config loresagent.Config,
+	configDir string,
 	interval time.Duration,
 	loreVersion string,
 	hookVersion string,
 	stderr io.Writer,
 ) error {
 	startedAt := time.Now().UTC()
+	renewCertificateIfNeeded := func() error {
+		needsRenewal, err := loresagent.CertificateNeedsRenewal(
+			configDir, config.ServerID, time.Now().UTC(),
+		)
+		if err != nil {
+			return err
+		}
+		if !needsRenewal {
+			return nil
+		}
+		certificate, err := requestAndSaveCertificate(ctx, client, config, configDir)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(stderr, "Lore Server hook certificate renewed through %s.\n",
+			certificate.ExpiresAt.Format(time.RFC3339))
+		return nil
+	}
 	sendHeartbeat := func() error {
 		uptimeSeconds := int64(time.Since(startedAt).Seconds())
 		if uptimeSeconds < 0 {
@@ -179,6 +234,15 @@ func runAgent(
 		return err
 	}
 
+	if err := renewCertificateIfNeeded(); err != nil {
+		if ctx.Err() != nil {
+			return nil
+		}
+		if loresagent.IsAuthenticationError(err) {
+			return fmt.Errorf("authentication failed: LoreHub rejected the server credential: %w", err)
+		}
+		return fmt.Errorf("initial certificate renewal failed: %w", err)
+	}
 	if err := sendHeartbeat(); err != nil {
 		if ctx.Err() != nil {
 			return nil
@@ -196,6 +260,15 @@ func runAgent(
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
+			if err := renewCertificateIfNeeded(); err != nil {
+				if ctx.Err() != nil {
+					return nil
+				}
+				if loresagent.IsAuthenticationError(err) {
+					return fmt.Errorf("authentication failed: LoreHub rejected the server credential: %w", err)
+				}
+				fmt.Fprintf(stderr, "certificate renewal failed; retrying in %s: %v\n", interval, err)
+			}
 			if err := sendHeartbeat(); err != nil {
 				if ctx.Err() != nil {
 					return nil
@@ -207,6 +280,25 @@ func runAgent(
 			}
 		}
 	}
+}
+
+func requestAndSaveCertificate(
+	ctx context.Context,
+	client *loresagent.Client,
+	config loresagent.Config,
+	configDir string,
+) (loresagent.CertificateResponse, error) {
+	if strings.TrimSpace(config.ServerID) == "" {
+		return loresagent.CertificateResponse{}, errors.New("agent config does not contain a Lore server ID")
+	}
+	certificate, err := client.RenewCertificate(ctx, config.Credential)
+	if err != nil {
+		return loresagent.CertificateResponse{}, err
+	}
+	if err := loresagent.SaveCertificate(configDir, config.ServerID, certificate); err != nil {
+		return loresagent.CertificateResponse{}, err
+	}
+	return certificate, nil
 }
 
 func readRegistrationToken(stdin io.Reader) (string, error) {

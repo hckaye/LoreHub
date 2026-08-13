@@ -60,6 +60,8 @@ func (readiness serviceReadiness) tlsFiles() []readinessFile {
 		{name: "policy TLS certificate", path: readiness.settings.PolicyTLSCert},
 		{name: "policy TLS key", path: readiness.settings.PolicyTLSKey},
 		{name: "policy client CA", path: readiness.settings.PolicyTLSClientCA},
+		{name: "Lore server certificate CA", path: readiness.settings.LoreServerCACert},
+		{name: "Lore server certificate CA key", path: readiness.settings.LoreServerCAKey},
 	}
 }
 
