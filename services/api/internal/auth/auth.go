@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 )
@@ -19,17 +20,20 @@ var (
 const RegistrationPrompt = "create"
 
 type Principal struct {
-	Issuer          string
-	Subject         string
-	InternalUserID  string
-	Username        string
-	Name            string
-	Email           string
-	PreferredLocale string
-	LoreAccessToken string
-	CredentialKind  string
-	CredentialID    string
-	Scopes          []string
+	Issuer               string
+	Subject              string
+	InternalUserID       string
+	Username             string
+	Name                 string
+	Email                string
+	PreferredLocale      string
+	LoreAccessToken      string
+	CredentialKind       string
+	CredentialID         string
+	CredentialPrefix     string
+	CredentialExpiresAt  time.Time
+	CredentialLastUsedAt *time.Time
+	Scopes               []string
 }
 
 type Authenticator interface {

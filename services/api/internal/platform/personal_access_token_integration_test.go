@@ -60,7 +60,9 @@ func TestPersonalAccessTokenLifecycleIntegration(t *testing.T) {
 		t.Fatalf("list personal access tokens: tokens=%+v error=%v", listed, err)
 	}
 	identity, err := store.VerifyPersonalAccessToken(ctx, secrets.Digest(raw), time.Now().UTC())
-	if err != nil || identity.UserID != owner.ID || identity.TokenID != token.ID || len(identity.Scopes) != 2 {
+	if err != nil || identity.UserID != owner.ID || identity.TokenID != token.ID ||
+		identity.Prefix != token.Prefix || !identity.ExpiresAt.Equal(token.ExpiresAt) ||
+		identity.LastUsedAt == nil || len(identity.Scopes) != 2 {
 		t.Fatalf("verify personal access token: identity=%+v error=%v", identity, err)
 	}
 	if err := store.ValidatePersonalAccessToken(ctx, token.ID, owner.ID, time.Now().UTC()); err != nil {
