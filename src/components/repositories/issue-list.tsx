@@ -7,8 +7,8 @@ import type { Issue } from "@/lib/api-types";
 import { formatRelativeTime, labelTextColor, normalizeLabelColor } from "@/lib/format";
 import { repositoryPath } from "@/lib/routes";
 
-import { UserAvatar } from "../ui/user-avatar";
 import { EmptyState } from "../ui/empty-state";
+import { UserAvatar } from "../ui/user-avatar";
 import styles from "./issue-list.module.css";
 
 type IssueListProps = {

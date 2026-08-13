@@ -22,13 +22,7 @@ type UserProfilePageProps = {
   unavailable?: boolean;
 };
 
-export function UserProfilePage({
-  dictionary,
-  locale,
-  profile,
-  repositories,
-  unavailable,
-}: UserProfilePageProps) {
+export function UserProfilePage({ dictionary, locale, profile, repositories, unavailable }: UserProfilePageProps) {
   if (!profile) {
     return (
       <div className={styles.page}>

@@ -11,8 +11,8 @@ import Link from "next/link";
 
 import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
-import type { GlobalWorkItem } from "@/lib/global-work-items";
 import { formatRelativeTime, labelTextColor, normalizeLabelColor } from "@/lib/format";
+import type { GlobalWorkItem } from "@/lib/global-work-items";
 import { repositoryPath } from "@/lib/routes";
 
 import { UserAvatar } from "../ui/user-avatar";

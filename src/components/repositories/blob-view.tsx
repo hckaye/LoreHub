@@ -6,8 +6,8 @@ import type { FileHistoryEntry, LoreFile, TreeEntry } from "@/lib/api-types";
 import { repositoryPath } from "@/lib/routes";
 
 import { BlobViewFile } from "./blob-view-file";
-import { FileHistory } from "./file-history";
 import styles from "./blob-view.module.css";
+import { FileHistory } from "./file-history";
 
 type BlobViewProps = {
   dictionary: Dictionary;

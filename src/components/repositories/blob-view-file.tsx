@@ -80,17 +80,8 @@ export function BlobViewFile(props: BlobViewFileProps) {
             </div>
           )}
           {canCopy && (
-            <button
-              className={styles.actionButton}
-              data-state={copyState}
-              onClick={handleCopy}
-              type="button"
-            >
-              {copyState === "copied" ? (
-                <Check aria-hidden="true" size={14} />
-              ) : (
-                <Copy aria-hidden="true" size={14} />
-              )}
+            <button className={styles.actionButton} data-state={copyState} onClick={handleCopy} type="button">
+              {copyState === "copied" ? <Check aria-hidden="true" size={14} /> : <Copy aria-hidden="true" size={14} />}
               {copyState === "copied" ? copy.copied : copy.copyContents}
             </button>
           )}
@@ -110,10 +101,7 @@ export function BlobViewFile(props: BlobViewFileProps) {
             {copy.binary}
           </p>
         ) : showCode ? (
-          <CodeDisplay
-            ariaLabel={copy.lineNumbers}
-            content={props.content ?? ""}
-          />
+          <CodeDisplay ariaLabel={copy.lineNumbers} content={props.content ?? ""} />
         ) : props.content ? (
           <div className={styles.markdownBody}>
             <MarkdownContent

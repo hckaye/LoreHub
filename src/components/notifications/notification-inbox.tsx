@@ -1,14 +1,14 @@
 "use client";
 
-import { Bell, Check, CircleDot, GitCommit, GitPullRequest, MessageSquare, Tag } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { Bell, Check, CircleDot, GitCommit, GitPullRequest, MessageSquare, Tag } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import type { Dictionary } from "@/i18n";
-import type { AuthSession, Notification } from "@/lib/api-types";
 import type { Locale } from "@/i18n/config";
+import type { AuthSession, Notification } from "@/lib/api-types";
 import { patchJson, postJson } from "@/lib/auth-client";
 import { formatRelativeTime } from "@/lib/format";
 

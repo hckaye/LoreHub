@@ -7,8 +7,8 @@ import type { MergeRequestListItem } from "@/lib/api-types";
 import { formatRelativeTime, labelTextColor, normalizeLabelColor } from "@/lib/format";
 import { repositoryPath } from "@/lib/routes";
 
-import { UserAvatar } from "../ui/user-avatar";
 import { EmptyState } from "../ui/empty-state";
+import { UserAvatar } from "../ui/user-avatar";
 import styles from "./merge-request-list.module.css";
 
 type MergeRequestListProps = {
@@ -76,10 +76,7 @@ export function MergeRequestList({ mergeRequests, dictionary, locale, owner, rep
           </div>
           <div className={styles.trailing}>
             {mergeRequest.assignees.length > 0 && (
-              <div
-                aria-label={dictionary.issueAssignees.title}
-                className={styles.assignees}
-              >
+              <div aria-label={dictionary.issueAssignees.title} className={styles.assignees}>
                 {mergeRequest.assignees.slice(0, 3).map((assignee) => (
                   <Link
                     aria-label={dictionary.issueAssignees.assignedTo.replace("{username}", assignee.username)}

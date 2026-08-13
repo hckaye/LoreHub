@@ -100,9 +100,7 @@ function DashboardSidebar(props: DashboardSidebarProps) {
         </ul>
       ) : (
         <p className={styles.sidebarEmpty}>
-          {props.unavailable
-            ? props.dictionary.home.apiUnavailableBody
-            : props.dictionary.home.organizationsEmptyBody}
+          {props.unavailable ? props.dictionary.home.apiUnavailableBody : props.dictionary.home.organizationsEmptyBody}
         </p>
       )}
     </aside>

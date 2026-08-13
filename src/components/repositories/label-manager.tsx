@@ -37,9 +37,7 @@ export function LabelManager(props: LabelManagerProps) {
     const query = filter.trim().toLowerCase();
     if (!query) return items;
     return items.filter(
-      (label) =>
-        label.name.toLowerCase().includes(query) ||
-        label.description.toLowerCase().includes(query),
+      (label) => label.name.toLowerCase().includes(query) || label.description.toLowerCase().includes(query),
     );
   }, [items, filter]);
 
