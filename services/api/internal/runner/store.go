@@ -47,6 +47,7 @@ type Job struct {
 	Environment      string          `json:"environment,omitempty"`
 	RunnerLabels     []string        `json:"runnerLabels"`
 	ExecutionTarget  string          `json:"executionTarget"`
+	LogObjectKey     string          `json:"-"`
 }
 
 type Artifact struct {

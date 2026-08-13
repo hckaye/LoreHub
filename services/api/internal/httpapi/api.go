@@ -168,6 +168,29 @@ type RunnerStore interface {
 	AuthenticateRunner(context.Context, []byte, string, time.Time) (platform.Runner, error)
 }
 
+type RunnerControlStore interface {
+	RunnerClaimJob(context.Context, []byte, string, time.Time, time.Duration) (*runner.Job, error)
+	RunnerLeaseJob(context.Context, string, string) (runner.Job, error)
+	RunnerHeartbeatJob(context.Context, string, string, time.Duration) error
+	RunnerCancellationRequested(context.Context, string, string) (bool, error)
+	AppendRunnerJobLog(context.Context, string, string, int64, []byte, int64) (int64, error)
+	AppendRunnerArtifact(
+		context.Context, string, string, string, int64, []byte, bool, int64, int64, int,
+	) (int64, error)
+	CompleteJob(context.Context, runner.Job, string, string, string, []runner.Artifact) error
+}
+
+type RunnerControlConfig struct {
+	LeaseDuration         time.Duration
+	LogMaxBytes           int64
+	ArtifactMaxCount      int
+	ArtifactMaxFileBytes  int64
+	ArtifactMaxTotalBytes int64
+	Principal             runner.CredentialPrincipal
+	RESTScope             string
+	GraphQLScope          string
+}
+
 type API struct {
 	store                   Store
 	actions                 ActionsStore
@@ -215,6 +238,10 @@ type API struct {
 	runners                 RunnerStore
 	runnerSecrets           *auth.SecretCodec
 	runnerCredentialKeyID   string
+	runnerControl           RunnerControlStore
+	runnerExecutionContext  runner.ExecutionContextResolver
+	runnerJobTokenIssuer    runner.JobTokenIssuer
+	runnerControlConfig     RunnerControlConfig
 	instanceAdminUsernames  map[string]struct{}
 	globalWorkItems         GlobalWorkItemStore
 	deletionRetention       time.Duration
@@ -328,6 +355,20 @@ func WithRunners(store RunnerStore, secrets *auth.SecretCodec, credentialKeyID s
 		api.runners = store
 		api.runnerSecrets = secrets
 		api.runnerCredentialKeyID = strings.TrimSpace(credentialKeyID)
+	}
+}
+
+func WithRunnerControlPlane(
+	store RunnerControlStore,
+	executionContext runner.ExecutionContextResolver,
+	jobTokenIssuer runner.JobTokenIssuer,
+	config RunnerControlConfig,
+) Option {
+	return func(api *API) {
+		api.runnerControl = store
+		api.runnerExecutionContext = executionContext
+		api.runnerJobTokenIssuer = jobTokenIssuer
+		api.runnerControlConfig = config
 	}
 }
 

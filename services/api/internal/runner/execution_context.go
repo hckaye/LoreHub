@@ -110,6 +110,14 @@ func resolveExecutionContext(
 	}, nil
 }
 
+func ResolveExecutionContext(
+	ctx context.Context,
+	resolver ExecutionContextResolver,
+	request ExecutionContextRequest,
+) (ResolvedExecutionContext, error) {
+	return resolveExecutionContext(ctx, resolver, request)
+}
+
 func mergeScopedValues(scopes ...map[string]string) map[string]string {
 	merged := make(map[string]string)
 	for _, scope := range scopes {

@@ -116,6 +116,17 @@ func issueJobToken(
 	return token, nil
 }
 
+func IssueJobToken(
+	ctx context.Context,
+	issuer JobTokenIssuer,
+	job Job,
+	principal CredentialPrincipal,
+	restScope string,
+	graphqlScope string,
+) (JobToken, error) {
+	return issueJobToken(ctx, issuer, job, principal, restScope, graphqlScope)
+}
+
 func validateJobTokenRequest(ctx context.Context, request JobTokenRequest) error {
 	if err := ctx.Err(); err != nil {
 		return err
