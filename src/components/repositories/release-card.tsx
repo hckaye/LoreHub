@@ -7,16 +7,19 @@ import { FormEvent, useState } from "react";
 import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
 import type { AuthSession, Release } from "@/lib/api-types";
+import { formatDate, shortRevision } from "@/lib/format";
 import { mutationFailureMessage } from "@/lib/mutation-messages";
 import { deleteRelease, publishRelease, updateRelease } from "@/lib/release-client";
 import { repositoryPath } from "@/lib/routes";
 
+import { MarkdownContent } from "../wiki/markdown-content";
 import { FlashNotice } from "../ui/flash-notice";
 import { ReleaseAssets } from "./release-assets";
 import styles from "./release-list.module.css";
 
 type ReleaseCardProps = {
   dictionary: Dictionary;
+  isLatest?: boolean;
   locale: Locale;
   owner: string;
   repository: string;
@@ -34,6 +37,7 @@ export function ReleaseCard(props: ReleaseCardProps) {
   const [failure, setFailure] = useState("");
   const labels = props.dictionary.releasesPage;
   const authenticated = props.session.status === "authenticated";
+  const anchorId = `release-${props.release.tagName}`;
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -93,7 +97,7 @@ export function ReleaseCard(props: ReleaseCardProps) {
   const revisionQuery = encodeURIComponent(props.release.revision);
   const revisionHref = `${repositoryHref}/commit?revision=${revisionQuery}`;
   return (
-    <article className={styles.releaseCard}>
+    <article className={styles.releaseCard} id={anchorId}>
       <header className={styles.releaseHeader}>
         <div>
           <div className={styles.tagLine}>
@@ -101,8 +105,11 @@ export function ReleaseCard(props: ReleaseCardProps) {
             <span className={props.release.state === "published" ? styles.published : styles.draft}>
               {props.release.state === "published" ? labels.published : labels.draft}
             </span>
+            {props.isLatest && <span className={styles.latest}>{labels.latest}</span>}
           </div>
-          <h2>{props.release.title}</h2>
+          <h2>
+            <a href={`#${anchorId}`}>{props.release.title}</a>
+          </h2>
           <p className={styles.meta}>
             {labels.createdBy.replace("{author}", props.release.createdBy)} ·{" "}
             {formatDate(props.release.createdAt, props.locale)}
@@ -130,8 +137,14 @@ export function ReleaseCard(props: ReleaseCardProps) {
       {failure && <FlashNotice body={failure} title={props.dictionary.forms.submitFailed} tone="error" />}
       {editing ? (
         <form className={styles.editForm} onSubmit={save}>
-          <input maxLength={512} onChange={(event) => setTitle(event.target.value)} required value={title} />
-          <textarea maxLength={1_048_576} onChange={(event) => setNotes(event.target.value)} value={notes} />
+          <label>
+            <span>{labels.titleLabel}</span>
+            <input maxLength={512} onChange={(event) => setTitle(event.target.value)} required value={title} />
+          </label>
+          <label>
+            <span>{labels.notesLabel}</span>
+            <textarea maxLength={1_048_576} onChange={(event) => setNotes(event.target.value)} value={notes} />
+          </label>
           <div className={styles.formActions}>
             <button className={styles.primaryButton} disabled={busy} type="submit">
               {busy ? labels.saving : labels.save}
@@ -142,14 +155,18 @@ export function ReleaseCard(props: ReleaseCardProps) {
           </div>
         </form>
       ) : (
-        props.release.notes && <p className={styles.notes}>{props.release.notes}</p>
+        props.release.notes && (
+          <div className={styles.notes}>
+            <MarkdownContent body={props.release.notes} />
+          </div>
+        )
       )}
       <div className={styles.revision}>
         <span>
           {labels.sourceBranch}: {props.release.sourceBranch}
         </span>
         <Link href={revisionHref} title={props.release.revision}>
-          {labels.pinnedRevision}: <code>{props.release.revision.slice(0, 12)}</code>
+          {labels.pinnedRevision}: <code>{shortRevision(props.release.revision)}</code>
         </Link>
       </div>
       <ReleaseAssets
@@ -163,11 +180,4 @@ export function ReleaseCard(props: ReleaseCardProps) {
       />
     </article>
   );
-}
-
-function formatDate(value: string, locale: Locale): string {
-  return new Intl.DateTimeFormat(locale === "ja" ? "ja-JP" : "en-US", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
 }

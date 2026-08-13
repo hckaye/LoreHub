@@ -1,7 +1,7 @@
 import { LockKeyhole, ServerOff } from "lucide-react";
 
 import { ReleaseList } from "@/components/repositories/release-list";
-import { RepositoryPanel, RepositorySection } from "@/components/repositories/repository-section";
+import { RepositorySection } from "@/components/repositories/repository-section";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getDictionary } from "@/i18n";
 import { isLocale } from "@/i18n/config";
@@ -29,33 +29,31 @@ export default async function ReleasesPage({ params, searchParams }: ReleasesPag
   const labels = dictionary.releasesPage;
   return (
     <RepositorySection description={labels.description} title={labels.title}>
-      <RepositoryPanel description={labels.description} title={labels.title}>
-        {releases.ok ? (
-          <ReleaseList
-            branches={branches.ok ? branches.data : []}
-            data={releases.data}
-            dictionary={dictionary}
-            locale={locale}
-            owner={owner}
-            repository={repository}
-            session={session}
-          />
-        ) : releases.reason === "forbidden" || releases.reason === "not-found" ? (
-          <EmptyState
-            body={labels.forbiddenBody}
-            icon={<LockKeyhole aria-hidden="true" />}
-            title={labels.forbiddenTitle}
-            tone="warning"
-          />
-        ) : (
-          <EmptyState
-            body={labels.unavailableBody}
-            icon={<ServerOff aria-hidden="true" />}
-            title={labels.unavailableTitle}
-            tone="warning"
-          />
-        )}
-      </RepositoryPanel>
+      {releases.ok ? (
+        <ReleaseList
+          branches={branches.ok ? branches.data : []}
+          data={releases.data}
+          dictionary={dictionary}
+          locale={locale}
+          owner={owner}
+          repository={repository}
+          session={session}
+        />
+      ) : releases.reason === "forbidden" || releases.reason === "not-found" ? (
+        <EmptyState
+          body={labels.forbiddenBody}
+          icon={<LockKeyhole aria-hidden="true" />}
+          title={labels.forbiddenTitle}
+          tone="warning"
+        />
+      ) : (
+        <EmptyState
+          body={labels.unavailableBody}
+          icon={<ServerOff aria-hidden="true" />}
+          title={labels.unavailableTitle}
+          tone="warning"
+        />
+      )}
     </RepositorySection>
   );
 }
