@@ -27,10 +27,12 @@ import { search } from "./search";
 import { settingsNavigation } from "./settings-navigation";
 import { webhooks } from "./webhooks";
 import { wiki } from "./wiki";
+import { workItemEvents } from "./work-item-events";
 import { workItemLists } from "./work-item-lists";
 
 const en = {
   commentPagination: commentPagination.en,
+  workItemEvents: workItemEvents.en,
   workItemLists: workItemLists.en,
   codeBrowser: codeBrowser.en,
   commitHistory: commitHistory.en,
@@ -124,6 +126,21 @@ const en = {
     license: "MIT License",
     localeEnglish: "English",
     localeJapanese: "日本語",
+  },
+  reactions: {
+    title: "Reactions",
+    add: "Add reaction",
+    plusOne: "+1",
+    minusOne: "-1",
+    laugh: "Laugh",
+    confused: "Confused",
+    heart: "Heart",
+    hooray: "Hooray",
+    rocket: "Rocket",
+    eyes: "Eyes",
+    react: "React with {reaction}",
+    remove: "Remove {reaction} reaction",
+    failed: "The reaction could not be saved. Try again.",
   },
   home: {
     homeTitle: "Home",

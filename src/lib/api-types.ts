@@ -1,6 +1,7 @@
 import type { MergeStatusCheck } from "./commit-status-types";
 
 export type { MergeStatusCheck, RevisionStatus, RevisionStatusPage, RevisionStatusState } from "./commit-status-types";
+export type { Reaction, ReactionName } from "./reactions";
 
 export type Repository = {
   id: string;
@@ -295,6 +296,7 @@ export type Issue = {
   milestone: MilestoneSummary | null;
   labelCount: number;
   commentCount: number;
+  reactions?: import("./reactions").Reaction[];
   createdAt: string;
   updatedAt: string;
   closedBy: string | null;
@@ -322,6 +324,7 @@ export type IssueComment = {
   body: string;
   createdAt: string;
   editedAt: string | null;
+  reactions?: import("./reactions").Reaction[];
   viewerCanUpdate: boolean;
 };
 
@@ -435,6 +438,7 @@ export type MergeRequest = {
   createdAt: string;
   updatedAt: string;
   closedAt: string | null;
+  reactions?: import("./reactions").Reaction[];
   viewerCanUpdate: boolean;
   viewerCanReview: boolean;
 };
@@ -464,6 +468,7 @@ export type MergeRequestComment = {
   body: string;
   createdAt: string;
   editedAt: string | null;
+  reactions?: import("./reactions").Reaction[];
   viewerCanUpdate: boolean;
 };
 

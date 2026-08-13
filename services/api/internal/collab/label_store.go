@@ -261,6 +261,14 @@ func (s *store) ApplyLabel(
 		}); err != nil {
 			return Label{}, false, err
 		}
+		attached := label.Label
+		if err := RecordWorkItemEvent(ctx, tx, WorkItemEventRecord{
+			RepositoryID: repoID, ItemKind: WorkItemIssue, ItemID: issueID,
+			ActorID: actor.ID, Kind: EventLabeled,
+			Payload: WorkItemEventPayload{Label: &attached},
+		}); err != nil {
+			return Label{}, false, err
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return Label{}, false, fmt.Errorf("commit apply label: %w", err)
@@ -318,6 +326,14 @@ func (s *store) RemoveLabel(
 		}
 		if err := insertOutbox(ctx, tx, "issue_label.removed", issueID+":"+labelID+":"+uuidArg(), map[string]any{
 			"issueId": issueID, "labelId": labelID,
+		}); err != nil {
+			return err
+		}
+		detached := label.Label
+		if err := RecordWorkItemEvent(ctx, tx, WorkItemEventRecord{
+			RepositoryID: repoID, ItemKind: WorkItemIssue, ItemID: issueID,
+			ActorID: actor.ID, Kind: EventUnlabeled,
+			Payload: WorkItemEventPayload{Label: &detached},
 		}); err != nil {
 			return err
 		}

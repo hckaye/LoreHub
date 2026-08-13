@@ -36,6 +36,26 @@ func (s *store) GetMergeRequest(
 	return mr, nil
 }
 
+func (s *store) GetMergeRequestWithReactions(
+	ctx context.Context,
+	repoID string,
+	number int64,
+	viewerUsername string,
+) (MergeRequest, error) {
+	mr, err := s.GetMergeRequest(ctx, repoID, number)
+	if err != nil {
+		return MergeRequest{}, err
+	}
+	reactions, err := loadReactions(
+		ctx, s.pool, repoID, reactionMergeRequest, []string{mr.ID}, viewerUsername,
+	)
+	if err != nil {
+		return MergeRequest{}, err
+	}
+	mr.Reactions = reactions[mr.ID]
+	return mr, nil
+}
+
 func scanMergeRequest(row pgx.Row) (MergeRequest, error) {
 	var mr MergeRequest
 	err := row.Scan(
@@ -72,6 +92,10 @@ func (s *store) UpdateMergeRequest(
 	}
 	defer rollback(ctx, tx)
 
+	previousTitle, previousState, err := lockMergeRequestForUpdate(ctx, tx, repoID, number)
+	if err != nil {
+		return MergeRequest{}, err
+	}
 	query, args, err := buildMergeRequestUpdateQuery(repoID, number, input, nowUTC())
 	if err != nil {
 		return MergeRequest{}, err
@@ -106,6 +130,11 @@ func (s *store) UpdateMergeRequest(
 	if err := insertAudit(ctx, tx, actor.ID, orgID, repoID, action, "merge_request", mr.ID); err != nil {
 		return MergeRequest{}, err
 	}
+	if err := recordStateChangeEvents(ctx, tx, WorkItemEventRecord{
+		RepositoryID: repoID, ItemKind: WorkItemMergeRequest, ItemID: mr.ID, ActorID: actor.ID,
+	}, previousTitle, previousState, input.Title, input.State); err != nil {
+		return MergeRequest{}, err
+	}
 	if err := insertOutbox(ctx, tx, "merge_request.updated", mr.ID+":"+uuidArg(), mr); err != nil {
 		return MergeRequest{}, err
 	}
@@ -113,6 +142,29 @@ func (s *store) UpdateMergeRequest(
 		return MergeRequest{}, fmt.Errorf("commit merge request update: %w", err)
 	}
 	return mr, nil
+}
+
+// lockMergeRequestForUpdate takes the row lock for a merge request edit and
+// returns the values the timeline events compare against.
+func lockMergeRequestForUpdate(
+	ctx context.Context,
+	tx pgx.Tx,
+	repoID string,
+	number int64,
+) (string, string, error) {
+	var title, state string
+	err := tx.QueryRow(ctx, `
+		SELECT title, state FROM merge_requests
+		WHERE repository_id = $1 AND number = $2
+		FOR UPDATE
+	`, repoID, number).Scan(&title, &state)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", "", platform.ErrNotFound
+	}
+	if err != nil {
+		return "", "", fmt.Errorf("lock merge request for update: %w", err)
+	}
+	return title, state, nil
 }
 
 func (s *store) checkMergeRequestMutation(

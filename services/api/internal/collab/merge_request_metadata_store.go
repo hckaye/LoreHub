@@ -575,6 +575,9 @@ func finishMergeRequestMetadataMutation(
 	); err != nil {
 		return err
 	}
+	if err := recordMergeRequestMetadataEvent(ctx, tx, actorID, request, change, subject); err != nil {
+		return err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit pull request metadata mutation: %w", err)
 	}

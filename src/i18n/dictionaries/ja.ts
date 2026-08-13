@@ -27,12 +27,14 @@ import { search } from "./search";
 import { settingsNavigation } from "./settings-navigation";
 import { webhooks } from "./webhooks";
 import { wiki } from "./wiki";
+import { workItemEvents } from "./work-item-events";
 import { workItemLists } from "./work-item-lists";
 
 const concat = (...parts: string[]) => parts.join("");
 
 const ja = {
   commentPagination: commentPagination.ja,
+  workItemEvents: workItemEvents.ja,
   workItemLists: workItemLists.ja,
   codeBrowser: codeBrowser.ja,
   commitHistory: commitHistory.ja,
@@ -126,6 +128,21 @@ const ja = {
     license: "MITライセンス",
     localeEnglish: "英語",
     localeJapanese: "日本語",
+  },
+  reactions: {
+    title: "リアクション",
+    add: "リアクションを追加",
+    plusOne: "いいね",
+    minusOne: "よくないね",
+    laugh: "笑い",
+    confused: "困惑",
+    heart: "ハート",
+    hooray: "やった",
+    rocket: "ロケット",
+    eyes: "注目",
+    react: "「{reaction}」でリアクション",
+    remove: "「{reaction}」のリアクションを削除",
+    failed: "リアクションを保存できませんでした。もう一度試してください。",
   },
   home: {
     homeTitle: "ホーム",

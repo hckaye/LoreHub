@@ -38,7 +38,14 @@ func (api *API) listMergeRequestComments(writer http.ResponseWriter, request *ht
 		writeProblem(writer, http.StatusBadRequest, "invalid_input", err.Error())
 		return
 	}
-	result, err := store.ListMergeRequestComments(requestContext(request), repo.ID, number, page)
+	var result Result[MergeRequestComment]
+	if reader, supported := api.store.(ReactionReadStore); supported {
+		result, err = reader.ListMergeRequestCommentsWithReactions(
+			requestContext(request), repo.ID, number, page, reactionViewer(actor),
+		)
+	} else {
+		result, err = store.ListMergeRequestComments(requestContext(request), repo.ID, number, page)
+	}
 	if err != nil {
 		storeError(writer, request, "list pull request comments", err, api.logger)
 		return
@@ -52,6 +59,9 @@ func (api *API) listMergeRequestComments(writer http.ResponseWriter, request *ht
 			result.Items[index].ViewerCanUpdate = repo.ArchivedAt == nil &&
 				(result.Items[index].AuthorID == actor.ID || access.AtLeast(PermTriage))
 		}
+	}
+	for index := range result.Items {
+		result.Items[index].Reactions = ensureReactions(result.Items[index].Reactions)
 	}
 	writeJSON(writer, http.StatusOK, result)
 }
@@ -86,6 +96,7 @@ func (api *API) createMergeRequestComment(writer http.ResponseWriter, request *h
 		return
 	}
 	comment.ViewerCanUpdate = true
+	comment.Reactions = ensureReactions(comment.Reactions)
 	writeLocation(writer, request, comment.ID)
 	writeJSON(writer, http.StatusCreated, comment)
 }
@@ -125,6 +136,7 @@ func (api *API) patchMergeRequestComment(writer http.ResponseWriter, request *ht
 		return
 	}
 	comment.ViewerCanUpdate = true
+	comment.Reactions = ensureReactions(comment.Reactions)
 	writeJSON(writer, http.StatusOK, comment)
 }
 

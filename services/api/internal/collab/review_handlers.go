@@ -29,7 +29,15 @@ func (api *API) getMergeRequest(writer http.ResponseWriter, request *http.Reques
 	if !ok {
 		return
 	}
-	mr, err := api.store.GetMergeRequest(requestContext(request), repo.ID, number)
+	var mr MergeRequest
+	var err error
+	if reader, supported := api.store.(ReactionReadStore); supported {
+		mr, err = reader.GetMergeRequestWithReactions(
+			requestContext(request), repo.ID, number, reactionViewer(actor),
+		)
+	} else {
+		mr, err = api.store.GetMergeRequest(requestContext(request), repo.ID, number)
+	}
 	if err != nil {
 		storeError(writer, request, "get merge request", err, api.logger)
 		return
@@ -44,6 +52,7 @@ func (api *API) getMergeRequest(writer http.ResponseWriter, request *http.Reques
 		mr.ViewerCanReview = repo.ArchivedAt == nil && mr.AuthorID != actor.ID &&
 			access.AtLeast(PermRead) && mr.State == "open"
 	}
+	mr.Reactions = ensureReactions(mr.Reactions)
 	writeJSON(writer, http.StatusOK, mr)
 }
 
@@ -77,6 +86,7 @@ func (api *API) patchMergeRequest(writer http.ResponseWriter, request *http.Requ
 	}
 	mr.ViewerCanUpdate = true
 	mr.ViewerCanReview = mr.AuthorID != actor.ID && mr.State == "open"
+	mr.Reactions = ensureReactions(mr.Reactions)
 	writeJSON(writer, http.StatusOK, mr)
 }
 

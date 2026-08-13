@@ -26,6 +26,24 @@ func (s *store) ListMergeRequestsForRepository(
 	repositoryID string,
 	query RepositoryMergeRequestQuery,
 ) (RepositoryMergeRequestPage, error) {
+	return s.listMergeRequestsForRepositoryWithViewer(ctx, repositoryID, query, "")
+}
+
+func (s *store) ListMergeRequestsForRepositoryWithReactions(
+	ctx context.Context,
+	repositoryID string,
+	query RepositoryMergeRequestQuery,
+	viewerUsername string,
+) (RepositoryMergeRequestPage, error) {
+	return s.listMergeRequestsForRepositoryWithViewer(ctx, repositoryID, query, viewerUsername)
+}
+
+func (s *store) listMergeRequestsForRepositoryWithViewer(
+	ctx context.Context,
+	repositoryID string,
+	query RepositoryMergeRequestQuery,
+	viewerUsername string,
+) (RepositoryMergeRequestPage, error) {
 	query, err := NormalizeRepositoryMergeRequestQuery(query)
 	if err != nil {
 		return RepositoryMergeRequestPage{}, err
@@ -52,7 +70,7 @@ func (s *store) ListMergeRequestsForRepository(
 	case "merged":
 		totalCount = mergedCount
 	}
-	mergeRequests, err := listRepositoryMergeRequests(ctx, tx, repositoryID, query)
+	mergeRequests, err := listRepositoryMergeRequests(ctx, tx, repositoryID, query, viewerUsername)
 	if err != nil {
 		return RepositoryMergeRequestPage{}, err
 	}
@@ -93,6 +111,7 @@ func listRepositoryMergeRequests(
 	tx pgx.Tx,
 	repositoryID string,
 	query RepositoryMergeRequestQuery,
+	viewerUsername string,
 ) ([]MergeRequestListItem, error) {
 	builder := buildRepositoryMergeRequestFilter(repositoryID, query, true)
 	limit := builder.bind(query.PerPage)
@@ -153,6 +172,19 @@ func listRepositoryMergeRequests(
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate repository pull requests: %w", err)
+	}
+	subjectIDs := make([]string, 0, len(mergeRequests))
+	for _, mergeRequest := range mergeRequests {
+		subjectIDs = append(subjectIDs, mergeRequest.ID)
+	}
+	reactions, err := loadReactions(
+		ctx, tx, repositoryID, reactionMergeRequest, subjectIDs, viewerUsername,
+	)
+	if err != nil {
+		return nil, err
+	}
+	for index := range mergeRequests {
+		mergeRequests[index].Reactions = reactions[mergeRequests[index].ID]
 	}
 	return mergeRequests, nil
 }

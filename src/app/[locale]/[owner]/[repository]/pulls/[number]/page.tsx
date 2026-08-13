@@ -19,6 +19,7 @@ import {
   getMergeReadiness,
   getMergeRequest,
   getMergeRequestComments,
+  getMergeRequestEvents,
   getMergeRequestMetadata,
   getMilestones,
   getPublicRepository,
@@ -75,6 +76,7 @@ export default async function PullRequestDetailPage({ params, searchParams }: Pu
     reviewRequests,
     reviewCandidates,
     comments,
+    events,
     reviewThreads,
     diff,
     history,
@@ -89,6 +91,7 @@ export default async function PullRequestDetailPage({ params, searchParams }: Pu
     getReviewRequests(owner, slug, number),
     getReviewCandidates(owner, slug, number),
     getMergeRequestComments(owner, slug, number, commentPage),
+    getMergeRequestEvents(owner, slug, number),
     getReviewThreads(owner, slug, number),
     getLoreDiff(owner, slug, mergeRequest.data.targetRevision, mergeRequest.data.sourceRevision),
     getRevisionHistory(owner, slug, {
@@ -109,6 +112,7 @@ export default async function PullRequestDetailPage({ params, searchParams }: Pu
       assigneesAvailable={assignees.ok}
       diff={resultData(diff, null)}
       dictionary={dictionary}
+      events={events.ok ? events.data : null}
       labels={resultData(labels, [])}
       labelsAvailable={labels.ok}
       locale={locale}

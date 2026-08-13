@@ -23,6 +23,7 @@ type API struct {
 	reviewRequests ReviewRequestStore
 	metadata       MergeRequestMetadataStore
 	drafts         MergeRequestDraftStore
+	events         WorkItemEventStore
 	actors         ActorResolver
 	logger         *slog.Logger
 }
@@ -33,9 +34,11 @@ func NewAPI(store Store, actors ActorResolver, logger *slog.Logger) *API {
 	reviewRequests, _ := store.(ReviewRequestStore)
 	metadata, _ := store.(MergeRequestMetadataStore)
 	drafts, _ := store.(MergeRequestDraftStore)
+	events, _ := store.(WorkItemEventStore)
 	return &API{
 		store: store, assignees: assignees, reviewRequests: reviewRequests,
-		metadata: metadata, drafts: drafts, actors: actors, logger: logger,
+		metadata: metadata, drafts: drafts, events: events,
+		actors: actors, logger: logger,
 	}
 }
 
@@ -146,6 +149,8 @@ func validationError(writer http.ResponseWriter, err error) bool {
 	case errors.Is(err, ErrBlankBody),
 		errors.Is(err, ErrTitleTooLong),
 		errors.Is(err, ErrBodyTooLong),
+		errors.Is(err, ErrInvalidReaction),
+		errors.Is(err, ErrInvalidReactionSubject),
 		errors.Is(err, ErrInvalidState),
 		errors.Is(err, ErrInvalidColor),
 		errors.Is(err, ErrInvalidLabel),
