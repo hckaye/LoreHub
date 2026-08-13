@@ -79,6 +79,7 @@ const repositoryArchiveManagerQuery = `
 	JOIN users actor_user ON actor_user.id = $3 AND actor_user.status = 'active'
 	WHERE organization.slug = $1 AND repository.slug = $2
 	  AND repository.lifecycle_state = 'active'
+	  AND repository.migrating_at IS NULL
 	  AND (
 	      EXISTS (
 	          SELECT 1 FROM organization_memberships membership

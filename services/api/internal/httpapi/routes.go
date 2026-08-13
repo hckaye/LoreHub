@@ -35,6 +35,11 @@ func (api *API) registerAdminRoutes(mux *http.ServeMux) {
 	mux.Handle("GET "+base, api.requireInstanceAdmin(http.HandlerFunc(api.listEntitlements)))
 	mux.Handle("POST "+base, api.requireInstanceAdmin(http.HandlerFunc(api.grantEntitlement)))
 	mux.Handle("DELETE "+base, api.requireInstanceAdmin(http.HandlerFunc(api.revokeEntitlement)))
+	migrationBase := "/api/v1/admin/repositories/{owner}/{repository}"
+	mux.Handle("POST "+migrationBase+"/migrate",
+		api.requireInstanceAdmin(http.HandlerFunc(api.migrateRepository)))
+	mux.Handle("GET "+migrationBase+"/migrations",
+		api.requireInstanceAdmin(http.HandlerFunc(api.listRepositoryMigrations)))
 }
 
 func (api *API) registerCoreRoutes(mux *http.ServeMux) {

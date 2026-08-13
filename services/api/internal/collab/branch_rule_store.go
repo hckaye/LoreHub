@@ -149,6 +149,10 @@ func (s *store) UpdateBranchRule(
 		    require_ci_success = $5, required_status_checks = $6,
 		    block_direct_push = $7, updated_at = $8
 		WHERE id = $1 AND repository_id = $2
+		  AND EXISTS (
+			SELECT 1 FROM repositories repository
+			WHERE repository.id = $2 AND repository.migrating_at IS NULL
+		  )
 	`, ruleID, repoID, input.Pattern, input.RequiredApprovals,
 		input.RequireCISuccess, input.RequiredStatusChecks, input.BlockDirectPush, now)
 	if err != nil {
@@ -202,7 +206,12 @@ func (s *store) DeleteBranchRule(
 	}
 	defer rollback(ctx, tx)
 	tag, err := tx.Exec(ctx, `
-		DELETE FROM branch_rules WHERE id = $1 AND repository_id = $2
+		DELETE FROM branch_rules
+		WHERE id = $1 AND repository_id = $2
+		  AND EXISTS (
+			SELECT 1 FROM repositories repository
+			WHERE repository.id = $2 AND repository.migrating_at IS NULL
+		  )
 	`, ruleID, repoID)
 	if err != nil {
 		return translateConstraintError("delete branch rule", err)
@@ -239,7 +248,7 @@ func (s *store) findBranchRule(ctx context.Context, repoID, ruleID string) (bran
 		JOIN repositories r
 		  ON r.id = br.repository_id
 		 AND r.lifecycle_state = 'active'
-		 AND r.archived_at IS NULL
+		 AND r.archived_at IS NULL AND r.migrating_at IS NULL
 		JOIN organizations o ON o.id = r.organization_id AND o.active
 		WHERE br.repository_id = $1 AND br.id = $2
 	`, repoID, ruleID).Scan(
@@ -266,7 +275,7 @@ func (s *store) activeBranchRuleRepositoryOrgID(ctx context.Context, repoID stri
 		  ON organization.id = repository.organization_id AND organization.active
 		WHERE repository.id = $1
 		  AND repository.lifecycle_state = 'active'
-		  AND repository.archived_at IS NULL
+		  AND repository.archived_at IS NULL AND repository.migrating_at IS NULL
 	`, repoID).Scan(&orgID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", platform.ErrNotFound

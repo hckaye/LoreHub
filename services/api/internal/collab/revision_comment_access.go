@@ -84,7 +84,9 @@ func revisionCommentPermission(
 		 AND direct_access.user_id = actor.id AND direct_access.active
 		WHERE repository.id = $1 AND repository.organization_id = $2
 		  AND repository.lifecycle_state = 'active'
-		  AND ($4 = false OR repository.archived_at IS NULL)
+		  AND ($4 = false OR (
+			repository.archived_at IS NULL AND repository.migrating_at IS NULL
+		  ))
 	`, repository.ID, repository.OrganizationID, actorID, mutation).Scan(&permission)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return PermNone, platform.ErrNotFound

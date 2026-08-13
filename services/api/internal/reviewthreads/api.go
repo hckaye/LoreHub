@@ -72,8 +72,8 @@ func (api *API) mutationRepository(
 		api.storeError(writer, request, "lookup review repository", err)
 		return collab.Repository{}, platform.User{}, false
 	}
-	if repository.ArchivedAt != nil {
-		writeProblem(writer, http.StatusForbidden, "repository_archived", "The repository is read-only")
+	if repository.ArchivedAt != nil || repository.MigratingAt != nil {
+		writeProblem(writer, http.StatusForbidden, "repository_read_only", "The repository is read-only")
 		return collab.Repository{}, platform.User{}, false
 	}
 	return repository, actor, true

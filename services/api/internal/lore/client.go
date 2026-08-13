@@ -100,6 +100,19 @@ type ManagedRepositoryClient interface {
 	) error
 }
 
+type RepositoryMirrorInput struct {
+	Source           RepositoryRef
+	Target           RepositoryRef
+	Name             string
+	Description      string
+	SourceCredential Credential
+	TargetCredential Credential
+}
+
+type RepositoryMigrationClient interface {
+	MirrorRepository(context.Context, RepositoryMirrorInput) error
+}
+
 type RepositoryDeletionClient interface {
 	DeleteRepositoryWithCredential(
 		context.Context,

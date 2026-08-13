@@ -283,7 +283,8 @@ func (store *Store) repositoryAdminAccess(
 		LEFT JOIN organization_memberships om
 		  ON om.organization_id = o.id AND om.user_id = $3 AND om.active
 		WHERE o.slug = $1 AND r.slug = $2 AND o.active
-		  AND r.archived_at IS NULL AND r.lifecycle_state = 'active'
+		  AND r.archived_at IS NULL AND r.migrating_at IS NULL
+		  AND r.lifecycle_state = 'active'
 		  AND (
 			  om.role = 'owner'
 				OR EXISTS (

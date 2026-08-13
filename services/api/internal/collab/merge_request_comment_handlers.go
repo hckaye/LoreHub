@@ -56,7 +56,7 @@ func (api *API) listMergeRequestComments(writer http.ResponseWriter, request *ht
 			return
 		}
 		for index := range result.Items {
-			result.Items[index].ViewerCanUpdate = repo.ArchivedAt == nil &&
+			result.Items[index].ViewerCanUpdate = !repositoryReadOnly(repo) &&
 				(result.Items[index].AuthorID == actor.ID || access.AtLeast(PermTriage))
 		}
 	}

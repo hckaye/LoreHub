@@ -74,7 +74,7 @@ func (s *store) ListRevisionComments(
 	if hasNext {
 		comments = comments[:perPage]
 	}
-	if actor != nil && repository.ArchivedAt == nil {
+	if actor != nil && !repositoryReadOnly(repository) {
 		for index := range comments {
 			comments[index].ViewerCanUpdate = comments[index].Author.ID == actor.ID || permission >= PermTriage
 		}

@@ -151,11 +151,12 @@ func (store *Store) ServicePrincipalResource(
 	var information authz.UserInfo
 	var principalKind, visibility string
 	var obliterateEnabled bool
-	var archived bool
+	var archived, migrating bool
 	var permissions []string
 	err := store.pool.QueryRow(ctx, `
 		SELECT principal.id, principal.name, principal.kind, repository.visibility,
-		       policy.obliterate_enabled, spg.permissions, repository.archived_at IS NOT NULL
+		       policy.obliterate_enabled, spg.permissions,
+		       repository.archived_at IS NOT NULL, repository.migrating_at IS NOT NULL
 		FROM service_principals principal
 		JOIN service_principal_repository_grants spg
 		  ON spg.principal_id = principal.id AND spg.active
@@ -185,7 +186,7 @@ func (store *Store) ServicePrincipalResource(
 		  )
 	`, strings.TrimSpace(name), strings.TrimPrefix(resourceID, "urc-")).Scan(
 		&information.ID, &information.Username, &principalKind, &visibility,
-		&obliterateEnabled, &permissions, &archived,
+		&obliterateEnabled, &permissions, &archived, &migrating,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return authz.UserInfo{}, nil, ErrForbidden
@@ -196,7 +197,7 @@ func (store *Store) ServicePrincipalResource(
 	information.DisplayName = information.Username
 	information.ProviderSubject = "service:" + information.Username
 	resolved := policyServicePermissions(permissions, principalKind, visibility, obliterateEnabled)
-	if archived && principalKind != "lifecycle" {
+	if (archived || migrating) && principalKind != "lifecycle" && principalKind != "provisioner" {
 		resolved = archivedPermissionList(resolved)
 	}
 	return information, resolved, nil

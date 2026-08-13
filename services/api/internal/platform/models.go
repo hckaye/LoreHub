@@ -68,9 +68,32 @@ type Repository struct {
 	IssueCount         int64      `json:"issueCount"`
 	MergeRequestCount  int64      `json:"mergeRequestCount"`
 	ArchivedAt         *time.Time `json:"archivedAt"`
+	MigratingAt        *time.Time `json:"migratingAt,omitempty"`
 	LifecycleState     string     `json:"lifecycleState,omitempty"`
 	ProvisioningError  string     `json:"provisioningError,omitempty"`
 	UpdatedAt          time.Time  `json:"updatedAt"`
+}
+
+const (
+	RepositoryMigrationPending    = "pending"
+	RepositoryMigrationMirroring  = "mirroring"
+	RepositoryMigrationRepointing = "repointing"
+	RepositoryMigrationCompleted  = "completed"
+	RepositoryMigrationFailed     = "failed"
+)
+
+type RepositoryMigration struct {
+	ID           string     `json:"id"`
+	RepositoryID string     `json:"repositoryId"`
+	FromServerID string     `json:"fromServerId"`
+	ToServerID   string     `json:"toServerId"`
+	State        string     `json:"state"`
+	ErrorText    string     `json:"errorText,omitempty"`
+	CreatedBy    string     `json:"createdBy"`
+	CreatedAt    time.Time  `json:"createdAt"`
+	StartedAt    *time.Time `json:"startedAt,omitempty"`
+	CompletedAt  *time.Time `json:"completedAt,omitempty"`
+	UpdatedAt    time.Time  `json:"updatedAt"`
 }
 
 type Issue struct {

@@ -47,9 +47,9 @@ func (api *API) getMergeRequest(writer http.ResponseWriter, request *http.Reques
 		if !ok {
 			return
 		}
-		mr.ViewerCanUpdate = repo.ArchivedAt == nil && mr.State != "merged" &&
+		mr.ViewerCanUpdate = !repositoryReadOnly(repo) && mr.State != "merged" &&
 			(mr.AuthorID == actor.ID || access.AtLeast(PermTriage))
-		mr.ViewerCanReview = repo.ArchivedAt == nil && mr.AuthorID != actor.ID &&
+		mr.ViewerCanReview = !repositoryReadOnly(repo) && mr.AuthorID != actor.ID &&
 			access.AtLeast(PermRead) && mr.State == "open"
 	}
 	mr.Reactions = ensureReactions(mr.Reactions)

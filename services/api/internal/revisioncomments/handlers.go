@@ -132,8 +132,8 @@ func (api *API) mutation(
 	if !ok {
 		return platform.User{}, collab.Repository{}, "", false
 	}
-	if repository.ArchivedAt != nil {
-		writeProblem(writer, http.StatusForbidden, "repository_archived", "The repository is read-only")
+	if repository.ArchivedAt != nil || repository.MigratingAt != nil {
+		writeProblem(writer, http.StatusForbidden, "repository_read_only", "The repository is read-only")
 		return platform.User{}, collab.Repository{}, "", false
 	}
 	revision, err := validateRevision(request.PathValue("revision"))

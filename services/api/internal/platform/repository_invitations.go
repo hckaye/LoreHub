@@ -292,7 +292,8 @@ func repositoryInvitationAdminBoundary(
 		JOIN organizations o ON o.id = r.organization_id AND o.active
 		JOIN users actor ON actor.id = $3 AND actor.status = 'active'
 		WHERE o.slug = $1 AND r.slug = $2
-		  AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
+		  AND r.lifecycle_state = 'active'
+		  AND r.archived_at IS NULL AND r.migrating_at IS NULL
 		  AND (
 			EXISTS (
 				SELECT 1 FROM organization_memberships membership

@@ -37,7 +37,7 @@ func (store *Store) SetTeamRepositoryRole(
 		JOIN organizations o ON o.id = r.organization_id
 		WHERE t.organization_id = $1 AND t.slug = $2 AND t.active
 		  AND o.slug = $3 AND o.active AND r.slug = $4 AND r.lifecycle_state = 'active'
-		  AND r.archived_at IS NULL
+		  AND r.archived_at IS NULL AND r.migrating_at IS NULL
 	`, organizationID, teamSlug, owner, repositorySlug).Scan(&result.TeamID, &result.RepositoryID,
 		&result.Owner, &result.Repository)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -104,7 +104,7 @@ func (store *Store) DeleteTeamRepositoryRole(
 		JOIN organizations o ON o.id = r.organization_id
 		WHERE t.organization_id = $1 AND t.slug = $2 AND t.active
 		  AND o.slug = $3 AND o.active AND r.slug = $4 AND r.lifecycle_state = 'active'
-		  AND r.archived_at IS NULL
+		  AND r.archived_at IS NULL AND r.migrating_at IS NULL
 	`, organizationID, teamSlug, owner, repositorySlug).Scan(&teamID, &foundRepositoryID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotFound

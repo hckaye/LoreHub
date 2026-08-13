@@ -18,6 +18,7 @@ type RepositoryAccess struct {
 	DefaultBranch  string
 	Visibility     string
 	Archived       bool
+	Migrating      bool
 	CanRead        bool
 	CanWrite       bool
 }
@@ -36,7 +37,7 @@ func (store *Store) RepositoryForActions(
 	var repository RepositoryAccess
 	err := store.pool.QueryRow(ctx, `
 		SELECT r.id, r.organization_id, o.slug, r.slug, r.lore_url, r.default_branch, r.visibility,
-		       r.archived_at IS NOT NULL,
+		       r.archived_at IS NOT NULL, r.migrating_at IS NOT NULL,
 		       ($3 = '' AND r.visibility = 'public')
 		       OR ($3 <> '' AND EXISTS (
 		           SELECT 1
@@ -114,6 +115,7 @@ func (store *Store) RepositoryForActions(
 		&repository.DefaultBranch,
 		&repository.Visibility,
 		&repository.Archived,
+		&repository.Migrating,
 		&repository.CanRead,
 		&repository.CanWrite,
 	)
@@ -126,7 +128,7 @@ func (store *Store) RepositoryForActions(
 	if !repository.CanRead {
 		return RepositoryAccess{}, ErrActionNotFound
 	}
-	if repository.Archived {
+	if repository.Archived || repository.Migrating {
 		repository.CanWrite = false
 	}
 	return repository, nil

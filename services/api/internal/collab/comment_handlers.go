@@ -45,7 +45,7 @@ func (api *API) listIssueComments(writer http.ResponseWriter, request *http.Requ
 			return
 		}
 		for index := range result.Items {
-			result.Items[index].ViewerCanUpdate = repo.ArchivedAt == nil &&
+			result.Items[index].ViewerCanUpdate = !repositoryReadOnly(repo) &&
 				(result.Items[index].AuthorID == actor.ID || access.AtLeast(PermTriage))
 		}
 	}

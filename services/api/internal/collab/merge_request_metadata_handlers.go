@@ -32,7 +32,7 @@ func (api *API) getMergeRequestMetadata(writer http.ResponseWriter, request *htt
 		if !ok {
 			return
 		}
-		canManage := access.AtLeast(PermTriage)
+		canManage := !repositoryReadOnly(repository) && access.AtLeast(PermTriage)
 		metadata.ViewerCanManageLabels = canManage
 		metadata.ViewerCanManageAssignees = canManage
 		metadata.ViewerCanManageMilestone = canManage

@@ -103,7 +103,8 @@ func (store *Store) UploadSARIF(ctx context.Context, input SARIFUploadInput) (SA
 		FROM repositories repository
 		JOIN organizations organization ON organization.id = repository.organization_id
 		WHERE repository.id = $1 AND organization.slug = $2 AND repository.slug = $3
-		  AND repository.archived_at IS NULL AND repository.lifecycle_state = 'active'
+		  AND repository.archived_at IS NULL AND repository.migrating_at IS NULL
+		  AND repository.lifecycle_state = 'active'
 		  AND organization.active
 		FOR SHARE OF repository, organization
 	`, selector.RepositoryID, selector.Owner, selector.Repository).Scan(&organizationID)

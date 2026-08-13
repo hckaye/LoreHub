@@ -140,6 +140,7 @@ const repositoryDeletionOwnerQuery = `
 	 AND membership.user_id = actor_user.id AND membership.role = 'owner' AND membership.active
 	WHERE organization.slug = $1 AND repository.slug = $2
 	  AND repository.lifecycle_state = 'active'
+	  AND repository.migrating_at IS NULL
 	FOR UPDATE OF repository
 `
 

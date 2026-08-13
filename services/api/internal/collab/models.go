@@ -31,6 +31,7 @@ type Repository struct {
 	ViewerHasStarred  bool       `json:"viewerHasStarred"`
 	ViewerIsWatching  bool       `json:"viewerIsWatching"`
 	ArchivedAt        *time.Time `json:"archivedAt"`
+	MigratingAt       *time.Time `json:"migratingAt,omitempty"`
 	UpdatedAt         time.Time  `json:"updatedAt"`
 }
 

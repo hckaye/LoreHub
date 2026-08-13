@@ -52,7 +52,7 @@ func (api *API) listDiscussions(writer http.ResponseWriter, request *http.Reques
 	if !ok {
 		return
 	}
-	decoratePage(&page, actor, access, repository.ArchivedAt != nil)
+	decoratePage(&page, actor, access, repository.ArchivedAt != nil || repository.MigratingAt != nil)
 	writeJSON(writer, http.StatusOK, page)
 }
 
@@ -84,7 +84,7 @@ func (api *API) getDiscussion(writer http.ResponseWriter, request *http.Request)
 	if !ok {
 		return
 	}
-	decorateDiscussion(&discussion, actor, access, repository.ArchivedAt != nil)
+	decorateDiscussion(&discussion, actor, access, repository.ArchivedAt != nil || repository.MigratingAt != nil)
 	writeJSON(writer, http.StatusOK, discussion)
 }
 
@@ -108,7 +108,7 @@ func (api *API) createDiscussion(writer http.ResponseWriter, request *http.Reque
 	if !ok {
 		return
 	}
-	decorateDiscussion(&discussion, &actor, access, repository.ArchivedAt != nil)
+	decorateDiscussion(&discussion, &actor, access, repository.ArchivedAt != nil || repository.MigratingAt != nil)
 	writeJSON(writer, http.StatusCreated, discussion)
 }
 
@@ -148,7 +148,7 @@ func (api *API) updateDiscussion(writer http.ResponseWriter, request *http.Reque
 	if !ok {
 		return
 	}
-	decorateDiscussion(&discussion, &actor, access, repository.ArchivedAt != nil)
+	decorateDiscussion(&discussion, &actor, access, repository.ArchivedAt != nil || repository.MigratingAt != nil)
 	writeJSON(writer, http.StatusOK, discussion)
 }
 
@@ -208,7 +208,7 @@ func (api *API) setVote(writer http.ResponseWriter, request *http.Request, enabl
 	if !ok {
 		return
 	}
-	decorateSummary(&summary, &actor, access, repository.ArchivedAt != nil)
+	decorateSummary(&summary, &actor, access, repository.ArchivedAt != nil || repository.MigratingAt != nil)
 	writeJSON(writer, http.StatusOK, summary)
 }
 
@@ -274,7 +274,8 @@ func (api *API) decorateCommentResponse(
 		api.storeError(writer, request, "decorate discussion comment", err)
 		return false
 	}
-	decorateComment(comment, discussion.Summary, actor, access, repository.ArchivedAt != nil)
+	decorateComment(comment, discussion.Summary, actor, access,
+		repository.ArchivedAt != nil || repository.MigratingAt != nil)
 	return true
 }
 
@@ -318,7 +319,7 @@ func (api *API) setAnswer(writer http.ResponseWriter, request *http.Request, acc
 	if !ok {
 		return
 	}
-	decorateDiscussion(&discussion, &actor, access, repository.ArchivedAt != nil)
+	decorateDiscussion(&discussion, &actor, access, repository.ArchivedAt != nil || repository.MigratingAt != nil)
 	writeJSON(writer, http.StatusOK, discussion)
 }
 
