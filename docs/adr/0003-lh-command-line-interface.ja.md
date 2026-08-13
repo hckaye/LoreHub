@@ -2,7 +2,7 @@
 
 [English](0003-lh-command-line-interface.md) | [日本語](0003-lh-command-line-interface.ja.md)
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-13
 
 ## Context

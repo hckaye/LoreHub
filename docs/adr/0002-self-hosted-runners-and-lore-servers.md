@@ -2,7 +2,7 @@
 
 [English](0002-self-hosted-runners-and-lore-servers.md) | [日本語](0002-self-hosted-runners-and-lore-servers.ja.md)
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-13
 
 ## Context
