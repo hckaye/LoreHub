@@ -2,6 +2,7 @@
 
 import { Plus, Tags } from "lucide-react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 
 import type { Dictionary } from "@/i18n";
@@ -29,6 +30,8 @@ export function ReleaseList(props: ReleaseListProps) {
   const [showForm, setShowForm] = useState(false);
   const labels = props.dictionary.releasesPage;
   const canWrite = props.data.viewerCanWrite && props.session.status === "authenticated";
+  const searchParams = useSearchParams();
+  const basePath = repositoryPath(props.locale, props.owner, props.repository, "releases");
 
   function replaceRelease(updated: Release) {
     setReleases((current) => current.map((release) => (release.id === updated.id ? updated : release)));
@@ -39,7 +42,14 @@ export function ReleaseList(props: ReleaseListProps) {
     setShowForm(false);
   }
 
-  const basePath = repositoryPath(props.locale, props.owner, props.repository, "releases");
+  function pageHref(page: number): string {
+    const params = new URLSearchParams(searchParams?.toString() ?? "");
+    params.set("page", String(page));
+    return `${basePath}?${params.toString()}`;
+  }
+
+  const latestId = props.data.page === 1 ? releases[0]?.id : undefined;
+
   return (
     <div className={styles.page}>
       {canWrite && (
@@ -68,6 +78,7 @@ export function ReleaseList(props: ReleaseListProps) {
           {releases.map((release) => (
             <ReleaseCard
               dictionary={props.dictionary}
+              isLatest={release.id === latestId}
               key={release.id}
               locale={props.locale}
               onChange={replaceRelease}
@@ -82,9 +93,9 @@ export function ReleaseList(props: ReleaseListProps) {
       )}
       {(props.data.page > 1 || props.data.hasNext) && (
         <nav aria-label={labels.pagination} className={styles.pagination}>
-          {props.data.page > 1 && <Link href={`${basePath}?page=${props.data.page - 1}`}>{labels.previous}</Link>}
+          {props.data.page > 1 && <Link href={pageHref(props.data.page - 1)}>{labels.previous}</Link>}
           <span>{labels.page.replace("{page}", String(props.data.page))}</span>
-          {props.data.hasNext && <Link href={`${basePath}?page=${props.data.page + 1}`}>{labels.next}</Link>}
+          {props.data.hasNext && <Link href={pageHref(props.data.page + 1)}>{labels.next}</Link>}
         </nav>
       )}
     </div>

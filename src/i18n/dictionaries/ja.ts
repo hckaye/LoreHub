@@ -205,7 +205,7 @@ const ja = {
   },
   branchManagement: {
     title: "ブランチ",
-    description: "Loreのブランチ作成とアーカイブ、保護ルールの設定を行います。",
+    description: "Loreのブランチ作成と削除、保護ルールの設定を行います。",
     createTitle: "ブランチを作成",
     // prettier-ignore
     createDescription: concat(
@@ -228,24 +228,31 @@ const ja = {
       "このリポジトリについて、Loreから有効なブランチが",
       "返されませんでした。",
     ),
+    noMatches: "検索条件に一致するブランチはありません。",
+    searchPlaceholder: "ブランチを絞り込み",
+    columnBranch: "ブランチ",
+    columnUpdated: "更新",
+    columnRevision: "リビジョン",
+    columnActions: "操作",
     defaultBranch: "既定",
     protectedBranch: "保護対象",
     createdBy: "作成者: {creator}",
-    archive: "アーカイブ",
-    archiving: "アーカイブ中…",
-    archived: "Loreのブランチをアーカイブしました。",
+    delete: "削除",
+    deleting: "削除中…",
+    deleted: "Loreのブランチを削除しました。",
     // prettier-ignore
-    archiveConfirm: concat(
-      "{branch}をアーカイブしますか？ ",
+    deleteConfirm: concat(
+      "{branch}を削除しますか？ ",
       "有効なブランチの一覧から削除されます。",
     ),
+    deleteConfirmAction: "ブランチを削除",
     signInRequired: concat(
-      "ブランチを作成またはアーカイブするには、",
+      "ブランチを作成または削除するには、",
       "書き込み権限のあるアカウントでログインしてください。",
     ),
     // prettier-ignore
     writeRequired: concat(
-      "ブランチを作成またはアーカイブするには、",
+      "ブランチを作成または削除するには、",
       "リポジトリへの書き込み権限が必要です。",
     ),
     protectionTitle: "ブランチ保護ルール",

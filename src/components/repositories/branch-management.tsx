@@ -1,6 +1,6 @@
 "use client";
 
-import { GitBranch, LockKeyhole, ShieldCheck, Trash2 } from "lucide-react";
+import { GitBranch, LockKeyhole, Search, ShieldCheck, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -9,6 +9,7 @@ import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
 import type { AuthSession, Branch, BranchOverview, BranchRule, Repository } from "@/lib/api-types";
 import { deleteJson } from "@/lib/auth-client";
+import { shortRevision } from "@/lib/format";
 import { mutationFailureMessage } from "@/lib/mutation-messages";
 import { brandedAuthUrl, repositoryBranchesPath, repositoryPath } from "@/lib/routes";
 
@@ -31,7 +32,9 @@ export function BranchManagement(props: BranchManagementProps) {
   const [rules, setRules] = useState(props.initialRules);
   const [message, setMessage] = useState("");
   const [messageIsError, setMessageIsError] = useState(false);
-  const [archiving, setArchiving] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<Branch | null>(null);
+  const [query, setQuery] = useState("");
   const router = useRouter();
   const copy = props.dictionary.branchManagement;
   const readOnly = Boolean(props.repository.archivedAt);
@@ -40,27 +43,34 @@ export function BranchManagement(props: BranchManagementProps) {
     () => new Set(branches.filter((branch) => branchProtected(rules, branch.name)).map((branch) => branch.id)),
     [branches, rules],
   );
+  const filteredBranches = useMemo(() => {
+    const trimmed = query.trim().toLowerCase();
+    const sorted = [...branches].sort(sortBranches);
+    if (!trimmed) return sorted;
+    return sorted.filter((branch) => branch.name.toLowerCase().includes(trimmed));
+  }, [branches, query]);
 
   function showMessage(value: string, error: boolean) {
     setMessage(value);
     setMessageIsError(error);
   }
 
-  async function archive(branch: Branch) {
-    if (!authenticated || !window.confirm(copy.archiveConfirm.replace("{branch}", branch.name))) return;
-    setArchiving(branch.id);
+  async function confirmDelete(branch: Branch) {
+    if (!authenticated) return;
+    setDeleting(branch.id);
     showMessage("", false);
     const base = `/api/v1/repositories/${encodeURIComponent(props.repository.owner)}/${encodeURIComponent(
       props.repository.slug,
     )}/branches/${branch.name.split("/").map(encodeURIComponent).join("/")}`;
     const result = await deleteJson<null>(base, authenticated.csrfToken);
-    setArchiving(null);
+    setDeleting(null);
+    setPendingDelete(null);
     if (!result.ok) {
       showMessage(mutationFailureMessage(result.kind, props.dictionary), true);
       return;
     }
     setBranches((current) => current.filter((item) => item.id !== branch.id));
-    showMessage(copy.archived, false);
+    showMessage(copy.deleted, false);
     router.refresh();
   }
 
@@ -104,11 +114,38 @@ export function BranchManagement(props: BranchManagementProps) {
           </div>
           <strong>{branches.length}</strong>
         </div>
+        <div className={styles.toolbar}>
+          <label className={styles.searchField}>
+            <Search aria-hidden="true" size={14} />
+            <input
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={copy.searchPlaceholder}
+              type="search"
+              value={query}
+            />
+          </label>
+        </div>
         {branches.length === 0 ? (
           <p className={styles.muted}>{copy.noBranches}</p>
+        ) : filteredBranches.length === 0 ? (
+          <p className={styles.muted}>{copy.noMatches}</p>
         ) : (
-          <div className={styles.branchList}>
-            {branches.map((branch) => {
+          <div className={styles.branchTable} role="table">
+            <div className={styles.tableHead} role="row">
+              <span className={styles.columnBranch} role="columnheader">
+                {copy.columnBranch}
+              </span>
+              <span className={styles.columnUpdated} role="columnheader">
+                {copy.columnUpdated}
+              </span>
+              <span className={styles.columnRevision} role="columnheader">
+                {copy.columnRevision}
+              </span>
+              <span className={styles.columnActions} role="columnheader">
+                <span className="visually-hidden">{copy.columnActions}</span>
+              </span>
+            </div>
+            {filteredBranches.map((branch) => {
               const isDefault = branch.name === props.repository.defaultBranch;
               const isProtected = protectedBranches.has(branch.id);
               const codeURL = `${repositoryPath(
@@ -116,37 +153,68 @@ export function BranchManagement(props: BranchManagementProps) {
                 props.repository.owner,
                 props.repository.slug,
               )}?branch=${encodeURIComponent(branch.name)}`;
+              const canDeleteRow = Boolean(authenticated && props.overview.viewerCanPush && !isDefault && !isProtected);
+              const isConfirming = pendingDelete?.id === branch.id;
               return (
-                <article className={styles.branchRow} key={branch.id}>
-                  <GitBranch aria-hidden="true" size={18} />
-                  <div className={styles.branchDetails}>
-                    <div className={styles.branchName}>
-                      <Link href={codeURL}>{branch.name}</Link>
-                      {isDefault && <StatusBadge tone="accent">{copy.defaultBranch}</StatusBadge>}
-                      {isProtected && (
-                        <StatusBadge>
-                          <ShieldCheck aria-hidden="true" size={12} /> {copy.protectedBranch}
-                        </StatusBadge>
-                      )}
+                <div className={styles.branchRow} key={branch.id} role="row">
+                  <div className={styles.columnBranch} role="cell">
+                    <GitBranch aria-hidden="true" size={16} />
+                    <div className={styles.branchDetails}>
+                      <Link href={codeURL} className={styles.branchName}>
+                        {branch.name}
+                      </Link>
+                      <div className={styles.badges}>
+                        {isDefault && <StatusBadge tone="accent">{copy.defaultBranch}</StatusBadge>}
+                        {isProtected && (
+                          <StatusBadge>
+                            <ShieldCheck aria-hidden="true" size={12} /> {copy.protectedBranch}
+                          </StatusBadge>
+                        )}
+                        {branch.category && <span className={styles.category}>{branch.category}</span>}
+                      </div>
                     </div>
-                    <p>
-                      <code title={branch.latestRevision}>{shortRevision(branch.latestRevision)}</code>
-                      {branch.category && <span>{branch.category}</span>}
-                      {branch.creator && <span>{copy.createdBy.replace("{creator}", branch.creator)}</span>}
-                    </p>
                   </div>
-                  {authenticated && props.overview.viewerCanPush && !isDefault && !isProtected && (
-                    <button
-                      className={styles.dangerButton}
-                      disabled={archiving !== null}
-                      onClick={() => void archive(branch)}
-                      type="button"
-                    >
-                      <Trash2 aria-hidden="true" size={14} />
-                      {archiving === branch.id ? copy.archiving : copy.archive}
-                    </button>
-                  )}
-                </article>
+                  <div className={styles.columnUpdated} role="cell">
+                    {branch.creator && <span>{copy.createdBy.replace("{creator}", branch.creator)}</span>}
+                  </div>
+                  <div className={styles.columnRevision} role="cell">
+                    <code title={branch.latestRevision}>{shortRevision(branch.latestRevision)}</code>
+                  </div>
+                  <div className={styles.columnActions} role="cell">
+                    {canDeleteRow && !isConfirming && (
+                      <button
+                        className={styles.dangerButton}
+                        disabled={deleting !== null}
+                        onClick={() => setPendingDelete(branch)}
+                        type="button"
+                      >
+                        <Trash2 aria-hidden="true" size={14} />
+                        {copy.delete}
+                      </button>
+                    )}
+                    {isConfirming && (
+                      <div className={styles.inlineConfirm}>
+                        <span>{copy.deleteConfirm.replace("{branch}", branch.name)}</span>
+                        <button
+                          className={styles.dangerButton}
+                          disabled={deleting !== null}
+                          onClick={() => void confirmDelete(branch)}
+                          type="button"
+                        >
+                          {deleting === branch.id ? copy.deleting : copy.deleteConfirmAction}
+                        </button>
+                        <button
+                          className={styles.secondaryButton}
+                          disabled={deleting !== null}
+                          onClick={() => setPendingDelete(null)}
+                          type="button"
+                        >
+                          {props.dictionary.common.cancel}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
               );
             })}
           </div>
@@ -210,8 +278,4 @@ function globMatches(pattern: string, value: string): boolean {
 
 function sortBranches(left: Branch, right: Branch): number {
   return left.name.localeCompare(right.name);
-}
-
-function shortRevision(revision: string): string {
-  return revision.length > 12 ? revision.slice(0, 12) : revision;
 }
