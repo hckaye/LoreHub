@@ -31,6 +31,7 @@ import type {
   MergeRequestComment,
   MergeRequestMetadata,
   Milestone,
+  PendingReview,
   ReviewCandidate,
   ReviewRequestSummary,
   ReviewSummary,
@@ -70,6 +71,7 @@ type PullRequestDetailProps = {
   milestonesAvailable: boolean;
   reviewThreads: ReviewThread[];
   reviewThreadsAvailable: boolean;
+  pendingReview: PendingReview | null;
   session: AuthSession;
   dictionary: Dictionary;
   initialTab: PullRequestTab;
@@ -100,6 +102,7 @@ export function PullRequestDetail({
   milestonesAvailable,
   reviewThreads,
   reviewThreadsAvailable,
+  pendingReview,
   session,
   dictionary,
   initialTab,
@@ -217,6 +220,7 @@ export function PullRequestDetail({
             reviewRequests={reviewRequests}
             reviewThreads={reviewThreads}
             reviewThreadsAvailable={reviewThreadsAvailable}
+            pendingReview={pendingReview}
             session={session}
             tab={tab}
             locale={locale}
@@ -273,6 +277,7 @@ function PullRequestTab({
   events,
   reviewThreads,
   reviewThreadsAvailable,
+  pendingReview,
   commits,
   diff,
   dictionary,
@@ -294,6 +299,7 @@ function PullRequestTab({
   readinessUnavailableReason: "forbidden" | "unavailable";
   reviewThreads: ReviewThread[];
   reviewThreadsAvailable: boolean;
+  pendingReview: PendingReview | null;
   commits: RevisionHistoryEntry[];
   diff: LoreDiff | null;
   dictionary: Dictionary;
@@ -395,6 +401,7 @@ function PullRequestTab({
           owner={owner}
           repository={repository}
           locale={locale}
+          pendingReview={pendingReview}
           threads={reviewThreads}
         />
       ) : (

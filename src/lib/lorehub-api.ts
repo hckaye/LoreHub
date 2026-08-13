@@ -41,6 +41,7 @@ import type {
   NotificationPage,
   NotificationPreferences,
   OrganizationView,
+  PendingReview,
   PersonalAccessTokenPage,
   Project,
   ProjectList,
@@ -54,6 +55,7 @@ import type {
   ReviewRequestSummary,
   ReviewSummary,
   ReviewThread,
+  ReviewThreadList,
   RevisionHistoryEntry,
   RevisionStatusPage,
   SARIFUploadMetadata,
@@ -608,11 +610,12 @@ export async function getReviewThreads(
   owner: string,
   repository: string,
   number: number,
-): Promise<APIResult<ReviewThread[]>> {
-  const result = await request<{ threads: ReviewThread[] }>(
+): Promise<APIResult<ReviewThreadList>> {
+  const result = await request<{ threads: ReviewThread[]; pendingReview?: PendingReview }>(
     repositoryPath(owner, repository, `/merge-requests/${number}/review-threads`),
   );
-  return result.ok ? { ok: true, data: result.data.threads } : result;
+  if (!result.ok) return result;
+  return { ok: true, data: { threads: result.data.threads, pendingReview: result.data.pendingReview ?? null } };
 }
 
 export async function getMergeReadiness(

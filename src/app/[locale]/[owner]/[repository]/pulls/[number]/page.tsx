@@ -132,6 +132,7 @@ export default async function PullRequestDetailPage({ params, searchParams }: Pu
       reviews={resultData(reviews, null)}
       reviewCandidates={resultData(reviewCandidates, [])}
       reviewRequests={resultData(reviewRequests, null)}
+      pendingReview={reviewThreads.ok ? reviewThreads.data.pendingReview : null}
       reviewThreads={reviewThreadData(reviewThreads)}
       reviewThreadsAvailable={reviewThreads.ok}
       session={session}
@@ -160,7 +161,7 @@ function redirectInvalidCommentPage(
 }
 
 function reviewThreadData(result: Awaited<ReturnType<typeof getReviewThreads>>) {
-  return result.ok ? result.data : [];
+  return result.ok ? result.data.threads : [];
 }
 
 function assigneeItems(result: Awaited<ReturnType<typeof getAssignableUsers>>) {

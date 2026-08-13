@@ -2,6 +2,14 @@ import type { MergeStatusCheck } from "./commit-status-types";
 
 export type { MergeStatusCheck, RevisionStatus, RevisionStatusPage, RevisionStatusState } from "./commit-status-types";
 export type { Reaction, ReactionName } from "./reactions";
+export type {
+  PendingReview,
+  PendingReviewResult,
+  ReviewThread,
+  ReviewThreadComment,
+  ReviewThreadList,
+  ReviewVerdict,
+} from "./review-thread-types";
 
 export type Repository = {
   id: string;
@@ -470,38 +478,6 @@ export type MergeRequestComment = {
   editedAt: string | null;
   reactions?: import("./reactions").Reaction[];
   viewerCanUpdate: boolean;
-};
-
-export type ReviewThreadComment = {
-  id: string;
-  author: string;
-  body: string;
-  deleted: boolean;
-  version: number;
-  createdAt: string;
-  updatedAt: string;
-  editedAt?: string | null;
-  viewerCanUpdate: boolean;
-};
-
-export type ReviewThread = {
-  id: string;
-  path: string;
-  side: "left" | "right";
-  lineNumber: number;
-  lineContent: string;
-  baseRevision: string;
-  headRevision: string;
-  outdated: boolean;
-  resolved: boolean;
-  version: number;
-  createdBy: string;
-  resolvedBy?: string | null;
-  createdAt: string;
-  updatedAt: string;
-  resolvedAt?: string | null;
-  viewerCanResolve: boolean;
-  comments: ReviewThreadComment[];
 };
 
 export type ProjectSummary = {

@@ -1,25 +1,21 @@
 "use client";
 
 import { ChevronDown, FileCode2, Folder } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
-import type { LoreDiff, LoreDiffFile, ReviewThread, ReviewThreadComment } from "@/lib/api-types";
-import { abbreviateCount, formatDate, formatRelativeTime } from "@/lib/format";
+import type { LoreDiff, LoreDiffFile, PendingReview, ReviewThread } from "@/lib/api-types";
+import { abbreviateCount } from "@/lib/format";
+import { startPendingReview } from "@/lib/pending-review-client";
 import { parseReviewDiff, type ReviewDiffRow } from "@/lib/review-diff";
-import {
-  createReviewThread,
-  deleteReviewComment,
-  replyToReviewThread,
-  setReviewThreadResolved,
-  updateReviewComment,
-} from "@/lib/review-thread-client";
+import { createReviewThread } from "@/lib/review-thread-client";
 
 import { CopyButton } from "../ui/copy-button";
-import { UserAvatar } from "../ui/user-avatar";
-import { MarkdownContent } from "../wiki/markdown-content";
+import { PendingReviewBar } from "./pending-review-bar";
 import styles from "./review-diff-view.module.css";
+import { ReviewThreadCard } from "./review-thread-card";
 
 type Anchor = { path: string; side: "left" | "right"; lineNumber: number };
 
@@ -34,7 +30,10 @@ type ReviewDiffViewProps = {
   csrfToken: string;
   authenticated: boolean;
   dictionary: Dictionary;
+  pendingReview: PendingReview | null;
 };
+
+type ComposerMode = "single" | "review";
 
 type DiffFileStatus = "added" | "removed" | "modified";
 
@@ -62,7 +61,9 @@ type FileTreeFile = {
 type FileTreeNode = FileTreeDirectory | FileTreeFile;
 
 export function ReviewDiffView(props: ReviewDiffViewProps) {
+  const router = useRouter();
   const [threads, setThreads] = useState(props.threads);
+  const [pending, setPending] = useState(props.pendingReview);
   const [anchor, setAnchor] = useState<Anchor | null>(null);
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
@@ -70,10 +71,27 @@ export function ReviewDiffView(props: ReviewDiffViewProps) {
     props.available ? "" : props.dictionary.pullRequestDetail.reviewThreadsUnavailable,
   );
 
-  const submitThread = async () => {
+  // A batched comment needs a pending review to hang on, so the first one
+  // starts the review before the comment is posted.
+  const resolvePendingReview = async (mode: ComposerMode) => {
+    if (mode === "single") return null;
+    if (pending) return pending;
+    const started = await startPendingReview(props.owner, props.repository, props.number, props.csrfToken);
+    if (!started.ok) return null;
+    setPending(started.data);
+    return started.data;
+  };
+
+  const submitThread = async (mode: ComposerMode) => {
     if (!anchor || !body.trim() || !props.csrfToken) return;
     setBusy(true);
     setMessage("");
+    const review = await resolvePendingReview(mode);
+    if (mode === "review" && !review) {
+      setBusy(false);
+      setMessage(props.dictionary.pendingReviews.startFailed);
+      return;
+    }
     const result = await createReviewThread(
       props.owner,
       props.repository,
@@ -83,6 +101,7 @@ export function ReviewDiffView(props: ReviewDiffViewProps) {
         body,
         expectedBaseRevision: props.diff.source,
         expectedHeadRevision: props.diff.target,
+        pendingReviewId: review?.id,
       },
       props.csrfToken,
     );
@@ -92,8 +111,19 @@ export function ReviewDiffView(props: ReviewDiffViewProps) {
       return;
     }
     setThreads((current) => [...current, result.data]);
+    if (review) countPendingComment();
     setAnchor(null);
     setBody("");
+  };
+
+  const countPendingComment = () => {
+    setPending((current) => (current ? { ...current, commentCount: current.commentCount + 1 } : current));
+  };
+
+  const finishPendingReview = (submitted: boolean) => {
+    setPending(null);
+    setMessage(submitted ? props.dictionary.pendingReviews.submitted : "");
+    router.refresh();
   };
 
   const updateThread = (thread: ReviewThread) => {
@@ -118,6 +148,19 @@ export function ReviewDiffView(props: ReviewDiffViewProps) {
   return (
     <div className={styles.files}>
       <DiffStatHeader dictionary={props.dictionary} files={files.length} locale={props.locale} stats={stats} />
+      {pending && (
+        <PendingReviewBar
+          csrfToken={props.csrfToken}
+          dictionary={props.dictionary}
+          locale={props.locale}
+          number={props.number}
+          onDiscarded={() => finishPendingReview(false)}
+          onSubmitted={() => finishPendingReview(true)}
+          owner={props.owner}
+          pendingReview={pending}
+          repository={props.repository}
+        />
+      )}
       <div aria-live="polite" className={styles.message}>
         {message}
       </div>
@@ -134,8 +177,10 @@ export function ReviewDiffView(props: ReviewDiffViewProps) {
               key={entry.file.path}
               onCancel={() => setAnchor(null)}
               onChangeBody={setBody}
+              onPendingComment={countPendingComment}
               onSelect={setAnchor}
               onSubmit={submitThread}
+              pendingReviewId={pending?.id ?? null}
               props={props}
               threadBody={body}
               threads={threads}
@@ -146,7 +191,14 @@ export function ReviewDiffView(props: ReviewDiffViewProps) {
             <section className={styles.outdated}>
               <h3>{props.dictionary.pullRequestDetail.outdatedConversations}</h3>
               {outdated.map((thread) => (
-                <ReviewThreadCard key={thread.id} thread={thread} updateThread={updateThread} {...props} />
+                <ReviewThreadCard
+                  key={thread.id}
+                  onPendingComment={countPendingComment}
+                  pendingReviewId={pending?.id ?? null}
+                  thread={thread}
+                  updateThread={updateThread}
+                  {...props}
+                />
               ))}
             </section>
           )}
@@ -260,8 +312,10 @@ function ReviewDiffFileCard({
   entry,
   onCancel,
   onChangeBody,
+  onPendingComment,
   onSelect,
   onSubmit,
+  pendingReviewId,
   props,
   threadBody,
   threads,
@@ -274,8 +328,10 @@ function ReviewDiffFileCard({
   entry: DiffFile;
   onCancel: () => void;
   onChangeBody: (body: string) => void;
+  onPendingComment: () => void;
   onSelect: (anchor: Anchor) => void;
-  onSubmit: () => Promise<void>;
+  onSubmit: (mode: ComposerMode) => Promise<void>;
+  pendingReviewId: string | null;
   props: ReviewDiffViewProps;
   threadBody: string;
   threads: ReviewThread[];
@@ -360,9 +416,11 @@ function ReviewDiffFileCard({
                 key={row.key}
                 onCancel={onCancel}
                 onChangeBody={onChangeBody}
+                onPendingComment={onPendingComment}
                 onSelect={onSelect}
                 onSubmit={onSubmit}
                 path={entry.file.path}
+                pendingReviewId={pendingReviewId}
                 row={row}
                 threadBody={threadBody}
                 threads={threadsForRow(currentThreads, row)}
@@ -387,7 +445,9 @@ type DiffRowProps = ReviewDiffViewProps & {
   onSelect: (anchor: Anchor) => void;
   onCancel: () => void;
   onChangeBody: (body: string) => void;
-  onSubmit: () => Promise<void>;
+  onSubmit: (mode: ComposerMode) => Promise<void>;
+  onPendingComment: () => void;
+  pendingReviewId: string | null;
   updateThread: (thread: ReviewThread) => void;
 };
 
@@ -435,6 +495,7 @@ function DiffRow(props: DiffRowProps) {
               onCancel={props.onCancel}
               onChange={props.onChangeBody}
               onSubmit={props.onSubmit}
+              pendingReviewId={props.pendingReviewId}
             />
           </td>
         </tr>
@@ -442,7 +503,13 @@ function DiffRow(props: DiffRowProps) {
       {props.threads.map((thread) => (
         <tr key={thread.id}>
           <td className={styles.inline} colSpan={3}>
-            <ReviewThreadCard {...props} thread={thread} updateThread={props.updateThread} />
+            <ReviewThreadCard
+              {...props}
+              onPendingComment={props.onPendingComment}
+              pendingReviewId={props.pendingReviewId}
+              thread={thread}
+              updateThread={props.updateThread}
+            />
           </td>
         </tr>
       ))}
@@ -485,13 +552,15 @@ function ReviewComposer({
   onChange,
   onCancel,
   onSubmit,
+  pendingReviewId,
 }: {
   body: string;
   busy: boolean;
   dictionary: Dictionary;
   onChange: (value: string) => void;
   onCancel: () => void;
-  onSubmit: () => Promise<void>;
+  onSubmit: (mode: ComposerMode) => Promise<void>;
+  pendingReviewId: string | null;
 }) {
   return (
     <div className={styles.composer}>
@@ -506,200 +575,14 @@ function ReviewComposer({
         <button disabled={busy} onClick={onCancel} type="button">
           {dictionary.common.cancel}
         </button>
-        <button disabled={busy || !body.trim()} onClick={() => void onSubmit()} type="button">
-          {dictionary.pullRequestDetail.startThread}
+        <button disabled={busy || !body.trim()} onClick={() => void onSubmit("single")} type="button">
+          {dictionary.pendingReviews.addSingleComment}
+        </button>
+        <button disabled={busy || !body.trim()} onClick={() => void onSubmit("review")} type="button">
+          {pendingReviewId ? dictionary.pendingReviews.addReviewComment : dictionary.pendingReviews.startReview}
         </button>
       </div>
     </div>
-  );
-}
-
-type ThreadCardProps = ReviewDiffViewProps & {
-  thread: ReviewThread;
-  updateThread: (thread: ReviewThread) => void;
-};
-
-function ReviewThreadCard(props: ThreadCardProps) {
-  const [reply, setReply] = useState("");
-  const [editing, setEditing] = useState<string | null>(null);
-  const [editBody, setEditBody] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
-
-  const run = async (operation: () => Promise<boolean>) => {
-    setBusy(true);
-    setMessage("");
-    const ok = await operation();
-    setBusy(false);
-    if (!ok) setMessage(props.dictionary.pullRequestDetail.reviewMutationFailed);
-  };
-
-  const submitReply = () =>
-    run(async () => {
-      const result = await replyToReviewThread(
-        props.owner,
-        props.repository,
-        props.number,
-        props.thread.id,
-        reply,
-        props.csrfToken,
-      );
-      if (!result.ok) return false;
-      props.updateThread({ ...props.thread, comments: [...props.thread.comments, result.data] });
-      setReply("");
-      return true;
-    });
-
-  const toggleResolved = () =>
-    run(async () => {
-      const result = await setReviewThreadResolved(
-        props.owner,
-        props.repository,
-        props.number,
-        props.thread.id,
-        !props.thread.resolved,
-        props.thread.version,
-        props.csrfToken,
-      );
-      if (!result.ok) return false;
-      props.updateThread({ ...result.data, comments: props.thread.comments });
-      return true;
-    });
-
-  const saveComment = (comment: ReviewThreadComment) =>
-    run(async () => {
-      const result = await updateReviewComment(
-        props.owner,
-        props.repository,
-        props.number,
-        props.thread.id,
-        comment.id,
-        editBody,
-        comment.version,
-        props.csrfToken,
-      );
-      if (!result.ok) return false;
-      props.updateThread({
-        ...props.thread,
-        comments: props.thread.comments.map((item) => (item.id === comment.id ? result.data : item)),
-      });
-      setEditing(null);
-      return true;
-    });
-
-  const removeComment = (comment: ReviewThreadComment) =>
-    run(async () => {
-      if (!window.confirm(props.dictionary.pullRequestDetail.deleteCommentConfirm)) return true;
-      const result = await deleteReviewComment(
-        props.owner,
-        props.repository,
-        props.number,
-        props.thread.id,
-        comment.id,
-        comment.version,
-        props.csrfToken,
-      );
-      if (!result.ok) return false;
-      props.updateThread({
-        ...props.thread,
-        comments: props.thread.comments.map((item) =>
-          item.id === comment.id ? { ...item, body: "", deleted: true, version: item.version + 1 } : item,
-        ),
-      });
-      return true;
-    });
-
-  return (
-    <article className={styles.thread} data-resolved={props.thread.resolved}>
-      <header>
-        <UserAvatar name={props.thread.createdBy} size={24} />
-        <strong>{props.thread.createdBy}</strong>
-        <span>
-          {props.thread.path}:{props.thread.lineNumber}
-        </span>
-        <time dateTime={props.thread.createdAt} title={formatDate(props.thread.createdAt, props.locale)}>
-          {formatRelativeTime(props.thread.createdAt, props.locale)}
-        </time>
-        {props.thread.outdated && <span>{props.dictionary.pullRequestDetail.outdatedConversation}</span>}
-        {props.thread.resolved && <span>{props.dictionary.pullRequestDetail.resolved}</span>}
-      </header>
-      <code className={styles.anchorLine}>{props.thread.lineContent || " "}</code>
-      {props.thread.comments.map((comment) => (
-        <div className={styles.comment} key={comment.id}>
-          <div className={styles.commentHeader}>
-            <UserAvatar name={comment.author} size={22} />
-            <strong>{comment.author}</strong>
-            <time dateTime={comment.createdAt} title={formatDate(comment.createdAt, props.locale)}>
-              {formatRelativeTime(comment.createdAt, props.locale)}
-            </time>
-          </div>
-          {editing === comment.id ? (
-            <textarea onChange={(event) => setEditBody(event.target.value)} rows={3} value={editBody} />
-          ) : (
-            <div className={styles.commentBody}>
-              <MarkdownContent
-                body={comment.deleted ? props.dictionary.pullRequestDetail.deletedComment : comment.body}
-              />
-            </div>
-          )}
-          {comment.viewerCanUpdate && !comment.deleted && (
-            <div className={styles.textActions}>
-              {editing === comment.id ? (
-                <>
-                  <button disabled={busy} onClick={() => setEditing(null)} type="button">
-                    {props.dictionary.common.cancel}
-                  </button>
-                  <button disabled={busy || !editBody.trim()} onClick={() => void saveComment(comment)} type="button">
-                    {props.dictionary.pullRequestDetail.saveComment}
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    onClick={() => {
-                      setEditing(comment.id);
-                      setEditBody(comment.body);
-                    }}
-                    type="button"
-                  >
-                    {props.dictionary.pullRequestDetail.editComment}
-                  </button>
-                  <button disabled={busy} onClick={() => void removeComment(comment)} type="button">
-                    {props.dictionary.pullRequestDetail.deleteComment}
-                  </button>
-                </>
-              )}
-            </div>
-          )}
-        </div>
-      ))}
-      {props.authenticated && (
-        <div className={styles.reply}>
-          <textarea
-            aria-label={props.dictionary.pullRequestDetail.replyPlaceholder}
-            onChange={(event) => setReply(event.target.value)}
-            placeholder={props.dictionary.pullRequestDetail.replyPlaceholder}
-            rows={3}
-            value={reply}
-          />
-          <div className={styles.actions}>
-            {props.thread.viewerCanResolve && (
-              <button disabled={busy} onClick={() => void toggleResolved()} type="button">
-                {props.thread.resolved
-                  ? props.dictionary.pullRequestDetail.reopenConversation
-                  : props.dictionary.pullRequestDetail.resolveConversation}
-              </button>
-            )}
-            <button disabled={busy || !reply.trim()} onClick={() => void submitReply()} type="button">
-              {props.dictionary.pullRequestDetail.reply}
-            </button>
-          </div>
-        </div>
-      )}
-      <span aria-live="polite" className={styles.message}>
-        {message}
-      </span>
-    </article>
   );
 }
 
