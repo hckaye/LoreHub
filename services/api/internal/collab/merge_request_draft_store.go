@@ -90,6 +90,14 @@ func (s *store) SetMergeRequestDraft(
 	if err := insertOutbox(ctx, tx, "merge_request.updated", ref.ID+":"+uuidArg(), payload); err != nil {
 		return MergeRequest{}, false, err
 	}
+	if !isDraft {
+		if err := RecordWorkItemEvent(ctx, tx, WorkItemEventRecord{
+			RepositoryID: repositoryID, ItemKind: WorkItemMergeRequest,
+			ItemID: ref.ID, ActorID: actor.ID, Kind: EventDraftReady,
+		}); err != nil {
+			return MergeRequest{}, false, err
+		}
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return MergeRequest{}, false, fmt.Errorf("commit pull request draft update: %w", err)
 	}

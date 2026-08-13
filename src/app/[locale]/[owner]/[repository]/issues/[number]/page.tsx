@@ -15,6 +15,7 @@ import {
   getAssignableUsers,
   getIssue,
   getIssueComments,
+  getIssueEvents,
   getLabels,
   getMilestones,
   getPublicRepository,
@@ -44,8 +45,9 @@ export default async function IssueDetailPage({ params, searchParams }: IssueDet
   if (!issue.ok && issue.reason === "not-found") notFound();
   if (!issue.ok) return unavailable(dictionary);
 
-  const [comments, labels, milestones, assignees, session] = await Promise.all([
+  const [comments, events, labels, milestones, assignees, session] = await Promise.all([
     getIssueComments(owner, repository, number, commentPage),
+    getIssueEvents(owner, repository, number),
     getLabels(owner, repository),
     getMilestones(owner, repository, "all", 1, 100),
     getAssignableUsers(owner, repository),
@@ -56,6 +58,7 @@ export default async function IssueDetailPage({ params, searchParams }: IssueDet
     <IssueDetail
       comments={comments.ok ? comments.data : null}
       dictionary={dictionary}
+      events={events.ok ? events.data : null}
       issue={issue.data}
       labels={labels.ok ? labels.data : []}
       labelsAvailable={labels.ok}

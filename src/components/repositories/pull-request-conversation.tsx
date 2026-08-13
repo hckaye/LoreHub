@@ -25,6 +25,7 @@ import {
 import { abbreviateCount, formatDate, formatRelativeTime } from "@/lib/format";
 import { mutationFailureMessage } from "@/lib/mutation-messages";
 import { repositoryPath } from "@/lib/routes";
+import { mergeConversationTimeline, type WorkItemEvent } from "@/lib/work-item-events";
 
 import { FlashNotice } from "../ui/flash-notice";
 import { UserAvatar } from "../ui/user-avatar";
@@ -32,10 +33,12 @@ import { MarkdownContent } from "../wiki/markdown-content";
 import { ConversationPagination } from "./conversation-pagination";
 import styles from "./pull-request-conversation.module.css";
 import { PullRequestReviewers } from "./pull-request-reviewers";
+import { WorkItemEventRow } from "./work-item-event-row";
 
 type PullRequestConversationProps = {
   comments: CommentPage<MergeRequestComment> | null;
   dictionary: Dictionary;
+  events: WorkItemEvent[] | null;
   locale: Locale;
   mergeRequest: MergeRequest;
   owner: string;
@@ -194,20 +197,22 @@ export function PullRequestConversation(props: PullRequestConversationProps) {
         summary={props.reviewRequests}
       />
       <div className={styles.timeline}>
-        {!props.comments ? (
-          <p className={styles.muted}>{labels.commentsUnavailable}</p>
-        ) : (
-          props.comments.items.map((comment) => (
+        {!props.comments && <p className={styles.muted}>{labels.commentsUnavailable}</p>}
+        {!props.events && <p className={styles.muted}>{props.dictionary.workItemEvents.unavailable}</p>}
+        {mergeConversationTimeline(props.comments, props.events ?? []).map((entry) =>
+          entry.kind === "comment" ? (
             <Comment
-              busy={busy === comment.id}
-              comment={comment}
+              busy={busy === entry.comment.id}
+              comment={entry.comment}
               dictionary={props.dictionary}
-              key={comment.id}
+              key={entry.id}
               locale={props.locale}
               onDelete={deleteComment}
               onUpdate={updateComment}
             />
-          ))
+          ) : (
+            <WorkItemEventRow dictionary={props.dictionary} event={entry.event} key={entry.id} locale={props.locale} />
+          ),
         )}
       </div>
       {props.comments && (

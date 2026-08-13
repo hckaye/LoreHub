@@ -27,10 +27,12 @@ import { search } from "./search";
 import { settingsNavigation } from "./settings-navigation";
 import { webhooks } from "./webhooks";
 import { wiki } from "./wiki";
+import { workItemEvents } from "./work-item-events";
 import { workItemLists } from "./work-item-lists";
 
 const en = {
   commentPagination: commentPagination.en,
+  workItemEvents: workItemEvents.en,
   workItemLists: workItemLists.en,
   codeBrowser: codeBrowser.en,
   commitHistory: commitHistory.en,

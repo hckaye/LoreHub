@@ -19,6 +19,7 @@ import { assignIssueUser, removeIssueUser } from "@/lib/issue-assignee-client";
 import { assignIssueMilestone, removeIssueMilestone } from "@/lib/milestone-client";
 import { mutationFailureMessage } from "@/lib/mutation-messages";
 import { localizedPath, repositoryPath } from "@/lib/routes";
+import type { WorkItemEvent } from "@/lib/work-item-events";
 
 import { IssueConversation } from "./issue-conversation";
 import styles from "./issue-detail.module.css";
@@ -28,6 +29,7 @@ import { RelativeTime } from "./issue-timeline-item";
 type IssueDetailProps = {
   comments: CommentPage<IssueComment> | null;
   dictionary: Dictionary;
+  events: WorkItemEvent[] | null;
   issue: Issue;
   labels: Label[];
   labelsAvailable: boolean;
@@ -226,6 +228,7 @@ export function IssueDetail(props: IssueDetailProps) {
           comments={comments}
           basePath={returnTo}
           dictionary={dictionary}
+          events={props.events}
           issue={issue}
           locale={props.locale}
           onDeleteComment={deleteComment}
