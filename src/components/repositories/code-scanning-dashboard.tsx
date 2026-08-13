@@ -4,6 +4,7 @@ import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
 import type { CodeScanningAlert, CodeScanningSeverity, SARIFUploadMetadata } from "@/lib/api-types";
 import { codeScanningAlertRows, type CodeScanningAlertRow } from "@/lib/code-scanning";
+import { formatTimestamp, shortRevision } from "@/lib/format";
 
 import styles from "./code-scanning-dashboard.module.css";
 import { RepositoryPanel } from "./repository-section";
@@ -99,7 +100,7 @@ function CodeScanningAlertItem({
           <span>
             <Clock3 aria-hidden="true" size={14} />
             <span className={styles.detailLabel}>{dictionary.securityPage.uploadedAt}</span>
-            <time dateTime={uploadedAt}>{formatUploadTime(uploadedAt, locale)}</time>
+            <time dateTime={uploadedAt}>{formatTimestamp(uploadedAt, locale)}</time>
           </span>
         </div>
       </article>
@@ -113,19 +114,4 @@ function severityLabel(level: CodeScanningSeverity, dictionary: Dictionary): str
 
 function locationLabel(alert: CodeScanningAlert): string {
   return alert.startLine ? `${alert.path}:${alert.startLine}` : alert.path;
-}
-
-function shortRevision(revision: string): string {
-  return revision.length > 12 ? revision.slice(0, 12) : revision;
-}
-
-function formatUploadTime(value: string, locale: Locale): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.valueOf())) {
-    return value;
-  }
-  return new Intl.DateTimeFormat(locale === "ja" ? "ja-JP" : "en-US", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(date);
 }

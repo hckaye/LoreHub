@@ -5,6 +5,7 @@ import { RepositoryPanel, RepositorySection } from "@/components/repositories/re
 import { EmptyState } from "@/components/ui/empty-state";
 import { getDictionary } from "@/i18n";
 import { isLocale } from "@/i18n/config";
+import { formatDate, shortRevision } from "@/lib/format";
 import { getRepositoryTags } from "@/lib/lorehub-api";
 import { repositoryPath } from "@/lib/routes";
 
@@ -92,12 +93,4 @@ export default async function TagsPage({ params }: TagsPageProps) {
       </RepositoryPanel>
     </RepositorySection>
   );
-}
-
-function shortRevision(revision: string): string {
-  return revision.length > 12 ? revision.slice(0, 12) : revision;
-}
-
-function formatDate(value: string, locale: "en" | "ja"): string {
-  return new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(new Date(value));
 }

@@ -7,7 +7,6 @@ export const revisionHistoryPageSize = 35;
 
 const maxHistoryLimit = 500;
 const detailBatchSize = 6;
-const shortRevisionLength = 7;
 
 export type RevisionRow = RevisionHistoryEntry & {
   author?: string;
@@ -42,10 +41,6 @@ export function revisionHistoryPageHref(basePath: string, query: RevisionHistory
   if (page > 1) params.set("page", String(page));
   const search = params.toString();
   return search ? `${basePath}?${search}` : basePath;
-}
-
-export function shortRevision(revision: string): string {
-  return revision.slice(0, shortRevisionLength);
 }
 
 export function revisionSubject(message?: string): string {

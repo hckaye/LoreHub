@@ -19,6 +19,7 @@ import { useMemo, useState, useSyncExternalStore } from "react";
 
 import type { Dictionary } from "@/i18n";
 import type { Branch, LoreRevision, LoreTree, RepositoryTag } from "@/lib/api-types";
+import { formatRelativeTime, shortRevision } from "@/lib/format";
 import { repositoryBranchesPath, repositoryPath, repositoryTagsPath } from "@/lib/routes";
 
 import { BranchSelector, type BranchSelection } from "./branch-selector";
@@ -339,7 +340,9 @@ function LatestCommitBar({
       </div>
       <div className={styles.commitMeta}>
         <time dateTime={latestCommit?.createdAt}>
-          {formatRelativeTime(latestCommit?.createdAt, locale, dictionary.codeBrowser.unknownDate)}
+          {latestCommit?.createdAt
+            ? formatRelativeTime(latestCommit.createdAt, locale)
+            : dictionary.codeBrowser.unknownDate}
         </time>
         <Link aria-label={`${dictionary.codeBrowser.history}: ${shortRevision(revision)}`} href={commitsPath}>
           <code title={revision}>{shortRevision(revision)}</code>
@@ -464,40 +467,6 @@ function fileHref(
   const query = new URLSearchParams({ revision, path });
   if (!currentRevision) query.set("branch", branch);
   return `${basePath}/blob?${query.toString()}`;
-}
-
-function shortRevision(revision: string): string {
-  return revision.length > 12 ? revision.slice(0, 12) : revision;
-}
-
-function formatRelativeTime(value: string | undefined, locale: "en" | "ja", fallback: string): string {
-  if (!value) return fallback;
-  const timestamp = new Date(value).getTime();
-  if (!Number.isFinite(timestamp)) return fallback;
-  const difference = timestamp - Date.now();
-  const absoluteDifference = Math.abs(difference);
-  if (absoluteDifference < 60_000) {
-    return new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(Math.round(difference / 1_000), "second");
-  }
-  if (absoluteDifference < 3_600_000) {
-    return new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(Math.round(difference / 60_000), "minute");
-  }
-  if (absoluteDifference < 86_400_000) {
-    return new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(Math.round(difference / 3_600_000), "hour");
-  }
-  if (absoluteDifference < 2_592_000_000) {
-    return new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(Math.round(difference / 86_400_000), "day");
-  }
-  if (absoluteDifference < 31_104_000_000) {
-    return new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(
-      Math.round(difference / 2_592_000_000),
-      "month",
-    );
-  }
-  return new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(
-    Math.round(difference / 31_104_000_000),
-    "year",
-  );
 }
 
 function EntryIcon({ kind }: { kind: "directory" | "file" | "link" }) {

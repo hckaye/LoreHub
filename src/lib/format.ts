@@ -1,5 +1,7 @@
 import type { Locale } from "@/i18n/config";
 
+const shortRevisionLength = 7;
+
 const RELATIVE_UNITS: Array<{ limit: number; divisor: number; unit: Intl.RelativeTimeFormatUnit }> = [
   { limit: 60, divisor: 1, unit: "second" },
   { limit: 3600, divisor: 60, unit: "minute" },
@@ -33,12 +35,20 @@ export function formatDate(value: string | Date, locale: Locale): string {
   return new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(date);
 }
 
+export function formatTimestamp(value: string | Date, locale: Locale): string {
+  const date = typeof value === "string" ? new Date(value) : value;
+  if (Number.isNaN(date.getTime())) {
+    return typeof value === "string" ? value : "";
+  }
+  return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(date);
+}
+
 export function abbreviateCount(count: number, locale: Locale): string {
   return new Intl.NumberFormat(locale, { notation: "compact", maximumFractionDigits: 1 }).format(count);
 }
 
 export function shortRevision(revision: string): string {
-  return revision.slice(0, 12);
+  return revision.slice(0, shortRevisionLength);
 }
 
 export function normalizeLabelColor(color: string): string {
