@@ -158,7 +158,7 @@ func authorizeExecutionContext(
 			  ON repository.id = service_grant.repository_id
 			 AND repository.organization_id = $2
 			 AND repository.lifecycle_state = 'active'
-			 AND repository.archived_at IS NULL
+			 AND repository.archived_at IS NULL AND repository.migrating_at IS NULL
 			JOIN organizations organization
 			  ON organization.id = repository.organization_id
 			 AND organization.active

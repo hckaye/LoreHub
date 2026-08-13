@@ -230,6 +230,10 @@ func (api *API) mutationContext(
 		api.storeError(writer, request, "lookup repository", err)
 		return platform.User{}, collab.Repository{}, collab.Access{}, false
 	}
+	if repository.ArchivedAt != nil || repository.MigratingAt != nil {
+		problem(writer, http.StatusForbidden, "repository_read_only", "The repository is read-only")
+		return platform.User{}, collab.Repository{}, collab.Access{}, false
+	}
 	access, err := api.store.RepositoryPermission(request.Context(), actor, repository)
 	if err != nil {
 		api.storeError(writer, request, "check branch permission", err)

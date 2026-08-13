@@ -279,6 +279,7 @@ func lockIssueForAssignment(
 		JOIN repositories repository
 		  ON repository.id = issue.repository_id
 		 AND repository.archived_at IS NULL
+		 AND repository.migrating_at IS NULL
 		 AND repository.lifecycle_state = 'active'
 		JOIN organizations organization
 		  ON organization.id = repository.organization_id
@@ -308,6 +309,7 @@ func assignableUser(
 		JOIN repositories repository
 		  ON repository.id = $1
 		 AND repository.archived_at IS NULL
+		 AND repository.migrating_at IS NULL
 		 AND repository.lifecycle_state = 'active'
 		JOIN organizations organization
 		  ON organization.id = repository.organization_id AND organization.active

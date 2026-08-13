@@ -385,7 +385,8 @@ func findReviewRequestContext(
 		FROM merge_requests request
 		JOIN repositories repository
 		  ON repository.id = request.repository_id
-		 AND repository.lifecycle_state = 'active' AND repository.archived_at IS NULL
+		 AND repository.lifecycle_state = 'active'
+		 AND repository.archived_at IS NULL AND repository.migrating_at IS NULL
 		JOIN organizations organization
 		  ON organization.id = repository.organization_id AND organization.active
 		WHERE request.repository_id = $1 AND request.number = $2 AND request.state = 'open'`
@@ -499,7 +500,7 @@ const userReviewCandidateSQL = `
 	FROM users account
 	JOIN repositories repository
 	  ON repository.id = $1 AND repository.lifecycle_state = 'active'
-	 AND repository.archived_at IS NULL
+	 AND repository.archived_at IS NULL AND repository.migrating_at IS NULL
 	JOIN organizations organization
 	  ON organization.id = repository.organization_id AND organization.active
 	WHERE account.status = 'active' AND (
@@ -554,7 +555,8 @@ const teamReviewCandidateSQL = `
 	FROM teams team
 	JOIN repositories repository
 	  ON repository.id = $1 AND repository.organization_id = team.organization_id
-	 AND repository.lifecycle_state = 'active' AND repository.archived_at IS NULL
+	 AND repository.lifecycle_state = 'active'
+	 AND repository.archived_at IS NULL AND repository.migrating_at IS NULL
 	JOIN organizations organization
 	  ON organization.id = team.organization_id AND organization.active
 	JOIN team_repository_roles role

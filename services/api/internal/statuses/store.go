@@ -60,7 +60,8 @@ func statusWriteAllowed(
 			  ON organization_member.organization_id = organization.id
 			 AND organization_member.user_id = actor.id AND organization_member.active
 			WHERE repository.id = $1 AND repository.organization_id = $2
-			  AND repository.lifecycle_state = 'active' AND repository.archived_at IS NULL
+			  AND repository.lifecycle_state = 'active'
+			  AND repository.archived_at IS NULL AND repository.migrating_at IS NULL
 			  AND (
 			    organization_member.role = 'owner'
 			    OR EXISTS (

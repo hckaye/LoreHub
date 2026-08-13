@@ -129,3 +129,30 @@ upgrade.
 
 Importing a repository also requires a registered server ID. The imported `lores://` URL must have the same authority
 as the registered server.
+
+## Migration
+
+An instance administrator can move one repository to another registered Lore Server. The operation is offline: the
+repository becomes read-only until the copy and pointer update finish.
+
+Start a migration by sending the target server ID:
+
+```bash
+curl -X POST https://lorehub.example/api/v1/admin/repositories/acme/lore/migrate \
+  -H 'Content-Type: application/json' \
+  -d '{"targetServerId":"<registered-server-id>"}'
+```
+
+The API returns `202 Accepted` and a migration row. Use the following endpoint to inspect state and failure details:
+
+```text
+GET /api/v1/admin/repositories/{owner}/{repo}/migrations
+```
+
+The first implementation creates a fresh partition with the same Lore repository ID on the target server. It clones
+the source, then pushes each active, non-empty branch before updating `lore_url` and `lore_server_id` together. History
+reachable from those branch tips is copied. Archived branches, branch metadata, and other Lore server-local metadata
+are not guaranteed to be copied.
+
+If the copy fails, LoreHub keeps the source assignment, lifts read-only, and records the error. A target partition may
+be left behind. Operators must inspect and remove that orphan manually after confirming that the source is usable.

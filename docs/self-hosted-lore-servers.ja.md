@@ -125,3 +125,29 @@ Organizationに登録したserverは、`hosted_lore_server` entitlementがなく
 
 リポジトリのimportにも登録済みserver IDが必要です。importする`lores://` URLのauthorityは、登録済みserverのauthorityと
 一致しなければなりません。
+
+## Migration
+
+instance administratorは、1つのリポジトリを別の登録済みLore Serverへ移せます。移行はofflineで行い、copyと参照先の更新が
+終わるまでリポジトリをread-onlyにします。
+
+移行先server IDを指定して開始します。
+
+```bash
+curl -X POST https://lorehub.example/api/v1/admin/repositories/acme/lore/migrate \
+  -H 'Content-Type: application/json' \
+  -d '{"targetServerId":"<registered-server-id>"}'
+```
+
+APIは `202 Accepted` と移行行を返します。状態と失敗内容は次のendpointで確認できます。
+
+```text
+GET /api/v1/admin/repositories/{owner}/{repo}/migrations
+```
+
+初回実装は、同じLore repository IDを持つ新しいpartitionを移行先serverに作ります。sourceをcloneし、activeで空でない各branchを
+pushしてから、`lore_url`と`lore_server_id`を同時に更新します。branchの先端から到達できるhistoryはコピーしますが、archived
+branch、branch metadata、その他のLore server固有metadataのコピーは保証しません。
+
+copyに失敗した場合、LoreHubはsourceの割り当てを保ったままread-onlyを解除し、エラーを記録します。移行先partitionが残ることが
+あります。sourceが利用できることを確認した後、運用者が孤立したpartitionを調べて手動で削除してください。

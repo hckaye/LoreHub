@@ -80,7 +80,8 @@ func (store *Store) RepositoryPartition(ctx context.Context, repositoryID string
 		SELECT r.lore_repository_id
 		FROM repositories r
 		JOIN organizations o ON o.id = r.organization_id AND o.active
-		WHERE r.id = $1 AND r.archived_at IS NULL AND r.lifecycle_state = 'active'
+		WHERE r.id = $1 AND r.archived_at IS NULL AND r.migrating_at IS NULL
+		  AND r.lifecycle_state = 'active'
 	`, repositoryID).Scan(&partition)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", errors.New("repository is not active for Actions polling")

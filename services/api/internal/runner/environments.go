@@ -456,7 +456,7 @@ func (store *Store) ReviewDeployment(
 	deploymentID string,
 	approved bool,
 ) (DeploymentRecord, error) {
-	if access.Archived {
+	if access.Archived || access.Migrating {
 		return DeploymentRecord{}, ErrActionForbidden
 	}
 	actor, err := uuid.Parse(actorID)
@@ -714,7 +714,8 @@ func authorizeEnvironmentAdmin(
 			  ON organization.id = repository.organization_id AND organization.active
 			JOIN users actor ON actor.id = $3 AND actor.status = 'active'
 			WHERE repository.id = $1 AND repository.organization_id = $2
-			  AND repository.lifecycle_state = 'active' AND repository.archived_at IS NULL
+			  AND repository.lifecycle_state = 'active'
+			  AND repository.archived_at IS NULL AND repository.migrating_at IS NULL
 			  AND (
 			    EXISTS (
 			      SELECT 1 FROM organization_memberships membership

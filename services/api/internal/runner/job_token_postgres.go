@@ -288,7 +288,8 @@ func (service *PostgresJobTokenService) authorize(
 			  AND run.cancel_requested = false
 			  AND job.lease_owner IS NOT NULL AND btrim(job.lease_owner) <> ''
 			  AND job.lease_expires_at > now()
-			  AND repository.archived_at IS NULL AND repository.lifecycle_state = 'active'
+			  AND repository.archived_at IS NULL AND repository.migrating_at IS NULL
+			  AND repository.lifecycle_state = 'active'
 			  AND organization.active AND repository_grant.active
 			  AND 'read'::varchar = ANY(repository_grant.permissions)
 		)

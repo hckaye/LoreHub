@@ -111,7 +111,8 @@ func lockRequest(
 		       )
 		FROM merge_requests request
 		JOIN repositories repository ON repository.id = request.repository_id
-		  AND repository.organization_id = $2 AND repository.archived_at IS NULL
+		  AND repository.organization_id = $2
+		  AND repository.archived_at IS NULL AND repository.migrating_at IS NULL
 		  AND repository.lifecycle_state = 'active'
 		JOIN organizations organization ON organization.id = repository.organization_id AND organization.active
 		JOIN users actor ON actor.id = $4 AND actor.status = 'active'

@@ -19,9 +19,11 @@ func (store *Store) BeginRepositoryMigration(
 	targetServerID string,
 ) (RepositoryMigration, Repository, LoreServer, error) {
 	targetServerID = strings.TrimSpace(targetServerID)
-	if _, err := uuid.Parse(targetServerID); err != nil {
+	parsedTargetServerID, err := uuid.Parse(targetServerID)
+	if err != nil {
 		return RepositoryMigration{}, Repository{}, LoreServer{}, ErrInvalidInput
 	}
+	targetServerID = parsedTargetServerID.String()
 	transaction, err := store.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
 	if err != nil {
 		return RepositoryMigration{}, Repository{}, LoreServer{},
@@ -65,7 +67,6 @@ func (store *Store) BeginRepositoryMigration(
 		State:        RepositoryMigrationPending,
 		CreatedBy:    actor.ID,
 		CreatedAt:    now,
-		StartedAt:    &now,
 		UpdatedAt:    now,
 	}
 	_, err = transaction.Exec(ctx, `
@@ -129,7 +130,9 @@ func (store *Store) updateRepositoryMigrationState(
 	}
 	result, err := store.pool.Exec(ctx, `
 		UPDATE repository_migrations
-		SET state = $2, updated_at = now()
+		SET state = $2,
+		    started_at = CASE WHEN $2 = 'mirroring' THEN COALESCE(started_at, now()) ELSE started_at END,
+		    updated_at = now()
 		WHERE id = $1 AND state = $3
 	`, migrationID, toState, fromState)
 	if err != nil {
@@ -156,9 +159,11 @@ func (store *Store) CompleteRepositoryMigration(ctx context.Context, migrationID
 		       migration.created_by, migration.created_at, migration.started_at,
 		       migration.completed_at, migration.updated_at, server.public_url
 		FROM repository_migrations migration
-		JOIN lore_servers server ON server.id = migration.to_server_id
+		JOIN lore_servers server
+		  ON server.id = migration.to_server_id
+		 AND server.status = 'active' AND server.revoked_at IS NULL
 		WHERE migration.id = $1
-		FOR UPDATE OF migration
+		FOR UPDATE OF migration, server
 	`, migrationID).Scan(
 		&migration.ID, &migration.RepositoryID, &migration.FromServerID, &migration.ToServerID,
 		&migration.State, &migration.ErrorText, &migration.CreatedBy, &migration.CreatedAt,

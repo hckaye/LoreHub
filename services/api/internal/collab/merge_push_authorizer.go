@@ -190,7 +190,8 @@ func validatePushPermission(ctx context.Context, tx pgx.Tx, input loreclient.Pus
 		SELECT EXISTS (
 			SELECT 1
 			FROM users u
-			JOIN repositories r ON r.id = $1 AND r.archived_at IS NULL AND r.lifecycle_state = 'active'
+			JOIN repositories r ON r.id = $1 AND r.archived_at IS NULL
+				AND r.migrating_at IS NULL AND r.lifecycle_state = 'active'
 			JOIN organizations o ON o.id = r.organization_id AND o.active
 			LEFT JOIN organization_memberships om
 				ON om.organization_id = o.id AND om.user_id = u.id AND om.active
@@ -288,7 +289,7 @@ func branchRulesForTransaction(ctx context.Context, tx pgx.Tx, repositoryID stri
 		JOIN repositories repository
 		  ON repository.id = rule.repository_id
 		 AND repository.lifecycle_state = 'active'
-		 AND repository.archived_at IS NULL
+		 AND repository.archived_at IS NULL AND repository.migrating_at IS NULL
 		JOIN organizations organization
 		  ON organization.id = repository.organization_id AND organization.active
 		WHERE rule.repository_id = $1

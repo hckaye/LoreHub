@@ -15,7 +15,7 @@ func (store *Store) Repositories(ctx context.Context) ([]Repository, error) {
 		SELECT r.id, o.slug, r.slug, r.lore_url, r.default_branch
 		FROM repositories r
 		JOIN organizations o ON o.id = r.organization_id
-		WHERE r.archived_at IS NULL
+		WHERE r.archived_at IS NULL AND r.migrating_at IS NULL
 		ORDER BY r.id
 	`)
 	if err != nil {

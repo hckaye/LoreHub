@@ -60,6 +60,7 @@ func (store *Store) RunnerClaimJob(
 		        AND scoped_repository.organization_id = runner.organization_id
 		        AND scoped_repository.lifecycle_state = 'active'
 		        AND scoped_repository.archived_at IS NULL
+		        AND scoped_repository.migrating_at IS NULL
 		    )
 		  )
 		FOR UPDATE OF runner
@@ -102,7 +103,7 @@ func (store *Store) RunnerClaimJob(
 		  AND repository.organization_id = $1
 		  AND ($2::uuid IS NULL OR repository.id = $2)
 		  AND repository.lifecycle_state = 'active'
-		  AND repository.archived_at IS NULL
+		  AND repository.archived_at IS NULL AND repository.migrating_at IS NULL
 		  AND NOT EXISTS (
 		    SELECT 1
 		    FROM jsonb_array_elements_text(job.runner_labels) required(label)

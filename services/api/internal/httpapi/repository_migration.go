@@ -53,7 +53,7 @@ func (api *API) migrateRepository(writer http.ResponseWriter, request *http.Requ
 		api.platformError(writer, request, "start repository migration", err)
 		return
 	}
-	go api.runRepositoryMigration(store, actor, migration, repository, target)
+	go api.runRepositoryMigration(store, migration, repository, target)
 	writeJSON(writer, http.StatusAccepted, migration)
 }
 
@@ -76,7 +76,6 @@ func (api *API) listRepositoryMigrations(writer http.ResponseWriter, request *ht
 
 func (api *API) runRepositoryMigration(
 	store repositoryMigrationStore,
-	actor platform.User,
 	migration platform.RepositoryMigration,
 	repository platform.Repository,
 	target platform.LoreServer,
@@ -115,17 +114,18 @@ func (api *API) runRepositoryMigration(
 		CacheKey: repository.ID, URL: targetURL,
 		LoreRepositoryID: repository.LoreRepositoryID, DefaultBranch: repository.DefaultBranch,
 	}
-	principal := loreclient.UserPrincipal(actor.ID)
-	if api.serviceSubjects.RepositoryRegistration != "" {
-		principal = loreclient.ServicePrincipal(loreclient.ServicePurposeRepositoryRegistration,
-			api.serviceSubjects.RepositoryRegistration)
+	if api.serviceSubjects.RepositoryRegistration == "" {
+		fail(errors.New("repository migration service principal is not configured"))
+		return
 	}
+	principal := loreclient.ServicePrincipal(loreclient.ServicePurposeRepositoryRegistration,
+		api.serviceSubjects.RepositoryRegistration)
 	sourceCredential, err := api.loreCredential(ctx, sourceRef, principal, loreclient.ScopeRead)
 	if err != nil {
 		fail(fmt.Errorf("issue source migration credential: %w", err))
 		return
 	}
-	targetCredential, err := api.loreCredential(ctx, targetRef, principal, loreclient.ScopeWrite)
+	targetCredential, err := api.loreCredential(ctx, targetRef, principal, loreclient.ScopeAdmin)
 	if err != nil {
 		fail(fmt.Errorf("issue target migration credential: %w", err))
 		return

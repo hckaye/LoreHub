@@ -188,7 +188,7 @@ func (api *API) branchCapabilities(
 	if err != nil {
 		return false, false
 	}
-	return access.AtLeast(collab.PermWrite), access.CanManageBranchRules()
+	return access.AtLeast(collab.PermWrite), repository.MigratingAt == nil && access.CanManageBranchRules()
 }
 
 func (api *API) repositoryBranches(writer http.ResponseWriter, request *http.Request) {

@@ -44,9 +44,10 @@ func (api *API) getIssue(writer http.ResponseWriter, request *http.Request) {
 		}
 		issue.ViewerCanUpdate = !repositoryReadOnly(repo) &&
 			(issue.AuthorID == actor.ID || access.AtLeast(PermTriage))
-		issue.ViewerCanManageLabels = access.AtLeast(PermTriage)
-		issue.ViewerCanManageMilestone = access.AtLeast(PermTriage)
-		issue.ViewerCanManageAssignees = access.AtLeast(PermTriage)
+		canManage := !repositoryReadOnly(repo) && access.AtLeast(PermTriage)
+		issue.ViewerCanManageLabels = canManage
+		issue.ViewerCanManageMilestone = canManage
+		issue.ViewerCanManageAssignees = canManage
 	}
 	issue.Reactions = ensureReactions(issue.Reactions)
 	writeJSON(writer, http.StatusOK, issue)

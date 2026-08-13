@@ -26,7 +26,7 @@ func (client *SDKClient) MirrorRepository(ctx context.Context, input RepositoryM
 	if err := ValidateCredential(input.Source, input.SourceCredential, ScopeRead); err != nil {
 		return fmt.Errorf("validate migration source credential: %w", err)
 	}
-	if err := ValidateCredential(input.Target, input.TargetCredential, ScopeWrite); err != nil {
+	if err := ValidateCredential(input.Target, input.TargetCredential, ScopeAdmin); err != nil {
 		return fmt.Errorf("validate migration target credential: %w", err)
 	}
 
@@ -70,6 +70,16 @@ func (client *SDKClient) MirrorRepository(ctx context.Context, input RepositoryM
 	for _, branch := range activeBranches {
 		if err := client.pushMigratedBranch(ctx, workspace, branch, input.TargetCredential.Identity); err != nil {
 			return fmt.Errorf("mirror Lore branch %q: %w", branch.Name, err)
+		}
+	}
+	targetBranches, err := client.Branches(ctx, input.Target, input.TargetCredential)
+	if err != nil {
+		return fmt.Errorf("verify target Lore branches: %w", err)
+	}
+	for _, sourceBranch := range activeBranches {
+		targetBranch, found := branchByName(targetBranches, sourceBranch.Name)
+		if !found || targetBranch.LatestRevision != sourceBranch.LatestRevision {
+			return fmt.Errorf("target Lore branch %q does not match source revision", sourceBranch.Name)
 		}
 	}
 	return nil

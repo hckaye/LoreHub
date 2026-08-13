@@ -408,7 +408,8 @@ func (store *Store) UpdateRepositorySettings(
 		    visibility = COALESCE($4, visibility),
 		    homepage_url = COALESCE($5, homepage_url),
 		    updated_at = now()
-		WHERE id = $1 AND lifecycle_state = 'active' AND archived_at IS NULL
+		WHERE id = $1 AND lifecycle_state = 'active'
+		  AND archived_at IS NULL AND migrating_at IS NULL
 		  AND EXISTS (SELECT 1 FROM organizations o WHERE o.id = repositories.organization_id AND o.active)
 		  AND (
 		      EXISTS (
