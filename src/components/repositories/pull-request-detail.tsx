@@ -1,12 +1,25 @@
 "use client";
 
+import {
+  Check,
+  CircleAlert,
+  CircleCheck,
+  CircleDot,
+  Copy,
+  FilePenLine,
+  GitMerge,
+  GitPullRequestClosed,
+} from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { AuthRequired } from "@/components/auth/auth-required";
 import { CommitStatusList } from "@/components/repositories/commit-status-list";
 import { PullRequestConversation } from "@/components/repositories/pull-request-conversation";
+import { PullRequestMetadata } from "@/components/repositories/pull-request-metadata";
 import { ReviewDiffView } from "@/components/repositories/review-diff-view";
+import { UserAvatar } from "@/components/ui/user-avatar";
 import type {
   Assignee,
   AuthSession,
@@ -26,6 +39,8 @@ import type {
 } from "@/lib/api-types";
 import { postJson } from "@/lib/auth-client";
 import type { CommentPage } from "@/lib/comment-page-types";
+import { abbreviateCount, shortRevision } from "@/lib/format";
+import { repositoryPath } from "@/lib/routes";
 
 import type { Dictionary } from "@/i18n";
 
@@ -55,9 +70,10 @@ type PullRequestDetailProps = {
   reviewThreadsAvailable: boolean;
   session: AuthSession;
   dictionary: Dictionary;
+  initialTab: PullRequestTab;
 };
 
-type Tab = "conversation" | "commits" | "files";
+export type PullRequestTab = "conversation" | "commits" | "checks" | "files";
 
 export function PullRequestDetail({
   owner,
@@ -83,15 +99,16 @@ export function PullRequestDetail({
   reviewThreadsAvailable,
   session,
   dictionary,
+  initialTab,
 }: PullRequestDetailProps) {
   const router = useRouter();
-  const [tab, setTab] = useState<Tab>("conversation");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [selectedPaths, setSelectedPaths] = useState<string[]>(readiness?.operation?.conflictPaths ?? []);
   const operation = readiness?.operation;
   const csrfToken = sessionCSRF(session);
   const base = mergeRequestPath(owner, repository, mergeRequest.number);
+  const pullRequestPath = `${repositoryPath(locale, owner, repository, "pulls")}/${mergeRequest.number}`;
 
   const mutate = async (path: string, input: unknown, successMessage?: string) => {
     if (!csrfToken) {
@@ -114,91 +131,129 @@ export function PullRequestDetail({
     router.refresh();
   };
 
-  const canMutate = isMutableSession(session) && mergeRequest.state === "open" && Boolean(readiness?.canMerge);
+  const canMutate = canMergeRequest(session, mergeRequest, readiness);
   const showStart = canStart(operation, canMutate);
   const showPush = canPush(operation, canMutate, readiness);
+  const tab = initialTab;
+  const counts = pullRequestTabCounts(comments, commits, readiness, diff);
   return (
     <div className={styles.layout}>
-      <div className={styles.heading}>
-        <h1>
-          {mergeRequest.title}
-          {mergeRequest.isDraft && <span className={styles.draft}>{dictionary.pullRequestDrafts.badge}</span>}
-          <span className={styles.meta}>#{mergeRequest.number}</span>
-        </h1>
-        <p>
-          {mergeRequest.author} · <code>{mergeRequest.sourceBranch}</code> → <code>{mergeRequest.targetBranch}</code>
+      <header className={styles.heading}>
+        <div className={styles.titleRow}>
+          <h1>
+            {mergeRequest.title} <span className={styles.meta}>#{mergeRequest.number}</span>
+          </h1>
+          <StateBadge dictionary={dictionary} mergeRequest={mergeRequest} />
+        </div>
+        <p className={styles.branchSummary}>
+          <UserAvatar name={mergeRequest.author} size={24} />
+          <span>
+            {dictionary.pullRequestDetail.mergeSummary
+              .replace("{author}", mergeRequest.author)
+              .replace("{count}", abbreviateCount(commits.length, locale))}
+          </span>
+          <BranchChip>{mergeRequest.targetBranch}</BranchChip>
+          <span>{dictionary.pullRequestDetail.from}</span>
+          <BranchChip>{mergeRequest.sourceBranch}</BranchChip>
         </p>
-      </div>
-      <div className={styles.tabs} role="tablist" aria-label={dictionary.common.pullRequests}>
-        <TabButton
+      </header>
+      <nav aria-label={dictionary.common.pullRequests} className={styles.tabs} role="tablist">
+        <TabLink
           active={tab === "conversation"}
+          count={counts.conversation}
+          href={tabHref(pullRequestPath, "conversation")}
+          id="pull-request-tab-conversation"
           label={dictionary.pullRequestDetail.conversation}
-          onClick={() => setTab("conversation")}
+          panelId="pull-request-panel-conversation"
+          locale={locale}
         />
-        <TabButton
+        <TabLink
           active={tab === "commits"}
+          count={counts.commits}
+          href={tabHref(pullRequestPath, "commits")}
+          id="pull-request-tab-commits"
           label={dictionary.pullRequestDetail.commits}
-          onClick={() => setTab("commits")}
+          panelId="pull-request-panel-commits"
+          locale={locale}
         />
-        <TabButton
+        <TabLink
+          active={tab === "checks"}
+          count={counts.checks}
+          href={tabHref(pullRequestPath, "checks")}
+          id="pull-request-tab-checks"
+          label={dictionary.pullRequestDetail.checks}
+          panelId="pull-request-panel-checks"
+          locale={locale}
+        />
+        <TabLink
           active={tab === "files"}
+          count={counts.files}
+          href={tabHref(pullRequestPath, "files")}
+          id="pull-request-tab-files"
           label={dictionary.pullRequestDetail.filesChanged}
-          onClick={() => setTab("files")}
+          panelId="pull-request-panel-files"
+          locale={locale}
         />
-      </div>
+      </nav>
       <div aria-live="polite" className={styles.announcement}>
         {message}
       </div>
-      <PullRequestTab
-        commits={commits}
-        comments={comments}
-        assignees={assignees}
-        assigneesAvailable={assigneesAvailable}
-        diff={diff}
-        dictionary={dictionary}
-        mergeRequest={mergeRequest}
-        labels={labels}
-        labelsAvailable={labelsAvailable}
-        metadata={metadata}
-        milestones={milestones}
-        milestonesAvailable={milestonesAvailable}
-        reviews={reviews}
-        reviewCandidates={reviewCandidates}
-        reviewRequests={reviewRequests}
-        reviewThreads={reviewThreads}
-        reviewThreadsAvailable={reviewThreadsAvailable}
-        session={session}
-        tab={tab}
-        locale={locale}
-        owner={owner}
-        repository={repository}
-      />
-      <CommitStatusList
-        dictionary={dictionary}
-        locale={locale}
-        statuses={readiness ? readiness.statusChecks : null}
-        unavailableReason={readiness ? undefined : readinessUnavailableReason}
-      />
-      {readiness && (
-        <MergePanel
-          busy={busy}
-          canMutate={canMutate}
-          dictionary={dictionary}
-          operation={operation}
-          readiness={readiness}
-          selectedPaths={selectedPaths}
-          setSelectedPaths={setSelectedPaths}
-          showPush={Boolean(showPush)}
-          showStart={showStart}
-          mutate={mutate}
-        />
-      )}
+      <div className={styles.columns}>
+        <main className={styles.main}>
+          <PullRequestTab
+            commits={commits}
+            comments={comments}
+            diff={diff}
+            dictionary={dictionary}
+            mergeRequest={mergeRequest}
+            readiness={readiness}
+            readinessUnavailableReason={readinessUnavailableReason}
+            reviews={reviews}
+            reviewCandidates={reviewCandidates}
+            reviewRequests={reviewRequests}
+            reviewThreads={reviewThreads}
+            reviewThreadsAvailable={reviewThreadsAvailable}
+            session={session}
+            tab={tab}
+            locale={locale}
+            owner={owner}
+            repository={repository}
+          />
+          {tab === "conversation" && readiness && (
+            <MergePanel
+              busy={busy}
+              canMutate={canMutate}
+              dictionary={dictionary}
+              operation={operation}
+              readiness={readiness}
+              selectedPaths={selectedPaths}
+              setSelectedPaths={setSelectedPaths}
+              showPush={Boolean(showPush)}
+              showStart={showStart}
+              mutate={mutate}
+              authenticated={session.status === "authenticated"}
+            />
+          )}
+        </main>
+        <div className={styles.sidebar}>
+          <PullRequestMetadata
+            assignees={assignees}
+            assigneesAvailable={assigneesAvailable}
+            csrfToken={csrfToken}
+            dictionary={dictionary}
+            labels={labels}
+            labelsAvailable={labelsAvailable}
+            metadata={metadata}
+            milestones={milestones}
+            milestonesAvailable={milestonesAvailable}
+            number={mergeRequest.number}
+            owner={owner}
+            repository={repository}
+          />
+        </div>
+      </div>
       {session.status !== "authenticated" && (
-        <AuthRequired
-          dictionary={dictionary}
-          returnTo={`/${locale}/${owner}/${repository}/pulls/${mergeRequest.number}`}
-          session={session}
-        />
+        <AuthRequired dictionary={dictionary} returnTo={pullRequestPath} session={session} />
       )}
     </div>
   );
@@ -211,8 +266,6 @@ function PullRequestTab({
   reviewCandidates,
   reviewRequests,
   comments,
-  assignees,
-  assigneesAvailable,
   reviewThreads,
   reviewThreadsAvailable,
   commits,
@@ -222,25 +275,17 @@ function PullRequestTab({
   locale,
   owner,
   repository,
-  labels,
-  labelsAvailable,
-  metadata,
-  milestones,
-  milestonesAvailable,
+  readiness,
+  readinessUnavailableReason,
 }: {
-  tab: Tab;
+  tab: PullRequestTab;
   mergeRequest: MergeRequest;
   reviews: ReviewSummary | null;
   reviewCandidates: ReviewCandidate[];
   reviewRequests: ReviewRequestSummary | null;
   comments: CommentPage<MergeRequestComment> | null;
-  assignees: Assignee[];
-  assigneesAvailable: boolean;
-  labels: Label[];
-  labelsAvailable: boolean;
-  metadata: MergeRequestMetadata | null;
-  milestones: Milestone[];
-  milestonesAvailable: boolean;
+  readiness: MergeReadiness | null;
+  readinessUnavailableReason: "forbidden" | "unavailable";
   reviewThreads: ReviewThread[];
   reviewThreadsAvailable: boolean;
   commits: RevisionHistoryEntry[];
@@ -253,48 +298,85 @@ function PullRequestTab({
 }) {
   if (tab === "conversation") {
     return (
-      <PullRequestConversation
-        assignees={assignees}
-        assigneesAvailable={assigneesAvailable}
-        comments={comments}
-        dictionary={dictionary}
-        locale={locale}
-        mergeRequest={mergeRequest}
-        labels={labels}
-        labelsAvailable={labelsAvailable}
-        metadata={metadata}
-        milestones={milestones}
-        milestonesAvailable={milestonesAvailable}
-        owner={owner}
-        repository={repository}
-        reviews={reviews}
-        reviewCandidates={reviewCandidates}
-        reviewRequests={reviewRequests}
-        session={session}
-      />
+      <div
+        aria-labelledby="pull-request-tab-conversation"
+        className={styles.tabpanel}
+        id="pull-request-panel-conversation"
+        role="tabpanel"
+        tabIndex={0}
+      >
+        <PullRequestConversation
+          comments={comments}
+          dictionary={dictionary}
+          locale={locale}
+          mergeRequest={mergeRequest}
+          owner={owner}
+          repository={repository}
+          reviews={reviews}
+          reviewCandidates={reviewCandidates}
+          reviewRequests={reviewRequests}
+          session={session}
+        />
+      </div>
+    );
+  }
+  if (tab === "checks") {
+    return (
+      <section
+        aria-labelledby="pull-request-tab-checks"
+        className={styles.panel}
+        id="pull-request-panel-checks"
+        role="tabpanel"
+        tabIndex={0}
+      >
+        <h2 id="pull-request-panel-checks-title">{dictionary.pullRequestDetail.checks}</h2>
+        <CommitStatusList
+          dictionary={dictionary}
+          locale={locale}
+          statuses={readiness ? readiness.statusChecks : null}
+          unavailableReason={readiness ? undefined : readinessUnavailableReason}
+        />
+      </section>
     );
   }
   if (tab === "commits") {
     return (
-      <section aria-labelledby="commits-title" className={styles.panel}>
-        <h2 id="commits-title">{dictionary.pullRequestDetail.commits}</h2>
+      <section
+        aria-labelledby="pull-request-tab-commits"
+        className={styles.panel}
+        id="pull-request-panel-commits"
+        role="tabpanel"
+        tabIndex={0}
+      >
+        <h2 id="pull-request-panel-commits-title">{dictionary.pullRequestDetail.commits}</h2>
         {commits.length > 0 ? (
-          <ul>
+          <ul className={styles.commitList}>
             {commits.map((commit) => (
-              <li key={commit.revision}>
-                <code>{commit.revision}</code> · #{commit.number}
-              </li>
+              <CommitRow
+                commit={commit}
+                dictionary={dictionary}
+                key={commit.revision}
+                locale={locale}
+                owner={owner}
+                repository={repository}
+              />
             ))}
           </ul>
         ) : (
-          <p className={styles.meta}>{dictionary.pullRequestDetail.noChangedFiles}</p>
+          <p className={styles.meta}>{dictionary.pullRequestDetail.noCommits}</p>
         )}
       </section>
     );
   }
   return (
-    <section aria-labelledby="files-title" className={styles.panel}>
-      <h2 id="files-title">{dictionary.pullRequestDetail.filesChanged}</h2>
+    <section
+      aria-labelledby="pull-request-tab-files"
+      className={styles.panel}
+      id="pull-request-panel-files"
+      role="tabpanel"
+      tabIndex={0}
+    >
+      <h2 id="pull-request-panel-files-title">{dictionary.pullRequestDetail.filesChanged}</h2>
       {diff ? (
         <ReviewDiffView
           authenticated={session.status === "authenticated"}
@@ -305,6 +387,7 @@ function PullRequestTab({
           number={mergeRequest.number}
           owner={owner}
           repository={repository}
+          locale={locale}
           threads={reviewThreads}
         />
       ) : (
@@ -320,6 +403,24 @@ function sessionCSRF(session: AuthSession): string {
 
 function isMutableSession(session: AuthSession): boolean {
   return session.status === "authenticated";
+}
+
+function canMergeRequest(session: AuthSession, mergeRequest: MergeRequest, readiness: MergeReadiness | null): boolean {
+  return isMutableSession(session) && mergeRequest.state === "open" && Boolean(readiness?.canMerge);
+}
+
+function pullRequestTabCounts(
+  comments: CommentPage<MergeRequestComment> | null,
+  commits: RevisionHistoryEntry[],
+  readiness: MergeReadiness | null,
+  diff: LoreDiff | null,
+) {
+  return {
+    conversation: comments?.totalCount ?? null,
+    commits: commits.length,
+    checks: readiness?.statusChecks.length ?? null,
+    files: diff?.files.length ?? null,
+  };
 }
 
 function canStart(operation: MergeOperation | undefined, canMutate: boolean): boolean {
@@ -343,17 +444,114 @@ function mergeRequestPath(owner: string, repository: string, number: number): st
   return `/api/v1/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/merge-requests/${number}`;
 }
 
-function TabButton({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
+function StateBadge({ dictionary, mergeRequest }: { dictionary: Dictionary; mergeRequest: MergeRequest }) {
+  const state = mergeRequest.isDraft ? "draft" : mergeRequest.state;
+  const label = mergeRequest.isDraft
+    ? dictionary.pullRequestDrafts.badge
+    : state === "open"
+      ? dictionary.common.open
+      : state === "merged"
+        ? dictionary.common.merged
+        : dictionary.common.closed;
+  const icon =
+    state === "draft" ? (
+      <FilePenLine aria-hidden="true" size={16} />
+    ) : state === "merged" ? (
+      <GitMerge aria-hidden="true" size={16} />
+    ) : state === "closed" ? (
+      <GitPullRequestClosed aria-hidden="true" size={16} />
+    ) : (
+      <CircleDot aria-hidden="true" size={16} />
+    );
   return (
-    <button aria-selected={active} role="tab" type="button" onClick={onClick}>
+    <span className={styles.stateBadge} data-state={state}>
+      {icon}
       {label}
-    </button>
+    </span>
+  );
+}
+
+function BranchChip({ children }: { children: string }) {
+  return <code className={styles.branchChip}>{children}</code>;
+}
+
+function TabLink({
+  active,
+  count,
+  href,
+  id,
+  label,
+  panelId,
+  locale,
+}: {
+  active: boolean;
+  count: number | null;
+  href: string;
+  id: string;
+  label: string;
+  panelId: string;
+  locale: "en" | "ja";
+}) {
+  return (
+    <Link aria-controls={panelId} aria-selected={active} className={styles.tab} href={href} id={id} role="tab">
+      <span>{label}</span>
+      {count !== null && <span className={styles.tabCount}>{abbreviateCount(count, locale)}</span>}
+    </Link>
+  );
+}
+
+function tabHref(path: string, tab: PullRequestTab): string {
+  return `${path}?tab=${encodeURIComponent(tab)}`;
+}
+
+function CommitRow({
+  commit,
+  dictionary,
+  locale,
+  owner,
+  repository,
+}: {
+  commit: RevisionHistoryEntry;
+  dictionary: Dictionary;
+  locale: "en" | "ja";
+  owner: string;
+  repository: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  const revisionPath = `${repositoryPath(locale, owner, repository)}/commit?revision=${encodeURIComponent(
+    commit.revision,
+  )}`;
+  async function copyRevision() {
+    if (!navigator.clipboard) return;
+    await navigator.clipboard.writeText(commit.revision);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1600);
+  }
+  return (
+    <li className={styles.commitRow}>
+      <div className={styles.commitIdentity}>
+        <Link href={revisionPath} className={styles.commitRevision}>
+          {shortRevision(commit.revision)}
+        </Link>
+        <button
+          aria-label={copied ? dictionary.pullRequestDetail.revisionCopied : dictionary.pullRequestDetail.copyRevision}
+          className={styles.copyButton}
+          onClick={() => void copyRevision()}
+          type="button"
+        >
+          {copied ? <Check aria-hidden="true" size={14} /> : <Copy aria-hidden="true" size={14} />}
+        </button>
+        <span className={styles.commitNumber}>#{commit.number}</span>
+      </div>
+      {commit.message && <p>{commit.message}</p>}
+    </li>
   );
 }
 
 type MergePanelProps = {
   busy: boolean;
   canMutate: boolean;
+  authenticated: boolean;
   dictionary: Dictionary;
   operation?: MergeOperation;
   readiness: MergeReadiness;
@@ -367,6 +565,7 @@ type MergePanelProps = {
 function MergePanel({
   busy,
   canMutate,
+  authenticated,
   dictionary,
   operation,
   readiness,
@@ -378,7 +577,7 @@ function MergePanel({
 }: MergePanelProps) {
   return (
     <section aria-labelledby="merge-title" className={styles.panel}>
-      <h2 id="merge-title">{dictionary.pullRequestDetail.reviewSummary}</h2>
+      <h2 id="merge-title">{dictionary.pullRequestDetail.mergePanelTitle}</h2>
       <MergeStatus dictionary={dictionary} operation={operation} readiness={readiness} />
       {canMutate && operation && operation.conflictPaths.length > 0 && (
         <ConflictResolver
@@ -393,6 +592,7 @@ function MergePanel({
       <MergeActions
         busy={busy}
         canMutate={canMutate}
+        authenticated={authenticated}
         dictionary={dictionary}
         mutate={mutate}
         operation={operation}
@@ -454,19 +654,25 @@ function MergeStatus({
 function ReadinessNotice({ readiness, dictionary }: { readiness: MergeReadiness; dictionary: Dictionary }) {
   if (readiness.ready) {
     return (
-      <div className={styles.status} data-tone="success">
-        {dictionary.pullRequestDetail.ready}
+      <div className={styles.statusRow} data-state="ready">
+        <CircleCheck aria-hidden="true" size={20} />
+        <strong>{dictionary.pullRequestDetail.ready}</strong>
       </div>
     );
   }
   return (
-    <div className={styles.blockers}>
-      <strong>{dictionary.pullRequestDetail.blocked}</strong>
-      <ul>
-        {readiness.blockers.map((blocker) => (
-          <li key={blocker.code}>{blockerLabel(blocker.code, dictionary)}</li>
-        ))}
-      </ul>
+    <div className={styles.blockedStatus}>
+      <div className={styles.statusRow} data-state="blocked">
+        <CircleAlert aria-hidden="true" size={20} />
+        <strong>{dictionary.pullRequestDetail.blocked}</strong>
+      </div>
+      {readiness.blockers.length > 0 && (
+        <ul className={styles.blockers}>
+          {readiness.blockers.map((blocker) => (
+            <li key={blocker.code}>{blockerLabel(blocker.code, dictionary)}</li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -543,6 +749,7 @@ type MergeAction = { path: string; label: string; tone?: "secondary" | "danger";
 function MergeActions({
   busy,
   canMutate,
+  authenticated,
   dictionary,
   mutate,
   operation,
@@ -556,13 +763,18 @@ function MergeActions({
   mutate: (path: string, input: unknown, successMessage?: string) => Promise<void>;
   operation?: MergeOperation;
   readiness: MergeReadiness;
+  authenticated: boolean;
   showStart: boolean;
   showPush: boolean;
 }) {
   if (!canMutate) {
     return (
       <p className={styles.meta}>
-        {readiness.canMerge ? dictionary.auth.requiredBody : dictionary.pullRequestDetail.blockers.writePermission}
+        {!authenticated
+          ? dictionary.pullRequestDetail.mergeRequiresAuth
+          : readiness.canMerge
+            ? dictionary.pullRequestDetail.blockers.writePermission
+            : dictionary.pullRequestDetail.policyBlocked}
       </p>
     );
   }

@@ -4,7 +4,7 @@ import styles from "./flash-notice.module.css";
 
 type FlashNoticeProps = {
   title: string;
-  body: string;
+  body?: string;
   tone?: "info" | "warning" | "success" | "error";
   icon?: ReactNode;
 };
@@ -15,7 +15,7 @@ export function FlashNotice({ title, body, tone = "info", icon }: FlashNoticePro
       {icon && <span className={styles.icon}>{icon}</span>}
       <div>
         <strong>{title}</strong>
-        <p>{body}</p>
+        {body && <p>{body}</p>}
       </div>
     </aside>
   );

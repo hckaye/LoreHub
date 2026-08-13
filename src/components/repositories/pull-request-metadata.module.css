@@ -107,20 +107,6 @@
   color: var(--fg-muted);
 }
 
-.avatar {
-  align-items: center;
-  background: var(--canvas-subtle);
-  border: 1px solid var(--border);
-  border-radius: 50%;
-  display: inline-flex;
-  flex: 0 0 26px;
-  font-size: 11px;
-  font-weight: 650;
-  height: 26px;
-  justify-content: center;
-  width: 26px;
-}
-
 .labels {
   display: flex;
   flex-wrap: wrap;

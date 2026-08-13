@@ -7,6 +7,7 @@ import type { Dictionary } from "@/i18n";
 import type { Assignee, Label, MergeRequestMetadata, Milestone } from "@/lib/api-types";
 import { deleteJson, putJson } from "@/lib/auth-client";
 
+import { UserAvatar } from "../ui/user-avatar";
 import styles from "./pull-request-metadata.module.css";
 
 type PullRequestMetadataProps = {
@@ -234,12 +235,9 @@ function SectionHeading({ children, label }: { children: ReactNode; label: strin
 }
 
 function AssigneeIdentity({ assignee }: { assignee: Assignee }) {
-  const initial = [...(assignee.displayName || assignee.username)][0]?.toUpperCase() ?? "?";
   return (
     <span className={styles.assignee}>
-      <span aria-hidden="true" className={styles.avatar}>
-        {initial}
-      </span>
+      <UserAvatar avatarUrl={assignee.avatarUrl} name={assignee.displayName || assignee.username} size={26} />
       <span>
         <strong>{assignee.displayName || assignee.username}</strong>
         <small>@{assignee.username}</small>
