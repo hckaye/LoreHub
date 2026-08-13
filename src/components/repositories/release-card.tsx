@@ -12,8 +12,8 @@ import { mutationFailureMessage } from "@/lib/mutation-messages";
 import { deleteRelease, publishRelease, updateRelease } from "@/lib/release-client";
 import { repositoryPath } from "@/lib/routes";
 
-import { MarkdownContent } from "../wiki/markdown-content";
 import { FlashNotice } from "../ui/flash-notice";
+import { MarkdownContent } from "../wiki/markdown-content";
 import { ReleaseAssets } from "./release-assets";
 import styles from "./release-list.module.css";
 

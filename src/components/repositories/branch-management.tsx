@@ -153,9 +153,7 @@ export function BranchManagement(props: BranchManagementProps) {
                 props.repository.owner,
                 props.repository.slug,
               )}?branch=${encodeURIComponent(branch.name)}`;
-              const canDeleteRow = Boolean(
-                authenticated && props.overview.viewerCanPush && !isDefault && !isProtected,
-              );
+              const canDeleteRow = Boolean(authenticated && props.overview.viewerCanPush && !isDefault && !isProtected);
               const isConfirming = pendingDelete?.id === branch.id;
               return (
                 <div className={styles.branchRow} key={branch.id} role="row">
