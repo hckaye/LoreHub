@@ -27,6 +27,12 @@ export function formatRelativeTime(value: string | Date, locale: Locale, now = n
   return formatter.format(Math.trunc(elapsedSeconds / 31536000), "year");
 }
 
+export function formatExpiryNote(template: string, expiresAt: string, locale: Locale): string {
+  return template
+    .replace("{relative}", formatRelativeTime(expiresAt, locale))
+    .replace("{date}", formatDateTime(expiresAt, locale));
+}
+
 export function formatDate(value: string | Date, locale: Locale): string {
   return formatWith(value, locale, { dateStyle: "medium" });
 }
