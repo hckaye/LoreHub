@@ -280,6 +280,32 @@
   text-decoration: none;
 }
 
+.commitMeta .historyLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--fg-muted);
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.commitMeta .historyLink:hover {
+  color: var(--accent-fg);
+}
+
+.commitSummary a {
+  overflow: hidden;
+  color: var(--fg-default);
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.commitSummary a:hover {
+  color: var(--accent-fg);
+  text-decoration: underline;
+}
+
 .commitMeta a:hover {
   text-decoration: underline;
 }

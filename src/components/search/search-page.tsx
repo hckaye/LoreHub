@@ -27,7 +27,7 @@ export function SearchPage({ dictionary, failure, locale, query, results }: Sear
   const selectedCount = results ? searchTypeCount(results.counts, query.type) : 0;
   const lastPage = results ? lastSearchPage(results, query.type) : 1;
   return (
-    <main className={styles.page}>
+    <div className={styles.page}>
       <header className={styles.heading}>
         <h1>{dictionary.searchPage.title}</h1>
         <p>{dictionary.searchPage.description}</p>
@@ -126,7 +126,7 @@ export function SearchPage({ dictionary, failure, locale, query, results }: Sear
           <SearchPagination dictionary={dictionary} lastPage={lastPage} locale={locale} query={query} />
         </>
       )}
-    </main>
+    </div>
   );
 }
 

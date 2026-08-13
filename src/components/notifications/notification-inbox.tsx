@@ -11,6 +11,7 @@ import type { Locale } from "@/i18n/config";
 import type { AuthSession, Notification } from "@/lib/api-types";
 import { patchJson, postJson } from "@/lib/auth-client";
 import { formatRelativeTime } from "@/lib/format";
+import { localizeHref } from "@/lib/routes";
 
 import { EmptyState } from "../ui/empty-state";
 import styles from "./notification-inbox.module.css";
@@ -157,11 +158,4 @@ function repoPrefixFromSegments(segments: string[]): string | null {
     return null;
   }
   return `${owner}/${repo}`;
-}
-
-function localizeHref(href: string, locale: Locale): string {
-  if (href === "/" || href.startsWith(`/${locale}/`)) {
-    return href === "/" ? `/${locale}` : href;
-  }
-  return `/${locale}${href.startsWith("/") ? href : `/${href}`}`;
 }

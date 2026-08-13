@@ -3,14 +3,16 @@
 import { KeyRound, Pencil, Trash2, Variable } from "lucide-react";
 
 import type { Dictionary } from "@/i18n";
+import type { Locale } from "@/i18n/config";
 import type { ActionsContextEntry } from "@/lib/actions-context-client";
+import { formatDateTime } from "@/lib/format";
 
 import styles from "./actions-context-settings.module.css";
 
 type ActionsContextEntryListProps = {
   copy: Dictionary["actionsSettings"];
   entries: ActionsContextEntry[];
-  locale: string;
+  locale: Locale;
   pending: boolean;
   onDelete: (entry: ActionsContextEntry) => void;
   onEdit: (entry: ActionsContextEntry) => void;
@@ -74,7 +76,7 @@ export function ActionsContextEntryList({
                 )}
               </td>
               <td>
-                <time dateTime={entry.updatedAt}>{formatUpdatedAt(entry.updatedAt, locale)}</time>
+                <time dateTime={entry.updatedAt}>{formatDateTime(entry.updatedAt, locale)}</time>
               </td>
               <td>
                 <div className={styles.rowActions}>
@@ -106,10 +108,4 @@ export function ActionsContextEntryList({
       </table>
     </div>
   );
-}
-
-function formatUpdatedAt(value: string, locale: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(date);
 }

@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
 import type { DashboardData } from "@/lib/api-types";
-import { repositoryPath } from "@/lib/routes";
+import { localizeHref, repositoryPath } from "@/lib/routes";
 
 import { RepositoryCard } from "../repositories/repository-card";
 import { EmptyState } from "../ui/empty-state";
@@ -176,11 +176,4 @@ function DashboardExplore({ dashboard, dictionary, locale, unavailable }: Dashbo
       </a>
     </aside>
   );
-}
-
-function localizeHref(href: string, locale: Locale): string {
-  if (href === "/" || href.startsWith(`/${locale}/`)) {
-    return href === "/" ? `/${locale}` : href;
-  }
-  return `/${locale}${href.startsWith("/") ? href : `/${href}`}`;
 }

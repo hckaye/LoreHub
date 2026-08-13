@@ -4,8 +4,8 @@ import { CopyButton } from "@/components/ui/copy-button";
 import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
 import type { LoreRevision } from "@/lib/api-types";
-import { formatRelativeTime, formatTimestamp } from "@/lib/relative-time";
-import { revisionBody, revisionSubject, shortRevision } from "@/lib/revision-history";
+import { formatRelativeTime, formatTimestamp, shortRevision } from "@/lib/format";
+import { revisionBody, revisionSubject } from "@/lib/revision-history";
 
 import styles from "./commit-detail.module.css";
 

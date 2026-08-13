@@ -1,26 +1,16 @@
 "use client";
 
-import {
-  ChevronDown,
-  Clipboard,
-  Code2,
-  FileCode2,
-  Folder,
-  GitBranch,
-  GitCommitHorizontal,
-  History,
-  Link2,
-  Search,
-  Tag,
-} from "lucide-react";
+import { ChevronDown, Clipboard, Code2, FileCode2, Folder, GitBranch, History, Link2, Search, Tag } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { useMemo, useState } from "react";
 
 import type { Dictionary } from "@/i18n";
 import type { Branch, LoreRevision, LoreTree, RepositoryTag } from "@/lib/api-types";
+import { formatRelativeTime, shortRevision } from "@/lib/format";
 import { repositoryBranchesPath, repositoryPath, repositoryTagsPath } from "@/lib/routes";
 
+import { UserAvatar } from "../ui/user-avatar";
 import { BranchSelector, type BranchSelection } from "./branch-selector";
 import styles from "./code-browser.module.css";
 
@@ -30,11 +20,11 @@ type CodeBrowserProps = {
   repository: string;
   branch: string;
   branches: Branch[];
+  cloneUrl: string;
   currentRevision?: string;
   latestCommit?: LoreRevision;
   tags: RepositoryTag[];
   tree: LoreTree;
-  parentRevision?: string;
   dictionary: Dictionary;
 };
 
@@ -44,11 +34,11 @@ export function CodeBrowser({
   repository,
   branch,
   branches,
+  cloneUrl,
   currentRevision,
   latestCommit,
   tags,
   tree,
-  parentRevision,
   dictionary,
 }: CodeBrowserProps) {
   const basePath = repositoryPath(locale, owner, repository);
@@ -68,6 +58,7 @@ export function CodeBrowser({
       <CodeToolbar
         branches={branches}
         branch={branch}
+        cloneUrl={cloneUrl}
         currentRevision={currentRevision}
         dictionary={dictionary}
         fileFilter={fileFilter}
@@ -77,16 +68,6 @@ export function CodeBrowser({
         owner={owner}
         repository={repository}
         tags={tags}
-      />
-      <HistoryLinks
-        branch={branch}
-        currentRevision={currentRevision}
-        dictionary={dictionary}
-        locale={locale}
-        owner={owner}
-        parentRevision={parentRevision}
-        repository={repository}
-        revision={tree.revision}
       />
       <div className={styles.tableWrap}>
         <h2 id="code-browser-title" className="visually-hidden">
@@ -102,6 +83,7 @@ export function CodeBrowser({
           repository={repository}
         />
         <LatestCommitBar
+          commitPath={`${basePath}/commit?revision=${encodeURIComponent(tree.revision)}`}
           commitsPath={historyHref(basePath, branch, currentRevision)}
           dictionary={dictionary}
           latestCommit={latestCommit}
@@ -128,6 +110,7 @@ export function CodeBrowser({
 type CodeToolbarProps = {
   branches: Branch[];
   branch: string;
+  cloneUrl: string;
   currentRevision?: string;
   dictionary: Dictionary;
   fileFilter: string;
@@ -142,6 +125,7 @@ type CodeToolbarProps = {
 function CodeToolbar({
   branches,
   branch,
+  cloneUrl,
   currentRevision,
   dictionary,
   fileFilter,
@@ -187,24 +171,19 @@ function CodeToolbar({
             value={fileFilter}
           />
         </div>
-        <CloneMenu dictionary={dictionary} owner={owner} repository={repository} />
+        <CloneMenu cloneUrl={cloneUrl} dictionary={dictionary} />
       </div>
     </div>
   );
 }
 
-function CloneMenu({ dictionary, owner, repository }: { dictionary: Dictionary; owner: string; repository: string }) {
+function CloneMenu({ cloneUrl, dictionary }: { cloneUrl: string; dictionary: Dictionary }) {
   const [copyStatus, setCopyStatus] = useState<"copied" | "failed" | null>(null);
-  const cloneURL = useSyncExternalStore(
-    noopSubscribe,
-    () => `${window.location.origin}/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}`,
-    emptyCloneURL,
-  );
 
   async function copyCloneURL() {
-    if (!cloneURL) return;
+    if (!cloneUrl) return;
     try {
-      await navigator.clipboard.writeText(cloneURL);
+      await navigator.clipboard.writeText(cloneUrl);
       setCopyStatus("copied");
     } catch {
       setCopyStatus("failed");
@@ -222,8 +201,8 @@ function CloneMenu({ dictionary, owner, repository }: { dictionary: Dictionary; 
         <strong>{dictionary.codeBrowser.cloneRepository}</strong>
         <label htmlFor="repository-clone-url">{dictionary.codeBrowser.cloneURL}</label>
         <div className={styles.cloneURLRow}>
-          <input id="repository-clone-url" readOnly value={cloneURL} />
-          <button disabled={!cloneURL} onClick={copyCloneURL} type="button">
+          <input id="repository-clone-url" readOnly value={cloneUrl} />
+          <button disabled={!cloneUrl} onClick={copyCloneURL} type="button">
             <Clipboard aria-hidden="true" size={15} />
             {copyStatus === "copied" ? dictionary.codeBrowser.copied : dictionary.codeBrowser.copy}
           </button>
@@ -231,46 +210,6 @@ function CloneMenu({ dictionary, owner, repository }: { dictionary: Dictionary; 
         {copyStatus === "failed" && <p role="status">{dictionary.codeBrowser.copyFailed}</p>}
       </div>
     </details>
-  );
-}
-
-function HistoryLinks({
-  branch,
-  currentRevision,
-  dictionary,
-  locale,
-  owner,
-  parentRevision,
-  repository,
-  revision,
-}: {
-  branch: string;
-  currentRevision?: string;
-  dictionary: Dictionary;
-  locale: "en" | "ja";
-  owner: string;
-  parentRevision?: string;
-  repository: string;
-  revision: string;
-}) {
-  const basePath = repositoryPath(locale, owner, repository);
-  return (
-    <div className={styles.secondaryToolbar}>
-      <Link className={styles.toolbarLink} href={historyHref(basePath, branch, currentRevision)}>
-        <History aria-hidden="true" size={16} />
-        {dictionary.codeBrowser.history}
-      </Link>
-      {parentRevision && (
-        <Link
-          className={styles.toolbarLink}
-          href={`${basePath}/compare?source=${encodeURIComponent(parentRevision)}&target=${encodeURIComponent(
-            revision,
-          )}`}
-        >
-          {dictionary.codeBrowser.compare}
-        </Link>
-      )}
-    </div>
   );
 }
 
@@ -316,12 +255,14 @@ function Breadcrumbs({
 }
 
 function LatestCommitBar({
+  commitPath,
   commitsPath,
   dictionary,
   latestCommit,
   locale,
   revision,
 }: {
+  commitPath: string;
   commitsPath: string;
   dictionary: Dictionary;
   latestCommit?: LoreRevision;
@@ -332,17 +273,25 @@ function LatestCommitBar({
   const message = latestCommit?.message?.split("\n")[0].trim() || dictionary.codeBrowser.noCommitMessage;
   return (
     <div aria-label={dictionary.codeBrowser.latestCommit} className={styles.revisionBar} role="group">
-      <GitCommitHorizontal aria-hidden="true" size={17} />
+      <UserAvatar name={author} size={20} />
       <div className={styles.commitSummary}>
         <strong>{author}</strong>
-        <span title={message}>{message}</span>
+        <Link href={commitPath} title={message}>
+          {message}
+        </Link>
       </div>
       <div className={styles.commitMeta}>
-        <time dateTime={latestCommit?.createdAt}>
-          {formatRelativeTime(latestCommit?.createdAt, locale, dictionary.codeBrowser.unknownDate)}
-        </time>
-        <Link aria-label={`${dictionary.codeBrowser.history}: ${shortRevision(revision)}`} href={commitsPath}>
+        <Link aria-label={`${dictionary.codeBrowser.latestCommit}: ${shortRevision(revision)}`} href={commitPath}>
           <code title={revision}>{shortRevision(revision)}</code>
+        </Link>
+        <time dateTime={latestCommit?.createdAt}>
+          {latestCommit?.createdAt
+            ? formatRelativeTime(latestCommit.createdAt, locale)
+            : dictionary.codeBrowser.unknownDate}
+        </time>
+        <Link className={styles.historyLink} href={commitsPath}>
+          <History aria-hidden="true" size={16} />
+          {dictionary.codeBrowser.history}
         </Link>
       </div>
     </div>
@@ -404,9 +353,6 @@ function FileTable({
   );
 }
 
-const noopSubscribe = () => () => {};
-const emptyCloneURL = () => "";
-
 function findTag(tags: RepositoryTag[], revision: string | undefined): RepositoryTag | undefined {
   return revision ? tags.find((tag) => tag.revision === revision) : undefined;
 }
@@ -464,40 +410,6 @@ function fileHref(
   const query = new URLSearchParams({ revision, path });
   if (!currentRevision) query.set("branch", branch);
   return `${basePath}/blob?${query.toString()}`;
-}
-
-function shortRevision(revision: string): string {
-  return revision.length > 12 ? revision.slice(0, 12) : revision;
-}
-
-function formatRelativeTime(value: string | undefined, locale: "en" | "ja", fallback: string): string {
-  if (!value) return fallback;
-  const timestamp = new Date(value).getTime();
-  if (!Number.isFinite(timestamp)) return fallback;
-  const difference = timestamp - Date.now();
-  const absoluteDifference = Math.abs(difference);
-  if (absoluteDifference < 60_000) {
-    return new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(Math.round(difference / 1_000), "second");
-  }
-  if (absoluteDifference < 3_600_000) {
-    return new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(Math.round(difference / 60_000), "minute");
-  }
-  if (absoluteDifference < 86_400_000) {
-    return new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(Math.round(difference / 3_600_000), "hour");
-  }
-  if (absoluteDifference < 2_592_000_000) {
-    return new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(Math.round(difference / 86_400_000), "day");
-  }
-  if (absoluteDifference < 31_104_000_000) {
-    return new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(
-      Math.round(difference / 2_592_000_000),
-      "month",
-    );
-  }
-  return new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(
-    Math.round(difference / 31_104_000_000),
-    "year",
-  );
 }
 
 function EntryIcon({ kind }: { kind: "directory" | "file" | "link" }) {

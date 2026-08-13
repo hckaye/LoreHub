@@ -1,5 +1,7 @@
 import type { Locale } from "@/i18n/config";
 
+const shortRevisionLength = 7;
+
 const RELATIVE_UNITS: Array<{ limit: number; divisor: number; unit: Intl.RelativeTimeFormatUnit }> = [
   { limit: 60, divisor: 1, unit: "second" },
   { limit: 3600, divisor: 60, unit: "minute" },
@@ -26,11 +28,23 @@ export function formatRelativeTime(value: string | Date, locale: Locale, now = n
 }
 
 export function formatDate(value: string | Date, locale: Locale): string {
+  return formatWith(value, locale, { dateStyle: "medium" });
+}
+
+export function formatDateTime(value: string | Date, locale: Locale): string {
+  return formatWith(value, locale, { dateStyle: "medium", timeStyle: "short" });
+}
+
+export function formatTimestamp(value: string | Date, locale: Locale): string {
+  return formatWith(value, locale, { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" });
+}
+
+function formatWith(value: string | Date, locale: Locale, options: Intl.DateTimeFormatOptions): string {
   const date = typeof value === "string" ? new Date(value) : value;
   if (Number.isNaN(date.getTime())) {
     return typeof value === "string" ? value : "";
   }
-  return new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(date);
+  return new Intl.DateTimeFormat(locale, options).format(date);
 }
 
 export function abbreviateCount(count: number, locale: Locale): string {
@@ -38,7 +52,7 @@ export function abbreviateCount(count: number, locale: Locale): string {
 }
 
 export function shortRevision(revision: string): string {
-  return revision.slice(0, 12);
+  return revision.slice(0, shortRevisionLength);
 }
 
 export function normalizeLabelColor(color: string): string {

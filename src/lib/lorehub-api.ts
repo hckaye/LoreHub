@@ -35,6 +35,7 @@ import type {
   MergeRequest,
   MergeRequestComment,
   MergeRequestMetadata,
+  Milestone,
   MilestonePage,
   Notification,
   NotificationPage,
@@ -494,6 +495,10 @@ export function getMilestones(
 ): Promise<APIResult<MilestonePage>> {
   const query = new URLSearchParams({ state, page: String(page), perPage: String(perPage) });
   return request(repositoryPath(owner, repository, `/milestones?${query.toString()}`));
+}
+
+export function getMilestone(owner: string, repository: string, number: number): Promise<APIResult<Milestone>> {
+  return request(repositoryPath(owner, repository, `/milestones/${number}`));
 }
 
 export function getAssignableUsers(

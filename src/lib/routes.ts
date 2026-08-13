@@ -37,6 +37,10 @@ export function repositoryMilestonesPath(locale: Locale, owner: string, reposito
   return `/${locale}/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/milestones`;
 }
 
+export function repositoryMilestonePath(locale: Locale, owner: string, repository: string, number: number): string {
+  return `${repositoryMilestonesPath(locale, owner, repository)}/${number}`;
+}
+
 export function repositoryTagsPath(locale: Locale, owner: string, repository: string): string {
   return repositoryPath(locale, owner, repository, "tags");
 }
@@ -44,6 +48,13 @@ export function repositoryTagsPath(locale: Locale, owner: string, repository: st
 export function actionsAPIPath(owner: string, repository: string, ...segments: string[]): string {
   const base = `/api/v1/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/actions`;
   return `${base}/${segments.map((segment) => encodeURIComponent(segment)).join("/")}`;
+}
+
+export function localizeHref(href: string, locale: Locale): string {
+  if (href === "/" || href.startsWith(`/${locale}/`)) {
+    return href === "/" ? `/${locale}` : href;
+  }
+  return `/${locale}${href.startsWith("/") ? href : `/${href}`}`;
 }
 
 export function localizedPath(locale: Locale, ...segments: string[]): string {

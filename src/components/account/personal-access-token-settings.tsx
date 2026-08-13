@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import type { Dictionary } from "@/i18n";
 import type { AuthSession, PersonalAccessToken, PersonalAccessTokenScope } from "@/lib/api-types";
+import { formatDateTime } from "@/lib/format";
 import { createPersonalAccessToken, revokePersonalAccessToken } from "@/lib/personal-access-token-client";
 
 import styles from "./personal-access-token-settings.module.css";
@@ -190,10 +191,10 @@ export function PersonalAccessTokenSettings(props: PersonalAccessTokenSettingsPr
                     </div>
                     <small>
                       {token.lastUsedAt
-                        ? copy.lastUsed.replace("{date}", formatDate(token.lastUsedAt, props.locale))
+                        ? copy.lastUsed.replace("{date}", formatDateTime(token.lastUsedAt, props.locale))
                         : copy.neverUsed}
                       {" · "}
-                      {copy.expires.replace("{date}", formatDate(token.expiresAt, props.locale))}
+                      {copy.expires.replace("{date}", formatDateTime(token.expiresAt, props.locale))}
                     </small>
                   </div>
                   {status === "active" && (
@@ -220,11 +221,4 @@ export function PersonalAccessTokenSettings(props: PersonalAccessTokenSettingsPr
 function tokenStatus(token: PersonalAccessToken): "active" | "expired" | "revoked" {
   if (token.revokedAt) return "revoked";
   return Date.parse(token.expiresAt) <= Date.now() ? "expired" : "active";
-}
-
-function formatDate(value: string, locale: "en" | "ja"): string {
-  return new Intl.DateTimeFormat(locale === "ja" ? "ja-JP" : "en-US", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
 }

@@ -4,6 +4,7 @@ import { FormEvent, useState } from "react";
 
 import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
+import { formatTimestamp } from "@/lib/format";
 import { revisionCommentPageHref, type RevisionComment, type RevisionCommentPage } from "@/lib/revision-comments";
 
 import { MarkdownContent } from "../wiki/markdown-content";
@@ -72,7 +73,7 @@ function RevisionCommentCard(props: {
     <article className={styles.card}>
       <header>
         <strong>{authorName(props.comment)}</strong>
-        <time dateTime={props.comment.createdAt}>{formatDate(props.comment.createdAt, props.locale)}</time>
+        <time dateTime={props.comment.createdAt}>{formatTimestamp(props.comment.createdAt, props.locale)}</time>
         {props.comment.editedAt && <span>{copy.edited}</span>}
         {props.comment.viewerCanUpdate && !editing && (
           <span className={styles.cardActions}>
@@ -110,12 +111,4 @@ function authorName(comment: RevisionComment): string {
   return comment.author.displayName
     ? `${comment.author.displayName} (@${comment.author.username})`
     : `@${comment.author.username}`;
-}
-
-function formatDate(value: string, locale: Locale): string {
-  return new Intl.DateTimeFormat(locale, {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "UTC",
-  }).format(new Date(value));
 }

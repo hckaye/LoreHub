@@ -1,0 +1,105 @@
+.page {
+  display: grid;
+  gap: 16px;
+}
+
+.header {
+  align-items: flex-start;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.headerMain {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.header h1 {
+  font-size: 20px;
+  margin: 0;
+}
+
+.meta {
+  align-items: center;
+  color: var(--fg-muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 12px;
+  gap: 3px;
+  margin: 0;
+}
+
+.description {
+  line-height: 1.55;
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.muted {
+  color: var(--fg-muted);
+  font-style: italic;
+}
+
+.editLink {
+  align-items: center;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  color: var(--fg-default);
+  display: inline-flex;
+  font-size: 14px;
+  font-weight: 600;
+  gap: 6px;
+  min-height: 32px;
+  padding: 5px 12px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.editLink:hover {
+  border-color: var(--accent-fg);
+  color: var(--accent-fg);
+}
+
+.progress {
+  display: grid;
+  gap: 7px;
+}
+
+.progress > div {
+  background: var(--border-muted);
+  border-radius: 6px;
+  height: 10px;
+  overflow: hidden;
+}
+
+.progress > div span {
+  background: var(--success-fg);
+  display: block;
+  height: 100%;
+}
+
+.progress p {
+  color: var(--fg-muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 12px;
+  gap: 14px;
+  margin: 0;
+}
+
+.progress strong {
+  color: var(--fg-default);
+}
+
+@media (max-width: 720px) {
+  .header {
+    display: grid;
+  }
+
+  .editLink {
+    justify-content: center;
+  }
+}

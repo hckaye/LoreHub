@@ -1,6 +1,7 @@
 "use client";
 
 import { CalendarDays, Pencil, Trash2 } from "lucide-react";
+import Link from "next/link";
 import { FormEvent, useState } from "react";
 
 import type { Dictionary } from "@/i18n";
@@ -8,6 +9,7 @@ import type { Locale } from "@/i18n/config";
 import type { AuthSession, Milestone } from "@/lib/api-types";
 import { deleteMilestone, updateMilestone } from "@/lib/milestone-client";
 import { mutationFailureMessage } from "@/lib/mutation-messages";
+import { repositoryMilestonePath } from "@/lib/routes";
 
 import { FlashNotice } from "../ui/flash-notice";
 import styles from "./milestone-list.module.css";
@@ -97,7 +99,11 @@ export function MilestoneCard(props: MilestoneCardProps) {
     <article className={styles.card}>
       <header className={styles.cardHeader}>
         <div>
-          <h2>{props.milestone.title}</h2>
+          <h2>
+            <Link href={repositoryMilestonePath(props.locale, props.owner, props.repository, props.milestone.number)}>
+              {props.milestone.title}
+            </Link>
+          </h2>
           <p className={styles.meta}>
             {labels.createdBy.replace("{author}", props.milestone.createdBy)}
             {props.milestone.dueOn && (

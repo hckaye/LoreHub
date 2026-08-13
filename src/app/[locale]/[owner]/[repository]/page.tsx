@@ -13,6 +13,7 @@ import {
   getLoreFile,
   getLoreTree,
   getPublicRepository,
+  getReleases,
   getRepositoryTags,
   getRevision,
 } from "@/lib/lorehub-api";
@@ -45,7 +46,11 @@ export default async function RepositoryCodePage({ params, searchParams }: Repos
       />
     );
   }
-  const [branches, tags] = await Promise.all([getBranches(owner, slug), getRepositoryTags(owner, slug)]);
+  const [branches, tags, releases] = await Promise.all([
+    getBranches(owner, slug),
+    getRepositoryTags(owner, slug),
+    getReleases(owner, slug, 1),
+  ]);
   const branch = query.branch || repository.data.defaultBranch;
   const tree = await getLoreTree(owner, slug, {
     branch: query.revision ? undefined : branch,
@@ -62,12 +67,12 @@ export default async function RepositoryCodePage({ params, searchParams }: Repos
             <CodeBrowser
               branches={resultData(branches) ?? []}
               branch={branch}
+              cloneUrl={repository.data.loreUrl}
               currentRevision={query.revision}
               dictionary={dictionary}
               latestCommit={revisionData}
               locale={locale}
               owner={owner}
-              parentRevision={revisionData?.parents[0]}
               repository={slug}
               tags={resultData(tags) ?? []}
               tree={tree.data}
@@ -92,7 +97,14 @@ export default async function RepositoryCodePage({ params, searchParams }: Repos
           />
         )}
       </div>
-      <RepositoryAbout dictionary={dictionary} locale={locale} repository={repository.data} />
+      <RepositoryAbout
+        dictionary={dictionary}
+        locale={locale}
+        owner={owner}
+        releasePage={releases.ok ? releases.data : undefined}
+        repository={repository.data}
+        repositorySlug={slug}
+      />
     </div>
   );
 }

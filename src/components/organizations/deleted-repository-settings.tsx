@@ -7,6 +7,7 @@ import { useState } from "react";
 import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
 import type { AuthSession, DeletedRepository } from "@/lib/api-types";
+import { formatDateTime } from "@/lib/format";
 import { mutationFailureMessage } from "@/lib/mutation-messages";
 import { restoreDeletedRepository } from "@/lib/repository-lifecycle-client";
 
@@ -63,7 +64,7 @@ export function DeletedRepositorySettings({ dictionary, locale, repositories, se
               <span>
                 {repository.purging
                   ? copy.purging
-                  : copy.purgeScheduled.replace("{date}", formatDate(repository.purgeAfter, locale))}
+                  : copy.purgeScheduled.replace("{date}", formatDateTime(repository.purgeAfter, locale))}
               </span>
             </div>
             <button
@@ -84,11 +85,4 @@ export function DeletedRepositorySettings({ dictionary, locale, repositories, se
       )}
     </div>
   );
-}
-
-function formatDate(value: string, locale: Locale): string {
-  return new Intl.DateTimeFormat(locale === "ja" ? "ja-JP" : "en-US", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
 }
