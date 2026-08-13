@@ -46,6 +46,13 @@ export function actionsAPIPath(owner: string, repository: string, ...segments: s
   return `${base}/${segments.map((segment) => encodeURIComponent(segment)).join("/")}`;
 }
 
+export function localizeHref(href: string, locale: Locale): string {
+  if (href === "/" || href.startsWith(`/${locale}/`)) {
+    return href === "/" ? `/${locale}` : href;
+  }
+  return `/${locale}${href.startsWith("/") ? href : `/${href}`}`;
+}
+
 export function localizedPath(locale: Locale, ...segments: string[]): string {
   return `/${locale}/${segments.map((segment) => encodeURIComponent(segment)).join("/")}`;
 }
