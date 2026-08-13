@@ -73,7 +73,7 @@ test("repository archive UI exposes read-only state and hides creation links", a
   assert.match(settings, /data\.archivedAt/);
   assert.match(settings, /RepositoryLifecycleSettings/);
   assert.match(issues, /!archived/);
-  assert.match(pulls, /archived \? undefined/);
+  assert.match(pulls, /!archived/);
   assert.match(chooser, /filter\(\(repository\) => !repository\.archivedAt\)/);
 });
 
