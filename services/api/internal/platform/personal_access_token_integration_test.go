@@ -31,12 +31,13 @@ func TestPersonalAccessTokenLifecycleIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	expiresAt := time.Now().UTC().Add(30 * 24 * time.Hour).Truncate(time.Microsecond).Add(789 * time.Nanosecond)
 	token, err := store.CreatePersonalAccessToken(ctx, owner, CreatePersonalAccessTokenInput{
 		Name:      "Developer workstation",
 		Prefix:    auth.PersonalAccessTokenPrefix(raw),
 		Digest:    digest,
 		Scopes:    []string{auth.ScopeWriteRepository, auth.ScopeReadAPI},
-		ExpiresAt: time.Now().UTC().Add(30 * 24 * time.Hour),
+		ExpiresAt: expiresAt,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -44,6 +45,10 @@ func TestPersonalAccessTokenLifecycleIntegration(t *testing.T) {
 	if token.ID == "" || token.Prefix != raw[:12] || token.Name != "Developer workstation" ||
 		len(token.Scopes) != 2 {
 		t.Fatalf("unexpected token metadata: %+v", token)
+	}
+	if !token.ExpiresAt.Equal(expiresAt.Truncate(time.Microsecond)) {
+		t.Fatalf("token expiration = %v, want stored precision %v", token.ExpiresAt,
+			expiresAt.Truncate(time.Microsecond))
 	}
 	var storedDigest []byte
 	var storedPrefix string

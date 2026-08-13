@@ -124,14 +124,17 @@ func (store *Store) CreatePersonalAccessToken(
 		ExpiresAt: input.ExpiresAt.UTC(),
 		CreatedAt: createdAt.UTC(),
 	}
-	_, err = transaction.Exec(ctx, `
+	err = transaction.QueryRow(ctx, `
 		INSERT INTO personal_access_tokens (
 			id, user_id, name, token_prefix, token_digest, expires_at, created_at
 		) VALUES ($1, $2, $3, $4, $5, $6, $7)
-	`, token.ID, actor.ID, token.Name, token.Prefix, input.Digest, token.ExpiresAt, token.CreatedAt)
+		RETURNING expires_at
+	`, token.ID, actor.ID, token.Name, token.Prefix, input.Digest, token.ExpiresAt, token.CreatedAt).
+		Scan(&token.ExpiresAt)
 	if err != nil {
 		return PersonalAccessToken{}, fmt.Errorf("create personal access token: %w", err)
 	}
+	token.ExpiresAt = token.ExpiresAt.UTC()
 	for _, scope := range token.Scopes {
 		if _, err := transaction.Exec(ctx, `
 			INSERT INTO personal_access_token_scopes (token_id, scope) VALUES ($1, $2)
