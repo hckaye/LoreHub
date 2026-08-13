@@ -68,6 +68,15 @@
   font-size: 20px;
 }
 
+.card h2 a {
+  color: var(--accent-fg);
+  text-decoration: none;
+}
+
+.card h2 a:hover {
+  text-decoration: underline;
+}
+
 .form label,
 .editForm label {
   display: grid;

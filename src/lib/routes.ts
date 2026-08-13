@@ -37,6 +37,10 @@ export function repositoryMilestonesPath(locale: Locale, owner: string, reposito
   return `/${locale}/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/milestones`;
 }
 
+export function repositoryMilestonePath(locale: Locale, owner: string, repository: string, number: number): string {
+  return `${repositoryMilestonesPath(locale, owner, repository)}/${number}`;
+}
+
 export function repositoryTagsPath(locale: Locale, owner: string, repository: string): string {
   return repositoryPath(locale, owner, repository, "tags");
 }
