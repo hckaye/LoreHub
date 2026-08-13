@@ -48,6 +48,8 @@ type Config struct {
 	ActionsSecretKeyID                string
 	ActionsSecretKey                  string
 	ActionsJobTokenAudience           string
+	RunnerTokenKeyID                  string
+	RunnerTokenKey                    string
 	WebhookSecretKeyID                string
 	WebhookSecretKey                  string
 	WebhookPollPeriod                 time.Duration
