@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type { MergeRequestListItem, RepositoryIssuePage, RepositoryMergeRequestPage } from "./api-types";
+import { optionalReactionsSchema } from "./reaction-contract";
 
 const timestamp = z.string().refine((value) => Number.isFinite(Date.parse(value)));
 const nullableTimestamp = timestamp.nullable();
@@ -53,6 +54,7 @@ const issueSchema = z
     milestone: milestoneSchema.nullable(),
     labelCount: z.number().int().nonnegative(),
     commentCount: z.number().int().nonnegative(),
+    reactions: optionalReactionsSchema,
     createdAt: timestamp,
     updatedAt: timestamp,
     closedBy: nullableString,
@@ -85,6 +87,7 @@ const mergeRequestSchema = z
     createdAt: timestamp,
     updatedAt: timestamp,
     closedAt: nullableTimestamp,
+    reactions: optionalReactionsSchema,
     viewerCanUpdate: z.boolean(),
     viewerCanReview: z.boolean(),
     labels: z.array(labelSchema),

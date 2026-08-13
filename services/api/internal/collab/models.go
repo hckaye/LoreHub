@@ -56,6 +56,7 @@ type Issue struct {
 	Milestone                *MilestoneSummary `json:"milestone"`
 	LabelCount               int64             `json:"labelCount"`
 	CommentCount             int64             `json:"commentCount"`
+	Reactions                []Reaction        `json:"reactions"`
 	CreatedAt                time.Time         `json:"createdAt"`
 	UpdatedAt                time.Time         `json:"updatedAt"`
 	ClosedBy                 *string           `json:"closedBy"`
@@ -100,6 +101,7 @@ type IssueComment struct {
 	Body            string     `json:"body"`
 	CreatedAt       time.Time  `json:"createdAt"`
 	EditedAt        *time.Time `json:"editedAt"`
+	Reactions       []Reaction `json:"reactions"`
 	ViewerCanUpdate bool       `json:"viewerCanUpdate"`
 }
 
@@ -141,6 +143,7 @@ type MergeRequest struct {
 	CreatedAt       time.Time  `json:"createdAt"`
 	UpdatedAt       time.Time  `json:"updatedAt"`
 	ClosedAt        *time.Time `json:"closedAt"`
+	Reactions       []Reaction `json:"reactions"`
 	ViewerCanUpdate bool       `json:"viewerCanUpdate"`
 	ViewerCanReview bool       `json:"viewerCanReview"`
 }
@@ -153,6 +156,7 @@ type MergeRequestComment struct {
 	Body            string     `json:"body"`
 	CreatedAt       time.Time  `json:"createdAt"`
 	EditedAt        *time.Time `json:"editedAt"`
+	Reactions       []Reaction `json:"reactions"`
 	ViewerCanUpdate bool       `json:"viewerCanUpdate"`
 }
 

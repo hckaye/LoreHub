@@ -36,6 +36,26 @@ func (s *store) GetMergeRequest(
 	return mr, nil
 }
 
+func (s *store) GetMergeRequestWithReactions(
+	ctx context.Context,
+	repoID string,
+	number int64,
+	viewerUsername string,
+) (MergeRequest, error) {
+	mr, err := s.GetMergeRequest(ctx, repoID, number)
+	if err != nil {
+		return MergeRequest{}, err
+	}
+	reactions, err := loadReactions(
+		ctx, s.pool, repoID, reactionMergeRequest, []string{mr.ID}, viewerUsername,
+	)
+	if err != nil {
+		return MergeRequest{}, err
+	}
+	mr.Reactions = reactions[mr.ID]
+	return mr, nil
+}
+
 func scanMergeRequest(row pgx.Row) (MergeRequest, error) {
 	var mr MergeRequest
 	err := row.Scan(

@@ -235,6 +235,8 @@ export function IssueDetail(props: IssueDetailProps) {
           onSubmitComment={submitComment}
           onUpdateComment={updateComment}
           onUpdateIssue={updateIssue}
+          owner={props.owner}
+          repository={props.repository}
           session={props.session}
         />
         <IssueSidebar

@@ -6,6 +6,7 @@ import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
 import type { AuthSession, Issue, IssueComment } from "@/lib/api-types";
 import type { CommentPage } from "@/lib/comment-page-types";
+import { repositoryReactionsPath } from "@/lib/reactions";
 import { mergeConversationTimeline, type WorkItemEvent } from "@/lib/work-item-events";
 
 import { AuthRequired } from "../auth/auth-required";
@@ -15,6 +16,7 @@ import { CommentComposer } from "./issue-comment-composer";
 import styles from "./issue-detail.module.css";
 import { MarkdownField } from "./issue-markdown-field";
 import { TimelineItem } from "./issue-timeline-item";
+import { ReactionBar } from "./reaction-bar";
 import { WorkItemEventRow } from "./work-item-event-row";
 
 type ConversationProps = {
@@ -29,6 +31,8 @@ type ConversationProps = {
   onSubmitComment: (body: string, nextState: "open" | "closed" | null) => Promise<boolean>;
   onUpdateComment: (commentID: string, body: string) => Promise<boolean>;
   onUpdateIssue: (input: Partial<Pick<Issue, "title" | "body" | "state">>) => Promise<boolean>;
+  owner: string;
+  repository: string;
   session: AuthSession;
 };
 
@@ -44,6 +48,9 @@ export function IssueConversation(props: ConversationProps) {
           issue={props.issue}
           locale={props.locale}
           onEdit={() => setEditingIssue(true)}
+          owner={props.owner}
+          repository={props.repository}
+          session={props.session}
         />
       )}
       {!props.comments && <p className={styles.notice}>{props.dictionary.issueDetail.commentsUnavailable}</p>}
@@ -58,6 +65,9 @@ export function IssueConversation(props: ConversationProps) {
             locale={props.locale}
             onDelete={props.onDeleteComment}
             onUpdate={props.onUpdateComment}
+            owner={props.owner}
+            repository={props.repository}
+            session={props.session}
           />
         ) : (
           <WorkItemEventRow dictionary={props.dictionary} event={entry.event} key={entry.id} locale={props.locale} />
@@ -88,7 +98,15 @@ export function IssueConversation(props: ConversationProps) {
   );
 }
 
-function IssueBody(props: { dictionary: Dictionary; issue: Issue; locale: Locale; onEdit: () => void }) {
+function IssueBody(props: {
+  dictionary: Dictionary;
+  issue: Issue;
+  locale: Locale;
+  onEdit: () => void;
+  owner: string;
+  repository: string;
+  session: AuthSession;
+}) {
   const copy = props.dictionary.issueDetail;
   return (
     <TimelineItem
@@ -111,6 +129,14 @@ function IssueBody(props: { dictionary: Dictionary; issue: Issue; locale: Locale
           <p className={styles.empty}>{copy.noDescription}</p>
         )}
       </div>
+      <ReactionBar
+        apiPath={repositoryReactionsPath(props.owner, props.repository)}
+        dictionary={props.dictionary}
+        reactions={props.issue.reactions}
+        session={props.session}
+        subjectId={props.issue.id}
+        subjectKind="issue"
+      />
     </TimelineItem>
   );
 }
@@ -160,6 +186,9 @@ function CommentCard(props: {
   locale: Locale;
   onDelete: (commentID: string) => Promise<boolean>;
   onUpdate: (commentID: string, body: string) => Promise<boolean>;
+  owner: string;
+  repository: string;
+  session: AuthSession;
 }) {
   const copy = props.dictionary.issueDetail;
   const [editing, setEditing] = useState(false);
@@ -211,6 +240,14 @@ function CommentCard(props: {
           <MarkdownContent body={props.comment.body} />
         </div>
       )}
+      <ReactionBar
+        apiPath={repositoryReactionsPath(props.owner, props.repository)}
+        dictionary={props.dictionary}
+        reactions={props.comment.reactions}
+        session={props.session}
+        subjectId={props.comment.id}
+        subjectKind="issue_comment"
+      />
     </TimelineItem>
   );
 }
