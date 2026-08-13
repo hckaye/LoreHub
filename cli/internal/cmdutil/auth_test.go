@@ -20,7 +20,11 @@ func TestAuthLoginWithTokenValidatesAndStoresToken(t *testing.T) {
 		authorization = request.Header.Get("Authorization")
 		requestPath = request.URL.Path
 		writer.Header().Set("Content-Type", "application/json")
-		_, _ = writer.Write([]byte(`{"user":{"id":"user-1","username":"alice","displayName":"Alice"},"token":{"id":"token-1","prefix":"lhp_abc","permissions":["read_api","write_repository"],"expiresAt":"2026-08-14T12:00:00Z"}}`))
+		_, _ = writer.Write([]byte(
+			`{"user":{"id":"user-1","username":"alice","displayName":"Alice"},` +
+				`"token":{"id":"token-1","prefix":"lhp_abc","permissions":["read_api",` +
+				`"write_repository"],"expiresAt":"2026-08-14T12:00:00Z"}}`,
+		))
 	}))
 	defer server.Close()
 
@@ -62,7 +66,10 @@ func TestAuthStatusUsesEnvironmentToken(t *testing.T) {
 			t.Errorf("authorization = %q", request.Header.Get("Authorization"))
 		}
 		writer.Header().Set("Content-Type", "application/json")
-		_, _ = writer.Write([]byte(`{"user":{"username":"alice"},"token":{"prefix":"lhp_abc","permissions":["read_api"],"expiresAt":"2026-08-14T12:00:00Z"}}`))
+		_, _ = writer.Write([]byte(
+			`{"user":{"username":"alice"},"token":{"prefix":"lhp_abc",` +
+				`"permissions":["read_api"],"expiresAt":"2026-08-14T12:00:00Z"}}`,
+		))
 	}))
 	defer server.Close()
 

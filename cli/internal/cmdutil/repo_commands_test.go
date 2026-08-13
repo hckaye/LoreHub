@@ -44,11 +44,20 @@ func TestRepoCommandsUseExpectedEndpoints(t *testing.T) {
 		case request.URL.Path == "/api/v1/account":
 			_, _ = writer.Write([]byte(`{"user":{"username":"alice"}}`))
 		case request.URL.Path == "/api/v1/users/alice/repositories":
-			_, _ = writer.Write([]byte(`{"repositories":[{"owner":"alice","slug":"notes","displayName":"Notes","visibility":"public","issueCount":2,"mergeRequestCount":1}]}`))
+			_, _ = writer.Write([]byte(
+				`{"repositories":[{"owner":"alice","slug":"notes","displayName":"Notes",` +
+					`"visibility":"public","issueCount":2,"mergeRequestCount":1}]}`,
+			))
 		case request.URL.Path == "/api/v1/organizations/acme/repositories" && request.Method == http.MethodGet:
-			_, _ = writer.Write([]byte(`{"repositories":[{"owner":"acme","slug":"widget","displayName":"Widget","visibility":"private"}]}`))
+			_, _ = writer.Write([]byte(
+				`{"repositories":[{"owner":"acme","slug":"widget","displayName":"Widget",` +
+					`"visibility":"private"}]}`,
+			))
 		case request.URL.Path == "/api/v1/repositories/acme/widget":
-			_, _ = writer.Write([]byte(`{"owner":"acme","slug":"widget","displayName":"Widget","visibility":"private","description":"A widget","defaultBranch":"main"}`))
+			_, _ = writer.Write([]byte(
+				`{"owner":"acme","slug":"widget","displayName":"Widget","visibility":"private",` +
+					`"description":"A widget","defaultBranch":"main"}`,
+			))
 		case request.URL.Path == "/api/v1/organizations/acme/repositories" && request.Method == http.MethodPost:
 			_, _ = writer.Write([]byte(`{"owner":"acme","slug":"new-widget","displayName":"new-widget","visibility":"public"}`))
 		default:
@@ -100,7 +109,9 @@ func TestRepoCommandsUseExpectedEndpoints(t *testing.T) {
 
 	output.Reset()
 	command = NewRootCommand(Options{Out: &output, ErrOut: &output, ConfigPath: configPath, DefaultHost: server.URL})
-	command.SetArgs([]string{"repo", "create", "acme/new-widget", "--visibility", "public", "--description", "A new widget"})
+	command.SetArgs([]string{
+		"repo", "create", "acme/new-widget", "--visibility", "public", "--description", "A new widget",
+	})
 	if err := command.Execute(); err != nil {
 		t.Fatal(err)
 	}

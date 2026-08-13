@@ -20,18 +20,29 @@ func TestPRCommandsAndBoundedMerge(t *testing.T) {
 		writer.Header().Set("Content-Type", "application/json")
 		switch {
 		case request.Method == http.MethodGet && request.URL.Path == "/api/v1/repositories/acme/widget/merge-requests":
-			_, _ = writer.Write([]byte(`{"mergeRequests":[{"number":3,"title":"Add feature","state":"open","author":"alice","sourceBranch":"feature","targetBranch":"main"}],"totalCount":1,"openCount":1,"closedCount":0,"mergedCount":0,"page":1,"perPage":25,"hasNext":false}`))
+			_, _ = writer.Write([]byte(
+				`{"mergeRequests":[{"number":3,"title":"Add feature","state":"open",` +
+					`"author":"alice","sourceBranch":"feature","targetBranch":"main"}],` +
+					`"totalCount":1,"openCount":1,"closedCount":0,"mergedCount":0,` +
+					`"page":1,"perPage":25,"hasNext":false}`,
+			))
 		case request.Method == http.MethodGet && request.URL.Path == "/api/v1/repositories/acme/widget/merge-requests/3":
-			_, _ = writer.Write([]byte(`{"number":3,"title":"Add feature","body":"Details","state":"open","author":"alice","sourceBranch":"feature","targetBranch":"main"}`))
+			_, _ = writer.Write([]byte(
+				`{"number":3,"title":"Add feature","body":"Details","state":"open",` +
+					`"author":"alice","sourceBranch":"feature","targetBranch":"main"}`,
+			))
 		case request.Method == http.MethodPost && request.URL.Path == "/api/v1/repositories/acme/widget/merge-requests":
-			_, _ = writer.Write([]byte(`{"number":4,"title":"New PR","state":"open","sourceBranch":"feature-2","targetBranch":"main","author":"alice"}`))
-		case request.Method == http.MethodGet && request.URL.Path == "/api/v1/repositories/acme/widget/merge-requests/3/merge-readiness":
+			_, _ = writer.Write([]byte(
+				`{"number":4,"title":"New PR","state":"open","sourceBranch":"feature-2",` +
+					`"targetBranch":"main","author":"alice"}`,
+			))
+		case request.Method == http.MethodGet && strings.HasSuffix(request.URL.Path, "/merge-readiness"):
 			_, _ = writer.Write([]byte(`{"ready":true,"canMerge":true,"blockers":[]}`))
-		case request.Method == http.MethodPost && request.URL.Path == "/api/v1/repositories/acme/widget/merge-requests/3/merge/start":
+		case request.Method == http.MethodPost && strings.HasSuffix(request.URL.Path, "/merge/start"):
 			_, _ = writer.Write([]byte(`{"id":"operation-1","state":"started"}`))
-		case request.Method == http.MethodGet && request.URL.Path == "/api/v1/repositories/acme/widget/merge-requests/3/merge-operation":
+		case request.Method == http.MethodGet && strings.HasSuffix(request.URL.Path, "/merge-operation"):
 			_, _ = writer.Write([]byte(`{"id":"operation-1","state":"ready_to_push"}`))
-		case request.Method == http.MethodPost && request.URL.Path == "/api/v1/repositories/acme/widget/merge-requests/3/merge/push":
+		case request.Method == http.MethodPost && strings.HasSuffix(request.URL.Path, "/merge/push"):
 			contents, _ := io.ReadAll(request.Body)
 			if len(contents) != 0 {
 				t.Errorf("push body = %s", contents)
@@ -106,7 +117,10 @@ func TestPRMergeReportsReadinessProblem(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Content-Type", "application/json")
 		if strings.HasSuffix(request.URL.Path, "/merge-readiness") {
-			_, _ = writer.Write([]byte(`{"ready":false,"canMerge":false,"blockers":[{"code":"ci_failed","detail":"CI failed"}]}`))
+			_, _ = writer.Write([]byte(
+				`{"ready":false,"canMerge":false,"blockers":[{"code":"ci_failed",` +
+					`"detail":"CI failed"}]}`,
+			))
 			return
 		}
 		if strings.HasSuffix(request.URL.Path, "/merge/start") {

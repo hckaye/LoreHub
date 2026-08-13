@@ -152,7 +152,8 @@ func newPRCreateCommand(state *rootState) *cobra.Command {
 				SourceBranch string `json:"sourceBranch"`
 				TargetBranch string `json:"targetBranch"`
 			}{Title: title, Body: body, SourceBranch: source, TargetBranch: target}
-			if err := postJSON(command.Context(), client, methodPath(repository, "/merge-requests"), input, &response); err != nil {
+			path := methodPath(repository, "/merge-requests")
+			if err := postJSON(command.Context(), client, path, input, &response); err != nil {
 				return statusError(command, "create pull request", err)
 			}
 			if state.json {
@@ -245,7 +246,8 @@ func newPRMergeCommand(state *rootState) *cobra.Command {
 		},
 	}
 	command.Flags().DurationVar(&timeout, "timeout", 2*time.Minute, "maximum time to wait for the merge")
-	command.Flags().DurationVar(&pollInterval, "poll-interval", 250*time.Millisecond, "time between merge operation checks")
+	command.Flags().DurationVar(&pollInterval, "poll-interval", 250*time.Millisecond,
+		"time between merge operation checks")
 	return command
 }
 
@@ -289,7 +291,8 @@ func waitForMergeOperation(
 		}
 		firstCheck = false
 		var current mergeOperation
-		if err := client.GetJSON(ctx, methodPath(repository, "/merge-requests/"+number+"/merge-operation"), &current); err != nil {
+		path := methodPath(repository, "/merge-requests/"+number+"/merge-operation")
+		if err := client.GetJSON(ctx, path, &current); err != nil {
 			return nil, statusError(nil, "get merge operation", err)
 		}
 		operation = &current

@@ -24,11 +24,21 @@ func TestIssueCommandsUseAPIEndpoints(t *testing.T) {
 				request.URL.Query().Get("author") != "alice" || request.URL.Query().Get("label") != "defect" {
 				t.Errorf("issue query = %s", request.URL.RawQuery)
 			}
-			_, _ = writer.Write([]byte(`{"issues":[{"number":7,"title":"Fix bug","state":"closed","author":"alice","commentCount":1}],"totalCount":1,"openCount":0,"closedCount":1,"page":1,"perPage":25,"hasNext":false}`))
+			_, _ = writer.Write([]byte(
+				`{"issues":[{"number":7,"title":"Fix bug","state":"closed",` +
+					`"author":"alice","commentCount":1}],"totalCount":1,"openCount":0,` +
+					`"closedCount":1,"page":1,"perPage":25,"hasNext":false}`,
+			))
 		case request.Method == http.MethodGet && request.URL.Path == "/api/v1/repositories/acme/widget/issues/7":
-			_, _ = writer.Write([]byte(`{"number":7,"title":"Fix bug","body":"Details","state":"open","author":"alice","commentCount":1}`))
+			_, _ = writer.Write([]byte(
+				`{"number":7,"title":"Fix bug","body":"Details","state":"open",` +
+					`"author":"alice","commentCount":1}`,
+			))
 		case request.Method == http.MethodGet && request.URL.Path == "/api/v1/repositories/acme/widget/issues/7/comments":
-			_, _ = writer.Write([]byte(`{"items":[{"id":"comment-1","author":"bob","body":"Looks good","createdAt":"2026-08-13T00:00:00Z"}],"hasMore":false}`))
+			_, _ = writer.Write([]byte(
+				`{"items":[{"id":"comment-1","author":"bob","body":"Looks good",` +
+					`"createdAt":"2026-08-13T00:00:00Z"}],"hasMore":false}`,
+			))
 		case request.Method == http.MethodPost && request.URL.Path == "/api/v1/repositories/acme/widget/issues":
 			_, _ = writer.Write([]byte(`{"number":8,"title":"New issue","state":"open","author":"alice"}`))
 		case request.Method == http.MethodPost && request.URL.Path == "/api/v1/repositories/acme/widget/issues/7/comments":
@@ -53,7 +63,9 @@ func TestIssueCommandsUseAPIEndpoints(t *testing.T) {
 
 	var output bytes.Buffer
 	command := NewRootCommand(Options{Out: &output, ErrOut: &output, ConfigPath: configPath, DefaultHost: server.URL})
-	command.SetArgs([]string{"issue", "list", "--state", "closed", "--author", "alice", "--label", "defect", "--search", "bug"})
+	command.SetArgs([]string{
+		"issue", "list", "--state", "closed", "--author", "alice", "--label", "defect", "--search", "bug",
+	})
 	if err := command.Execute(); err != nil {
 		t.Fatal(err)
 	}

@@ -61,7 +61,8 @@ func newIssueListCommand(state *rootState) *cobra.Command {
 				}
 			}
 			var response issuePage
-			if err := getJSON(command.Context(), client, queryPath(methodPath(repository, "/issues"), values), &response); err != nil {
+			path := queryPath(methodPath(repository, "/issues"), values)
+			if err := getJSON(command.Context(), client, path, &response); err != nil {
 				return statusError(command, "list issues", err)
 			}
 			rows := make([][]string, 0, len(response.Issues))
@@ -105,7 +106,8 @@ func newIssueViewCommand(state *rootState) *cobra.Command {
 				return statusError(command, "get issue", err)
 			}
 			var comments commentPage
-			if err := getJSON(command.Context(), client, methodPath(repository, "/issues/"+number+"/comments"), &comments); err != nil {
+			commentsPath := methodPath(repository, "/issues/"+number+"/comments")
+			if err := getJSON(command.Context(), client, commentsPath, &comments); err != nil {
 				return statusError(command, "list issue comments", err)
 			}
 			view := issueView{issue: response, Comments: comments}
