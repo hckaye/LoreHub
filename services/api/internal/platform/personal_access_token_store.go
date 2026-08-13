@@ -214,7 +214,8 @@ func (store *Store) VerifyPersonalAccessToken(
 	var identity auth.PersonalAccessTokenIdentity
 	var previousUse *time.Time
 	err = transaction.QueryRow(ctx, `
-		SELECT token.id, owner.id, owner.username, owner.display_name,
+		SELECT token.id, token.token_prefix, token.expires_at,
+		       owner.id, owner.username, owner.display_name,
 		       COALESCE(owner.email, ''), owner.locale, token.last_used_at,
 		       ARRAY(
 		           SELECT scope.scope
@@ -231,6 +232,8 @@ func (store *Store) VerifyPersonalAccessToken(
 		FOR UPDATE OF token
 	`, digest, usedAt).Scan(
 		&identity.TokenID,
+		&identity.Prefix,
+		&identity.ExpiresAt,
 		&identity.UserID,
 		&identity.Username,
 		&identity.DisplayName,
@@ -254,6 +257,9 @@ func (store *Store) VerifyPersonalAccessToken(
 		`, identity.TokenID, usedAt); err != nil {
 			return auth.PersonalAccessTokenIdentity{}, fmt.Errorf("record personal access token use: %w", err)
 		}
+		identity.LastUsedAt = &usedAt
+	} else {
+		identity.LastUsedAt = previousUse
 	}
 	if err := transaction.Commit(ctx); err != nil {
 		return auth.PersonalAccessTokenIdentity{}, fmt.Errorf("commit personal access token verification: %w", err)

@@ -751,25 +751,33 @@ func latestRevision(branches []loreclient.Branch, name string) (string, bool) {
 }
 
 func (api *API) actor(writer http.ResponseWriter, request *http.Request) (platform.User, bool) {
+	user, _, ok := api.resolveActor(writer, request)
+	return user, ok
+}
+
+func (api *API) resolveActor(
+	writer http.ResponseWriter,
+	request *http.Request,
+) (platform.User, auth.Principal, bool) {
 	authorization := strings.TrimSpace(request.Header.Get("Authorization"))
 	if authorization == "" {
 		if session, sessionToken, found, err := api.lookupSession(request); err != nil {
 			api.internalError(writer, request, "look up authentication session", err)
-			return platform.User{}, false
+			return platform.User{}, auth.Principal{}, false
 		} else if found {
 			if stateChangingMethod(request.Method) && !api.validCSRF(request, session.CSRFDigest) {
 				writeProblem(writer, http.StatusForbidden, "csrf_failed", "A valid CSRF token is required")
-				return platform.User{}, false
+				return platform.User{}, auth.Principal{}, false
 			}
 			user, err := api.store.ActiveUser(request.Context(), session.UserID)
 			if err != nil {
 				writeProblem(writer, http.StatusForbidden, "forbidden", "This operation is not permitted")
-				return platform.User{}, false
+				return platform.User{}, auth.Principal{}, false
 			}
-			return user, true
+			return user, auth.Principal{}, true
 		} else if sessionToken != "" {
 			writeProblem(writer, http.StatusUnauthorized, "authentication_required", "Authentication is required")
-			return platform.User{}, false
+			return platform.User{}, auth.Principal{}, false
 		}
 	}
 	principal, err := api.authenticator.Authenticate(request.Context(), authorization)
@@ -779,20 +787,20 @@ func (api *API) actor(writer http.ResponseWriter, request *http.Request) (platfo
 		} else {
 			writeProblem(writer, http.StatusUnauthorized, "authentication_required", "Authentication is required")
 		}
-		return platform.User{}, false
+		return platform.User{}, auth.Principal{}, false
 	}
 	if principal.CredentialKind == auth.CredentialPersonalAccessToken &&
 		!auth.PersonalAccessTokenAllowsAPI(principal.Scopes, stateChangingMethod(request.Method)) {
 		writer.Header().Set("WWW-Authenticate", `Bearer error="insufficient_scope"`)
 		writeProblem(writer, http.StatusForbidden, "insufficient_token_scope",
 			"The personal access token does not allow this operation")
-		return platform.User{}, false
+		return platform.User{}, auth.Principal{}, false
 	}
 	var user platform.User
 	if principal.CredentialKind == auth.CredentialPersonalAccessToken {
 		if principal.InternalUserID == "" || principal.CredentialID == "" {
 			writeProblem(writer, http.StatusUnauthorized, "authentication_required", "Authentication is required")
-			return platform.User{}, false
+			return platform.User{}, auth.Principal{}, false
 		}
 		user, err = api.store.ActiveUser(request.Context(), principal.InternalUserID)
 	} else {
@@ -801,12 +809,12 @@ func (api *API) actor(writer http.ResponseWriter, request *http.Request) (platfo
 	if err != nil {
 		if errors.Is(err, platform.ErrForbidden) {
 			writeProblem(writer, http.StatusForbidden, "forbidden", "This operation is not permitted")
-			return platform.User{}, false
+			return platform.User{}, auth.Principal{}, false
 		}
 		api.internalError(writer, request, "resolve authenticated user", err)
-		return platform.User{}, false
+		return platform.User{}, auth.Principal{}, false
 	}
-	return user, true
+	return user, principal, true
 }
 
 func (api *API) platformError(writer http.ResponseWriter, request *http.Request, operation string, err error) {

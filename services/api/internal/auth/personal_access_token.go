@@ -31,12 +31,15 @@ var personalAccessTokenScopes = map[string]bool{
 
 type PersonalAccessTokenIdentity struct {
 	TokenID         string
+	Prefix          string
 	UserID          string
 	Username        string
 	DisplayName     string
 	Email           string
 	PreferredLocale string
 	Scopes          []string
+	ExpiresAt       time.Time
+	LastUsedAt      *time.Time
 }
 
 type PersonalAccessTokenVerifier interface {
@@ -106,15 +109,18 @@ func (authenticator *PersonalAccessTokenAuthenticator) AuthenticateAPIKey(
 		return Principal{}, ErrInvalidPersonalAccessToken
 	}
 	return Principal{
-		InternalUserID:  identity.UserID,
-		Subject:         identity.UserID,
-		Username:        identity.Username,
-		Name:            identity.DisplayName,
-		Email:           identity.Email,
-		PreferredLocale: identity.PreferredLocale,
-		CredentialKind:  CredentialPersonalAccessToken,
-		CredentialID:    identity.TokenID,
-		Scopes:          append([]string(nil), identity.Scopes...),
+		InternalUserID:       identity.UserID,
+		Subject:              identity.UserID,
+		Username:             identity.Username,
+		Name:                 identity.DisplayName,
+		Email:                identity.Email,
+		PreferredLocale:      identity.PreferredLocale,
+		CredentialKind:       CredentialPersonalAccessToken,
+		CredentialID:         identity.TokenID,
+		CredentialPrefix:     identity.Prefix,
+		CredentialExpiresAt:  identity.ExpiresAt,
+		CredentialLastUsedAt: identity.LastUsedAt,
+		Scopes:               append([]string(nil), identity.Scopes...),
 	}, nil
 }
 
