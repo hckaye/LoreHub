@@ -550,3 +550,99 @@
     padding: 8px !important;
   }
 }
+
+.pendingBar {
+  position: sticky;
+  top: 8px;
+  z-index: 3;
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--accent-emphasis);
+  border-radius: 999px;
+  background: var(--canvas-default);
+}
+
+.pendingCount {
+  color: var(--fg-muted);
+  font-size: 13px;
+}
+
+.pendingFinish {
+  margin-left: auto;
+  padding: 5px 12px;
+  border: 1px solid var(--accent-emphasis);
+  border-radius: 999px;
+  background: var(--accent-emphasis);
+  color: var(--fg-on-emphasis);
+  cursor: pointer;
+  font: inherit;
+}
+
+.pendingPopover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 4;
+  display: grid;
+  gap: 10px;
+  width: min(420px, 90vw);
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--canvas-default);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 18%);
+}
+
+.pendingPopover textarea {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--fg-default);
+  font: inherit;
+  resize: vertical;
+}
+
+.pendingVerdicts {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.pendingVerdicts legend {
+  padding: 0;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.pendingVerdicts label {
+  align-items: start;
+  display: flex;
+  gap: 8px;
+}
+
+.pendingVerdicts span {
+  display: grid;
+  gap: 2px;
+}
+
+.pendingVerdicts em {
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-style: normal;
+}
+
+.pendingBadge {
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--canvas-subtle);
+  color: var(--fg-muted);
+  font-size: 11px;
+}

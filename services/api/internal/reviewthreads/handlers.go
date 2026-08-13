@@ -16,11 +16,17 @@ type createThreadRequest struct {
 	Body                 string `json:"body"`
 	ExpectedBaseRevision string `json:"expectedBaseRevision"`
 	ExpectedHeadRevision string `json:"expectedHeadRevision"`
+	PendingReviewID      string `json:"pendingReviewId"`
 }
 
 type commentRequest struct {
 	Body            string `json:"body"`
 	ExpectedVersion int    `json:"expectedVersion"`
+}
+
+type replyRequest struct {
+	Body            string `json:"body"`
+	PendingReviewID string `json:"pendingReviewId"`
 }
 
 type updateThreadRequest struct {
@@ -37,15 +43,25 @@ func (api *API) listThreads(writer http.ResponseWriter, request *http.Request) {
 	if !ok {
 		return
 	}
-	threads, err := api.store.List(request.Context(), repository.ID, number)
+	viewer := ""
+	if actor != nil {
+		viewer = actor.Username
+	}
+	threads, err := api.store.List(request.Context(), repository.ID, number, viewer)
 	if err != nil {
 		api.storeError(writer, request, "list review threads", err)
 		return
 	}
+	var pending *PendingReview
 	if actor != nil {
 		access, err := api.repositories.RepositoryPermission(request.Context(), *actor, repository)
 		if err != nil {
 			api.storeError(writer, request, "compute review permissions", err)
+			return
+		}
+		pending, err = api.store.PendingReview(request.Context(), repository.ID, number, viewer)
+		if err != nil {
+			api.storeError(writer, request, "get pending review", err)
 			return
 		}
 		for index := range threads {
@@ -59,7 +75,7 @@ func (api *API) listThreads(writer http.ResponseWriter, request *http.Request) {
 			}
 		}
 	}
-	writeJSON(writer, http.StatusOK, ThreadList{Threads: threads})
+	writeJSON(writer, http.StatusOK, ThreadList{Threads: threads, PendingReview: pending})
 }
 
 func (api *API) createThread(writer http.ResponseWriter, request *http.Request) {
@@ -79,6 +95,7 @@ func (api *API) createThread(writer http.ResponseWriter, request *http.Request) 
 		Path: body.Path, Side: body.Side, LineNumber: body.LineNumber, Body: body.Body,
 		ExpectedBaseRevision: body.ExpectedBaseRevision,
 		ExpectedHeadRevision: body.ExpectedHeadRevision,
+		PendingReviewID:      strings.TrimSpace(body.PendingReviewID),
 	})
 	if err != nil {
 		api.storeError(writer, request, "validate review thread", err)
@@ -138,13 +155,14 @@ func (api *API) reply(writer http.ResponseWriter, request *http.Request) {
 	if !ok {
 		return
 	}
-	var body commentRequest
+	var body replyRequest
 	if !decodeJSON(writer, request, &body) {
 		return
 	}
 	comment, err := api.store.Reply(
 		request.Context(), actor, repositoryRef(repository), number,
 		strings.TrimSpace(request.PathValue("threadID")), body.Body,
+		strings.TrimSpace(body.PendingReviewID),
 	)
 	if err != nil {
 		api.storeError(writer, request, "reply to review thread", err)

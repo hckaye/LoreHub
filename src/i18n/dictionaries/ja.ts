@@ -15,6 +15,7 @@ import { issueDetail } from "./issue-detail";
 import { loreServers } from "./lore-servers";
 import { metadata } from "./metadata";
 import { milestones } from "./milestones";
+import { pendingReviews } from "./pending-reviews";
 import { personalAccessTokens } from "./personal-access-tokens";
 import { pullRequestDrafts } from "./pull-request-drafts";
 import { pullRequestMetadata } from "./pull-request-metadata";
@@ -48,6 +49,7 @@ const ja = {
   wikiPage: wiki.ja,
   pullRequestMetadata: pullRequestMetadata.ja,
   pullRequestDrafts: pullRequestDrafts.ja,
+  pendingReviews: pendingReviews.ja,
   personalAccessTokens: personalAccessTokens.ja,
   fileLocks: fileLocks.ja,
   globalWorkItems: globalWorkItems.ja,
