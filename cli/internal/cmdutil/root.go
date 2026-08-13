@@ -94,6 +94,10 @@ func NewRootCommand(options Options) *cobra.Command {
 		newRepoCommand(state),
 		newIssueCommand(state),
 		newPRCommand(state),
+		newReleaseCommand(state),
+		newRunCommand(state),
+		newLabelCommand(state),
+		newSearchCommand(state),
 		newVersionCommand(state),
 	)
 	return root

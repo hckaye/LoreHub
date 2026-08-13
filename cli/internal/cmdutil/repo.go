@@ -1,8 +1,12 @@
 package cmdutil
 
 import (
+	"bytes"
+	"context"
 	"fmt"
 	"net/url"
+	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 
@@ -20,9 +24,120 @@ func newRepoCommand(state *rootState) *cobra.Command {
 		newRepoListCommand(state),
 		newRepoViewCommand(state),
 		newRepoCreateCommand(state),
+		newRepoCloneCommand(state),
 		newRepoSetDefaultCommand(state),
 	)
 	return repo
+}
+
+func newRepoCloneCommand(state *rootState) *cobra.Command {
+	return &cobra.Command{
+		Use:   "clone OWNER/NAME [DIR]",
+		Short: "Clone a Lore repository",
+		Args:  cobra.RangeArgs(1, 2),
+		RunE: func(command *cobra.Command, args []string) error {
+			if _, err := exec.LookPath("lore"); err != nil {
+				return fmt.Errorf("lore CLI is not installed; install the Lore CLI and ensure lore is on PATH")
+			}
+			repoContext, err := ParseRepoContext(args[0])
+			if err != nil || repoContext.Host != "" {
+				return fmt.Errorf("repository must be OWNER/NAME")
+			}
+			repoContext.Host = state.commandHost()
+			client, err := state.clientForRepo(repoContext)
+			if err != nil {
+				return err
+			}
+
+			var metadata repository
+			if err := getJSON(command.Context(), client, methodPath(repoContext, ""), &metadata); err != nil {
+				return statusError(command, "get repository", err)
+			}
+			if strings.TrimSpace(metadata.LoreURL) == "" {
+				return fmt.Errorf("repository %s has no Lore URL", repoContext)
+			}
+
+			var account accountResponse
+			if err := getJSON(command.Context(), client, "/api/v1/account", &account); err != nil {
+				return statusError(command, "check token permissions", err)
+			}
+			if err := checkClonePermissions(command, account); err != nil {
+				return err
+			}
+
+			if err := runLoreAuth(command.Context(), client.Token, metadata.LoreURL); err != nil {
+				return err
+			}
+			if err := runLoreClone(command.Context(), metadata.LoreURL, args[1:]); err != nil {
+				return err
+			}
+			if state.json {
+				return state.writeJSON(map[string]any{
+					"repository": repoContext.String(),
+					"loreUrl":    metadata.LoreURL,
+					"cloned":     true,
+				})
+			}
+			_, err = fmt.Fprintf(command.OutOrStdout(), "Cloned %s\n", repoContext.String())
+			return err
+		},
+	}
+}
+
+func checkClonePermissions(command *cobra.Command, account accountResponse) error {
+	if account.Token == nil {
+		return fmt.Errorf("check token permissions: API did not report token permissions")
+	}
+	permissions := make(map[string]bool, len(account.Token.Permissions))
+	for _, permission := range account.Token.Permissions {
+		permissions[permission] = true
+	}
+	missing := make([]string, 0, 2)
+	if !permissions["api"] && !permissions["read_api"] {
+		missing = append(missing, "read_api or api")
+	}
+	if !permissions["read_repository"] && !permissions["write_repository"] {
+		missing = append(missing, "read_repository or write_repository")
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	message := "token is missing " + strings.Join(missing, "; ")
+	_, _ = fmt.Fprintf(command.ErrOrStderr(), "Warning: %s\n", message)
+	return fmt.Errorf("cannot clone: %s", message)
+}
+
+func runLoreAuth(ctx context.Context, token string, loreURL string) error {
+	if strings.TrimSpace(token) == "" {
+		return fmt.Errorf("cannot authenticate lore CLI: token is empty")
+	}
+	arguments := []string{
+		"auth", "login", "--token-type", "api-key", "--token", token, loreURL,
+	}
+	process := exec.CommandContext(ctx, "lore", arguments...)
+	process.Env = append(os.Environ(), "LOREHUB_TOKEN="+token)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	process.Stdout = &stdout
+	process.Stderr = &stderr
+	if err := process.Run(); err != nil {
+		return fmt.Errorf("lore auth login failed")
+	}
+	return nil
+}
+
+func runLoreClone(ctx context.Context, loreURL string, directory []string) error {
+	arguments := []string{"clone", loreURL}
+	arguments = append(arguments, directory...)
+	process := exec.CommandContext(ctx, "lore", arguments...)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	process.Stdout = &stdout
+	process.Stderr = &stderr
+	if err := process.Run(); err != nil {
+		return fmt.Errorf("lore clone failed")
+	}
+	return nil
 }
 
 func newRepoListCommand(state *rootState) *cobra.Command {

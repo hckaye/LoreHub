@@ -25,6 +25,7 @@ type repository struct {
 	Visibility         string     `json:"visibility"`
 	LoreRepositoryID   string     `json:"loreRepositoryId"`
 	LoreURL            string     `json:"loreUrl"`
+	LoreServerID       string     `json:"loreServerId"`
 	DefaultBranch      string     `json:"defaultBranch"`
 	HomepageURL        string     `json:"homepageUrl"`
 	AllowIssues        bool       `json:"allowIssues"`
