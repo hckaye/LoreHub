@@ -158,8 +158,20 @@ func TestRunnerClaimFiltersTargetLabelsAndScopePostgres(t *testing.T) {
 	if err := store.RunnerHeartbeatJob(ctx, claimed.ID, runnerID, time.Minute); err != nil {
 		t.Fatalf("leaseholder could not heartbeat runner job: %v", err)
 	}
-	if err := store.CompleteJob(ctx, *claimed, runnerID, "success", "", nil); err != nil {
+	if _, err := pool.Exec(ctx, `
+		UPDATE ci_runs SET status = 'cancelled', conclusion = 'cancelled', cancel_requested = true
+		WHERE id = $1
+	`, claimed.RunID); err != nil {
 		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `
+		UPDATE ci_jobs SET status = 'cancelled', conclusion = 'cancelled',
+		  lease_owner = NULL, lease_expires_at = NULL WHERE id = $1
+	`, claimed.ID); err != nil {
+		t.Fatal(err)
+	}
+	if requested, err := store.RunnerCancellationRequested(ctx, claimed.ID, runnerID); err != nil || !requested {
+		t.Fatalf("leaseholder could not observe cancellation: requested=%v err=%v", requested, err)
 	}
 	if managed, err := store.ClaimJob(ctx, "managed-worker", time.Minute); err != nil ||
 		managed == nil || managed.ID != managedJobID {

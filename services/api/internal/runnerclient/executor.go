@@ -60,10 +60,8 @@ func NewShellExecutor(config ShellExecutorConfig) (*ShellExecutor, error) {
 	if strings.TrimSpace(config.ActBinary) == "" {
 		config.ActBinary = "act"
 	}
-	for name, binary := range map[string]string{"Lore": config.LoreBinary, "act": config.ActBinary} {
-		if _, err := exec.LookPath(binary); err != nil {
-			return nil, fmt.Errorf("%s executable %q is unavailable: %w", name, binary, err)
-		}
+	if _, err := exec.LookPath(config.ActBinary); err != nil {
+		return nil, fmt.Errorf("act executable %q is unavailable: %w", config.ActBinary, err)
 	}
 	if strings.TrimSpace(config.WorkDirectory) == "" {
 		return nil, errors.New("runner work directory is required")

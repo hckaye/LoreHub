@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -220,9 +221,15 @@ func (store *Store) RunnerCancellationRequested(
 		SELECT run.status = 'cancelled' OR run.cancel_requested
 		FROM ci_jobs job
 		JOIN ci_runs run ON run.id = job.run_id
-		WHERE job.id = $1 AND job.runner_id = $2::uuid AND job.lease_owner = $2::text
-		  AND job.execution_target = 'self_hosted' AND job.status = 'in_progress'
-		  AND job.lease_expires_at > now()
+		WHERE job.id = $1 AND job.runner_id = $2::uuid
+		  AND job.execution_target = 'self_hosted'
+		  AND (
+		    (
+		      job.lease_owner = $2::text AND job.status = 'in_progress'
+		      AND job.lease_expires_at > now()
+		    )
+		    OR (job.status = 'cancelled' AND run.cancel_requested)
+		  )
 	`, jobID, runnerID).Scan(&requested)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, ErrRunnerLeaseNotHeld
@@ -389,6 +396,13 @@ func appendRunnerUpload(path string, offset int64, content []byte, maximum int64
 	}
 	writtenSize := offset + int64(len(content))
 	if info.Size() == writtenSize {
+		existing := make([]byte, len(content))
+		if _, err := file.ReadAt(existing, offset); err != nil && !errors.Is(err, io.EOF) {
+			return info.Size(), fmt.Errorf("verify repeated runner upload: %w", err)
+		}
+		if !bytes.Equal(existing, content) {
+			return info.Size(), ErrRunnerUploadOffset
+		}
 		return info.Size(), nil
 	}
 	if info.Size() != offset {
