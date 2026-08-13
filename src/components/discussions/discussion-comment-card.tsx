@@ -3,6 +3,8 @@
 import { CheckCircle2 } from "lucide-react";
 import { FormEvent, useState } from "react";
 
+import { formatTimestamp } from "@/lib/format";
+
 import { MarkdownContent } from "../wiki/markdown-content";
 import type { DiscussionCommentCardProps } from "./discussion-component-types";
 import styles from "./discussion-detail.module.css";
@@ -35,7 +37,7 @@ export function DiscussionCommentCard(props: DiscussionCommentCardProps) {
       <header className={styles.cardHeader}>
         <strong>{props.comment.author.displayName}</strong>
         <span>@{props.comment.author.username}</span>
-        <time dateTime={props.comment.createdAt}>{formatDate(props.comment.createdAt, props.locale)}</time>
+        <time dateTime={props.comment.createdAt}>{formatTimestamp(props.comment.createdAt, props.locale)}</time>
         {props.comment.editedAt && <span>{props.copy.edited}</span>}
         {props.comment.answer && (
           <span className={styles.answerLabel}>
@@ -112,11 +114,5 @@ export function DiscussionCommentCard(props: DiscussionCommentCardProps) {
         )}
       </div>
     </article>
-  );
-}
-
-function formatDate(value: string, locale: DiscussionCommentCardProps["locale"]): string {
-  return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(
-    new Date(value),
   );
 }

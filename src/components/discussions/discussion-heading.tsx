@@ -5,6 +5,7 @@ import { CircleDot, LockKeyhole, Pin, Unlock, XCircle } from "lucide-react";
 import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
 import type { AuthSession, Discussion } from "@/lib/api-types";
+import { formatTimestamp } from "@/lib/format";
 
 import styles from "./discussion-detail.module.css";
 
@@ -37,7 +38,7 @@ export function DiscussionHeading(props: DiscussionHeadingProps) {
           </span>
           <span>{props.discussion.category.name}</span>
           <span>
-            {props.discussion.author.displayName} · {formatDate(props.discussion.createdAt, props.locale)}
+            {props.discussion.author.displayName} · {formatTimestamp(props.discussion.createdAt, props.locale)}
           </span>
         </div>
       </div>
@@ -104,11 +105,5 @@ export function DiscussionHeading(props: DiscussionHeadingProps) {
         )}
       </div>
     </header>
-  );
-}
-
-function formatDate(value: string, locale: Locale): string {
-  return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(
-    new Date(value),
   );
 }

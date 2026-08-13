@@ -9,6 +9,7 @@ import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
 import type { AuthSession, WikiPage, WikiRevision } from "@/lib/api-types";
 import { deleteJsonWithBody, patchJson, type MutationFailureKind } from "@/lib/auth-client";
+import { formatDateTime } from "@/lib/format";
 import { mutationFailureMessage } from "@/lib/mutation-messages";
 import { repositoryPath } from "@/lib/routes";
 
@@ -217,15 +218,11 @@ function formatMeta(template: string, locale: Locale, version: number, author: s
   return template
     .replace("{version}", String(version))
     .replace("{author}", author)
-    .replace("{date}", formatDate(locale, date));
+    .replace("{date}", formatDateTime(date, locale));
 }
 
 function formatHistoryMeta(locale: Locale, author: string, date: string): string {
-  return `${author} · ${formatDate(locale, date)}`;
-}
-
-function formatDate(locale: Locale, date: string): string {
-  return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(new Date(date));
+  return `${author} · ${formatDateTime(date, locale)}`;
 }
 
 function wikiAPIPath(owner: string, repository: string, slug: string): string {

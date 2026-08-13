@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import type { Dictionary } from "@/i18n";
+import type { Locale } from "@/i18n/config";
 import {
   actionsContextEntryPath,
   actionsContextListPath,
@@ -24,7 +25,7 @@ type ActionsContextTarget =
 
 type ActionsContextSettingsProps = {
   dictionary: Dictionary;
-  locale: string;
+  locale: Locale;
   session: Extract<AuthSession, { status: "authenticated" }>;
   target: ActionsContextTarget;
   environmentNames?: string[];

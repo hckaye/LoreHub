@@ -1,5 +1,6 @@
 import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
+import { formatDateTime } from "@/lib/format";
 import type { RepositoryInvitation } from "@/lib/repository-invitations";
 
 import styles from "./repository-invitation-settings.module.css";
@@ -30,7 +31,7 @@ export function RepositoryInvitationList(props: RepositoryInvitationListProps) {
             </div>
             <span className={styles.metadata}>@{invitation.inviteeUsername}</span>
             <span className={styles.metadata}>
-              {props.copy.expires.replace("{date}", formatInvitationDate(invitation.expiresAt, props.locale))}
+              {props.copy.expires.replace("{date}", formatDateTime(invitation.expiresAt, props.locale))}
             </span>
           </div>
           {invitation.status === "pending" && (
@@ -47,11 +48,4 @@ export function RepositoryInvitationList(props: RepositoryInvitationListProps) {
       ))}
     </ul>
   );
-}
-
-function formatInvitationDate(value: string, locale: Locale): string {
-  return new Intl.DateTimeFormat(locale === "ja" ? "ja-JP" : "en-US", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
 }

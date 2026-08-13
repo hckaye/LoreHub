@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
 import type { AuthSession } from "@/lib/api-types";
+import { formatDateTime } from "@/lib/format";
 import {
   listRepositoryInvitations,
   repositoryInvitationAccountPath,
@@ -184,18 +185,9 @@ function InvitationDetails({
         <code>{invitation.role}</code>
       </div>
       <span className={styles.metadata}>{copy.invitedBy.replace("{username}", invitation.invitedByUsername)}</span>
-      {date && (
-        <span className={styles.metadata}>{dateLabel.replace("{date}", formatInvitationDate(date, locale))}</span>
-      )}
+      {date && <span className={styles.metadata}>{dateLabel.replace("{date}", formatDateTime(date, locale))}</span>}
     </div>
   );
-}
-
-function formatInvitationDate(value: string, locale: Locale): string {
-  return new Intl.DateTimeFormat(locale === "ja" ? "ja-JP" : "en-US", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
 }
 
 function formatPageStatus(template: string, page: number, pages: number): string {
