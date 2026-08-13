@@ -112,7 +112,7 @@ export default async function PullRequestDetailPage({ params, searchParams }: Pu
       assigneesAvailable={assignees.ok}
       diff={resultData(diff, null)}
       dictionary={dictionary}
-      events={events.ok ? events.data : []}
+      events={events.ok ? events.data : null}
       labels={resultData(labels, [])}
       labelsAvailable={labels.ok}
       locale={locale}

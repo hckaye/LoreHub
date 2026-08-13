@@ -60,7 +60,7 @@ type PullRequestDetailProps = {
   diff: LoreDiff | null;
   commits: RevisionHistoryEntry[];
   comments: CommentPage<MergeRequestComment> | null;
-  events: WorkItemEvent[];
+  events: WorkItemEvent[] | null;
   assignees: Assignee[];
   assigneesAvailable: boolean;
   labels: Label[];
@@ -289,7 +289,7 @@ function PullRequestTab({
   reviewCandidates: ReviewCandidate[];
   reviewRequests: ReviewRequestSummary | null;
   comments: CommentPage<MergeRequestComment> | null;
-  events: WorkItemEvent[];
+  events: WorkItemEvent[] | null;
   readiness: MergeReadiness | null;
   readinessUnavailableReason: "forbidden" | "unavailable";
   reviewThreads: ReviewThread[];

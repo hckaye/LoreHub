@@ -58,7 +58,7 @@ export default async function IssueDetailPage({ params, searchParams }: IssueDet
     <IssueDetail
       comments={comments.ok ? comments.data : null}
       dictionary={dictionary}
-      events={events.ok ? events.data : []}
+      events={events.ok ? events.data : null}
       issue={issue.data}
       labels={labels.ok ? labels.data : []}
       labelsAvailable={labels.ok}

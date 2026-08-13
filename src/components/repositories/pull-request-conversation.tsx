@@ -38,7 +38,7 @@ import { WorkItemEventRow } from "./work-item-event-row";
 type PullRequestConversationProps = {
   comments: CommentPage<MergeRequestComment> | null;
   dictionary: Dictionary;
-  events: WorkItemEvent[];
+  events: WorkItemEvent[] | null;
   locale: Locale;
   mergeRequest: MergeRequest;
   owner: string;
@@ -198,7 +198,8 @@ export function PullRequestConversation(props: PullRequestConversationProps) {
       />
       <div className={styles.timeline}>
         {!props.comments && <p className={styles.muted}>{labels.commentsUnavailable}</p>}
-        {mergeConversationTimeline(props.comments, props.events).map((entry) =>
+        {!props.events && <p className={styles.muted}>{props.dictionary.workItemEvents.unavailable}</p>}
+        {mergeConversationTimeline(props.comments, props.events ?? []).map((entry) =>
           entry.kind === "comment" ? (
             <Comment
               busy={busy === entry.comment.id}

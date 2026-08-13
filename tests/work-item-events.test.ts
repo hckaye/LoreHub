@@ -83,8 +83,9 @@ test("conversations render event rows next to unchanged comment cards", async ()
   assert.match(issuePage, /getIssueEvents\(owner, repository, number\)/u);
   assert.match(pullPage, /getMergeRequestEvents\(owner, slug, number\)/u);
   for (const conversation of [issueConversation, pullConversation]) {
-    assert.match(conversation, /mergeConversationTimeline\(props\.comments, props\.events\)/u);
+    assert.match(conversation, /mergeConversationTimeline\(props\.comments, props\.events \?\? \[\]\)/u);
     assert.match(conversation, /<WorkItemEventRow/u);
+    assert.match(conversation, /workItemEvents\.unavailable/u);
   }
   assert.match(issueConversation, /<CommentCard/u);
   assert.match(pullConversation, /<Comment\b/u);

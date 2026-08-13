@@ -29,7 +29,7 @@ import { RelativeTime } from "./issue-timeline-item";
 type IssueDetailProps = {
   comments: CommentPage<IssueComment> | null;
   dictionary: Dictionary;
-  events: WorkItemEvent[];
+  events: WorkItemEvent[] | null;
   issue: Issue;
   labels: Label[];
   labelsAvailable: boolean;

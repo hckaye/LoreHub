@@ -22,7 +22,7 @@ type ConversationProps = {
   basePath: string;
   comments: CommentPage<IssueComment> | null;
   dictionary: Dictionary;
-  events: WorkItemEvent[];
+  events: WorkItemEvent[] | null;
   issue: Issue;
   locale: Locale;
   onDeleteComment: (commentID: string) => Promise<boolean>;
@@ -47,7 +47,8 @@ export function IssueConversation(props: ConversationProps) {
         />
       )}
       {!props.comments && <p className={styles.notice}>{props.dictionary.issueDetail.commentsUnavailable}</p>}
-      {mergeConversationTimeline(props.comments, props.events).map((entry) =>
+      {!props.events && <p className={styles.notice}>{props.dictionary.workItemEvents.unavailable}</p>}
+      {mergeConversationTimeline(props.comments, props.events ?? []).map((entry) =>
         entry.kind === "comment" ? (
           <CommentCard
             busy={props.busyAction === entry.comment.id}
