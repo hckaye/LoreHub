@@ -199,6 +199,16 @@ func prepareRemoteActions(
 	return mappings, nil
 }
 
+func PrepareRemoteActions(
+	ctx context.Context,
+	workflowPath string,
+	destination string,
+	sourceURL string,
+	environment string,
+) ([]string, error) {
+	return prepareRemoteActions(ctx, workflowPath, destination, sourceURL, environment)
+}
+
 type remoteActionResolver struct {
 	client         *http.Client
 	sourceURL      string

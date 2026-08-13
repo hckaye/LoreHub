@@ -310,6 +310,17 @@ func run(logger *slog.Logger) error {
 		httpapi.WithRunners(store, runnerTokenCodec, settings.RunnerTokenKeyID),
 		httpapi.WithLoreServers(store, loresSecretCodec, settings.LoresTokenKeyID,
 			settings.LoreAllowPrivateServers),
+		httpapi.WithRunnerControlPlane(actionsStore, actionsContext, actionsJobTokens, httpapi.RunnerControlConfig{
+			LeaseDuration:         settings.RunnerLeaseDuration,
+			LogMaxBytes:           settings.RunnerLogMaxBytes,
+			ArtifactMaxCount:      settings.RunnerArtifactMaxCount,
+			ArtifactMaxFileBytes:  settings.RunnerArtifactMaxFile,
+			ArtifactMaxTotalBytes: settings.RunnerArtifactMaxTotal,
+			Principal: runner.CredentialPrincipal{
+				Kind: "service", Subject: settings.LoreActionsRunnerSubject,
+			},
+			RESTScope: runner.JobTokenRESTScope, GraphQLScope: runner.JobTokenGraphQLScope,
+		}),
 		httpapi.WithInstanceAdminUsernames(settings.InstanceAdminUsernames),
 		httpapi.WithConfiguredLoginProviders(settings.IdentityProviders),
 		httpapi.WithCollaboration(collaborationStore),

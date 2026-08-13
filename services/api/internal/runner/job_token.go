@@ -26,10 +26,10 @@ type JobTokenRequest struct {
 }
 
 type JobToken struct {
-	RepositoryID string
-	Token        string
-	Subject      string
-	ExpiresAt    time.Time
+	RepositoryID string    `json:"repositoryId"`
+	Token        string    `json:"token"`
+	Subject      string    `json:"subject"`
+	ExpiresAt    time.Time `json:"expiresAt"`
 }
 
 type JobTokenIssuer interface {
@@ -114,6 +114,17 @@ func issueJobToken(
 		return JobToken{}, err
 	}
 	return token, nil
+}
+
+func IssueJobToken(
+	ctx context.Context,
+	issuer JobTokenIssuer,
+	job Job,
+	principal CredentialPrincipal,
+	restScope string,
+	graphqlScope string,
+) (JobToken, error) {
+	return issueJobToken(ctx, issuer, job, principal, restScope, graphqlScope)
 }
 
 func validateJobTokenRequest(ctx context.Context, request JobTokenRequest) error {

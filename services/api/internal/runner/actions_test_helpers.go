@@ -72,6 +72,13 @@ func newActionsFixture(t *testing.T, pool *pgxpool.Pool) actionsFixture {
 		t.Fatal(err)
 	}
 	_, err = pool.Exec(ctx, `
+		INSERT INTO entitlements (organization_id, feature, grant_source)
+		VALUES ($1, 'hosted_runners', 'migration')
+	`, fixture.organizationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = pool.Exec(ctx, `
 		INSERT INTO repositories (
 			id, organization_id, slug, display_name, lore_repository_id, lore_url, default_branch, created_by
 		) VALUES ($1, $2, $3, 'Runtime', $5, $6, 'main', $4)

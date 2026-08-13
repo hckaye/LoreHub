@@ -59,6 +59,7 @@ type WorkflowDefinition struct {
 	WorkflowDispatch   bool
 	DispatchInputs     map[string]WorkflowDispatchInput
 	Environment        string
+	RunnerLabels       []string
 	TriggerConfig      json.RawMessage
 }
 
@@ -165,6 +166,7 @@ func workflowFromTriggerConfig(
 		Schedules          []ScheduleTrigger          `json:"schedule"`
 		RepositoryDispatch *RepositoryDispatchTrigger `json:"repository_dispatch"`
 		Environment        string                     `json:"environment"`
+		RunnerLabels       []string                   `json:"runner_labels"`
 	}
 	if len(triggerConfig) > 0 && string(triggerConfig) != "null" {
 		if err := json.Unmarshal(triggerConfig, &config); err != nil {
@@ -182,6 +184,7 @@ func workflowFromTriggerConfig(
 		}(),
 		PullRequest: config.PullRequest, Schedules: config.Schedules,
 		RepositoryDispatch: config.RepositoryDispatch, Environment: config.Environment,
+		RunnerLabels:  config.RunnerLabels,
 		TriggerConfig: triggerConfig,
 	}, nil
 }
@@ -300,7 +303,8 @@ func parseWorkflowFile(
 	if err != nil {
 		return workflow, err
 	}
-	if err := validateWorkflowRunnerLabels(filePath, platformImages); err != nil {
+	workflow.RunnerLabels, err = validateWorkflowRunnerLabels(filePath, platformImages)
+	if err != nil {
 		return workflow, err
 	}
 	on := mappingValue(root, "on")
@@ -319,7 +323,7 @@ func parseWorkflowFile(
 	workflow.RepositoryDispatch = repositoryDispatch
 	workflow.TriggerConfig, err = encodeTriggerConfig(
 		push, dispatch, dispatchInputs, pullRequest, schedules, repositoryDispatch,
-		workflow.Environment,
+		workflow.Environment, workflow.RunnerLabels,
 	)
 	if err != nil {
 		return workflow, err

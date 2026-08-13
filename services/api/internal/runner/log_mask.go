@@ -23,6 +23,21 @@ type maskingLogWriter struct {
 	err         error
 }
 
+type MaskingLogWriter interface {
+	io.Writer
+	Flush() error
+	Err() error
+}
+
+func NewMaskingLogWriter(
+	writer io.Writer,
+	secrets map[string]string,
+	maxLineSize int,
+	onError func(error),
+) MaskingLogWriter {
+	return newMaskingLogWriterWithLimit(writer, secrets, maxLineSize, onError)
+}
+
 func newMaskingLogWriter(writer io.Writer, secrets map[string]string) *maskingLogWriter {
 	return newMaskingLogWriterWithLimit(writer, secrets, defaultMaskingLineBytes, nil)
 }

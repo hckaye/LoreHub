@@ -330,7 +330,7 @@ func (worker *Worker) runJob(ctx context.Context, job Job, logKey string) (strin
 	if err := validateWorkflowFile(workflowPath); err != nil {
 		return logKey, nil, err
 	}
-	if err := validateWorkflowRunnerLabels(workflowPath, worker.config.PlatformImages); err != nil {
+	if _, err := validateWorkflowRunnerLabels(workflowPath, worker.config.PlatformImages); err != nil {
 		return logKey, nil, err
 	}
 	workflowEnvironment, err := workflowEnvironmentName(workflowPath)
@@ -515,6 +515,39 @@ func actArguments(
 	return arguments
 }
 
+type ExternalActInvocation struct {
+	ActionRepositories    []string
+	PlatformImages        map[string]string
+	GitHub                GitHubContext
+	Variables             map[string]string
+	SecretFile            string
+	ArtifactServerAddress string
+	NetworkName           string
+	ProxyURL              string
+}
+
+func ExternalActArguments(
+	job Job,
+	repositoryPath string,
+	workflowPath string,
+	eventPath string,
+	artifactPath string,
+	config ExternalActInvocation,
+) []string {
+	networkName := strings.TrimSpace(config.NetworkName)
+	if networkName == "" {
+		networkName = "bridge"
+	}
+	return actArguments(
+		job, repositoryPath, workflowPath, eventPath, artifactPath, networkName, config.ProxyURL,
+		actInvocation{
+			ActionRepositories: config.ActionRepositories, PlatformImages: config.PlatformImages,
+			GitHub: config.GitHub, Variables: config.Variables, SecretFile: config.SecretFile,
+			ArtifactServerAddress: config.ArtifactServerAddress,
+		},
+	)
+}
+
 type actInvocation struct {
 	ActionRepositories    []string
 	PlatformImages        map[string]string
@@ -565,6 +598,10 @@ func runAct(ctx context.Context, act *exec.Cmd) error {
 			return ctx.Err()
 		}
 	}
+}
+
+func RunAct(ctx context.Context, command *exec.Cmd) error {
+	return runAct(ctx, command)
 }
 
 func (worker *Worker) cloneRevision(ctx context.Context, job Job, destination string, output io.Writer) error {
