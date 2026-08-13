@@ -28,27 +28,23 @@ export function formatRelativeTime(value: string | Date, locale: Locale, now = n
 }
 
 export function formatDate(value: string | Date, locale: Locale): string {
-  const date = typeof value === "string" ? new Date(value) : value;
-  if (Number.isNaN(date.getTime())) {
-    return typeof value === "string" ? value : "";
-  }
-  return new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(date);
+  return formatWith(value, locale, { dateStyle: "medium" });
 }
 
 export function formatDateTime(value: string | Date, locale: Locale): string {
-  const date = typeof value === "string" ? new Date(value) : value;
-  if (Number.isNaN(date.getTime())) {
-    return typeof value === "string" ? value : "";
-  }
-  return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(date);
+  return formatWith(value, locale, { dateStyle: "medium", timeStyle: "short" });
 }
 
 export function formatTimestamp(value: string | Date, locale: Locale): string {
+  return formatWith(value, locale, { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" });
+}
+
+function formatWith(value: string | Date, locale: Locale, options: Intl.DateTimeFormatOptions): string {
   const date = typeof value === "string" ? new Date(value) : value;
   if (Number.isNaN(date.getTime())) {
     return typeof value === "string" ? value : "";
   }
-  return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(date);
+  return new Intl.DateTimeFormat(locale, options).format(date);
 }
 
 export function abbreviateCount(count: number, locale: Locale): string {
