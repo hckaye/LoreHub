@@ -2,12 +2,15 @@ import { actionsEnvironments } from "./actions-environments";
 import { actionsSettings } from "./actions-settings";
 import { assignees } from "./assignees";
 import { auditLog } from "./audit-log";
+import { codeBrowser } from "./code-browser";
 import { commentPagination } from "./comment-pagination";
+import { commitHistory } from "./commit-history";
 import { commitStatuses } from "./commit-statuses";
 import { discussions } from "./discussions";
 import { fileLocks } from "./file-locks";
 import { globalWorkItems } from "./global-work-items";
 import { insights } from "./insights";
+import { issueDetail } from "./issue-detail";
 import { metadata } from "./metadata";
 import { milestones } from "./milestones";
 import { personalAccessTokens } from "./personal-access-tokens";
@@ -27,6 +30,8 @@ const concat = (...parts: string[]) => parts.join("");
 const ja = {
   commentPagination: commentPagination.ja,
   workItemLists: workItemLists.ja,
+  codeBrowser: codeBrowser.ja,
+  commitHistory: commitHistory.ja,
   commitStatuses: commitStatuses.ja,
   discussionsPage: discussions.ja,
   actionsEnvironments: actionsEnvironments.ja,
@@ -54,6 +59,8 @@ const ja = {
     signOut: "ログアウト",
     create: "作成",
     profile: "プロフィール",
+    yourRepositories: "自分のリポジトリ",
+    yourOrganizations: "自分の組織",
     accountSettings: "アカウント設定",
     dashboard: "ダッシュボード",
     notifications: "通知",
@@ -64,6 +71,7 @@ const ja = {
     searchPlaceholder: "リポジトリを検索",
     openMenu: "ナビゲーションメニューを開く",
     closeMenu: "ナビゲーションメニューを閉じる",
+    skipToContent: "本文へ移動",
     primaryNavigation: "メインナビゲーション",
     repositoryNavigation: "リポジトリのナビゲーション",
     code: "コード",
@@ -79,6 +87,7 @@ const ja = {
     settings: "設定",
     more: "その他",
     branches: "ブランチ",
+    tags: "タグ",
     locks: "ロック",
     branch: "ブランチ",
     defaultBranch: "既定ブランチ",
@@ -103,6 +112,8 @@ const ja = {
     closed: "クローズ",
     merged: "マージ済み",
     loading: "読み込み中",
+    unreadNotifications: "未読通知（{count}件）",
+    license: "MITライセンス",
     localeEnglish: "英語",
     localeJapanese: "日本語",
   },
@@ -158,6 +169,15 @@ const ja = {
       "ログインすると、アクセスできる",
       "非公開リポジトリも表示されます。",
     ),
+    organizationsEmptyTitle: "組織はありません",
+    organizationsEmptyBody: "所属している組織がここに表示されます。",
+    discoverEmptyTitle: "表示できる公開リポジトリはありません",
+    // prettier-ignore
+    discoverEmptyBody: concat(
+      "このLoreHubに登録された公開リポジトリが",
+      "ここに表示されます。",
+    ),
+    showMore: "もっと見る",
   },
   repository: {
     about: "概要",
@@ -205,7 +225,7 @@ const ja = {
   },
   branchManagement: {
     title: "ブランチ",
-    description: "Loreのブランチ作成とアーカイブ、保護ルールの設定を行います。",
+    description: "Loreのブランチ作成と削除、保護ルールの設定を行います。",
     createTitle: "ブランチを作成",
     // prettier-ignore
     createDescription: concat(
@@ -228,24 +248,31 @@ const ja = {
       "このリポジトリについて、Loreから有効なブランチが",
       "返されませんでした。",
     ),
+    noMatches: "検索条件に一致するブランチはありません。",
+    searchPlaceholder: "ブランチを絞り込み",
+    columnBranch: "ブランチ",
+    columnUpdated: "更新",
+    columnRevision: "リビジョン",
+    columnActions: "操作",
     defaultBranch: "既定",
     protectedBranch: "保護対象",
     createdBy: "作成者: {creator}",
-    archive: "アーカイブ",
-    archiving: "アーカイブ中…",
-    archived: "Loreのブランチをアーカイブしました。",
+    delete: "削除",
+    deleting: "削除中…",
+    deleted: "Loreのブランチを削除しました。",
     // prettier-ignore
-    archiveConfirm: concat(
-      "{branch}をアーカイブしますか？ ",
+    deleteConfirm: concat(
+      "{branch}を削除しますか？ ",
       "有効なブランチの一覧から削除されます。",
     ),
+    deleteConfirmAction: "ブランチを削除",
     signInRequired: concat(
-      "ブランチを作成またはアーカイブするには、",
+      "ブランチを作成または削除するには、",
       "書き込み権限のあるアカウントでログインしてください。",
     ),
     // prettier-ignore
     writeRequired: concat(
-      "ブランチを作成またはアーカイブするには、",
+      "ブランチを作成または削除するには、",
       "リポジトリへの書き込み権限が必要です。",
     ),
     protectionTitle: "ブランチ保護ルール",
@@ -266,53 +293,34 @@ const ja = {
     ruleDeleted: "ブランチ保護ルールを削除しました。",
     noRules: "ブランチ保護ルールは設定されていません。",
   },
-  codeBrowser: {
-    history: "リビジョン履歴",
-    compare: "リビジョンを比較",
-    parentDirectory: "親ディレクトリ",
-    treeTitle: "リポジトリのファイル",
-    breadcrumbLabel: "リポジトリのパス",
+  tagsPage: {
+    title: "タグ",
+    description: "このリポジトリで公開されたリリースのタグを閲覧します。",
+    sourceNote: "LoreHubにはタグ参照専用APIがないため、公開済みリリースのタグを表示しています。",
+    name: "タグ",
     revision: "リビジョン",
-    name: "名前",
-    kind: "種類",
-    action: "変更",
-    size: "サイズ",
-    emptyTree: "このLoreディレクトリは空です。",
-    emptyHistory: "このパスのリビジョン履歴はありません。",
-    // prettier-ignore
-    treeTruncated: concat(
-      "先頭の項目だけを表示しています。",
-      "ディレクトリを絞り込んでください。",
-    ),
-    diffTruncated: "この差分はレスポンスの上限で省略されています。",
-    unavailable: "Loreのコードブラウザーを一時的に利用できません。",
-    fileTitle: "ファイル",
-    raw: "Raw表示",
-    fileHistory: "ファイル履歴",
-    binary: "バイナリ内容は表示しません。",
-    tooLarge: "安全なブラウザー上限を超えるファイルです。",
-    emptyReadme: "READMEは空です。",
-    bytes: "バイト",
-    actions: {
-      added: "追加",
-      deleted: "削除",
-      modified: "変更",
-      moved: "移動",
-      copied: "コピー",
-    },
-    kinds: {
-      directory: "ディレクトリ",
-      file: "ファイル",
-      link: "リンク",
-    },
+    createdAt: "作成日時",
+    createdBy: "作成者",
+    emptyTitle: "タグはありません",
+    emptyBody: "タグ付きの公開済みリリースがここに表示されます。",
+    forbiddenTitle: "タグを閲覧できません",
+    forbiddenBody: "タグの閲覧にはリポジトリの読み取り権限が必要です。",
+    unavailableTitle: "タグを利用できません",
+    unavailableBody: "タグを取得できませんでした。サービスが復旧してから再読み込みしてください。",
   },
   pullRequestDetail: {
     conversation: "会話",
     commits: "コミット",
+    checks: "チェック",
     filesChanged: "変更ファイル",
+    mergeSummary: "{author}が{count}件のコミットを",
+    from: "へ、",
+    mergePanelTitle: "マージ",
     reviewSummary: "レビュー概要",
     approvals: "現在の承認",
+    approvalsCount: "{count}件の承認",
     changesRequested: "変更要求",
+    changesRequestedCount: "{count}件の変更要求",
     ci: "CIの状態",
     ciPassed: "対象リビジョンのCIは成功しています",
     ciMissing: "成功したCIが必要です",
@@ -332,6 +340,10 @@ const ja = {
     noConflicts: "未解決のLore競合はありません。",
     noReviews: "このリビジョンにはレビューがありません。",
     noChangedFiles: "変更ファイルは返されませんでした。",
+    noCommits: "このプルリクエストにはコミットがありません。",
+    filesChangedSummary: "{files}ファイルの変更、+{additions} -{deletions}",
+    copyRevision: "リビジョンをコピー",
+    revisionCopied: "リビジョンをコピーしました",
     changedFiles: "変更ファイル",
     source: "ソース",
     target: "対象",
@@ -344,6 +356,7 @@ const ja = {
       "再試行して状態を確認してください。",
     ),
     mutationFailed: "マージ操作を完了できませんでした。",
+    mergeRequiresAuth: "このプルリクエストをマージするにはログインしてください。",
     policyBlocked: "マージ前に表示された条件を解決してください。",
     alreadyMerged: "このプルリクエストはすでにマージされています。",
     review: "レビュー",
@@ -425,6 +438,8 @@ const ja = {
     emptyTitle: "この表示条件のIssueはありません",
     emptyBody: "具体的な作業を追跡するときにIssueを作成してください。",
     createdNotice: "Issueを作成しました。",
+    labelsButton: "ラベル",
+    milestonesButton: "マイルストーン",
   },
   labelsPage: {
     title: "ラベル",
@@ -460,29 +475,11 @@ const ja = {
     ),
     forbiddenTitle: "ラベルを表示できません",
     forbiddenBody: "このリポジトリのラベルを表示する権限がありません。",
+    countWithTotal: "{count}個のラベル",
+    filterPlaceholder: "ラベルを絞り込む",
+    newLabel: "ラベルを作成",
   },
-  issueDetail: {
-    openedBy: "{author}さんが{date}にこのIssueを作成しました",
-    closedBy: "{author}さんが{date}にこのIssueをクローズしました",
-    commentCount: "コメント {count}件",
-    editIssue: "Issueを編集",
-    saveChanges: "変更を保存",
-    closeIssue: "Issueをクローズ",
-    reopenIssue: "Issueを再オープン",
-    addComment: "コメントを追加",
-    commentPlaceholder: "コメントを入力",
-    submitComment: "コメントする",
-    noDescription: "説明はありません。",
-    edited: "編集済み",
-    editComment: "編集",
-    deleteComment: "削除",
-    deleteCommentConfirm: "このコメントを削除しますか？",
-    labels: "ラベル",
-    noLabels: "ラベルはありません",
-    manageLabels: "ラベルを編集",
-    labelsUnavailable: "ラベルを読み込めませんでした。",
-    commentsUnavailable: "コメントを読み込めませんでした。",
-  },
+  issueDetail: issueDetail.ja,
   pullRequestsPage: {
     title: "プルリクエスト",
     // prettier-ignore
@@ -495,14 +492,19 @@ const ja = {
     emptyTitle: "この表示条件のプルリクエストはありません",
     emptyBody: "レビューする変更がソースブランチにあるときに作成してください。",
     createdNotice: "プルリクエストを作成しました。",
+    labelsButton: "ラベル",
+    milestonesButton: "マイルストーン",
   },
   notificationsPage: {
     title: "通知",
     description: "確認が必要なアカウント、チーム、リポジトリのイベントを確認します。",
     unreadOnly: "未読のみ",
+    filterAll: "すべて",
+    filterUnread: "未読",
     markAllRead: "すべて既読にする",
     markRead: "既読にする",
     unavailableTitle: "通知を一時的に利用できません",
+    markReadFailed: "通知を既読にできませんでした。もう一度お試しください。",
     emptyTitle: "通知はありません",
     emptyBody: "アカウント、チーム、リポジトリの新しいイベントがここに表示されます。",
   },
@@ -881,6 +883,10 @@ const ja = {
       "ブラウザには画面に必要なセッション状態だけが渡されます。",
     ),
     active: "有効なセッション",
+    joined: "登録日",
+    filterRepositories: "リポジトリを絞り込み",
+    repositoriesEmptyTitle: "表示できるリポジトリはありません",
+    repositoriesEmptyBody: "このユーザーが所有または参加しているリポジトリがここに表示されます。",
   },
   accountSettings: {
     title: "アカウント設定",

@@ -1,134 +1,283 @@
-.toolbar {
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
   border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface);
+  border-bottom: 0;
+  border-radius: 6px 6px 0 0;
+  background: var(--canvas-subtle);
 }
 
-.summary {
+.stateToggle {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border-muted);
-  font-size: 0.78rem;
+  gap: 2px;
 }
 
-.summary a {
-  margin-left: auto;
-  color: var(--accent-fg);
-  text-decoration: none;
-}
-
-.summary a:hover {
-  text-decoration: underline;
-}
-
-.form {
-  display: grid;
-  align-items: end;
-  gap: 10px;
-  padding: 12px;
-  grid-template-columns: minmax(220px, 2fr) repeat(auto-fit, minmax(132px, 1fr));
-}
-
-.form label {
-  display: grid;
+.stateLink,
+.stateActive {
+  display: inline-flex;
+  align-items: center;
   gap: 5px;
-  min-width: 0;
-}
-
-.form label > span {
-  color: var(--fg-muted);
-  font-size: 0.7rem;
+  padding: 5px 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg-default);
+  font: inherit;
+  font-size: 0.82rem;
   font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
 }
 
-.form input,
-.form select {
+.stateLink:hover {
+  background: var(--canvas-default);
+}
+
+.stateActive {
+  background: var(--canvas-default);
+  border-color: var(--border);
+}
+
+.searchForm {
+  position: relative;
+  flex: 1 1 220px;
+  min-width: 160px;
+}
+
+.searchIcon {
+  position: absolute;
+  top: 50%;
+  left: 9px;
+  transform: translateY(-50%);
+  color: var(--fg-muted);
+  pointer-events: none;
+}
+
+.searchInput {
   width: 100%;
   min-height: 32px;
-  padding: 5px 8px;
+  padding: 5px 10px 5px 30px;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--canvas-default);
   color: var(--fg-default);
   font: inherit;
-  font-size: 0.78rem;
+  font-size: 0.82rem;
 }
 
-.searchField div {
+.searchInput:focus {
+  outline: 2px solid var(--accent-border);
+  outline-offset: -1px;
+  border-color: var(--accent-fg);
+}
+
+.dropdowns {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.dropdown {
   position: relative;
 }
 
-.searchField svg {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  color: var(--fg-muted);
-  pointer-events: none;
-}
-
-.searchField input {
-  padding-left: 30px;
-}
-
-.form button {
+.dropdown > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   min-height: 32px;
-  padding: 0 12px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--canvas-default);
+  color: var(--fg-default);
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+  list-style: none;
+  white-space: nowrap;
+}
+
+.dropdown > summary::-webkit-details-marker {
+  display: none;
+}
+
+.dropdown > summary:hover {
+  background: var(--canvas-subtle);
+}
+
+.dropdownMenu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
+  min-width: 220px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-popover);
+}
+
+.dropdownInput {
+  width: 100%;
+  min-height: 32px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--canvas-default);
+  color: var(--fg-default);
+  font: inherit;
+  font-size: 0.82rem;
+}
+
+.dropdownInput:focus {
+  outline: 2px solid var(--accent-border);
+  outline-offset: -1px;
+  border-color: var(--accent-fg);
+}
+
+.dropdownSubmit {
+  width: 100%;
+  margin-top: 8px;
+  min-height: 32px;
+  padding: 5px 12px;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--canvas-subtle);
   color: var(--fg-default);
-  font-size: 0.78rem;
+  font: inherit;
+  font-size: 0.82rem;
   font-weight: 600;
+  cursor: pointer;
+}
+
+.dropdownSubmit:hover {
+  background: var(--canvas-default);
+}
+
+.dropdownItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 32px;
+  padding: 5px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg-default);
+  font: inherit;
+  font-size: 0.82rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dropdownItem:hover {
+  background: var(--canvas-subtle);
+}
+
+.dropdownItem[data-active="true"] {
+  font-weight: 600;
+}
+
+.dropdownDivider {
+  height: 1px;
+  margin: 6px 0;
+  background: var(--border-muted);
 }
 
 .pagination {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 14px;
+  gap: 6px;
+  padding: 16px 0;
 }
 
 .pagination a,
-.pagination span {
-  min-width: 72px;
-  padding: 7px 10px;
+.pagination button {
+  min-width: 36px;
+  min-height: 32px;
+  padding: 5px 10px;
   border: 1px solid var(--border);
   border-radius: 6px;
+  background: var(--surface);
   color: var(--accent-fg);
   font-size: 0.78rem;
+  font-weight: 600;
   text-align: center;
   text-decoration: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.pagination span {
+.pagination a:hover,
+.pagination button:hover:not(:disabled) {
+  background: var(--canvas-subtle);
+}
+
+.pagination button:disabled {
   color: var(--fg-muted);
   opacity: 0.65;
+  cursor: not-allowed;
 }
 
-.pagination strong {
+.pagination .paginationButton:disabled {
   color: var(--fg-muted);
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.pagination .currentPage {
+  min-width: 36px;
+  min-height: 32px;
+  padding: 5px 10px;
+  border: 1px solid var(--accent-fg);
+  border-radius: 6px;
+  background: var(--accent-fg);
+  color: var(--fg-on-emphasis);
   font-size: 0.78rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pagination .ellipsis {
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: default;
+  min-width: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pagination .ellipsis:hover {
+  background: transparent;
 }
 
 @media (max-width: 720px) {
-  .form {
-    grid-template-columns: 1fr 1fr;
+  .bar {
+    padding: 8px;
   }
 
-  .searchField {
-    grid-column: 1 / -1;
-  }
-}
-
-@media (max-width: 480px) {
-  .form {
-    grid-template-columns: 1fr;
+  .searchForm {
+    flex: 1 1 100%;
+    order: 3;
   }
 
-  .searchField {
-    grid-column: auto;
+  .dropdowns {
+    order: 4;
+    width: 100%;
   }
 }

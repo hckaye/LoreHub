@@ -7,30 +7,40 @@
 .inner {
   display: flex;
   width: min(1012px, calc(100% - 64px));
-  min-height: 92px;
+  min-height: 64px;
   align-items: center;
-  justify-content: space-between;
-  gap: 24px;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
   margin: 0 auto;
   color: var(--fg-muted);
-  font-size: 0.82rem;
+  font-size: 0.76rem;
+  text-align: center;
 }
 
-.inner p {
-  margin: 0;
-  text-align: right;
+.product {
+  color: var(--fg-default);
+  font-weight: 600;
+}
+
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+}
+
+.links a {
+  color: var(--fg-muted);
+  text-decoration: none;
+}
+
+.links a:hover {
+  color: var(--accent-fg);
 }
 
 @media (max-width: 640px) {
   .inner {
     width: min(100% - 32px, 1012px);
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 6px;
-    justify-content: center;
-  }
-
-  .inner p {
-    text-align: left;
   }
 }

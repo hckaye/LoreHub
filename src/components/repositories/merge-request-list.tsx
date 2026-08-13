@@ -1,12 +1,14 @@
-import { GitMerge, GitPullRequest, MessageSquare } from "lucide-react";
+import { GitMerge, GitPullRequest, GitPullRequestClosed, MessageSquare } from "lucide-react";
 import Link from "next/link";
 
 import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
 import type { MergeRequestListItem } from "@/lib/api-types";
-import { repositoryMilestonesPath, repositoryPath } from "@/lib/routes";
+import { formatRelativeTime, labelTextColor, normalizeLabelColor } from "@/lib/format";
+import { repositoryPath } from "@/lib/routes";
 
 import { EmptyState } from "../ui/empty-state";
+import { UserAvatar } from "../ui/user-avatar";
 import styles from "./merge-request-list.module.css";
 
 type MergeRequestListProps = {
@@ -21,60 +23,78 @@ export function MergeRequestList({ mergeRequests, dictionary, locale, owner, rep
   if (mergeRequests.length === 0) {
     return (
       <EmptyState
+        body={dictionary.pullRequestsPage.emptyBody}
         icon={<GitPullRequest aria-hidden="true" />}
-        title={dictionary.repository.noPullRequests}
-        body={dictionary.repository.pullRequestsDescription}
+        title={dictionary.pullRequestsPage.emptyTitle}
       />
     );
   }
 
+  const copy = dictionary.workItemLists;
   return (
     <div className={styles.list}>
       {mergeRequests.map((mergeRequest) => (
         <article className={styles.row} key={mergeRequest.id}>
-          <GitPullRequest aria-hidden="true" className={styles.icon} data-state={mergeRequest.state} size={18} />
+          <StateIcon isDraft={mergeRequest.isDraft} state={mergeRequest.state} />
           <div className={styles.details}>
             <h3>
               <Link href={`${repositoryPath(locale, owner, repository, "pulls")}/${mergeRequest.number}`}>
                 {mergeRequest.title}
               </Link>
               {mergeRequest.isDraft && <span className={styles.draft}>{dictionary.pullRequestDrafts.badge}</span>}
-              {mergeRequest.labels.map((label) => (
-                <span className={styles.label} key={label.id} style={{ borderColor: `#${label.color}` }}>
-                  {label.name}
-                </span>
-              ))}
+              {mergeRequest.labels.map((label) => {
+                const bg = normalizeLabelColor(label.color);
+                return (
+                  <span
+                    className={styles.label}
+                    key={label.id}
+                    style={{ backgroundColor: bg, color: labelTextColor(bg) }}
+                  >
+                    {label.name}
+                  </span>
+                );
+              })}
             </h3>
             <p>
-              #{mergeRequest.number} · {mergeRequest.author} · {formatDate(mergeRequest.updatedAt, locale)}
+              {copy.openedBy
+                .replace("{number}", String(mergeRequest.number))
+                .replace("{time}", formatRelativeTime(mergeRequest.createdAt, locale))
+                .replace("{author}", mergeRequest.author)}
               {mergeRequest.milestone && (
                 <>
                   {" · "}
-                  <Link href={repositoryMilestonesPath(locale, owner, repository)}>{mergeRequest.milestone.title}</Link>
+                  <Link
+                    href={`${repositoryPath(locale, owner, repository, "pulls")}?milestone=${
+                      mergeRequest.milestone.number
+                    }`}
+                  >
+                    {mergeRequest.milestone.title}
+                  </Link>
                 </>
               )}
             </p>
           </div>
-          <div className={styles.branches}>
-            <code>{mergeRequest.sourceBranch}</code>
-            <GitMerge aria-hidden="true" size={14} />
-            <code>{mergeRequest.targetBranch}</code>
-          </div>
           <div className={styles.trailing}>
             {mergeRequest.assignees.length > 0 && (
-              <span
-                aria-label={`${dictionary.issueAssignees.title}: ${mergeRequest.assignees
-                  .map((assignee) => `@${assignee.username}`)
-                  .join(", ")}`}
-              >
-                {mergeRequest.assignees.length}
-              </span>
+              <div aria-label={dictionary.issueAssignees.title} className={styles.assignees}>
+                {mergeRequest.assignees.slice(0, 3).map((assignee) => (
+                  <Link
+                    aria-label={dictionary.issueAssignees.assignedTo.replace("{username}", assignee.username)}
+                    href={`${repositoryPath(locale, owner, repository, "pulls")}?assignee=${assignee.username}`}
+                    key={assignee.id}
+                    title={`@${assignee.username}`}
+                  >
+                    <UserAvatar
+                      avatarUrl={assignee.avatarUrl}
+                      name={assignee.displayName || assignee.username}
+                      size={20}
+                    />
+                  </Link>
+                ))}
+              </div>
             )}
-            <span>
-              {mergeRequest.approvalCount} {dictionary.repository.approvals}
-            </span>
             {mergeRequest.commentCount > 0 && (
-              <span>
+              <span className={styles.comments}>
                 <MessageSquare aria-hidden="true" size={14} />
                 {mergeRequest.commentCount}
               </span>
@@ -86,6 +106,15 @@ export function MergeRequestList({ mergeRequests, dictionary, locale, owner, rep
   );
 }
 
-function formatDate(value: string, locale: string): string {
-  return new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(new Date(value));
+function StateIcon(props: { isDraft: boolean; state: MergeRequestListItem["state"] }) {
+  if (props.isDraft && props.state === "open") {
+    return <GitPullRequest aria-hidden="true" className={styles.icon} data-state="draft" size={18} />;
+  }
+  if (props.state === "merged") {
+    return <GitMerge aria-hidden="true" className={styles.icon} data-state={props.state} size={18} />;
+  }
+  if (props.state === "closed") {
+    return <GitPullRequestClosed aria-hidden="true" className={styles.icon} data-state={props.state} size={18} />;
+  }
+  return <GitPullRequest aria-hidden="true" className={styles.icon} data-state={props.state} size={18} />;
 }

@@ -619,6 +619,13 @@ export type ReleasePage = {
   viewerCanWrite: boolean;
 };
 
+export type RepositoryTag = {
+  name: string;
+  revision: string;
+  createdAt: string;
+  createdBy: string;
+};
+
 export type Milestone = MilestoneSummary & {
   description: string;
   createdBy: string;
@@ -671,6 +678,7 @@ export type RevisionHistoryEntry = {
   revision: string;
   number: number;
   parents: string[];
+  message?: string;
 };
 
 export type FileHistoryEntry = {

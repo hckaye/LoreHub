@@ -1,19 +1,15 @@
 "use client";
 
-import { GitPullRequest, MessageSquare } from "lucide-react";
+import { CircleAlert, CircleCheck, GitPullRequest, MessageCircle, MessageSquare } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 
 import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
 import type {
-  Assignee,
   AuthSession,
-  Label,
   MergeRequest,
   MergeRequestComment,
-  MergeRequestMetadata,
-  Milestone,
   Review,
   ReviewCandidate,
   ReviewRequestSummary,
@@ -26,27 +22,22 @@ import {
   conversationCommentPageSize,
   lastConversationCommentPage,
 } from "@/lib/comment-pagination";
+import { abbreviateCount, formatDate, formatRelativeTime } from "@/lib/format";
 import { mutationFailureMessage } from "@/lib/mutation-messages";
 import { repositoryPath } from "@/lib/routes";
 
 import { FlashNotice } from "../ui/flash-notice";
+import { UserAvatar } from "../ui/user-avatar";
+import { MarkdownContent } from "../wiki/markdown-content";
 import { ConversationPagination } from "./conversation-pagination";
 import styles from "./pull-request-conversation.module.css";
-import { PullRequestMetadata } from "./pull-request-metadata";
 import { PullRequestReviewers } from "./pull-request-reviewers";
 
 type PullRequestConversationProps = {
-  assignees: Assignee[];
-  assigneesAvailable: boolean;
   comments: CommentPage<MergeRequestComment> | null;
   dictionary: Dictionary;
   locale: Locale;
   mergeRequest: MergeRequest;
-  labels: Label[];
-  labelsAvailable: boolean;
-  metadata: MergeRequestMetadata | null;
-  milestones: Milestone[];
-  milestonesAvailable: boolean;
   owner: string;
   repository: string;
   reviews: ReviewSummary | null;
@@ -176,7 +167,7 @@ export function PullRequestConversation(props: PullRequestConversationProps) {
     <section aria-labelledby="conversation-title" className={styles.conversation}>
       <h2 id="conversation-title">{labels.conversation}</h2>
       {message && <FlashNotice body={message} title={props.dictionary.forms.submitFailed} tone="error" />}
-      {success && <FlashNotice body={success} title={success} tone="success" />}
+      {success && <FlashNotice title={success} tone="success" />}
       <PullRequestDescription
         busy={busy === "request"}
         dictionary={props.dictionary}
@@ -192,7 +183,7 @@ export function PullRequestConversation(props: PullRequestConversationProps) {
           onChange={setDraft}
         />
       )}
-      <ReviewList dictionary={props.dictionary} reviews={props.reviews} />
+      <ReviewList dictionary={props.dictionary} locale={props.locale} reviews={props.reviews} />
       <PullRequestReviewers
         candidates={props.reviewCandidates}
         csrfToken={csrfToken}
@@ -201,20 +192,6 @@ export function PullRequestConversation(props: PullRequestConversationProps) {
         owner={props.owner}
         repository={props.repository}
         summary={props.reviewRequests}
-      />
-      <PullRequestMetadata
-        assignees={props.assignees}
-        assigneesAvailable={props.assigneesAvailable}
-        csrfToken={csrfToken}
-        dictionary={props.dictionary}
-        labels={props.labels}
-        labelsAvailable={props.labelsAvailable}
-        metadata={props.metadata}
-        milestones={props.milestones}
-        milestonesAvailable={props.milestonesAvailable}
-        number={props.mergeRequest.number}
-        owner={props.owner}
-        repository={props.repository}
       />
       <div className={styles.timeline}>
         {!props.comments ? (
@@ -301,9 +278,12 @@ function PullRequestDescription(props: DescriptionProps) {
   return (
     <article className={styles.description}>
       <header>
+        <UserAvatar name={props.mergeRequest.author} size={24} />
         <GitPullRequest aria-hidden="true" size={18} />
         <strong>{props.mergeRequest.author}</strong>
-        <span>{activity}</span>
+        <time dateTime={activity.dateTime} title={activity.exact}>
+          {activity.relative}
+        </time>
         {props.mergeRequest.viewerCanUpdate && (
           <button onClick={() => setEditing((value) => !value)} type="button">
             {labels.editPullRequest}
@@ -337,7 +317,9 @@ function PullRequestDescription(props: DescriptionProps) {
           </div>
         </form>
       ) : (
-        <p className={styles.body}>{props.mergeRequest.body || labels.noDescription}</p>
+        <div className={styles.body}>
+          <MarkdownContent body={props.mergeRequest.body || labels.noDescription} />
+        </div>
       )}
       {props.mergeRequest.viewerCanUpdate && props.mergeRequest.state !== "merged" && !editing && (
         <button
@@ -375,9 +357,12 @@ function Comment(props: CommentProps) {
   return (
     <article className={styles.comment}>
       <header>
+        <UserAvatar name={props.comment.author} size={24} />
         <MessageSquare aria-hidden="true" size={16} />
         <strong>{props.comment.author}</strong>
-        <time dateTime={props.comment.createdAt}>{formatDate(props.comment.createdAt, props.locale)}</time>
+        <time dateTime={props.comment.createdAt} title={formatDate(props.comment.createdAt, props.locale)}>
+          {formatRelativeTime(props.comment.createdAt, props.locale)}
+        </time>
         {props.comment.editedAt && <span>{labels.edited}</span>}
         {props.comment.viewerCanUpdate && (
           <span className={styles.commentActions}>
@@ -409,7 +394,9 @@ function Comment(props: CommentProps) {
           </div>
         </form>
       ) : (
-        <p className={styles.body}>{props.comment.body}</p>
+        <div className={styles.body}>
+          <MarkdownContent body={props.comment.body} />
+        </div>
       )}
     </article>
   );
@@ -480,22 +467,37 @@ function ReviewForm(props: {
   );
 }
 
-function ReviewList(props: { dictionary: Dictionary; reviews: ReviewSummary | null }) {
+function ReviewList(props: { dictionary: Dictionary; locale: Locale; reviews: ReviewSummary | null }) {
   if (!props.reviews) return null;
   const labels = props.dictionary.pullRequestDetail;
   return (
     <div className={styles.reviews}>
       <h3>{labels.reviewSummary}</h3>
       <p>
-        {props.reviews.approvals} {labels.approvals} · {props.reviews.changeRequests} {labels.changesRequested}
+        {labels.approvalsCount.replace("{count}", abbreviateCount(props.reviews.approvals, props.locale))} ·{" "}
+        {labels.changesRequestedCount.replace("{count}", abbreviateCount(props.reviews.changeRequests, props.locale))}
       </p>
       {props.reviews.currentReviews.length === 0 ? (
         <p className={styles.muted}>{labels.noReviews}</p>
       ) : (
         props.reviews.currentReviews.map((review) => (
           <article key={review.id}>
-            <strong>{review.reviewer}</strong> · {reviewDecision(review.decision, labels)}
-            {review.body && <p>{review.body}</p>}
+            <header className={styles.reviewHeader}>
+              <UserAvatar name={review.reviewer} size={24} />
+              <strong>{review.reviewer}</strong>
+              <span className={styles.reviewDecision} data-decision={review.decision}>
+                {reviewIcon(review.decision)}
+                {reviewDecision(review.decision, labels)}
+              </span>
+              <time dateTime={review.createdAt} title={formatDate(review.createdAt, props.locale)}>
+                {formatRelativeTime(review.createdAt, props.locale)}
+              </time>
+            </header>
+            {review.body && (
+              <div className={styles.reviewBody}>
+                <MarkdownContent body={review.body} />
+              </div>
+            )}
           </article>
         ))
       )}
@@ -504,19 +506,22 @@ function ReviewList(props: { dictionary: Dictionary; reviews: ReviewSummary | nu
 }
 
 function mergeRequestActivity(mergeRequest: MergeRequest, labels: Dictionary["pullRequestDetail"], locale: Locale) {
+  let template = labels.openedBy;
+  let author = mergeRequest.author;
+  let date = mergeRequest.createdAt;
   if (mergeRequest.state === "merged" && mergeRequest.mergedBy && mergeRequest.mergedAt) {
-    return labels.mergedBy
-      .replace("{author}", mergeRequest.mergedBy)
-      .replace("{date}", formatDate(mergeRequest.mergedAt, locale));
+    template = labels.mergedBy;
+    author = mergeRequest.mergedBy;
+    date = mergeRequest.mergedAt;
+  } else if (mergeRequest.state === "closed" && mergeRequest.closedAt) {
+    template = labels.closedBy;
+    date = mergeRequest.closedAt;
   }
-  if (mergeRequest.state === "closed" && mergeRequest.closedAt) {
-    return labels.closedBy
-      .replace("{author}", mergeRequest.author)
-      .replace("{date}", formatDate(mergeRequest.closedAt, locale));
-  }
-  return labels.openedBy
-    .replace("{author}", mergeRequest.author)
-    .replace("{date}", formatDate(mergeRequest.createdAt, locale));
+  return {
+    dateTime: date,
+    exact: template.replace("{author}", author).replace("{date}", formatDate(date, locale)),
+    relative: formatRelativeTime(date, locale),
+  };
 }
 
 function reviewDecision(decision: Review["decision"], labels: Dictionary["pullRequestDetail"]): string {
@@ -525,12 +530,10 @@ function reviewDecision(decision: Review["decision"], labels: Dictionary["pullRe
   return labels.commented;
 }
 
-function formatDate(value: string, locale: Locale): string {
-  return new Intl.DateTimeFormat(locale, {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "UTC",
-  }).format(new Date(value));
+function reviewIcon(decision: Review["decision"]) {
+  if (decision === "approved") return <CircleCheck aria-hidden="true" size={15} />;
+  if (decision === "changes_requested") return <CircleAlert aria-hidden="true" size={15} />;
+  return <MessageCircle aria-hidden="true" size={15} />;
 }
 
 function mergeRequestAPIPath(owner: string, repository: string, number: number): string {

@@ -58,7 +58,7 @@ test("README links reject traversal, encoded separators, and active content", ()
 test("repository pages fetch README content and use safe GFM rendering", async () => {
   const [page, blob, readme, markdown] = await Promise.all([
     readFile("src/app/[locale]/[owner]/[repository]/page.tsx", "utf8"),
-    readFile("src/app/[locale]/[owner]/[repository]/blob/page.tsx", "utf8"),
+    readFile("src/components/repositories/blob-view-file.tsx", "utf8"),
     readFile("src/components/repositories/repository-readme.tsx", "utf8"),
     readFile("src/components/wiki/markdown-content.tsx", "utf8"),
   ]);

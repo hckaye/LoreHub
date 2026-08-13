@@ -28,6 +28,7 @@ export default async function ProfilePage({ params }: ProfilePageProps) {
       locale={locale}
       profile={profile.ok ? profile.data : null}
       repositories={repositories.ok ? repositories.data : null}
+      unavailable={!profile.ok}
     />
   );
 }

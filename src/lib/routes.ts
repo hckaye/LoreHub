@@ -11,6 +11,7 @@ export const repositorySections = [
   "projects",
   "wiki",
   "releases",
+  "tags",
   "security",
   "insights",
   "settings",
@@ -34,6 +35,10 @@ export function repositoryBranchesPath(locale: Locale, owner: string, repository
 
 export function repositoryMilestonesPath(locale: Locale, owner: string, repository: string): string {
   return `/${locale}/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/milestones`;
+}
+
+export function repositoryTagsPath(locale: Locale, owner: string, repository: string): string {
+  return repositoryPath(locale, owner, repository, "tags");
 }
 
 export function actionsAPIPath(owner: string, repository: string, ...segments: string[]): string {

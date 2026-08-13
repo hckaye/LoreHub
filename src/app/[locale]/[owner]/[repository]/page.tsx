@@ -7,7 +7,15 @@ import { RepositoryReadme } from "@/components/repositories/repository-readme";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getDictionary } from "@/i18n";
 import { isLocale } from "@/i18n/config";
-import { getBranches, getLoreFile, getLoreTree, getPublicRepository, getRevision } from "@/lib/lorehub-api";
+import type { APIResult } from "@/lib/api-types";
+import {
+  getBranches,
+  getLoreFile,
+  getLoreTree,
+  getPublicRepository,
+  getRepositoryTags,
+  getRevision,
+} from "@/lib/lorehub-api";
 import { findRepositoryReadme } from "@/lib/repository-readme";
 
 import styles from "./repository.module.css";
@@ -37,7 +45,7 @@ export default async function RepositoryCodePage({ params, searchParams }: Repos
       />
     );
   }
-  const branches = await getBranches(owner, slug);
+  const [branches, tags] = await Promise.all([getBranches(owner, slug), getRepositoryTags(owner, slug)]);
   const branch = query.branch || repository.data.defaultBranch;
   const tree = await getLoreTree(owner, slug, {
     branch: query.revision ? undefined : branch,
@@ -45,19 +53,23 @@ export default async function RepositoryCodePage({ params, searchParams }: Repos
     path: query.path,
   });
   const { revision, readme } = await loadTreeDetails(owner, slug, tree);
+  const revisionData = resultData(revision);
   return (
     <div className={styles.content}>
       <div className={styles.codeColumn}>
         {tree.ok ? (
           <>
             <CodeBrowser
-              branches={branches.ok ? branches.data : []}
+              branches={resultData(branches) ?? []}
               branch={branch}
+              currentRevision={query.revision}
               dictionary={dictionary}
+              latestCommit={revisionData}
               locale={locale}
               owner={owner}
-              parentRevision={revision?.ok ? revision.data.parents[0] : undefined}
+              parentRevision={revisionData?.parents[0]}
               repository={slug}
+              tags={resultData(tags) ?? []}
               tree={tree.data}
             />
             {readme?.ok && (
@@ -83,6 +95,10 @@ export default async function RepositoryCodePage({ params, searchParams }: Repos
       <RepositoryAbout dictionary={dictionary} locale={locale} repository={repository.data} />
     </div>
   );
+}
+
+function resultData<T>(result: APIResult<T> | null): T | undefined {
+  return result?.ok ? result.data : undefined;
 }
 
 async function loadTreeDetails(owner: string, repository: string, tree: Awaited<ReturnType<typeof getLoreTree>>) {

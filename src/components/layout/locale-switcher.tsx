@@ -12,9 +12,10 @@ import styles from "./locale-switcher.module.css";
 type LocaleSwitcherProps = {
   locale: Locale;
   dictionary: Dictionary;
+  onClick?: () => void;
 };
 
-export function LocaleSwitcher({ locale, dictionary }: LocaleSwitcherProps) {
+export function LocaleSwitcher({ locale, dictionary, onClick }: LocaleSwitcherProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const target = locale === "ja" ? "en" : "ja";
@@ -22,7 +23,13 @@ export function LocaleSwitcher({ locale, dictionary }: LocaleSwitcherProps) {
   const query = searchParams.toString();
 
   return (
-    <a className={styles.switcher} href={`${path}${query ? `?${query}` : ""}`} hrefLang={target} lang={target}>
+    <a
+      className={styles.switcher}
+      href={`${path}${query ? `?${query}` : ""}`}
+      hrefLang={target}
+      lang={target}
+      onClick={onClick}
+    >
       <Languages aria-hidden="true" size={17} />
       {target === "ja" ? dictionary.common.localeJapanese : dictionary.common.localeEnglish}
     </a>

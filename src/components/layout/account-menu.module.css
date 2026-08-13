@@ -2,37 +2,22 @@
   position: relative;
 }
 
-.summary {
+.trigger {
   display: inline-flex;
   min-height: 36px;
   align-items: center;
   gap: 7px;
   padding: 2px 7px 2px 3px;
+  border: 0;
   border-radius: 6px;
+  background: transparent;
   color: var(--header-fg);
   cursor: pointer;
   font-size: 0.82rem;
-  list-style: none;
 }
 
-.summary::-webkit-details-marker {
-  display: none;
-}
-
-.summary:hover {
+.trigger:hover {
   background: var(--header-hover);
-}
-
-.avatar {
-  display: grid;
-  width: 27px;
-  height: 27px;
-  place-items: center;
-  border-radius: 50%;
-  background: var(--header-avatar-bg);
-  color: var(--header-avatar-fg);
-  font-size: 0.73rem;
-  font-weight: 700;
 }
 
 .dropdown {

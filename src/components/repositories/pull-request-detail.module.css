@@ -1,37 +1,82 @@
 .layout {
   display: grid;
-  gap: 1rem;
+  gap: 1.25rem;
 }
 
 .heading {
+  border-bottom: 1px solid var(--border);
   display: grid;
-  gap: 0.55rem;
+  gap: 0.8rem;
+  padding-bottom: 1.15rem;
 }
 
-.heading h1,
-.heading p {
-  margin: 0;
+.titleRow {
+  align-items: flex-start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem;
+  justify-content: space-between;
 }
 
 .heading h1 {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  font-weight: 500;
+  line-height: 1.25;
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 
-.draft {
-  border: 1px solid var(--border-strong);
-  border-radius: 2em;
-  color: var(--fg-muted);
-  font-size: 12px;
-  font-weight: 600;
-  padding: 2px 8px;
-}
-
-.heading p,
 .meta {
   color: var(--fg-muted);
+  font-weight: 400;
+}
+
+.stateBadge {
+  align-items: center;
+  background: var(--success-fg);
+  border: 1px solid var(--success-border);
+  border-radius: 2rem;
+  color: var(--fg-on-emphasis);
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 0.9rem;
+  font-weight: 650;
+  gap: 0.4rem;
+  padding: 0.4rem 0.8rem;
+}
+
+.stateBadge[data-state="merged"] {
+  background: #8250df;
+  border-color: #8250df;
+}
+
+.stateBadge[data-state="closed"] {
+  background: var(--danger-fg);
+  border-color: var(--danger-border);
+}
+
+.stateBadge[data-state="draft"] {
+  background: var(--fg-muted);
+  border-color: var(--fg-muted);
+}
+
+.branchSummary {
+  align-items: center;
+  color: var(--fg-muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 0.88rem;
+  gap: 0.45rem;
+  margin: 0;
+}
+
+.branchChip {
+  background: var(--canvas-subtle);
+  border: 1px solid var(--border);
+  border-radius: 0.35rem;
+  color: var(--fg-default);
+  font-size: 0.82rem;
+  padding: 0.18rem 0.42rem;
 }
 
 .tabs {
@@ -41,63 +86,142 @@
   overflow-x: auto;
 }
 
-.tabs button {
+.tab {
+  align-items: center;
   background: transparent;
-  border: 0;
   border-bottom: 2px solid transparent;
   color: var(--fg-muted);
-  cursor: pointer;
-  font: inherit;
+  display: inline-flex;
+  font-size: 0.9rem;
+  gap: 0.38rem;
   padding: 0.7rem 0.85rem;
+  text-decoration: none;
   white-space: nowrap;
 }
 
-.tabs button[aria-selected="true"] {
+.tab:hover {
+  color: var(--fg-default);
+  text-decoration: none;
+}
+
+.tab[aria-selected="true"] {
   border-bottom-color: var(--accent-emphasis);
   color: var(--fg-default);
   font-weight: 650;
 }
 
-.panel {
-  border: 1px solid var(--border);
-  border-radius: 0.65rem;
+.tabCount {
+  color: var(--fg-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.announcement {
+  min-height: 1.4rem;
+}
+
+.columns {
+  align-items: start;
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: minmax(0, 1fr) minmax(14rem, 17rem);
+}
+
+.main,
+.sidebar {
   display: grid;
   gap: 1rem;
-  padding: clamp(1rem, 2.5vw, 1.5rem);
+  min-width: 0;
+}
+
+.tabpanel {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.panel {
+  border: 1px solid var(--border);
+  border-radius: 0.45rem;
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+  padding: clamp(1rem, 2.5vw, 1.35rem);
+}
+
+.panel h2,
+.panel h3,
+.panel p {
+  margin: 0;
 }
 
 .summary {
   display: grid;
   gap: 0.65rem;
   grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  margin: 0;
 }
 
 .summary div {
   background: var(--canvas-subtle);
-  border-radius: 0.45rem;
+  border-radius: 0.35rem;
   padding: 0.7rem;
 }
 
 .summary dt {
   color: var(--fg-muted);
-  font-size: 0.8rem;
+  font-size: 0.78rem;
 }
 
 .summary dd {
   margin: 0.3rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+.statusRow {
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  display: flex;
+  gap: 0.55rem;
+  padding: 0.75rem 0.85rem;
+}
+
+.statusRow[data-state="ready"] {
+  background: var(--success-bg);
+  border-color: var(--success-border);
+  color: var(--success-fg);
+}
+
+.statusRow[data-state="blocked"] {
+  background: var(--danger-bg);
+  border-color: var(--danger-border);
+  color: var(--danger-fg);
+}
+
+.blockedStatus {
+  display: grid;
+  gap: 0.7rem;
 }
 
 .blockers {
-  background: var(--attention-bg);
-  border: 1px solid var(--attention-border);
-  border-radius: 0.55rem;
-  padding: 0.8rem 1rem;
+  background: var(--canvas-subtle);
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  margin: 0;
+  padding: 0.75rem 0.85rem 0.75rem 2rem;
 }
 
-.blockers ul,
-.conflicts ul {
-  margin: 0.5rem 0 0;
-  padding-left: 1.3rem;
+.blockers li + li {
+  margin-top: 0.35rem;
+}
+
+.status {
+  border: 1px solid var(--attention-border);
+  border-radius: 0.4rem;
+  background: var(--attention-bg);
+  color: var(--attention-fg);
+  padding: 0.7rem 0.85rem;
 }
 
 .actions {
@@ -109,10 +233,11 @@
 .actions button {
   background: var(--accent-emphasis);
   border: 1px solid var(--accent-emphasis);
-  border-radius: 0.45rem;
+  border-radius: 0.4rem;
   color: var(--fg-on-emphasis);
   cursor: pointer;
   font: inherit;
+  font-size: 0.86rem;
   font-weight: 650;
   padding: 0.5rem 0.8rem;
 }
@@ -133,25 +258,22 @@
   opacity: 0.65;
 }
 
-.reviewList,
 .conflicts {
   display: grid;
   gap: 0.7rem;
 }
 
-.review {
-  border-bottom: 1px solid var(--border-muted);
-  padding-bottom: 0.7rem;
+.conflicts p {
+  color: var(--fg-muted);
 }
 
-.review:last-child {
-  border-bottom: 0;
-  padding-bottom: 0;
+.conflicts ul {
+  margin: 0;
+  padding-left: 1.3rem;
 }
 
-.review p {
-  margin: 0.25rem 0 0;
-  white-space: pre-wrap;
+.conflicts li + li {
+  margin-top: 0.35rem;
 }
 
 .conflicts label {
@@ -164,13 +286,67 @@
   overflow-wrap: anywhere;
 }
 
-.diff {
+.commitList {
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  list-style: none;
   margin: 0;
-  max-height: 30rem;
-  overflow: auto;
-  white-space: pre-wrap;
+  padding: 0;
 }
 
-.announcement {
-  min-height: 1.4rem;
+.commitRow {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.75rem 0.85rem;
+}
+
+.commitRow + .commitRow {
+  border-top: 1px solid var(--border-muted);
+}
+
+.commitIdentity {
+  align-items: center;
+  display: flex;
+  gap: 0.45rem;
+}
+
+.commitRevision {
+  color: var(--accent-fg);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.copyButton {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--fg-muted);
+  display: inline-flex;
+  padding: 0.2rem;
+}
+
+.copyButton:hover {
+  color: var(--accent-fg);
+}
+
+.commitNumber {
+  color: var(--fg-muted);
+  font-size: 0.78rem;
+}
+
+.commitRow p {
+  color: var(--fg-default);
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .columns {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    order: 2;
+  }
 }

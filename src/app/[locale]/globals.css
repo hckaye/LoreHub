@@ -24,9 +24,15 @@
   --danger-fg: #cf222e;
   --danger-bg: #ffebe9;
   --danger-border: #cf222e;
+  --done-fg: #8250df;
+  --done-bg: #fbefff;
+  --done-border: #8250df;
   --attention-fg: #9a6700;
   --attention-bg: #fff8c5;
   --attention-border: #bf8700;
+  --done-fg: #8250df;
+  --done-emphasis: #8250df;
+  --done-border: #6639ba;
   --header-bg: #25292e;
   --header-border: #3d444d;
   --header-hover: #32383f;
@@ -66,9 +72,15 @@
     --danger-fg: #ff7b72;
     --danger-bg: #2d1617;
     --danger-border: #da3633;
+    --done-fg: #a371f7;
+    --done-bg: #211047;
+    --done-border: #a371f7;
     --attention-fg: #d29922;
     --attention-bg: #2b2111;
     --attention-border: #9e6a03;
+    --done-fg: #a371f7;
+    --done-emphasis: #8957e5;
+    --done-border: #6e40c9;
     --header-bg: #010409;
     --header-border: #30363d;
     --header-hover: #21262d;
@@ -94,7 +106,12 @@
 html {
   min-width: 320px;
   background: var(--canvas-default);
-  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
 }
 
 body {
@@ -155,6 +172,23 @@ button {
 
 .site-main {
   flex: 1;
+}
+
+.skip-link {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 50;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--accent-emphasis);
+  color: var(--fg-on-emphasis);
+  transform: translateY(-150%);
+  transition: transform 120ms ease;
+}
+
+.skip-link:focus {
+  transform: translateY(0);
 }
 
 body:has([data-auth-page]) .site-shell > header,

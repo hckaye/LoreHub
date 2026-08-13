@@ -1,0 +1,158 @@
+.history {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+}
+
+.group {
+  min-width: 0;
+}
+
+.groupHeading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  color: var(--fg-default);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.groupHeading svg {
+  color: var(--fg-muted);
+}
+
+.rows {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--canvas-default);
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border-muted);
+}
+
+.row:last-child {
+  border-bottom: 0;
+}
+
+.row:hover {
+  background: var(--canvas-subtle);
+}
+
+.details {
+  min-width: 0;
+}
+
+.message {
+  display: block;
+  overflow: hidden;
+  color: var(--fg-default);
+  font-size: 0.88rem;
+  font-weight: 600;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.message:hover {
+  color: var(--accent-fg);
+  text-decoration: underline;
+}
+
+.byline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  margin: 3px 0 0;
+  color: var(--fg-muted);
+  font-size: 0.78rem;
+}
+
+.byline strong {
+  color: var(--fg-default);
+  font-weight: 600;
+}
+
+.revision {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+}
+
+.revisionLink {
+  padding: 3px 6px;
+  border-radius: 6px;
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  text-decoration: none;
+}
+
+.revisionLink:hover {
+  background: var(--canvas-subtle);
+  color: var(--accent-fg);
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 0;
+}
+
+.pagination a,
+.pagination span {
+  min-width: 84px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--accent-fg);
+  font-size: 0.78rem;
+  text-align: center;
+  text-decoration: none;
+}
+
+.pagination a:hover {
+  background: var(--canvas-subtle);
+}
+
+.pagination span {
+  color: var(--fg-muted);
+  opacity: 0.65;
+}
+
+.empty {
+  margin: 0;
+  padding: 32px 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--fg-muted);
+  font-size: 0.82rem;
+  text-align: center;
+}
+
+@media (max-width: 640px) {
+  .row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .message {
+    white-space: normal;
+  }
+}

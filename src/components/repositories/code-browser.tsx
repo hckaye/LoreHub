@@ -1,13 +1,27 @@
 "use client";
 
-import { FileCode2, Folder, GitBranch, GitCommitHorizontal, History, Link2 } from "lucide-react";
+import {
+  ChevronDown,
+  Clipboard,
+  Code2,
+  FileCode2,
+  Folder,
+  GitBranch,
+  GitCommitHorizontal,
+  History,
+  Link2,
+  Search,
+  Tag,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useMemo, useState, useSyncExternalStore } from "react";
 
 import type { Dictionary } from "@/i18n";
-import type { Branch, LoreTree } from "@/lib/api-types";
-import { repositoryBranchesPath, repositoryPath } from "@/lib/routes";
+import type { Branch, LoreRevision, LoreTree, RepositoryTag } from "@/lib/api-types";
+import { repositoryBranchesPath, repositoryPath, repositoryTagsPath } from "@/lib/routes";
 
+import { BranchSelector, type BranchSelection } from "./branch-selector";
 import styles from "./code-browser.module.css";
 
 type CodeBrowserProps = {
@@ -16,6 +30,9 @@ type CodeBrowserProps = {
   repository: string;
   branch: string;
   branches: Branch[];
+  currentRevision?: string;
+  latestCommit?: LoreRevision;
+  tags: RepositoryTag[];
   tree: LoreTree;
   parentRevision?: string;
   dictionary: Dictionary;
@@ -27,149 +44,460 @@ export function CodeBrowser({
   repository,
   branch,
   branches,
+  currentRevision,
+  latestCommit,
+  tags,
   tree,
   parentRevision,
   dictionary,
 }: CodeBrowserProps) {
   const basePath = repositoryPath(locale, owner, repository);
   const router = useRouter();
-  const commitsPath = `${basePath}/commits?branch=${encodeURIComponent(branch)}`;
-  const parentPath = parentTreePath(tree.path);
+  const [fileFilter, setFileFilter] = useState("");
+  const filteredEntries = useMemo(
+    () => filterTreeEntries(tree.entries, fileFilter, locale),
+    [fileFilter, locale, tree.entries],
+  );
+
+  function selectReference(selection: BranchSelection) {
+    router.push(referenceHref(basePath, selection, tree.path));
+  }
+
   return (
     <section aria-labelledby="code-browser-title" className={styles.browser}>
-      <div className={styles.toolbar}>
-        <div className={styles.branchControls}>
-          <div className={styles.branchBox}>
-            <GitBranch aria-hidden="true" size={16} />
-            <label className="visually-hidden" htmlFor="code-branch">
-              {dictionary.repository.branchSelector}
-            </label>
-            <select
-              aria-label={dictionary.repository.branchSelector}
-              id="code-branch"
-              defaultValue={branch}
-              onChange={(event) => {
-                router.push(`${basePath}?branch=${encodeURIComponent(event.target.value)}`);
-              }}
-            >
-              {branches.map((item) => (
-                <option disabled={item.archived} key={item.id} value={item.name}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <Link className={styles.toolbarLink} href={repositoryBranchesPath(locale, owner, repository)}>
-            <GitBranch aria-hidden="true" size={16} />
-            {branches.length} {dictionary.common.branches}
-          </Link>
-        </div>
-        <div className={styles.links}>
-          <Link className={styles.toolbarLink} href={commitsPath}>
-            <History aria-hidden="true" size={16} />
-            {dictionary.codeBrowser.history}
-          </Link>
-          {parentRevision && (
-            <Link
-              className={styles.toolbarLink}
-              href={`${basePath}/compare?source=${encodeURIComponent(parentRevision)}&target=${encodeURIComponent(
-                tree.revision,
-              )}`}
-            >
-              {dictionary.codeBrowser.compare}
-            </Link>
-          )}
-        </div>
-      </div>
+      <CodeToolbar
+        branches={branches}
+        branch={branch}
+        currentRevision={currentRevision}
+        dictionary={dictionary}
+        fileFilter={fileFilter}
+        locale={locale}
+        onFileFilterChange={setFileFilter}
+        onSelect={selectReference}
+        owner={owner}
+        repository={repository}
+        tags={tags}
+      />
+      <HistoryLinks
+        branch={branch}
+        currentRevision={currentRevision}
+        dictionary={dictionary}
+        locale={locale}
+        owner={owner}
+        parentRevision={parentRevision}
+        repository={repository}
+        revision={tree.revision}
+      />
       <div className={styles.tableWrap}>
         <h2 id="code-browser-title" className="visually-hidden">
           {dictionary.codeBrowser.treeTitle}
         </h2>
-        {tree.path && (
-          <nav aria-label={dictionary.codeBrowser.breadcrumbLabel} className={styles.pathBar}>
-            <ol className={styles.breadcrumb}>
-              <li>
-                <Link href={`${basePath}?branch=${encodeURIComponent(branch)}`}>{repository}</Link>
-              </li>
-              {tree.path
-                .split("/")
-                .filter(Boolean)
-                .map((part, index, parts) => (
-                  <li key={`${part}-${index}`}>
-                    <span aria-hidden="true">/</span>
-                    <Link
-                      href={`${basePath}?branch=${encodeURIComponent(branch)}&path=${encodeURIComponent(
-                        parts.slice(0, index + 1).join("/"),
-                      )}`}
-                    >
-                      {part}
-                    </Link>
-                  </li>
-                ))}
-            </ol>
-          </nav>
-        )}
-        <div className={styles.revisionBar}>
-          <GitCommitHorizontal aria-hidden="true" size={17} />
-          <strong>{dictionary.repository.latestRevision}</strong>
-          <code title={tree.revision}>{shortRevision(tree.revision)}</code>
-          <Link href={commitsPath}>
-            <History aria-hidden="true" size={16} />
-            {dictionary.codeBrowser.history}
-          </Link>
-        </div>
-        {tree.entries.length === 0 ? (
-          <p className={styles.empty}>{dictionary.codeBrowser.emptyTree}</p>
-        ) : (
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th scope="col">{dictionary.codeBrowser.name}</th>
-                <th scope="col">{dictionary.codeBrowser.size}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {parentPath !== null && (
-                <tr>
-                  <td colSpan={2}>
-                    <Link
-                      href={`${basePath}?branch=${encodeURIComponent(branch)}&path=${encodeURIComponent(parentPath)}`}
-                    >
-                      {dictionary.codeBrowser.parentDirectory}
-                    </Link>
-                  </td>
-                </tr>
-              )}
-              {tree.entries.map((entry) => {
-                const href =
-                  entry.kind === "directory"
-                    ? `${basePath}?branch=${encodeURIComponent(branch)}&path=${encodeURIComponent(entry.path)}`
-                    : `${basePath}/blob?branch=${encodeURIComponent(branch)}&revision=${encodeURIComponent(
-                        tree.revision,
-                      )}&path=${encodeURIComponent(entry.path)}`;
-                return (
-                  <tr key={entry.path}>
-                    <td>
-                      <span className={styles.entry}>
-                        <EntryIcon kind={entry.kind} />
-                        <Link href={href}>{entry.name}</Link>
-                      </span>
-                    </td>
-                    <td>{entry.kind === "file" ? formatSize(entry.size, dictionary.codeBrowser.bytes) : "—"}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
+        <Breadcrumbs
+          branch={branch}
+          currentRevision={currentRevision}
+          dictionary={dictionary}
+          locale={locale}
+          owner={owner}
+          path={tree.path}
+          repository={repository}
+        />
+        <LatestCommitBar
+          commitsPath={historyHref(basePath, branch, currentRevision)}
+          dictionary={dictionary}
+          latestCommit={latestCommit}
+          locale={locale}
+          revision={tree.revision}
+        />
+        <FileTable
+          branch={branch}
+          currentRevision={currentRevision}
+          dictionary={dictionary}
+          entries={filteredEntries}
+          hasEntries={tree.entries.length > 0}
+          locale={locale}
+          owner={owner}
+          repository={repository}
+          revision={tree.revision}
+        />
       </div>
       {tree.hasMore && <p className={styles.revision}>{dictionary.codeBrowser.treeTruncated}</p>}
     </section>
   );
 }
 
+type CodeToolbarProps = {
+  branches: Branch[];
+  branch: string;
+  currentRevision?: string;
+  dictionary: Dictionary;
+  fileFilter: string;
+  locale: "en" | "ja";
+  onFileFilterChange: (value: string) => void;
+  onSelect: (selection: BranchSelection) => void;
+  owner: string;
+  repository: string;
+  tags: RepositoryTag[];
+};
+
+function CodeToolbar({
+  branches,
+  branch,
+  currentRevision,
+  dictionary,
+  fileFilter,
+  locale,
+  onFileFilterChange,
+  onSelect,
+  owner,
+  repository,
+  tags,
+}: CodeToolbarProps) {
+  const selectedTag = findTag(tags, currentRevision);
+  return (
+    <div className={styles.toolbar}>
+      <div className={styles.branchControls}>
+        <BranchSelector
+          branches={branches}
+          dictionary={dictionary}
+          onSelect={onSelect}
+          selectedKind={selectedTag ? "tag" : "branch"}
+          selectedName={selectedTag?.name ?? branch}
+          tags={tags}
+        />
+        <Link className={styles.toolbarLink} href={repositoryBranchesPath(locale, owner, repository)}>
+          <GitBranch aria-hidden="true" size={16} />
+          {branches.length} {dictionary.common.branches}
+        </Link>
+        <Link className={styles.toolbarLink} href={repositoryTagsPath(locale, owner, repository)}>
+          <Tag aria-hidden="true" size={16} />
+          {tags.length} {dictionary.common.tags}
+        </Link>
+      </div>
+      <div className={styles.toolbarActions}>
+        <div className={styles.fileFilter}>
+          <Search aria-hidden="true" size={16} />
+          <label className="visually-hidden" htmlFor="code-file-filter">
+            {dictionary.codeBrowser.goToFile}
+          </label>
+          <input
+            id="code-file-filter"
+            onChange={(event) => onFileFilterChange(event.target.value)}
+            placeholder={dictionary.codeBrowser.goToFilePlaceholder}
+            type="search"
+            value={fileFilter}
+          />
+        </div>
+        <CloneMenu dictionary={dictionary} owner={owner} repository={repository} />
+      </div>
+    </div>
+  );
+}
+
+function CloneMenu({ dictionary, owner, repository }: { dictionary: Dictionary; owner: string; repository: string }) {
+  const [copyStatus, setCopyStatus] = useState<"copied" | "failed" | null>(null);
+  const cloneURL = useSyncExternalStore(
+    noopSubscribe,
+    () => `${window.location.origin}/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}`,
+    emptyCloneURL,
+  );
+
+  async function copyCloneURL() {
+    if (!cloneURL) return;
+    try {
+      await navigator.clipboard.writeText(cloneURL);
+      setCopyStatus("copied");
+    } catch {
+      setCopyStatus("failed");
+    }
+  }
+
+  return (
+    <details className={styles.codeMenu}>
+      <summary className={styles.codeButton}>
+        <Code2 aria-hidden="true" size={16} />
+        {dictionary.codeBrowser.code}
+        <ChevronDown aria-hidden="true" size={14} />
+      </summary>
+      <div className={styles.codePopover}>
+        <strong>{dictionary.codeBrowser.cloneRepository}</strong>
+        <label htmlFor="repository-clone-url">{dictionary.codeBrowser.cloneURL}</label>
+        <div className={styles.cloneURLRow}>
+          <input id="repository-clone-url" readOnly value={cloneURL} />
+          <button disabled={!cloneURL} onClick={copyCloneURL} type="button">
+            <Clipboard aria-hidden="true" size={15} />
+            {copyStatus === "copied" ? dictionary.codeBrowser.copied : dictionary.codeBrowser.copy}
+          </button>
+        </div>
+        {copyStatus === "failed" && <p role="status">{dictionary.codeBrowser.copyFailed}</p>}
+      </div>
+    </details>
+  );
+}
+
+function HistoryLinks({
+  branch,
+  currentRevision,
+  dictionary,
+  locale,
+  owner,
+  parentRevision,
+  repository,
+  revision,
+}: {
+  branch: string;
+  currentRevision?: string;
+  dictionary: Dictionary;
+  locale: "en" | "ja";
+  owner: string;
+  parentRevision?: string;
+  repository: string;
+  revision: string;
+}) {
+  const basePath = repositoryPath(locale, owner, repository);
+  return (
+    <div className={styles.secondaryToolbar}>
+      <Link className={styles.toolbarLink} href={historyHref(basePath, branch, currentRevision)}>
+        <History aria-hidden="true" size={16} />
+        {dictionary.codeBrowser.history}
+      </Link>
+      {parentRevision && (
+        <Link
+          className={styles.toolbarLink}
+          href={`${basePath}/compare?source=${encodeURIComponent(parentRevision)}&target=${encodeURIComponent(
+            revision,
+          )}`}
+        >
+          {dictionary.codeBrowser.compare}
+        </Link>
+      )}
+    </div>
+  );
+}
+
+function Breadcrumbs({
+  branch,
+  currentRevision,
+  dictionary,
+  locale,
+  owner,
+  path,
+  repository,
+}: {
+  branch: string;
+  currentRevision?: string;
+  dictionary: Dictionary;
+  locale: "en" | "ja";
+  owner: string;
+  path: string;
+  repository: string;
+}) {
+  if (!path) return null;
+  const basePath = repositoryPath(locale, owner, repository);
+  return (
+    <nav aria-label={dictionary.codeBrowser.breadcrumbLabel} className={styles.pathBar}>
+      <ol className={styles.breadcrumb}>
+        <li>
+          <Link href={treeHref(basePath, branch, currentRevision)}>{repository}</Link>
+        </li>
+        {path
+          .split("/")
+          .filter(Boolean)
+          .map((part, index, parts) => (
+            <li key={`${part}-${index}`}>
+              <span aria-hidden="true">/</span>
+              <Link href={treeHref(basePath, branch, currentRevision, parts.slice(0, index + 1).join("/"))}>
+                {part}
+              </Link>
+            </li>
+          ))}
+      </ol>
+    </nav>
+  );
+}
+
+function LatestCommitBar({
+  commitsPath,
+  dictionary,
+  latestCommit,
+  locale,
+  revision,
+}: {
+  commitsPath: string;
+  dictionary: Dictionary;
+  latestCommit?: LoreRevision;
+  locale: "en" | "ja";
+  revision: string;
+}) {
+  const author = latestCommit?.author?.trim() || dictionary.codeBrowser.unknownAuthor;
+  const message = latestCommit?.message?.split("\n")[0].trim() || dictionary.codeBrowser.noCommitMessage;
+  return (
+    <div aria-label={dictionary.codeBrowser.latestCommit} className={styles.revisionBar} role="group">
+      <GitCommitHorizontal aria-hidden="true" size={17} />
+      <div className={styles.commitSummary}>
+        <strong>{author}</strong>
+        <span title={message}>{message}</span>
+      </div>
+      <div className={styles.commitMeta}>
+        <time dateTime={latestCommit?.createdAt}>
+          {formatRelativeTime(latestCommit?.createdAt, locale, dictionary.codeBrowser.unknownDate)}
+        </time>
+        <Link aria-label={`${dictionary.codeBrowser.history}: ${shortRevision(revision)}`} href={commitsPath}>
+          <code title={revision}>{shortRevision(revision)}</code>
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+function FileTable({
+  branch,
+  currentRevision,
+  dictionary,
+  entries,
+  hasEntries,
+  locale,
+  owner,
+  repository,
+  revision,
+}: {
+  branch: string;
+  currentRevision?: string;
+  dictionary: Dictionary;
+  entries: LoreTree["entries"];
+  hasEntries: boolean;
+  locale: "en" | "ja";
+  owner: string;
+  repository: string;
+  revision: string;
+}) {
+  const basePath = repositoryPath(locale, owner, repository);
+  if (!hasEntries) return <p className={styles.empty}>{dictionary.codeBrowser.emptyTree}</p>;
+  if (entries.length === 0) return <p className={styles.empty}>{dictionary.codeBrowser.noMatchingFiles}</p>;
+  return (
+    <table className={styles.table}>
+      <thead>
+        <tr>
+          <th scope="col">{dictionary.codeBrowser.name}</th>
+          <th scope="col">{dictionary.codeBrowser.size}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {entries.map((entry) => {
+          const href =
+            entry.kind === "directory"
+              ? treeHref(basePath, branch, currentRevision, entry.path)
+              : fileHref(basePath, branch, currentRevision, revision, entry.path);
+          return (
+            <tr key={entry.path}>
+              <td>
+                <span className={styles.entry}>
+                  <EntryIcon kind={entry.kind} />
+                  <Link href={href}>{entry.name}</Link>
+                </span>
+              </td>
+              <td>{entry.kind === "file" ? formatSize(entry.size, dictionary.codeBrowser.bytes) : "—"}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+const noopSubscribe = () => () => {};
+const emptyCloneURL = () => "";
+
+function findTag(tags: RepositoryTag[], revision: string | undefined): RepositoryTag | undefined {
+  return revision ? tags.find((tag) => tag.revision === revision) : undefined;
+}
+
+function filterTreeEntries(entries: LoreTree["entries"], filter: string, locale: "en" | "ja") {
+  const normalizedFilter = filter.trim().toLocaleLowerCase();
+  return entries
+    .filter((entry) => matchesEntry(entry, normalizedFilter))
+    .sort((left, right) => compareEntries(left, right, locale));
+}
+
+function matchesEntry(entry: LoreTree["entries"][number], filter: string): boolean {
+  return (
+    filter === "" || entry.name.toLocaleLowerCase().includes(filter) || entry.path.toLocaleLowerCase().includes(filter)
+  );
+}
+
+function compareEntries(
+  left: LoreTree["entries"][number],
+  right: LoreTree["entries"][number],
+  locale: "en" | "ja",
+): number {
+  const leftIsDirectory = left.kind === "directory";
+  const rightIsDirectory = right.kind === "directory";
+  if (leftIsDirectory !== rightIsDirectory) return leftIsDirectory ? -1 : 1;
+  return left.name.localeCompare(right.name, locale);
+}
+
+function referenceHref(basePath: string, selection: BranchSelection, path: string): string {
+  const query = new URLSearchParams(
+    selection.kind === "branch" ? { branch: selection.name } : { revision: selection.revision },
+  );
+  if (path) query.set("path", path);
+  return `${basePath}?${query.toString()}`;
+}
+
+function treeHref(basePath: string, branch: string, currentRevision: string | undefined, path?: string): string {
+  const query = new URLSearchParams(currentRevision ? { revision: currentRevision } : { branch });
+  if (path) query.set("path", path);
+  return `${basePath}?${query.toString()}`;
+}
+
+function historyHref(basePath: string, branch: string, currentRevision: string | undefined): string {
+  const query = new URLSearchParams(currentRevision ? { revision: currentRevision } : { branch });
+  return `${basePath}/commits?${query.toString()}`;
+}
+
+function fileHref(
+  basePath: string,
+  branch: string,
+  currentRevision: string | undefined,
+  revision: string,
+  path: string,
+) {
+  const query = new URLSearchParams({ revision, path });
+  if (!currentRevision) query.set("branch", branch);
+  return `${basePath}/blob?${query.toString()}`;
+}
+
 function shortRevision(revision: string): string {
   return revision.length > 12 ? revision.slice(0, 12) : revision;
+}
+
+function formatRelativeTime(value: string | undefined, locale: "en" | "ja", fallback: string): string {
+  if (!value) return fallback;
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) return fallback;
+  const difference = timestamp - Date.now();
+  const absoluteDifference = Math.abs(difference);
+  if (absoluteDifference < 60_000) {
+    return new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(Math.round(difference / 1_000), "second");
+  }
+  if (absoluteDifference < 3_600_000) {
+    return new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(Math.round(difference / 60_000), "minute");
+  }
+  if (absoluteDifference < 86_400_000) {
+    return new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(Math.round(difference / 3_600_000), "hour");
+  }
+  if (absoluteDifference < 2_592_000_000) {
+    return new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(Math.round(difference / 86_400_000), "day");
+  }
+  if (absoluteDifference < 31_104_000_000) {
+    return new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(
+      Math.round(difference / 2_592_000_000),
+      "month",
+    );
+  }
+  return new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(
+    Math.round(difference / 31_104_000_000),
+    "year",
+  );
 }
 
 function EntryIcon({ kind }: { kind: "directory" | "file" | "link" }) {
@@ -180,15 +508,6 @@ function EntryIcon({ kind }: { kind: "directory" | "file" | "link" }) {
     return <Link2 aria-hidden="true" size={17} />;
   }
   return <FileCode2 aria-hidden="true" size={17} />;
-}
-
-function parentTreePath(path: string): string | null {
-  const parts = path.split("/").filter(Boolean);
-  if (parts.length === 0) {
-    return null;
-  }
-  parts.pop();
-  return parts.join("/");
 }
 
 function formatSize(value: number, unit: string): string {

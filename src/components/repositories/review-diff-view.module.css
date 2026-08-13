@@ -19,6 +19,28 @@
   padding: 0.65rem 0.8rem;
 }
 
+.fileHeader::-webkit-details-marker {
+  display: none;
+}
+
+.fileHeader {
+  cursor: pointer;
+  list-style: none;
+}
+
+.fileHeader::before {
+  border-bottom: 1px solid currentColor;
+  border-right: 1px solid currentColor;
+  content: "";
+  flex: 0 0 0.45rem;
+  height: 0.45rem;
+  transform: rotate(-45deg);
+}
+
+.file[open] > .fileHeader::before {
+  transform: rotate(45deg) translate(-0.1rem, -0.1rem);
+}
+
 .fileHeader h3 {
   font-family: var(--font-mono), ui-monospace, monospace;
   font-size: 0.9rem;
@@ -31,6 +53,12 @@
 .message {
   color: var(--fg-muted);
   font-size: 0.85rem;
+}
+
+.summary {
+  color: var(--fg-muted);
+  font-size: 0.85rem;
+  margin: 0;
 }
 
 .diffTable {
@@ -176,6 +204,12 @@
   font-size: 0.8rem;
 }
 
+.thread > header time {
+  color: var(--fg-muted);
+  font-size: 0.8rem;
+  margin-left: auto;
+}
+
 .anchorLine {
   background: var(--canvas-subtle);
   margin: 0 0.7rem;
@@ -199,6 +233,22 @@
 .comment p {
   margin: 0;
   white-space: pre-wrap;
+}
+
+.commentHeader {
+  align-items: center;
+  display: flex;
+  gap: 0.45rem;
+}
+
+.commentHeader time {
+  color: var(--fg-muted);
+  font-size: 0.78rem;
+  margin-left: auto;
+}
+
+.commentBody {
+  overflow-wrap: anywhere;
 }
 
 .textActions button {
