@@ -6,19 +6,15 @@ import { RepositorySection } from "@/components/repositories/repository-section"
 import { WorkItemListPagination } from "@/components/repositories/work-item-list-pagination";
 import { WorkItemListToolbar } from "@/components/repositories/work-item-list-toolbar";
 import { EmptyState } from "@/components/ui/empty-state";
-import { FilterTabs } from "@/components/ui/filter-tabs";
 import { FlashNotice } from "@/components/ui/flash-notice";
 import { getDictionary } from "@/i18n";
 import { isLocale } from "@/i18n/config";
 import { getMergeRequests, getPublicRepository } from "@/lib/lorehub-api";
 import {
-  parseRepositoryMergeRequestQuery,
-  repositoryWorkItemSearchParams,
-  type MergeRequestFilter,
   type RawRepositoryWorkItemSearchParams,
-  type RepositoryMergeRequestQuery,
+  parseRepositoryMergeRequestQuery,
 } from "@/lib/repository-work-item-query";
-import { repositoryPath } from "@/lib/routes";
+import { repositoryMilestonesPath, repositoryPath } from "@/lib/routes";
 
 import styles from "@/components/repositories/repository-section.module.css";
 
@@ -34,7 +30,6 @@ export default async function PullRequestsPage({ params, searchParams }: PullReq
   const locale = isLocale(value) ? value : "en";
   const query = await searchParams;
   const filters = parseRepositoryMergeRequestQuery(query);
-  const state = filters.state ?? "open";
   const [dictionary, mergeRequests, repositoryResult] = await Promise.all([
     getDictionary(locale),
     getMergeRequests(owner, repository, filters),
@@ -45,11 +40,19 @@ export default async function PullRequestsPage({ params, searchParams }: PullReq
   return (
     <RepositorySection
       actions={
-        archived ? undefined : (
-          <Link className={styles.primaryButton} href={`${basePath}/new`}>
-            {dictionary.pullRequestsPage.newPullRequest}
+        <div className={styles.panelActions}>
+          <Link className={styles.secondaryButton} href={repositoryPath(locale, owner, repository, "labels")}>
+            {dictionary.pullRequestsPage.labelsButton}
           </Link>
-        )
+          <Link className={styles.secondaryButton} href={repositoryMilestonesPath(locale, owner, repository)}>
+            {dictionary.pullRequestsPage.milestonesButton}
+          </Link>
+          {!archived && (
+            <Link className={styles.primaryButton} href={`${basePath}/new`}>
+              {dictionary.pullRequestsPage.newPullRequest}
+            </Link>
+          )}
+        </div>
       }
       title={dictionary.pullRequestsPage.title}
     >
@@ -61,44 +64,15 @@ export default async function PullRequestsPage({ params, searchParams }: PullReq
           tone="success"
         />
       )}
-      <WorkItemListToolbar
-        basePath={basePath}
-        dictionary={dictionary}
-        kind="pulls"
-        query={filters}
-        totalCount={mergeRequests.ok ? mergeRequests.data.totalCount : undefined}
-      />
       <div className={styles.workItemList}>
-        <FilterTabs
-          label={dictionary.pullRequestsPage.filterLabel}
-          tabs={[
-            {
-              active: state === "open",
-              count: mergeRequests.ok ? mergeRequests.data.openCount : undefined,
-              href: stateHref(basePath, filters, "open"),
-              label: dictionary.common.open,
-            },
-            {
-              active: state === "closed",
-              count: mergeRequests.ok ? mergeRequests.data.closedCount : undefined,
-              href: stateHref(basePath, filters, "closed"),
-              label: dictionary.common.closed,
-            },
-            {
-              active: state === "merged",
-              count: mergeRequests.ok ? mergeRequests.data.mergedCount : undefined,
-              href: stateHref(basePath, filters, "merged"),
-              label: dictionary.common.merged,
-            },
-            {
-              active: state === "all",
-              count: mergeRequests.ok
-                ? mergeRequests.data.openCount + mergeRequests.data.closedCount + mergeRequests.data.mergedCount
-                : undefined,
-              href: stateHref(basePath, filters, "all"),
-              label: dictionary.common.all,
-            },
-          ]}
+        <WorkItemListToolbar
+          basePath={basePath}
+          closedCount={mergeRequests.ok ? mergeRequests.data.closedCount : undefined}
+          dictionary={dictionary}
+          kind="pulls"
+          mergedCount={mergeRequests.ok ? mergeRequests.data.mergedCount : undefined}
+          openCount={mergeRequests.ok ? mergeRequests.data.openCount : undefined}
+          query={filters}
         />
         {mergeRequests.ok ? (
           <MergeRequestList
@@ -123,14 +97,11 @@ export default async function PullRequestsPage({ params, searchParams }: PullReq
           dictionary={dictionary}
           hasNext={mergeRequests.data.hasNext}
           page={mergeRequests.data.page}
+          perPage={mergeRequests.data.perPage}
           query={filters}
+          totalCount={mergeRequests.data.totalCount}
         />
       )}
     </RepositorySection>
   );
-}
-
-function stateHref(basePath: string, query: RepositoryMergeRequestQuery, state: MergeRequestFilter): string {
-  const params = repositoryWorkItemSearchParams(query, { state, page: 1 });
-  return params.size > 0 ? `${basePath}?${params}` : basePath;
 }

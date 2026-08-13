@@ -1,7 +1,7 @@
 "use client";
 
 import { Tags } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import type { Dictionary } from "@/i18n";
 import type { AuthSession, Label, LabelPage } from "@/lib/api-types";
@@ -12,6 +12,7 @@ import { EmptyState } from "../ui/empty-state";
 import styles from "./label-manager.module.css";
 
 type LabelManagerProps = {
+  count: number;
   data: LabelPage;
   dictionary: Dictionary;
   owner: string;
@@ -29,7 +30,18 @@ export function LabelManager(props: LabelManagerProps) {
   const [editDraft, setEditDraft] = useState<LabelInput>(emptyDraft);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<{ error: boolean; text: string } | null>(null);
+  const [filter, setFilter] = useState("");
+  const [showCreate, setShowCreate] = useState(false);
   const canWrite = props.data.viewerCanWrite && props.session.status === "authenticated";
+  const filteredItems = useMemo(() => {
+    const query = filter.trim().toLowerCase();
+    if (!query) return items;
+    return items.filter(
+      (label) =>
+        label.name.toLowerCase().includes(query) ||
+        label.description.toLowerCase().includes(query),
+    );
+  }, [items, filter]);
 
   async function create(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -44,6 +56,7 @@ export function LabelManager(props: LabelManagerProps) {
     }
     setItems((current) => sortLabels([...current, result.data]));
     setDraft(emptyDraft);
+    setShowCreate(false);
     setMessage({ error: false, text: copy.created });
   }
 
@@ -87,7 +100,30 @@ export function LabelManager(props: LabelManagerProps) {
 
   return (
     <div className={styles.manager}>
-      {canWrite && (
+      <div className={styles.toolbar}>
+        <div className={styles.toolbarLeft}>
+          <strong>{copy.countWithTotal.replace("{count}", String(props.count))}</strong>
+          <input
+            aria-label={copy.filterPlaceholder}
+            className={styles.filterInput}
+            onChange={(event) => setFilter(event.target.value)}
+            placeholder={copy.filterPlaceholder}
+            type="search"
+            value={filter}
+          />
+        </div>
+        {canWrite && (
+          <button
+            className={styles.newButton}
+            disabled={busy !== null}
+            onClick={() => setShowCreate((value) => !value)}
+            type="button"
+          >
+            {copy.newLabel}
+          </button>
+        )}
+      </div>
+      {canWrite && showCreate && (
         <form className={styles.createForm} onSubmit={create}>
           <h2>{copy.createTitle}</h2>
           <LabelFields copy={copy} draft={draft} idPrefix="new-label" setDraft={setDraft} />
@@ -103,9 +139,11 @@ export function LabelManager(props: LabelManagerProps) {
       )}
       {items.length === 0 ? (
         <EmptyState body={copy.emptyBody} icon={<Tags aria-hidden="true" />} title={copy.emptyTitle} />
+      ) : filteredItems.length === 0 ? (
+        <EmptyState body={copy.filterPlaceholder} icon={<Tags aria-hidden="true" />} title={copy.emptyTitle} />
       ) : (
         <ul className={styles.list}>
-          {items.map((label) => (
+          {filteredItems.map((label) => (
             <li key={label.id}>
               {editID === label.id ? (
                 <form className={styles.editForm} onSubmit={(event) => save(event, label.id)}>

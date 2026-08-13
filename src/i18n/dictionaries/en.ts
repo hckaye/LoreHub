@@ -370,6 +370,8 @@ const en = {
     emptyTitle: "No issues in this view",
     emptyBody: "Create an issue when there is a concrete piece of work to track.",
     createdNotice: "Issue created successfully.",
+    labelsButton: "Labels",
+    milestonesButton: "Milestones",
   },
   labelsPage: {
     title: "Labels",
@@ -397,6 +399,9 @@ const en = {
     unavailableBody: "LoreHub could not load this repository's labels. Try again later.",
     forbiddenTitle: "Labels are not available",
     forbiddenBody: "You do not have access to this repository's labels.",
+    countWithTotal: "{count} labels",
+    filterPlaceholder: "Filter labels",
+    newLabel: "New label",
   },
   issueDetail: {
     openedBy: "{author} opened this issue on {date}",
@@ -428,6 +433,8 @@ const en = {
     emptyTitle: "No pull requests in this view",
     emptyBody: "Create a pull request after a source branch has a change to review.",
     createdNotice: "Pull request created successfully.",
+    labelsButton: "Labels",
+    milestonesButton: "Milestones",
   },
   notificationsPage: {
     title: "Notifications",

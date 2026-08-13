@@ -1,4 +1,4 @@
-import { CircleDot, GitPullRequest } from "lucide-react";
+import { CircleDot, GitPullRequest, Search } from "lucide-react";
 import Link from "next/link";
 
 import type { Dictionary } from "@/i18n";
@@ -32,7 +32,7 @@ export function GlobalWorkItemList(props: GlobalWorkItemListProps) {
   const createLabel =
     props.kind === "issue" ? props.dictionary.common.newIssue : props.dictionary.common.newPullRequest;
   return (
-    <main className={styles.page}>
+    <div className={styles.page}>
       <header className={styles.heading}>
         <div>
           <h1>{title}</h1>
@@ -72,7 +72,7 @@ export function GlobalWorkItemList(props: GlobalWorkItemListProps) {
           )}
         </>
       )}
-    </main>
+    </div>
   );
 }
 
@@ -95,60 +95,50 @@ function WorkItemFilters(props: WorkItemFiltersProps) {
   scopes.push(["all", copy.allVisible]);
   return (
     <section aria-label={props.dictionary.common.filter} className={styles.filters}>
-      <FilterLinks
-        active={props.query.state}
-        label={copy.stateLabel}
-        links={states.map(([value, label]) => ({
-          href: workItemHref(props.locale, props.route, props.query, { state: value, cursor: undefined }),
-          label,
-          value,
-        }))}
-      />
-      <FilterLinks
-        active={props.query.scope}
-        label={copy.scopeLabel}
-        links={scopes.map(([value, label]) => ({
-          href: workItemHref(props.locale, props.route, props.query, { scope: value, cursor: undefined }),
-          label,
-          value,
-        }))}
-      />
-      <form action={`/${props.locale}/${props.route}`} className={styles.search} role="search">
-        <input name="state" type="hidden" value={props.query.state} />
-        <input name="scope" type="hidden" value={props.query.scope} />
-        <label className="visually-hidden" htmlFor={`${props.route}-query`}>
-          {copy.searchLabel}
-        </label>
-        <input
-          defaultValue={props.query.q ?? ""}
-          id={`${props.route}-query`}
-          maxLength={160}
-          name="q"
-          placeholder={copy.searchPlaceholder}
-          type="search"
-        />
-        <button type="submit">{copy.searchButton}</button>
-      </form>
+      <div className={styles.filterRow}>
+        <div className={styles.tabGroup} role="tablist" aria-label={copy.scopeLabel}>
+          {scopes.map(([value, label]) => (
+            <Link
+              aria-current={props.query.scope === value ? "page" : undefined}
+              className={props.query.scope === value ? styles.tabActive : styles.tab}
+              href={workItemHref(props.locale, props.route, props.query, { scope: value, cursor: undefined })}
+              key={value}
+              role="tab"
+            >
+              {label}
+            </Link>
+          ))}
+        </div>
+        <form action={`/${props.locale}/${props.route}`} className={styles.search} role="search">
+          <input name="state" type="hidden" value={props.query.state} />
+          <input name="scope" type="hidden" value={props.query.scope} />
+          <Search aria-hidden="true" className={styles.searchIcon} size={14} />
+          <label className="visually-hidden" htmlFor={`${props.route}-query`}>
+            {copy.searchLabel}
+          </label>
+          <input
+            defaultValue={props.query.q ?? ""}
+            id={`${props.route}-query`}
+            maxLength={160}
+            name="q"
+            placeholder={copy.searchPlaceholder}
+            type="search"
+          />
+        </form>
+      </div>
+      <div className={styles.stateRow}>
+        {states.map(([value, label]) => (
+          <Link
+            aria-current={props.query.state === value ? "page" : undefined}
+            className={props.query.state === value ? styles.stateActive : styles.stateLink}
+            href={workItemHref(props.locale, props.route, props.query, { state: value, cursor: undefined })}
+            key={value}
+          >
+            {label}
+          </Link>
+        ))}
+      </div>
     </section>
-  );
-}
-
-type FilterLinksProps = {
-  active: string;
-  label: string;
-  links: Array<{ href: string; label: string; value: string }>;
-};
-
-function FilterLinks(props: FilterLinksProps) {
-  return (
-    <nav aria-label={props.label} className={styles.filterLinks}>
-      <span>{props.label}</span>
-      {props.links.map((link) => (
-        <Link aria-current={props.active === link.value ? "page" : undefined} href={link.href} key={link.value}>
-          {link.label}
-        </Link>
-      ))}
-    </nav>
   );
 }
 
@@ -161,7 +151,9 @@ function workItemHref(
   const params = new URLSearchParams();
   const values = { ...query, ...overrides };
   for (const key of ["state", "scope", "q", "cursor"] as const) {
-    if (values[key]) params.set(key, values[key]);
+    const v = values[key];
+    if (v && v !== "open" && v !== "involved") params.set(key, v);
   }
-  return `/${locale}/${route}?${params.toString()}`;
+  const search = params.toString();
+  return `/${locale}/${route}${search ? `?${search}` : ""}`;
 }

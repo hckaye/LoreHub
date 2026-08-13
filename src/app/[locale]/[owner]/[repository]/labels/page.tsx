@@ -1,7 +1,7 @@
 import { LockKeyhole, ServerOff } from "lucide-react";
 
 import { LabelManager } from "@/components/repositories/label-manager";
-import { RepositoryPanel, RepositorySection } from "@/components/repositories/repository-section";
+import { RepositorySection } from "@/components/repositories/repository-section";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getDictionary } from "@/i18n";
 import { isLocale } from "@/i18n/config";
@@ -23,33 +23,33 @@ export default async function LabelsPage({ params }: LabelsPageProps) {
     getAuthSession(),
   ]);
   const copy = dictionary.labelsPage;
+  const labelCount = labels.ok ? labels.data.items.length : 0;
   return (
     <RepositorySection description={copy.description} title={copy.title}>
-      <RepositoryPanel description={copy.description} title={copy.title}>
-        {labels.ok ? (
-          <LabelManager
-            data={labels.data}
-            dictionary={dictionary}
-            owner={owner}
-            repository={repository}
-            session={session}
-          />
-        ) : labels.reason === "forbidden" || labels.reason === "not-found" ? (
-          <EmptyState
-            body={copy.forbiddenBody}
-            icon={<LockKeyhole aria-hidden="true" />}
-            title={copy.forbiddenTitle}
-            tone="warning"
-          />
-        ) : (
-          <EmptyState
-            body={copy.unavailableBody}
-            icon={<ServerOff aria-hidden="true" />}
-            title={copy.unavailableTitle}
-            tone="warning"
-          />
-        )}
-      </RepositoryPanel>
+      {labels.ok ? (
+        <LabelManager
+          count={labelCount}
+          data={labels.data}
+          dictionary={dictionary}
+          owner={owner}
+          repository={repository}
+          session={session}
+        />
+      ) : labels.reason === "forbidden" || labels.reason === "not-found" ? (
+        <EmptyState
+          body={copy.forbiddenBody}
+          icon={<LockKeyhole aria-hidden="true" />}
+          title={copy.forbiddenTitle}
+          tone="warning"
+        />
+      ) : (
+        <EmptyState
+          body={copy.unavailableBody}
+          icon={<ServerOff aria-hidden="true" />}
+          title={copy.unavailableTitle}
+          tone="warning"
+        />
+      )}
     </RepositorySection>
   );
 }

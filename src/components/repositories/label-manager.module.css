@@ -3,6 +3,61 @@
   gap: 16px;
 }
 
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.toolbarLeft {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.toolbarLeft strong {
+  font-size: 0.85rem;
+  color: var(--fg-default);
+}
+
+.filterInput {
+  min-width: 200px;
+  min-height: 32px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--canvas-default);
+  color: var(--fg-default);
+  font: inherit;
+  font-size: 0.82rem;
+}
+
+.filterInput:focus {
+  outline: 2px solid var(--accent-border);
+  outline-offset: -1px;
+  border-color: var(--accent-fg);
+}
+
+.newButton {
+  background: var(--canvas-subtle);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--fg-default);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.82rem;
+  min-height: 32px;
+  padding: 5px 12px;
+}
+
+.newButton:hover {
+  background: var(--canvas-default);
+}
+
 .createForm,
 .editForm {
   display: grid;
@@ -10,8 +65,10 @@
 }
 
 .createForm {
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 16px;
+  background: var(--canvas-subtle);
 }
 
 .createForm h2 {

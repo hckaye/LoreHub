@@ -103,6 +103,8 @@ export function MilestoneList(props: MilestoneListProps) {
 }
 
 function pagePath(basePath: string, state: string, page: number): string {
-  const query = new URLSearchParams({ state, page: String(page) });
-  return `${basePath}?${query.toString()}`;
+  const params = new URLSearchParams();
+  if (state !== "open") params.set("state", state);
+  if (page > 1) params.set("page", String(page));
+  return params.size > 0 ? `${basePath}?${params.toString()}` : basePath;
 }
