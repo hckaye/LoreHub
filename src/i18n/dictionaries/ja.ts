@@ -183,6 +183,7 @@ const ja = {
     about: "概要",
     stars: "スター",
     watching: "ウォッチ中",
+    moreReleases: "+ {count}件のリリース",
     codeTitle: "コード",
     codeDescription: "Loreから取得したリポジトリ情報とブランチの指し先です。",
     repositorySummary: "リポジトリの概要",
