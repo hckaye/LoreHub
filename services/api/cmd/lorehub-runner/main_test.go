@@ -14,12 +14,16 @@ func TestConfigureRegistersAndWritesRestrictedConfig(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.Method != http.MethodPost || request.URL.Path != "/api/v1/actions/runner/register" ||
 			request.Header.Get("Authorization") != "Bearer registration-token" {
-			t.Fatalf("unexpected registration request: %s %s %q", request.Method, request.URL.Path,
+			t.Errorf("unexpected registration request: %s %s %q", request.Method, request.URL.Path,
 				request.Header.Get("Authorization"))
+			writer.WriteHeader(http.StatusBadRequest)
+			return
 		}
 		var input map[string]any
 		if err := json.NewDecoder(request.Body).Decode(&input); err != nil {
-			t.Fatal(err)
+			t.Error(err)
+			writer.WriteHeader(http.StatusBadRequest)
+			return
 		}
 		writer.Header().Set("Content-Type", "application/json")
 		writer.WriteHeader(http.StatusCreated)

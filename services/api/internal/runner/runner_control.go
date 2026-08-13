@@ -78,10 +78,11 @@ func (store *Store) RunnerClaimJob(
 	if _, err := transaction.Exec(ctx, `
 		UPDATE ci_runners
 		SET last_used_at = CASE
-		      WHEN last_used_at IS NULL OR last_used_at < $2 - interval '5 minutes' THEN $2
+		      WHEN last_used_at IS NULL OR last_used_at < $2::timestamptz - interval '5 minutes'
+		      THEN $2::timestamptz
 		      ELSE last_used_at
 		    END,
-		    last_seen_at = GREATEST(COALESCE(last_seen_at, $2), $2)
+		    last_seen_at = GREATEST(COALESCE(last_seen_at, $2::timestamptz), $2::timestamptz)
 		WHERE id = $1
 	`, runnerID, usedAt.UTC()); err != nil {
 		return nil, fmt.Errorf("record runner claim activity: %w", err)
@@ -136,8 +137,8 @@ func (store *Store) RunnerClaimJob(
 	command, err := transaction.Exec(ctx, `
 		UPDATE ci_jobs job
 		SET status = 'in_progress', started_at = COALESCE(job.started_at, now()),
-		    lease_owner = $2, lease_expires_at = now() + $3::interval,
-		    runner_id = $2,
+		    lease_owner = $2::text, lease_expires_at = now() + $3::interval,
+		    runner_id = $2::uuid,
 		    attempt = job.attempt + CASE WHEN job.started_at IS NULL THEN 0 ELSE 1 END
 		FROM ci_runs run
 		WHERE job.id = $1 AND run.id = job.run_id AND NOT run.cancel_requested
@@ -195,7 +196,7 @@ func (store *Store) RunnerHeartbeatJob(
 		UPDATE ci_jobs job
 		SET lease_expires_at = now() + $3::interval
 		FROM ci_runs run
-		WHERE job.id = $1 AND job.runner_id = $2 AND job.lease_owner = $2
+		WHERE job.id = $1 AND job.runner_id = $2::uuid AND job.lease_owner = $2::text
 		  AND job.execution_target = 'self_hosted' AND job.status = 'in_progress'
 		  AND job.lease_expires_at > now()
 		  AND run.id = job.run_id AND run.status = 'in_progress' AND NOT run.cancel_requested
@@ -219,7 +220,7 @@ func (store *Store) RunnerCancellationRequested(
 		SELECT run.status = 'cancelled' OR run.cancel_requested
 		FROM ci_jobs job
 		JOIN ci_runs run ON run.id = job.run_id
-		WHERE job.id = $1 AND job.runner_id = $2 AND job.lease_owner = $2
+		WHERE job.id = $1 AND job.runner_id = $2::uuid AND job.lease_owner = $2::text
 		  AND job.execution_target = 'self_hosted' AND job.status = 'in_progress'
 		  AND job.lease_expires_at > now()
 	`, jobID, runnerID).Scan(&requested)
@@ -265,7 +266,7 @@ func (store *Store) AppendRunnerJobLog(
 	command, err := transaction.Exec(ctx, `
 		UPDATE ci_jobs
 		SET log_object_key = $3
-		WHERE id = $1 AND runner_id = $2 AND lease_owner = $2
+		WHERE id = $1 AND runner_id = $2::uuid AND lease_owner = $2::text
 		  AND status = 'in_progress' AND lease_expires_at > now()
 	`, jobID, runnerID, objectKey)
 	if err != nil {
@@ -355,7 +356,7 @@ func (store *Store) lockRunnerLease(
 	}
 	err = transaction.QueryRow(ctx, `
 		SELECT id FROM ci_jobs
-		WHERE id = $1 AND runner_id = $2 AND lease_owner = $2
+		WHERE id = $1 AND runner_id = $2::uuid AND lease_owner = $2::text
 		  AND execution_target = 'self_hosted' AND status = 'in_progress'
 		  AND lease_expires_at > now()
 		FOR UPDATE
@@ -447,8 +448,8 @@ func loadRunnerJob(
 		extraSQL = `
 			AND job.status = 'in_progress'
 			AND job.execution_target = 'self_hosted'
-			AND job.runner_id = $2
-			AND job.lease_owner = $2
+			AND job.runner_id = $2::uuid
+			AND job.lease_owner = $2::text
 			AND job.lease_expires_at > now()
 		`
 		arguments = append(arguments, runnerID[0])

@@ -123,7 +123,7 @@ func (executor *ShellExecutor) Execute(
 	)
 	clone.Stdout = masker
 	clone.Stderr = masker
-	clone.Env = append(os.Environ(), "LOREHUB_ACTIONS_JOB_TOKEN="+jobToken.Token)
+	clone.Env = append(safeCommandEnvironment(), "LOREHUB_ACTIONS_JOB_TOKEN="+jobToken.Token)
 	if err := clone.Run(); err != nil {
 		_ = masker.Flush()
 		return executionFailure(logBuffer.Bytes(), fmt.Errorf("clone Lore revision: %w", err)), nil
@@ -154,11 +154,18 @@ func (executor *ShellExecutor) Execute(
 		return ExecutionResult{}, err
 	}
 	serverURL := strings.TrimRight(executor.config.ServerURL, "/")
+	platformImages := make(map[string]string, len(job.RunnerLabels))
+	for _, label := range job.RunnerLabels {
+		platformImages[label] = executor.config.PlatformImage
+	}
+	if len(platformImages) == 0 {
+		platformImages["self-hosted"] = executor.config.PlatformImage
+	}
 	arguments := runner.ExternalActArguments(
 		job, repositoryPath, workflowPath, eventPath, artifactPath,
 		runner.ExternalActInvocation{
 			ActionRepositories: actionRepositories,
-			PlatformImages:     map[string]string{"self-hosted": executor.config.PlatformImage},
+			PlatformImages:     platformImages,
 			GitHub: runner.GitHubContext{
 				ServerURL: serverURL, APIURL: serverURL + "/api/v3", GraphQLURL: serverURL + "/api/graphql",
 			},
@@ -170,7 +177,7 @@ func (executor *ShellExecutor) Execute(
 	command := exec.CommandContext(ctx, executor.config.ActBinary, arguments...)
 	command.Stdout = masker
 	command.Stderr = masker
-	command.Env = append(os.Environ(), "LOREHUB_LORE_REVISION="+job.Revision)
+	command.Env = append(safeCommandEnvironment(), "LOREHUB_LORE_REVISION="+job.Revision)
 	runErr := runner.RunAct(ctx, command)
 	if err := masker.Flush(); err != nil && runErr == nil {
 		runErr = err
@@ -260,4 +267,19 @@ func firstEnvironment(names ...string) string {
 		}
 	}
 	return ""
+}
+
+func safeCommandEnvironment() []string {
+	allowed := []string{
+		"PATH", "HOME", "DOCKER_HOST", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH", "DOCKER_CONFIG",
+		"XDG_RUNTIME_DIR", "TMPDIR", "HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy",
+		"NO_PROXY", "no_proxy",
+	}
+	environment := make([]string, 0, len(allowed))
+	for _, name := range allowed {
+		if value := os.Getenv(name); value != "" {
+			environment = append(environment, name+"="+value)
+		}
+	}
+	return environment
 }

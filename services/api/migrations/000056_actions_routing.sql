@@ -1,6 +1,6 @@
 ALTER TABLE ci_jobs
     ADD COLUMN execution_target varchar(16) NOT NULL DEFAULT 'managed',
-    ADD COLUMN runner_id uuid REFERENCES ci_runners (id),
+    ADD COLUMN runner_id uuid REFERENCES ci_runners (id) ON DELETE SET NULL,
     ADD CONSTRAINT ci_jobs_execution_target_check CHECK (
         execution_target IN ('managed', 'self_hosted')
     );

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -143,6 +144,19 @@ func TestRunnerClaimFiltersTargetLabelsAndScopePostgres(t *testing.T) {
 	if err := pool.QueryRow(ctx, `SELECT runner_id FROM ci_jobs WHERE id = $1`, claimed.ID).
 		Scan(&leasedRunnerID); err != nil || leasedRunnerID != runnerID {
 		t.Fatalf("runner lease was not recorded: %q, %v", leasedRunnerID, err)
+	}
+	otherRunnerID := uuid.NewString()
+	if _, err := store.RunnerLeaseJob(ctx, claimed.ID, otherRunnerID); !errors.Is(err, ErrRunnerLeaseNotHeld) {
+		t.Fatalf("non-leaseholder read runner job: %v", err)
+	}
+	if err := store.RunnerHeartbeatJob(ctx, claimed.ID, otherRunnerID, time.Minute); !errors.Is(err, ErrRunnerLeaseNotHeld) {
+		t.Fatalf("non-leaseholder heartbeated runner job: %v", err)
+	}
+	if _, err := store.RunnerCancellationRequested(ctx, claimed.ID, otherRunnerID); !errors.Is(err, ErrRunnerLeaseNotHeld) {
+		t.Fatalf("non-leaseholder polled runner job cancellation: %v", err)
+	}
+	if err := store.RunnerHeartbeatJob(ctx, claimed.ID, runnerID, time.Minute); err != nil {
+		t.Fatalf("leaseholder could not heartbeat runner job: %v", err)
 	}
 	if err := store.CompleteJob(ctx, *claimed, runnerID, "success", "", nil); err != nil {
 		t.Fatal(err)

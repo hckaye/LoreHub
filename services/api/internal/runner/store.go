@@ -479,8 +479,8 @@ func (store *Store) enqueueRun(
 			id, repository_id, workflow_id, workflow_revision_id, run_number, run_attempt, rerun_of, event_name,
 			branch, revision, actor_id, status, conclusion, failure_reason, event_payload, completed_at
 		) VALUES ($1, $2, NULLIF($3, '')::uuid, $4, $5, $6, $7, $8, $9, $10,
-			NULLIF($11, '')::uuid, $12, NULLIF($13, ''), NULLIF($14, ''), $15,
-			CASE WHEN $12 = 'completed' THEN now() ELSE NULL END)
+			NULLIF($11, '')::uuid, $12::varchar, NULLIF($13, ''), NULLIF($14, ''), $15,
+			CASE WHEN $12::varchar = 'completed' THEN now() ELSE NULL END)
 	`, runID, repository.ID, workflowID, workflowRevisionID, runNumber, runAttempt, rerunOf,
 		eventName, branch, revision, actorID, runStatus, runConclusion, failureReason, payload)
 	if err != nil {
@@ -492,8 +492,8 @@ func (store *Store) enqueueRun(
 			id, run_id, name, status, conclusion, runner_labels, execution_target, completed_at
 		)
 		VALUES (
-			$1, $2, $3, $4, NULLIF($5, ''), $6, $7,
-			CASE WHEN $4 = 'completed' THEN now() ELSE NULL END
+			$1, $2, $3, $4::varchar, NULLIF($5, ''), $6, $7,
+			CASE WHEN $4::varchar = 'completed' THEN now() ELSE NULL END
 		)
 	`, jobID, runID, workflowName, runStatus, runConclusion, runnerLabels, executionTarget)
 	if err != nil {
