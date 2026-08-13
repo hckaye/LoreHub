@@ -1,4 +1,5 @@
 import { KeyRound, Languages, Settings2 } from "lucide-react";
+import Link from "next/link";
 
 import { NotificationSettingsForm } from "@/components/account/notification-settings-form";
 import { PersonalAccessTokenSettings } from "@/components/account/personal-access-token-settings";
@@ -6,10 +7,16 @@ import { ProfileSettingsForm } from "@/components/account/profile-settings-form"
 import { RepositoryInvitationSettings } from "@/components/account/repository-invitation-settings";
 import { AuthRequired } from "@/components/auth/auth-required";
 import { RepositoryPanel, RepositorySection } from "@/components/repositories/repository-section";
+import sectionStyles from "@/components/repositories/repository-section.module.css";
 import { getDictionary } from "@/i18n";
 import { isLocale } from "@/i18n/config";
 import { getAuthSession } from "@/lib/auth-api";
-import { getNotificationPreferences, getPersonalAccessTokens, getUserProfile } from "@/lib/lorehub-api";
+import {
+  getEntitlements,
+  getNotificationPreferences,
+  getPersonalAccessTokens,
+  getUserProfile,
+} from "@/lib/lorehub-api";
 
 import styles from "@/components/repositories/repository-detail.module.css";
 
@@ -30,13 +37,24 @@ export default async function AccountSettingsPage({ params }: AccountSettingsPag
       </RepositorySection>
     );
   }
-  const [profile, preferences, personalAccessTokens] = await Promise.all([
+  const [profile, preferences, personalAccessTokens, entitlements] = await Promise.all([
     getUserProfile(session.user.username),
     getNotificationPreferences(),
     getPersonalAccessTokens(),
+    getEntitlements(),
   ]);
   return (
-    <RepositorySection description={dictionary.accountSettings.description} title={dictionary.accountSettings.title}>
+    <RepositorySection
+      actions={
+        entitlements.ok ? (
+          <Link className={sectionStyles.secondaryButton} href={`/${locale}/settings/entitlements`}>
+            {dictionary.settingsNav.entitlements}
+          </Link>
+        ) : undefined
+      }
+      description={dictionary.accountSettings.description}
+      title={dictionary.accountSettings.title}
+    >
       <RepositoryPanel
         description={dictionary.accountSettings.profileBody}
         title={dictionary.accountSettings.profileTitle}

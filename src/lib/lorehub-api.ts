@@ -69,8 +69,16 @@ import { parseIssueCommentPage, parseMergeRequestCommentPage } from "./comment-p
 import type { CommentPage } from "./comment-page-types";
 import { conversationCommentPageSize } from "./comment-pagination";
 import { parseRevisionStatusResponse } from "./commit-status-client";
+import { entitlementsPath, normalizeEntitlementList, type Entitlement } from "./entitlements";
 import { normalizeFileLockPage, type FileLockPage } from "./file-locks";
 import { normalizeGlobalWorkItemPage, type GlobalWorkItemPage, type GlobalWorkItemQuery } from "./global-work-items";
+import {
+  defaultLoreServerPath,
+  loreServersPath,
+  normalizeDefaultLoreServer,
+  normalizeLoreServerList,
+  type LoreServer,
+} from "./lore-servers";
 import { parseMergeReadiness } from "./merge-readiness-contract";
 import { normalizePersonalAccessTokenPage } from "./personal-access-token";
 import { parseRepositoryIssuePage, parseRepositoryMergeRequestPage } from "./repository-work-item-contract";
@@ -85,6 +93,7 @@ import {
   revisionCommentsAPIPath,
   type RevisionCommentPage,
 } from "./revision-comments";
+import { normalizeRunnerList, runnersPath, type Runner, type RunnerTarget } from "./runners";
 import { parseSearchResults, searchPageSize, type SearchResults, type SearchType } from "./search";
 
 export type {
@@ -180,6 +189,33 @@ export async function getPersonalAccessTokens(): Promise<APIResult<PersonalAcces
 
 export function getOrganization(slug: string): Promise<APIResult<OrganizationView>> {
   return request(`/api/v1/organizations/${encodeURIComponent(slug)}`);
+}
+
+export async function getRunners(target: RunnerTarget): Promise<APIResult<Runner[]>> {
+  const result = await request<unknown>(runnersPath(target));
+  if (!result.ok) return result;
+  const runners = normalizeRunnerList(result.data);
+  return runners ? { ok: true, data: runners } : { ok: false, reason: "unavailable" };
+}
+
+export async function getLoreServers(organization: string): Promise<APIResult<LoreServer[]>> {
+  const result = await request<unknown>(loreServersPath(organization));
+  if (!result.ok) return result;
+  const servers = normalizeLoreServerList(result.data);
+  return servers ? { ok: true, data: servers } : { ok: false, reason: "unavailable" };
+}
+
+export async function getDefaultLoreServer(organization: string): Promise<APIResult<LoreServer | null>> {
+  const result = await request<unknown>(defaultLoreServerPath(organization));
+  if (!result.ok) return result;
+  return { ok: true, data: normalizeDefaultLoreServer(result.data) };
+}
+
+export async function getEntitlements(): Promise<APIResult<Entitlement[]>> {
+  const result = await request<unknown>(entitlementsPath);
+  if (!result.ok) return result;
+  const entitlements = normalizeEntitlementList(result.data);
+  return entitlements ? { ok: true, data: entitlements } : { ok: false, reason: "unavailable" };
 }
 
 export function getOrganizationAuditLog(slug: string, query: string, before: string): Promise<APIResult<AuditLogPage>> {

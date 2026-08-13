@@ -10,6 +10,7 @@ import { RepositoryDeleteSettings } from "@/components/repositories/repository-d
 import { RepositoryLifecycleSettings } from "@/components/repositories/repository-lifecycle-settings";
 import { RepositoryPanel, RepositorySection } from "@/components/repositories/repository-section";
 import { RepositorySettingsForm } from "@/components/repositories/repository-settings-form";
+import { RepositorySettingsTabs } from "@/components/settings/settings-tabs";
 import { EmptyState } from "@/components/ui/empty-state";
 import { RepositoryWebhookSettings } from "@/components/webhooks/repository-webhook-settings";
 import { getDictionary } from "@/i18n";
@@ -78,6 +79,13 @@ export default async function RepositorySettingsPage({ params }: RepositorySetti
   const canDelete = organizationResult.ok && organizationResult.data.role === "owner";
   return (
     <RepositorySection description={dictionary.settingsPage.description} title={dictionary.settingsPage.title}>
+      <RepositorySettingsTabs
+        active="general"
+        dictionary={dictionary}
+        locale={locale}
+        owner={data.owner}
+        repository={data.slug}
+      />
       {data.archivedAt ? (
         <EmptyState
           body={dictionary.repositoryLifecycle.archivedSettings}
