@@ -31,10 +31,23 @@
   padding: 10px 12px;
 }
 
+.description > header svg,
+.comment > header svg {
+  color: var(--fg-muted);
+  flex: 0 0 auto;
+}
+
 .description > header span,
 .comment > header time,
 .comment > header span,
+.description > header time,
 .muted {
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.description > header time,
+.comment > header time {
   color: var(--fg-muted);
   font-size: 12px;
 }
@@ -66,7 +79,10 @@
   min-height: 52px;
   overflow-wrap: anywhere;
   padding: 4px 12px 12px;
-  white-space: pre-wrap;
+}
+
+.body > div {
+  min-width: 0;
 }
 
 .stateButton {
@@ -218,7 +234,42 @@
 
 .reviews article {
   border-top: 1px solid var(--border-muted);
+  display: grid;
+  gap: 8px;
   padding-top: 10px;
+}
+
+.reviewHeader {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.reviewHeader time {
+  color: var(--fg-muted);
+  font-size: 12px;
+  margin-left: auto;
+}
+
+.reviewDecision {
+  align-items: center;
+  color: var(--fg-muted);
+  display: inline-flex;
+  font-size: 12px;
+  gap: 4px;
+}
+
+.reviewDecision[data-decision="approved"] {
+  color: var(--success-fg);
+}
+
+.reviewDecision[data-decision="changes_requested"] {
+  color: var(--danger-fg);
+}
+
+.reviewBody {
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 640px) {

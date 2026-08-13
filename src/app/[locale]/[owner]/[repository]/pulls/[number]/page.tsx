@@ -1,7 +1,7 @@
 import { ServerOff } from "lucide-react";
 import { notFound, redirect } from "next/navigation";
 
-import { PullRequestDetail } from "@/components/repositories/pull-request-detail";
+import { PullRequestDetail, type PullRequestTab } from "@/components/repositories/pull-request-detail";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getDictionary } from "@/i18n";
 import { isLocale } from "@/i18n/config";
@@ -32,7 +32,7 @@ import { repositoryPath } from "@/lib/routes";
 
 type PullRequestDetailPageProps = {
   params: Promise<{ locale: string; owner: string; repository: string; number: string }>;
-  searchParams: Promise<{ comment_page?: string | string[] }>;
+  searchParams: Promise<{ comment_page?: string | string[]; tab?: string | string[] }>;
 };
 
 export const dynamic = "force-dynamic";
@@ -41,7 +41,9 @@ export default async function PullRequestDetailPage({ params, searchParams }: Pu
   const { locale: value, owner, repository: slug, number: numberValue } = await params;
   const locale = isLocale(value) ? value : "en";
   const number = Number(numberValue);
-  const commentPage = parseConversationCommentPage((await searchParams).comment_page);
+  const query = await searchParams;
+  const commentPage = parseConversationCommentPage(query.comment_page);
+  const tab = parsePullRequestTab(query.tab);
   const dictionary = await getDictionary(locale);
   if (!Number.isSafeInteger(number) || number < 1) notFound();
   const repository = await getPublicRepository(owner, slug);
@@ -115,6 +117,7 @@ export default async function PullRequestDetailPage({ params, searchParams }: Pu
       milestones={milestoneItems(milestones)}
       milestonesAvailable={milestones.ok}
       owner={owner}
+      initialTab={tab}
       readiness={resultData(readiness, null)}
       readinessUnavailableReason={
         !readiness.ok && (readiness.reason === "forbidden" || readiness.reason === "unauthorized")
@@ -130,6 +133,11 @@ export default async function PullRequestDetailPage({ params, searchParams }: Pu
       session={session}
     />
   );
+}
+
+function parsePullRequestTab(value: string | string[] | undefined): PullRequestTab {
+  const tab = Array.isArray(value) ? value[0] : value;
+  return tab === "commits" || tab === "checks" || tab === "files" ? tab : "conversation";
 }
 
 function redirectInvalidCommentPage(

@@ -3,7 +3,9 @@
 import { useState } from "react";
 
 import type { Dictionary } from "@/i18n";
+import type { Locale } from "@/i18n/config";
 import type { LoreDiff, ReviewThread, ReviewThreadComment } from "@/lib/api-types";
+import { abbreviateCount, formatDate, formatRelativeTime } from "@/lib/format";
 import { parseReviewDiff, type ReviewDiffRow } from "@/lib/review-diff";
 import {
   createReviewThread,
@@ -13,6 +15,8 @@ import {
   updateReviewComment,
 } from "@/lib/review-thread-client";
 
+import { UserAvatar } from "../ui/user-avatar";
+import { MarkdownContent } from "../wiki/markdown-content";
 import styles from "./review-diff-view.module.css";
 
 type Anchor = { path: string; side: "left" | "right"; lineNumber: number };
@@ -24,6 +28,7 @@ type ReviewDiffViewProps = {
   owner: string;
   repository: string;
   number: number;
+  locale: Locale;
   csrfToken: string;
   authenticated: boolean;
   dictionary: Dictionary;
@@ -69,22 +74,29 @@ export function ReviewDiffView(props: ReviewDiffViewProps) {
   };
 
   const outdated = threads.filter((thread) => thread.outdated);
+  const stats = diffStats(props.diff);
   if (props.diff.files.length === 0) {
     return <p className={styles.meta}>{props.dictionary.pullRequestDetail.noChangedFiles}</p>;
   }
   return (
     <div className={styles.files}>
+      <p className={styles.summary}>
+        {props.dictionary.pullRequestDetail.filesChangedSummary
+          .replace("{files}", abbreviateCount(props.diff.files.length, props.locale))
+          .replace("{additions}", abbreviateCount(stats.additions, props.locale))
+          .replace("{deletions}", abbreviateCount(stats.deletions, props.locale))}
+      </p>
       <div aria-live="polite" className={styles.message}>
         {message}
       </div>
       {props.diff.files.map((file) => {
         const currentThreads = threads.filter((thread) => thread.path === file.path && !thread.outdated);
         return (
-          <section className={styles.file} key={file.path}>
-            <header className={styles.fileHeader}>
+          <details className={styles.file} key={file.path} open>
+            <summary className={styles.fileHeader}>
               <h3>{file.path}</h3>
               <span>{actionLabel(file.action, props.dictionary)}</span>
-            </header>
+            </summary>
             {file.binary || !file.patch ? (
               <p className={styles.meta}>
                 {file.binary ? props.dictionary.codeBrowser.binary : props.dictionary.codeBrowser.diffTruncated}
@@ -115,7 +127,7 @@ export function ReviewDiffView(props: ReviewDiffViewProps) {
               </table>
             )}
             {file.truncated && <p className={styles.meta}>{props.dictionary.codeBrowser.diffTruncated}</p>}
-          </section>
+          </details>
         );
       })}
       {outdated.length > 0 && (
@@ -368,21 +380,35 @@ function ReviewThreadCard(props: ThreadCardProps) {
   return (
     <article className={styles.thread} data-resolved={props.thread.resolved}>
       <header>
+        <UserAvatar name={props.thread.createdBy} size={24} />
         <strong>{props.thread.createdBy}</strong>
         <span>
           {props.thread.path}:{props.thread.lineNumber}
         </span>
+        <time dateTime={props.thread.createdAt} title={formatDate(props.thread.createdAt, props.locale)}>
+          {formatRelativeTime(props.thread.createdAt, props.locale)}
+        </time>
         {props.thread.outdated && <span>{props.dictionary.pullRequestDetail.outdatedConversation}</span>}
         {props.thread.resolved && <span>{props.dictionary.pullRequestDetail.resolved}</span>}
       </header>
       <code className={styles.anchorLine}>{props.thread.lineContent || " "}</code>
       {props.thread.comments.map((comment) => (
         <div className={styles.comment} key={comment.id}>
-          <strong>{comment.author}</strong>
+          <div className={styles.commentHeader}>
+            <UserAvatar name={comment.author} size={22} />
+            <strong>{comment.author}</strong>
+            <time dateTime={comment.createdAt} title={formatDate(comment.createdAt, props.locale)}>
+              {formatRelativeTime(comment.createdAt, props.locale)}
+            </time>
+          </div>
           {editing === comment.id ? (
             <textarea onChange={(event) => setEditBody(event.target.value)} rows={3} value={editBody} />
           ) : (
-            <p>{comment.deleted ? props.dictionary.pullRequestDetail.deletedComment : comment.body}</p>
+            <div className={styles.commentBody}>
+              <MarkdownContent
+                body={comment.deleted ? props.dictionary.pullRequestDetail.deletedComment : comment.body}
+              />
+            </div>
           )}
           {comment.viewerCanUpdate && !comment.deleted && (
             <div className={styles.textActions}>
@@ -472,4 +498,18 @@ function actionLabel(action: string, dictionary: Dictionary): string {
     default:
       return dictionary.codeBrowser.actions.modified;
   }
+}
+
+function diffStats(diff: LoreDiff): { additions: number; deletions: number } {
+  return diff.files.reduce(
+    (stats, file) => {
+      for (const line of file.patch?.split("\n") ?? []) {
+        if (line.startsWith("+++") || line.startsWith("---")) continue;
+        if (line.startsWith("+")) stats.additions += 1;
+        if (line.startsWith("-")) stats.deletions += 1;
+      }
+      return stats;
+    },
+    { additions: 0, deletions: 0 },
+  );
 }

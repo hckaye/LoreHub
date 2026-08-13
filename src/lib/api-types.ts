@@ -671,6 +671,7 @@ export type RevisionHistoryEntry = {
   revision: string;
   number: number;
   parents: string[];
+  message?: string;
 };
 
 export type FileHistoryEntry = {

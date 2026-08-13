@@ -1,6 +1,6 @@
 "use client";
 
-import { UserRound, UsersRound, X } from "lucide-react";
+import { Check, CircleAlert, Clock3, MessageCircle, UserRound, UsersRound, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
@@ -10,6 +10,7 @@ import { deleteJson, putJson } from "@/lib/auth-client";
 import { mutationFailureMessage } from "@/lib/mutation-messages";
 
 import { FlashNotice } from "../ui/flash-notice";
+import { UserAvatar } from "../ui/user-avatar";
 import styles from "./pull-request-reviewers.module.css";
 
 type PullRequestReviewersProps = {
@@ -35,7 +36,12 @@ export function PullRequestReviewers(props: PullRequestReviewersProps) {
   );
 
   if (!props.summary) {
-    return <p className={styles.muted}>{labels.reviewRequestsUnavailable}</p>;
+    return (
+      <section aria-labelledby="requested-reviewers-title" className={styles.panel}>
+        <h3 id="requested-reviewers-title">{labels.requestedReviewers}</h3>
+        <p className={styles.muted}>{labels.reviewRequestsUnavailable}</p>
+      </section>
+    );
   }
   const summary = props.summary;
 
@@ -86,6 +92,7 @@ export function PullRequestReviewers(props: PullRequestReviewersProps) {
           {summary.items.map((request) => (
             <li key={request.id}>
               <span className={styles.identity}>
+                <UserAvatar avatarUrl={request.avatarUrl} name={request.displayName || request.slug} size={28} />
                 {request.kind === "team" ? (
                   <UsersRound aria-hidden="true" size={17} />
                 ) : (
@@ -99,6 +106,7 @@ export function PullRequestReviewers(props: PullRequestReviewersProps) {
                 </span>
               </span>
               <span className={styles.status} data-status={request.status}>
+                {reviewRequestStatusIcon(request.status)}
                 {reviewRequestStatus(request.status, labels)}
               </span>
               {summary.viewerCanManage && (
@@ -156,6 +164,13 @@ function reviewRequestStatus(status: ReviewRequest["status"], labels: Dictionary
   if (status === "changes_requested") return labels.changesRequestedLabel;
   if (status === "commented") return labels.commented;
   return labels.reviewPending;
+}
+
+function reviewRequestStatusIcon(status: ReviewRequest["status"]) {
+  if (status === "approved") return <Check aria-hidden="true" size={15} />;
+  if (status === "changes_requested") return <CircleAlert aria-hidden="true" size={15} />;
+  if (status === "commented") return <MessageCircle aria-hidden="true" size={15} />;
+  return <Clock3 aria-hidden="true" size={15} />;
 }
 
 function reviewRequestPath(owner: string, repository: string, number: number): string {
