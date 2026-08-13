@@ -1,5 +1,4 @@
 import { BookOpenText, Search, ServerOff } from "lucide-react";
-import Link from "next/link";
 
 import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
@@ -26,7 +25,7 @@ export function PublicExplore({ locale, dictionary, repositories, query, unavail
           <h1>{dictionary.common.explore}</h1>
           <p>{dictionary.home.repositoriesDescription}</p>
         </div>
-        <Link
+        <a
           className={styles.architectureLink}
           href="https://github.com/EpicGames/lore"
           rel="noreferrer"
@@ -34,7 +33,7 @@ export function PublicExplore({ locale, dictionary, repositories, query, unavail
         >
           <BookOpenText aria-hidden="true" size={17} />
           {dictionary.home.architecture}
-        </Link>
+        </a>
       </header>
       <section aria-labelledby="explore-title" className={styles.repositories}>
         <div className={styles.sectionHeading}>

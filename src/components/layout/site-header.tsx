@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, BookOpen, CircleDot, GitPullRequest, Menu, Search, X } from "lucide-react";
+import { Bell, BookOpen, CircleDot, GitPullRequest, Home, Menu, Search, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useState } from "react";
@@ -8,6 +8,7 @@ import { useState } from "react";
 import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
 import type { AuthSession } from "@/lib/api-types";
+import { abbreviateCount } from "@/lib/format";
 import { brandedAuthUrl } from "@/lib/routes";
 
 import { AccountMenu } from "./account-menu";
@@ -26,8 +27,14 @@ export function SiteHeader({ locale, dictionary, session, unreadNotifications }:
   const [navigationOpen, setNavigationOpen] = useState(false);
   const pathname = usePathname() ?? `/${locale}`;
   const searchParams = useSearchParams();
+  const searchQuery = searchParams.get("q") ?? "";
   const returnTo = `${pathname}${searchParams.toString() ? `?${searchParams.toString()}` : ""}`;
   const isAuthenticated = session.status === "authenticated";
+  const notificationCount = unreadNotifications > 99 ? "99+" : abbreviateCount(unreadNotifications, locale);
+  const notificationLabel =
+    unreadNotifications > 0
+      ? dictionary.common.unreadNotifications.replace("{count}", unreadNotifications.toLocaleString(locale))
+      : dictionary.common.notifications;
 
   return (
     <header className={styles.header} data-authenticated={isAuthenticated}>
@@ -59,7 +66,7 @@ export function SiteHeader({ locale, dictionary, session, unreadNotifications }:
           id="primary-navigation"
         >
           <Link href={`/${locale}`} onClick={() => setNavigationOpen(false)}>
-            <Search aria-hidden="true" size={16} />
+            <Home aria-hidden="true" size={16} />
             {isAuthenticated ? dictionary.common.dashboard : dictionary.common.explore}
           </Link>
           {isAuthenticated && (
@@ -73,13 +80,18 @@ export function SiteHeader({ locale, dictionary, session, unreadNotifications }:
                 {dictionary.common.pullRequests}
               </Link>
               <Link
+                aria-label={notificationLabel}
                 className={styles.mobileOnly}
                 href={`/${locale}/notifications`}
                 onClick={() => setNavigationOpen(false)}
               >
                 <Bell aria-hidden="true" size={16} />
                 {dictionary.common.notifications}
-                {unreadNotifications > 0 && <span className={styles.notificationCount}>{unreadNotifications}</span>}
+                {unreadNotifications > 0 && (
+                  <span aria-hidden="true" className={styles.notificationCount}>
+                    {notificationCount}
+                  </span>
+                )}
               </Link>
             </>
           )}
@@ -87,6 +99,9 @@ export function SiteHeader({ locale, dictionary, session, unreadNotifications }:
             <BookOpen aria-hidden="true" size={16} />
             {dictionary.common.documentation}
           </a>
+          <span className={styles.mobileLocale}>
+            <LocaleSwitcher dictionary={dictionary} locale={locale} onClick={() => setNavigationOpen(false)} />
+          </span>
         </nav>
         <form action={`/${locale}/search`} className={styles.search} role="search">
           <label className="visually-hidden" htmlFor="global-repository-search">
@@ -94,8 +109,9 @@ export function SiteHeader({ locale, dictionary, session, unreadNotifications }:
           </label>
           <Search aria-hidden="true" size={16} />
           <input
-            defaultValue={searchParams.get("q") ?? ""}
+            defaultValue={searchQuery}
             id="global-repository-search"
+            key={searchQuery}
             name="q"
             placeholder={dictionary.common.searchPlaceholder}
             type="search"
@@ -121,13 +137,17 @@ export function SiteHeader({ locale, dictionary, session, unreadNotifications }:
                 <GitPullRequest aria-hidden="true" size={16} />
               </Link>
               <Link
-                aria-label={dictionary.common.notifications}
+                aria-label={notificationLabel}
                 className={styles.iconAction}
                 href={`/${locale}/notifications`}
-                title={dictionary.common.notifications}
+                title={notificationLabel}
               >
                 <Bell aria-hidden="true" size={16} />
-                {unreadNotifications > 0 && <span className={styles.notificationDot}>{unreadNotifications}</span>}
+                {unreadNotifications > 0 && (
+                  <span aria-hidden="true" className={styles.notificationDot}>
+                    {notificationCount}
+                  </span>
+                )}
               </Link>
               <CreateMenu compact dictionary={dictionary} locale={locale} />
               <AccountMenu dictionary={dictionary} locale={locale} session={session} />

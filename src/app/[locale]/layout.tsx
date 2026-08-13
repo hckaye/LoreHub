@@ -43,6 +43,9 @@ export default async function LocaleLayout({ children, params }: LayoutProps) {
   return (
     <html lang={value}>
       <body>
+        <a className="skip-link" href="#main-content">
+          {dictionary.common.skipToContent}
+        </a>
         <div className="site-shell">
           <SiteHeader
             dictionary={dictionary}
@@ -51,7 +54,9 @@ export default async function LocaleLayout({ children, params }: LayoutProps) {
             unreadNotifications={unreadNotifications.ok ? unreadNotifications.data : 0}
           />
           <AuthNotice dictionary={dictionary} session={session} />
-          <main className="site-main">{children}</main>
+          <main className="site-main" id="main-content">
+            {children}
+          </main>
           <SiteFooter dictionary={dictionary} />
         </div>
       </body>
