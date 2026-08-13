@@ -2,11 +2,11 @@ package cmdutil
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/lorehub/lorehub/cli/internal/config"
 	"github.com/lorehub/lorehub/cli/internal/text"
@@ -43,8 +43,8 @@ func newAuthLoginCommand(state *rootState) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			var dashboard json.RawMessage
-			if err := client.GetJSON(command.Context(), "/api/v1/dashboard", &dashboard); err != nil {
+			var account accountResponse
+			if err := client.GetJSON(command.Context(), "/api/v1/account", &account); err != nil {
 				return fmt.Errorf("validate token: %w", err)
 			}
 
@@ -123,11 +123,26 @@ type authIdentity struct {
 	Email       string `json:"email,omitempty"`
 }
 
+type accountToken struct {
+	ID          string     `json:"id"`
+	Prefix      string     `json:"prefix"`
+	Permissions []string   `json:"permissions"`
+	ExpiresAt   time.Time  `json:"expiresAt"`
+	LastUsedAt  *time.Time `json:"lastUsedAt"`
+}
+
+type accountResponse struct {
+	User  authIdentity  `json:"user"`
+	Token *accountToken `json:"token,omitempty"`
+}
+
 type authStatus struct {
 	Host          string        `json:"host"`
 	Authenticated bool          `json:"authenticated"`
 	User          *authIdentity `json:"user,omitempty"`
 	Permissions   []string      `json:"permissions,omitempty"`
+	TokenPrefix   string        `json:"tokenPrefix,omitempty"`
+	ExpiresAt     *time.Time    `json:"expiresAt,omitempty"`
 	DefaultRepo   string        `json:"defaultRepo,omitempty"`
 	TokenSource   string        `json:"tokenSource,omitempty"`
 }
@@ -151,16 +166,17 @@ func newAuthStatusCommand(state *rootState) *cobra.Command {
 				if err != nil {
 					return err
 				}
-				var dashboard struct {
-					User        *authIdentity `json:"user"`
-					Permissions []string      `json:"permissions"`
-				}
-				if err := client.GetJSON(command.Context(), "/api/v1/dashboard", &dashboard); err != nil {
+				var account accountResponse
+				if err := client.GetJSON(command.Context(), "/api/v1/account", &account); err != nil {
 					return fmt.Errorf("check authentication: %w", err)
 				}
 				status.Authenticated = true
-				status.User = dashboard.User
-				status.Permissions = dashboard.Permissions
+				status.User = &account.User
+				if account.Token != nil {
+					status.Permissions = account.Token.Permissions
+					status.TokenPrefix = account.Token.Prefix
+					status.ExpiresAt = &account.Token.ExpiresAt
+				}
 				status.TokenSource = source
 			}
 
@@ -197,11 +213,20 @@ func writeAuthStatus(command *cobra.Command, status authStatus) error {
 		{"Host", status.Host},
 		{"Authenticated", authenticated},
 		{"User", user},
+		{"Token prefix", status.TokenPrefix},
 		{"Permissions", permissions},
+		{"Expires", formatTime(status.ExpiresAt)},
 		{"Default repository", status.DefaultRepo},
 		{"Token source", status.TokenSource},
 	}
 	return text.NewWriter(command.OutOrStdout()).Table([]string{"Field", "Value"}, rows)
+}
+
+func formatTime(value *time.Time) string {
+	if value == nil || value.IsZero() {
+		return "-"
+	}
+	return value.UTC().Format(time.RFC3339)
 }
 
 func readToken(command *cobra.Command, withToken bool) (string, error) {
