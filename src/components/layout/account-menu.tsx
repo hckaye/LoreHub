@@ -76,6 +76,7 @@ export function AccountMenu({ locale, dictionary, session }: AccountMenuProps) {
   return (
     <div className={styles.menu} ref={menuRef}>
       <button
+        aria-label={user.displayName}
         aria-controls="account-menu-popover"
         aria-expanded={open}
         aria-haspopup="menu"
