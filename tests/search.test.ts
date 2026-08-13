@@ -3,9 +3,11 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { search } from "../src/i18n/dictionaries/search";
+import type { CodeSearchResults } from "../src/lib/search";
 import {
   lastSearchPage,
   normalizeSearchQuery,
+  parseCodeSearchQualifier,
   parseSearchResults,
   searchHref,
   type SearchQuery,
@@ -88,17 +90,44 @@ test("search links encode and retain locale, query, type, and page", () => {
   assert.equal(lastSearchPage(response, "issues"), 3);
 });
 
+test("code search requires a repository qualifier and validates grouped hits", () => {
+  assert.deepEqual(parseCodeSearchQualifier("repo:acme/renderer Needle"), {
+    owner: "acme",
+    repository: "renderer",
+    terms: ["needle"],
+  });
+  assert.equal(parseCodeSearchQualifier("needle"), null);
+
+  const response = searchResponse();
+  response.repositories = [];
+  response.organizations = [];
+  response.users = [];
+  response.issues = [];
+  response.pullRequests = [];
+  response.counts = { repositories: 0, organizations: 0, users: 0, issues: 0, pullRequests: 0, code: 1 };
+  response.code = {
+    revision: "a".repeat(64),
+    files: [{ path: "src/main.ts", matchCount: 1, matches: [{ lineNumber: 4, snippet: "return needle;" }] }],
+    truncated: false,
+  };
+  const parsed = parseSearchResults(response, { q: "repo:acme/renderer needle", type: "code", page: 1 });
+  assert.ok(parsed?.code);
+  assert.equal(parsed.code.files[0]?.matches[0]?.lineNumber, 4);
+});
+
 test("search UI wires tabs, pagination, issues, and pull requests", async () => {
-  const [page, tabs, pagination, workItems, sharedRow, list] = await Promise.all([
+  const [page, tabs, pagination, workItems, sharedRow, list, codeResults] = await Promise.all([
     readFile("src/components/search/search-page.tsx", "utf8"),
     readFile("src/components/search/search-type-tabs.tsx", "utf8"),
     readFile("src/components/search/search-pagination.tsx", "utf8"),
     readFile("src/components/search/search-work-item-results.tsx", "utf8"),
     readFile("src/components/work-items/global-work-item-row.tsx", "utf8"),
     readFile("src/components/work-items/global-work-item-list.tsx", "utf8"),
+    readFile("src/components/search/search-code-results.tsx", "utf8"),
   ]);
   assert.match(page, /kind="issues"/);
   assert.match(page, /kind="pulls"/);
+  assert.match(page, /SearchCodeResults/);
   assert.match(tabs, /searchHref\(locale, query/);
   assert.match(pagination, /rel="prev"/);
   assert.match(pagination, /rel="next"/);
@@ -106,6 +135,8 @@ test("search UI wires tabs, pagination, issues, and pull requests", async () => 
   assert.match(list, /GlobalWorkItemRow/);
   assert.doesNotMatch(list, /function WorkItemRow/);
   assert.match(sharedRow, /repositoryPath/);
+  assert.match(codeResults, /<mark/);
+  assert.match(codeResults, /revision/);
 });
 
 test("English and Japanese search dictionaries have identical keys", () => {
@@ -119,7 +150,8 @@ function searchResponse() {
     users: [searchUser()],
     issues: [searchWorkItem("issue")],
     pullRequests: [searchWorkItem("pull_request")],
-    counts: { repositories: 1, organizations: 1, users: 1, issues: 1, pullRequests: 1 },
+    counts: { repositories: 1, organizations: 1, users: 1, issues: 1, pullRequests: 1, code: 0 },
+    code: undefined as CodeSearchResults | undefined,
     page: 1,
     perPage: 20,
   };

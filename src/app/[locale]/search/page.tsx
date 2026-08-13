@@ -4,7 +4,7 @@ import { SearchPage } from "@/components/search/search-page";
 import { getDictionary } from "@/i18n";
 import { isLocale } from "@/i18n/config";
 import { getSearchResults } from "@/lib/lorehub-api";
-import { lastSearchPage, normalizeSearchQuery, searchHref } from "@/lib/search";
+import { lastSearchPage, normalizeSearchQuery, parseCodeSearchQualifier, searchHref } from "@/lib/search";
 
 type SearchRouteProps = {
   params: Promise<{ locale: string }>;
@@ -20,7 +20,8 @@ export default async function SearchRoute({ params, searchParams }: SearchRouteP
   }
   const [input, dictionary] = await Promise.all([searchParams, getDictionary(value)]);
   const query = normalizeSearchQuery(input);
-  const result = query.q ? await getSearchResults(query.q, query.type, query.page) : null;
+  const canSearchCode = query.type !== "code" || Boolean(parseCodeSearchQualifier(query.q));
+  const result = query.q && canSearchCode ? await getSearchResults(query.q, query.type, query.page) : null;
   if (result?.ok && query.page > lastSearchPage(result.data, query.type)) {
     redirect(searchHref(value, query, { page: lastSearchPage(result.data, query.type) }));
   }
@@ -37,5 +38,6 @@ export default async function SearchRoute({ params, searchParams }: SearchRouteP
 }
 
 function failureReason(reason: "not-found" | "unauthorized" | "forbidden" | "invalid" | "unavailable") {
-  return reason === "unauthorized" || reason === "forbidden" ? "forbidden" : "unavailable";
+  if (reason === "unauthorized" || reason === "forbidden") return "forbidden";
+  return reason === "invalid" ? "invalid" : "unavailable";
 }
