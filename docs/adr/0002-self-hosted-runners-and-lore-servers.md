@@ -172,13 +172,13 @@ Reachability and health:
 
 ### Enforcement summary
 
-| Action                                      | Without entitlement                                     | With entitlement                      |
-| ------------------------------------------- | ------------------------------------------------------- | ------------------------------------- |
-| Create repository, no server registered     | Rejected in the provisioning transaction, with guidance | Provisions on instance server         |
-| Create repository, owner default server set | Provisions on that server                               | Same, instance server also selectable |
-| Import repository                           | Requires a registered server id                         | Same, instance server also allowed    |
-| Run with `runs-on: self-hosted`             | Routes to registered runners                            | Same                                  |
-| Run with `runs-on: ubuntu-latest`           | Recorded as failed with `failure_reason`                | Routes to managed fleet               |
+| Action                            | Without entitlement                      | With entitlement              |
+| --------------------------------- | ---------------------------------------- | ----------------------------- |
+| Create repo, no server registered | Rejected in provisioning, with guidance  | Provisions on instance server |
+| Create repo, owner default set    | Provisions on that server                | Instance server also allowed  |
+| Import repository                 | Requires a registered server id          | Instance server also allowed  |
+| Run with `runs-on: self-hosted`   | Routes to registered runners             | Same                          |
+| Run with `runs-on: ubuntu-latest` | Recorded as failed with `failure_reason` | Routes to managed fleet       |
 
 Grandfathered organizations hold both entitlements via migration grants, so their behavior does not change at
 upgrade time.

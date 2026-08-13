@@ -56,17 +56,29 @@ Ship an official CLI named `lh` that mirrors the `gh` command taxonomy against t
 
 ### Command taxonomy (first iteration)
 
-| Command      | Verbs                                                  | Notes                                                                                                                                                                                                                                                                                                       |
-| ------------ | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `lh auth`    | `login`, `logout`, `status`                            | token-based, per host                                                                                                                                                                                                                                                                                       |
-| `lh repo`    | `list`, `view`, `create`, `clone`                      | `clone` resolves the repository's `lores://` URL, runs `lore auth login --token-type api-key` with the stored token, then `lore` clone; fails with guidance when the `lore` CLI is absent                                                                                                                   |
-| `lh issue`   | `list`, `view`, `create`, `comment`, `close`, `reopen` | filters mirror the web list (state, author, assignee, label, milestone, search)                                                                                                                                                                                                                             |
-| `lh pr`      | `list`, `view`, `create`, `merge`                      | `merge` is bounded in the first iteration: it checks merge readiness, starts the server-side merge, and pushes only when the operation reaches the ready state with no conflicts; anything else prints the blockers and exits non-zero. Local checkout is out of scope because Lore has no detached PR refs |
-| `lh release` | `list`, `view`, `create`                               |                                                                                                                                                                                                                                                                                                             |
-| `lh run`     | `list`, `view`, `watch`                                | Actions workflow runs; `watch` polls until completion                                                                                                                                                                                                                                                       |
-| `lh label`   | `list`, `create`, `delete`                             |                                                                                                                                                                                                                                                                                                             |
-| `lh search`  | `repos`, `issues`, `prs`                               | maps to the search API                                                                                                                                                                                                                                                                                      |
-| `lh api`     | raw requests                                           | `lh api repos/{owner}/{repo} --method POST --field k=v`, prints raw JSON; escape hatch for everything not yet wrapped                                                                                                                                                                                       |
+| Command      | Verbs                                                  |
+| ------------ | ------------------------------------------------------ |
+| `lh auth`    | `login`, `logout`, `status`                            |
+| `lh repo`    | `list`, `view`, `create`, `clone`, `set-default`       |
+| `lh issue`   | `list`, `view`, `create`, `comment`, `close`, `reopen` |
+| `lh pr`      | `list`, `view`, `create`, `merge`                      |
+| `lh release` | `list`, `view`, `create`                               |
+| `lh run`     | `list`, `view`, `watch`                                |
+| `lh label`   | `list`, `create`, `delete`                             |
+| `lh search`  | `repos`, `issues`, `prs`                               |
+| `lh api`     | raw requests against `/api/v1`                         |
+
+Command notes:
+
+- `lh repo clone` resolves the repository's `lores://` URL, runs `lore auth login --token-type api-key` with the
+  stored token, then clones with `lore`. It fails with guidance when the `lore` CLI is absent.
+- `lh issue list` filters mirror the web list: state, author, assignee, label, milestone, and search.
+- `lh pr merge` is bounded in the first iteration: it checks merge readiness, starts the server-side merge, and
+  pushes only when the operation reaches the ready state with no conflicts; anything else prints the blockers and
+  exits non-zero. Local checkout is out of scope because Lore has no detached PR refs.
+- `lh run watch` polls until the run completes.
+- `lh api repos/{owner}/{repo} --method POST --field k=v` prints raw JSON; it is the escape hatch for everything
+  not yet wrapped.
 
 - Repository context: `--repo [HOST/]owner/name` always wins, then `LH_REPO`, then the default stored by
   `lh repo set-default`. Deriving context from a Lore working copy is a follow-up once the `lore` CLI exposes
