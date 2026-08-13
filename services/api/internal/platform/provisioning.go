@@ -19,7 +19,7 @@ func (store *Store) BeginRepositoryProvisioning(
 	actor User,
 	organizationSlug string,
 	input ProvisionRepositoryInput,
-	publicLoreURL string,
+	explicitServerID string,
 ) (Repository, error) {
 	if err := validateSlug(input.Slug); err != nil {
 		return Repository{}, err
@@ -33,9 +33,6 @@ func (store *Store) BeginRepositoryProvisioning(
 	if input.DefaultBranch == "" {
 		input.DefaultBranch = "main"
 	}
-	if err := validatePublicLoreURL(publicLoreURL); err != nil {
-		return Repository{}, err
-	}
 	organizationID, err := store.organizationManager(ctx, actor.ID, organizationSlug)
 	if err != nil {
 		return Repository{}, err
@@ -43,10 +40,6 @@ func (store *Store) BeginRepositoryProvisioning(
 	loreRepositoryID, err := newLorePartitionID()
 	if err != nil {
 		return Repository{}, fmt.Errorf("create canonical Lore repository ID: %w", err)
-	}
-	publicLoreURL, err = loreRepositoryURL(publicLoreURL, loreRepositoryID)
-	if err != nil {
-		return Repository{}, err
 	}
 	now := time.Now().UTC()
 	repository := Repository{
@@ -58,7 +51,6 @@ func (store *Store) BeginRepositoryProvisioning(
 		Description:      input.Description,
 		Visibility:       input.Visibility,
 		LoreRepositoryID: loreRepositoryID,
-		LoreURL:          publicLoreURL,
 		DefaultBranch:    input.DefaultBranch,
 		LifecycleState:   "pending",
 		UpdatedAt:        now,
@@ -87,15 +79,25 @@ func (store *Store) BeginRepositoryProvisioning(
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return Repository{}, fmt.Errorf("find existing repository provisioning state: %w", err)
 	}
+	server, err := resolveServerForNewRepository(ctx, transaction, organizationID, strings.TrimSpace(explicitServerID))
+	if err != nil {
+		return Repository{}, err
+	}
+	publicLoreURL, err := loreRepositoryURL(server.PublicURL, loreRepositoryID)
+	if err != nil {
+		return Repository{}, err
+	}
+	repository.LoreURL = publicLoreURL
+	repository.LoreServerID = server.ID
 	_, err = transaction.Exec(ctx, `
 		INSERT INTO repositories (
 			id, organization_id, slug, display_name, description, visibility,
-			lore_repository_id, lore_url, default_branch, created_by, lifecycle_state,
-			created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending', $11, $11)
+			lore_repository_id, lore_url, lore_server_id, default_branch, created_by,
+			lifecycle_state, created_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'pending', $12, $12)
 	`, repository.ID, repository.OrganizationID, repository.Slug, repository.DisplayName,
 		repository.Description, repository.Visibility, repository.LoreRepositoryID, repository.LoreURL,
-		repository.DefaultBranch, actor.ID, now)
+		repository.LoreServerID, repository.DefaultBranch, actor.ID, now)
 	if err != nil {
 		return Repository{}, translateConstraintError("begin repository provisioning", err)
 	}

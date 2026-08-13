@@ -154,6 +154,24 @@ type EntitlementStore interface {
 	List(context.Context) ([]platform.Entitlement, error)
 }
 
+type LoreServerStore interface {
+	CreateRegistrationToken(
+		context.Context, platform.User, string, platform.CreateLoreServerRegistrationTokenInput,
+	) (platform.LoreServerRegistrationToken, error)
+	RegisterServer(
+		context.Context, []byte, platform.RegisterLoreServerInput,
+	) (platform.LoreServer, error)
+	ListServers(context.Context, platform.User, string) ([]platform.LoreServer, error)
+	RevokeServer(context.Context, platform.User, string, string) error
+	AuthenticateServer(context.Context, []byte, string, time.Time) (platform.LoreServer, error)
+	UpdateServerHealth(context.Context, string, time.Time, string, string, map[string]any) error
+	GetOrganizationDefaultServer(context.Context, platform.User, string) (*platform.LoreServer, error)
+	SetOrganizationDefaultServer(
+		context.Context, platform.User, string, string,
+	) (*platform.LoreServer, error)
+	ValidateRepositoryImportServer(context.Context, platform.User, string, string, string) error
+}
+
 type API struct {
 	store                   Store
 	actions                 ActionsStore
@@ -192,12 +210,15 @@ type API struct {
 	cookie                  sessionCookieConfig
 	sessionTTL              time.Duration
 	transactionTTL          time.Duration
-	lorePublicURL           string
 	identityStore           IdentityStore
 	loginProviders          []string
 	webhooksStore           webhooksManager
 	personalAccessTokens    PersonalAccessTokenStore
 	entitlements            EntitlementStore
+	loreServers             LoreServerStore
+	loresSecrets            *auth.SecretCodec
+	loresTokenKeyID         string
+	loreAllowPrivateServers bool
 	instanceAdminUsernames  map[string]struct{}
 	globalWorkItems         GlobalWorkItemStore
 	deletionRetention       time.Duration
@@ -306,6 +327,20 @@ func WithEntitlements(store EntitlementStore) Option {
 	return func(api *API) { api.entitlements = store }
 }
 
+func WithLoreServers(
+	store LoreServerStore,
+	secrets *auth.SecretCodec,
+	tokenKeyID string,
+	allowPrivateServers bool,
+) Option {
+	return func(api *API) {
+		api.loreServers = store
+		api.loresSecrets = secrets
+		api.loresTokenKeyID = strings.TrimSpace(tokenKeyID)
+		api.loreAllowPrivateServers = allowPrivateServers
+	}
+}
+
 func WithInstanceAdminUsernames(usernames []string) Option {
 	return func(api *API) {
 		api.instanceAdminUsernames = make(map[string]struct{}, len(usernames))
@@ -324,10 +359,6 @@ func WithAuthorization(store AuthorizationStore) Option {
 
 func WithLoreAuth(service *loreauth.Service) Option {
 	return func(api *API) { api.loreAuth = service }
-}
-
-func WithLorePublicURL(repositoryURL string) Option {
-	return func(api *API) { api.lorePublicURL = strings.TrimSpace(repositoryURL) }
 }
 
 func WithLegacyLoreIdentityAllowed(allowed bool) Option {
@@ -527,22 +558,22 @@ func (api *API) registerRepository(writer http.ResponseWriter, request *http.Req
 		input.DisplayName = input.Slug
 	}
 	provisioner, supported := api.store.(repositoryProvisioningStore)
-	if !supported || api.managedLoreClient == nil || api.loreAuth == nil || api.lorePublicURL == "" {
+	if !supported || api.managedLoreClient == nil || api.loreAuth == nil {
 		writeProblem(writer, http.StatusServiceUnavailable, "provisioning_unavailable",
-			"Managed Lore repository provisioning is unavailable")
+			"Lore repository provisioning is unavailable")
 		return
 	}
 	repository, err := provisioner.BeginRepositoryProvisioning(request.Context(), actor,
 		request.PathValue("organization"), platform.ProvisionRepositoryInput{
 			Slug: input.Slug, DisplayName: input.DisplayName, Description: input.Description,
 			Visibility: input.Visibility, DefaultBranch: input.DefaultBranch,
-		}, api.lorePublicURL)
+		}, input.LoreServerID)
 	if err != nil {
 		api.platformError(writer, request, "begin repository provisioning", err)
 		return
 	}
 	if err := api.provisionManagedRepository(request, actor, repository, provisioner); err != nil {
-		api.logger.Error("provision managed Lore repository", "error", err,
+		api.logger.Error("provision Lore repository", "error", err,
 			"repository_id", repository.ID, "lore_repository_id", repository.LoreRepositoryID)
 		writeProblem(writer, http.StatusBadGateway, "lore_unavailable", "Lore repository provisioning failed")
 		return
@@ -785,7 +816,10 @@ func (api *API) actor(writer http.ResponseWriter, request *http.Request) (platfo
 }
 
 func (api *API) platformError(writer http.ResponseWriter, request *http.Request, operation string, err error) {
+	var selectionError *platform.LoreServerSelectionError
 	switch {
+	case errors.As(err, &selectionError):
+		writeProblem(writer, http.StatusConflict, selectionError.Reason, selectionError.Error())
 	case errors.Is(err, platform.ErrNotFound):
 		writeProblem(writer, http.StatusNotFound, "not_found", "The requested resource was not found")
 	case errors.Is(err, platform.ErrForbidden):

@@ -52,6 +52,32 @@ func TestLoadAllowsNoInstanceAdministrators(t *testing.T) {
 	}
 }
 
+func TestLoadParsesLoreServerTokenAndNetworkSettings(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("LOREHUB_LORES_TOKEN_KEY", strings.Repeat("s", 32))
+	t.Setenv("LOREHUB_LORES_TOKEN_KEY_ID", "lores-2026-08")
+	t.Setenv("LOREHUB_LORE_ALLOW_PRIVATE_SERVERS", "true")
+
+	settings, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.LoresTokenKey != strings.Repeat("s", 32) ||
+		settings.LoresTokenKeyID != "lores-2026-08" || !settings.LoreAllowPrivateServers {
+		t.Fatalf("unexpected Lore server settings: %#v", settings)
+	}
+}
+
+func TestLoadRequiresDedicatedLoreServerTokenKeyInProduction(t *testing.T) {
+	setProductionEnvironment(t)
+	t.Setenv("LOREHUB_LORES_TOKEN_KEY", "")
+
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "LOREHUB_LORES_TOKEN_KEY") {
+		t.Fatalf("expected a missing Lore server token key error, got %v", err)
+	}
+}
+
 func TestLocalLoreDefaultsFollowTheConfiguredRootDomain(t *testing.T) {
 	setRequiredEnvironment(t)
 	t.Setenv("LOREHUB_ENV", "development")
@@ -520,6 +546,9 @@ func setRequiredEnvironment(t *testing.T) {
 		"MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
 	)
 	t.Setenv("LOREHUB_WEBHOOK_ALLOW_PRIVATE_TARGETS", "")
+	t.Setenv("LOREHUB_LORES_TOKEN_KEY", strings.Repeat("l", 32))
+	t.Setenv("LOREHUB_LORES_TOKEN_KEY_ID", "test-lores-v1")
+	t.Setenv("LOREHUB_LORE_ALLOW_PRIVATE_SERVERS", "")
 	t.Setenv("LOREHUB_WEBHOOK_POLL_PERIOD", "")
 	t.Setenv("LOREHUB_WEBHOOK_REQUEST_TIMEOUT", "")
 	t.Setenv("LOREHUB_WEBHOOK_LEASE_DURATION", "")

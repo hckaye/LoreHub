@@ -76,6 +76,9 @@ func run(logger *slog.Logger) error {
 		return nil
 	}
 	store := platform.NewStoreWithNotificationEmail(pool, settings.NotificationEmailEnabled)
+	if _, err := store.EnsureInstanceLoreServer(rootContext, settings.LorePublicURL); err != nil {
+		return err
+	}
 	keyProvider, err := newSigningKeyProvider(settings)
 	if err != nil {
 		return err
@@ -117,6 +120,10 @@ func run(logger *slog.Logger) error {
 	var sessionStore auth.SessionStore
 	var cleanupStore auth.CleanupStore
 	var secretCodec *auth.SecretCodec
+	loresSecretCodec, err := auth.NewSecretCodec(settings.LoresTokenKey)
+	if err != nil {
+		return err
+	}
 	actionsStore := runner.NewStoreWithFiles(pool, settings.RunnerLogDir, settings.RunnerArtifactDir)
 	actionsContext, err := runner.NewPostgresExecutionContextResolver(
 		pool,
@@ -296,6 +303,8 @@ func run(logger *slog.Logger) error {
 		httpapi.WithGlobalWorkItems(store),
 		httpapi.WithPersonalAccessTokens(store, secretCodec),
 		httpapi.WithEntitlements(store),
+		httpapi.WithLoreServers(store, loresSecretCodec, settings.LoresTokenKeyID,
+			settings.LoreAllowPrivateServers),
 		httpapi.WithInstanceAdminUsernames(settings.InstanceAdminUsernames),
 		httpapi.WithConfiguredLoginProviders(settings.IdentityProviders),
 		httpapi.WithCollaboration(collaborationStore),
@@ -311,7 +320,6 @@ func run(logger *slog.Logger) error {
 		httpapi.WithWebhooks(webhookStore),
 		httpapi.WithAuthorization(store),
 		httpapi.WithLoreAuth(loreAuth),
-		httpapi.WithLorePublicURL(settings.LorePublicURL),
 		httpapi.WithLegacyLoreIdentityAllowed(settings.AllowLegacyLoreIdentity),
 		httpapi.WithLoreCredentials(loreCredentials),
 		httpapi.WithRepositoryDeletion(settings.RepositoryDeletionRetention),
