@@ -38,8 +38,8 @@ type ExecutionContext struct {
 }
 
 type ResolvedExecutionContext struct {
-	Variables map[string]string
-	Secrets   map[string]string
+	Variables map[string]string `json:"variables"`
+	Secrets   map[string]string `json:"secrets"`
 }
 
 type ExecutionContextResolver interface {
@@ -108,6 +108,14 @@ func resolveExecutionContext(
 			value.EnvironmentSecrets,
 		),
 	}, nil
+}
+
+func ResolveExecutionContext(
+	ctx context.Context,
+	resolver ExecutionContextResolver,
+	request ExecutionContextRequest,
+) (ResolvedExecutionContext, error) {
+	return resolveExecutionContext(ctx, resolver, request)
 }
 
 func mergeScopedValues(scopes ...map[string]string) map[string]string {
@@ -300,6 +308,14 @@ func cleanupSecretFile(path string) {
 		_ = file.Close()
 	}
 	_ = os.Remove(path)
+}
+
+func WriteActionSecretFile(directory string, secrets map[string]string) (string, error) {
+	return writeSecretFile(directory, secrets)
+}
+
+func CleanupActionSecretFile(path string) {
+	cleanupSecretFile(path)
 }
 
 func secretExpiry(now time.Time) time.Time {

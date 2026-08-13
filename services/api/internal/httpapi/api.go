@@ -186,6 +186,29 @@ type LoreServerStore interface {
 	ValidateRepositoryImportServer(context.Context, platform.User, string, string, string) error
 }
 
+type RunnerControlStore interface {
+	RunnerClaimJob(context.Context, []byte, string, time.Time, time.Duration) (*runner.Job, error)
+	RunnerLeaseJob(context.Context, string, string) (runner.Job, error)
+	RunnerHeartbeatJob(context.Context, string, string, time.Duration) error
+	RunnerCancellationRequested(context.Context, string, string) (bool, error)
+	AppendRunnerJobLog(context.Context, string, string, int64, []byte, int64) (int64, error)
+	AppendRunnerArtifact(
+		context.Context, string, string, string, int64, []byte, bool, int64, int64, int,
+	) (int64, error)
+	CompleteJob(context.Context, runner.Job, string, string, string, []runner.Artifact) error
+}
+
+type RunnerControlConfig struct {
+	LeaseDuration         time.Duration
+	LogMaxBytes           int64
+	ArtifactMaxCount      int
+	ArtifactMaxFileBytes  int64
+	ArtifactMaxTotalBytes int64
+	Principal             runner.CredentialPrincipal
+	RESTScope             string
+	GraphQLScope          string
+}
+
 type API struct {
 	store                   Store
 	actions                 ActionsStore
@@ -236,6 +259,10 @@ type API struct {
 	loresSecrets            *auth.SecretCodec
 	loresTokenKeyID         string
 	loreAllowPrivateServers bool
+	runnerControl           RunnerControlStore
+	runnerExecutionContext  runner.ExecutionContextResolver
+	runnerJobTokenIssuer    runner.JobTokenIssuer
+	runnerControlConfig     RunnerControlConfig
 	instanceAdminUsernames  map[string]struct{}
 	globalWorkItems         GlobalWorkItemStore
 	deletionRetention       time.Duration
@@ -363,6 +390,20 @@ func WithLoreServers(
 		api.loresSecrets = secrets
 		api.loresTokenKeyID = strings.TrimSpace(tokenKeyID)
 		api.loreAllowPrivateServers = allowPrivateServers
+	}
+}
+
+func WithRunnerControlPlane(
+	store RunnerControlStore,
+	executionContext runner.ExecutionContextResolver,
+	jobTokenIssuer runner.JobTokenIssuer,
+	config RunnerControlConfig,
+) Option {
+	return func(api *API) {
+		api.runnerControl = store
+		api.runnerExecutionContext = executionContext
+		api.runnerJobTokenIssuer = jobTokenIssuer
+		api.runnerControlConfig = config
 	}
 }
 

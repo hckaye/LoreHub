@@ -31,6 +31,7 @@ type fakeRunnerStore struct {
 	runners        []platform.Runner
 	consumeErr     error
 	registerErr    error
+	authenticated  platform.Runner
 }
 
 func (store *fakeRunnerStore) CreateRegistrationToken(
@@ -95,10 +96,10 @@ func (store *fakeRunnerStore) RevokeRunner(
 
 func (*fakeRunnerStore) TouchRunnerSeen(context.Context, string, time.Time) error { return nil }
 
-func (*fakeRunnerStore) AuthenticateRunner(
+func (store *fakeRunnerStore) AuthenticateRunner(
 	context.Context, []byte, string, time.Time,
 ) (platform.Runner, error) {
-	return platform.Runner{}, nil
+	return store.authenticated, nil
 }
 
 type rejectingRunnerEndpointAuthenticator struct {

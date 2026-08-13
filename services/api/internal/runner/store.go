@@ -29,22 +29,25 @@ type ObservedBranch struct {
 }
 
 type Job struct {
-	ID               string
-	Attempt          int
-	RunID            string
-	ActorID          string
-	WorkflowPath     string
-	RepositoryID     string
-	OrganizationID   string
-	Owner            string
-	Repository       string
-	LoreRepositoryID string
-	LoreURL          string
-	Revision         string
-	Branch           string
-	EventName        string
-	EventPayload     json.RawMessage
-	Environment      string
+	ID               string          `json:"id"`
+	Attempt          int             `json:"attempt"`
+	RunID            string          `json:"runId"`
+	ActorID          string          `json:"actorId,omitempty"`
+	WorkflowPath     string          `json:"workflowPath"`
+	RepositoryID     string          `json:"repositoryId"`
+	OrganizationID   string          `json:"organizationId"`
+	Owner            string          `json:"owner"`
+	Repository       string          `json:"repository"`
+	LoreRepositoryID string          `json:"loreRepositoryId"`
+	LoreURL          string          `json:"loreUrl"`
+	Revision         string          `json:"revision"`
+	Branch           string          `json:"branch"`
+	EventName        string          `json:"eventName"`
+	EventPayload     json.RawMessage `json:"eventPayload"`
+	Environment      string          `json:"environment,omitempty"`
+	RunnerLabels     []string        `json:"runnerLabels"`
+	ExecutionTarget  string          `json:"executionTarget"`
+	LogObjectKey     string          `json:"-"`
 }
 
 type Artifact struct {
@@ -418,8 +421,33 @@ func (store *Store) enqueueRun(
 	actorID string,
 	rerunOf *string,
 ) (uuid.UUID, error) {
+	runnerLabels, err := workflowRunnerLabels(ctx, transaction, workflowID, workflowRevisionID)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	executionTarget := "managed"
+	if containsRunnerLabel(runnerLabels, "self-hosted") {
+		executionTarget = "self_hosted"
+	}
+	managedEntitled := true
+	if executionTarget == "managed" {
+		if err := transaction.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1
+				FROM repositories repository
+				JOIN entitlements entitlement
+				  ON entitlement.organization_id = repository.organization_id
+				 AND entitlement.user_id IS NULL
+				 AND entitlement.feature = 'hosted_runners'
+				 AND entitlement.revoked_at IS NULL
+				WHERE repository.id = $1
+			)
+		`, repository.ID).Scan(&managedEntitled); err != nil {
+			return uuid.Nil, fmt.Errorf("check hosted runner entitlement: %w", err)
+		}
+	}
 	var runNumber int64
-	err := transaction.QueryRow(ctx, `
+	err = transaction.QueryRow(ctx, `
 		UPDATE repository_counters
 		SET next_ci_run_number = next_ci_run_number + 1
 		WHERE repository_id = $1
@@ -438,24 +466,44 @@ func (store *Store) enqueueRun(
 	} else {
 		runAttempt = 1
 	}
+	runStatus := "queued"
+	runConclusion := ""
+	failureReason := ""
+	if !managedEntitled {
+		runStatus = "completed"
+		runConclusion = "failure"
+		failureReason = "entitlement_required"
+	}
 	_, err = transaction.Exec(ctx, `
 		INSERT INTO ci_runs (
 			id, repository_id, workflow_id, workflow_revision_id, run_number, run_attempt, rerun_of, event_name,
-			branch, revision, actor_id, status, event_payload
+			branch, revision, actor_id, status, conclusion, failure_reason, event_payload, completed_at
 		) VALUES ($1, $2, NULLIF($3, '')::uuid, $4, $5, $6, $7, $8, $9, $10,
-			NULLIF($11, '')::uuid, 'queued', $12)
+			NULLIF($11, '')::uuid, $12::varchar, NULLIF($13, ''), NULLIF($14, ''), $15,
+			CASE WHEN $12::varchar = 'completed' THEN now() ELSE NULL END)
 	`, runID, repository.ID, workflowID, workflowRevisionID, runNumber, runAttempt, rerunOf,
-		eventName, branch, revision, actorID, payload)
+		eventName, branch, revision, actorID, runStatus, runConclusion, failureReason, payload)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("enqueue CI run: %w", err)
 	}
 	jobID := uuid.New()
 	_, err = transaction.Exec(ctx, `
-		INSERT INTO ci_jobs (id, run_id, name, status)
-		VALUES ($1, $2, $3, 'queued')
-	`, jobID, runID, workflowName)
+		INSERT INTO ci_jobs (
+			id, run_id, name, status, conclusion, runner_labels, execution_target, completed_at
+		)
+		VALUES (
+			$1, $2, $3, $4::varchar, NULLIF($5, ''), $6, $7,
+			CASE WHEN $4::varchar = 'completed' THEN now() ELSE NULL END
+		)
+	`, jobID, runID, workflowName, runStatus, runConclusion, runnerLabels, executionTarget)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("enqueue CI job: %w", err)
+	}
+	if !managedEntitled {
+		if err := recordCompletionEvents(ctx, transaction, runID.String(), "failure"); err != nil {
+			return uuid.Nil, err
+		}
+		return runID, nil
 	}
 	if environment != "" {
 		if err := store.enqueueDeployment(
@@ -465,6 +513,42 @@ func (store *Store) enqueueRun(
 		}
 	}
 	return runID, nil
+}
+
+func workflowRunnerLabels(
+	ctx context.Context,
+	transaction pgx.Tx,
+	workflowID string,
+	workflowRevisionID *uuid.UUID,
+) ([]string, error) {
+	var triggerConfig json.RawMessage
+	var err error
+	if workflowRevisionID != nil {
+		err = transaction.QueryRow(ctx, `
+			SELECT trigger_config FROM ci_workflow_revisions WHERE id = $1
+		`, *workflowRevisionID).Scan(&triggerConfig)
+	} else {
+		err = transaction.QueryRow(ctx, `
+			SELECT trigger_config FROM ci_workflows WHERE id = NULLIF($1, '')::uuid
+		`, workflowID).Scan(&triggerConfig)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read workflow runner labels: %w", err)
+	}
+	var config struct {
+		RunnerLabels []string `json:"runner_labels"`
+	}
+	if err := json.Unmarshal(triggerConfig, &config); err != nil {
+		return nil, fmt.Errorf("decode workflow runner labels: %w", err)
+	}
+	if len(config.RunnerLabels) == 0 {
+		return []string{"ubuntu-latest"}, nil
+	}
+	labels := append([]string(nil), config.RunnerLabels...)
+	for index := range labels {
+		labels[index] = strings.ToLower(strings.TrimSpace(labels[index]))
+	}
+	return labels, nil
 }
 
 func (store *Store) ClaimJob(ctx context.Context, workerID string, lease time.Duration) (*Job, error) {
@@ -482,6 +566,7 @@ func (store *Store) ClaimJob(ctx context.Context, workerID string, lease time.Du
 		LEFT JOIN deployments deployment ON deployment.job_id = j.id
 		WHERE run.status IN ('queued', 'in_progress')
 		  AND run.cancel_requested = false
+		  AND j.execution_target = 'managed'
 		  AND (
 		    deployment.id IS NULL
 		    OR (
@@ -513,6 +598,7 @@ func (store *Store) ClaimJob(ctx context.Context, workerID string, lease time.Du
 		UPDATE ci_jobs j
 		SET status = 'in_progress', started_at = COALESCE(j.started_at, now()),
 		    lease_owner = $2, lease_expires_at = now() + $3::interval,
+		    runner_id = NULL,
 		    attempt = j.attempt + CASE WHEN j.started_at IS NULL THEN 0 ELSE 1 END
 		FROM ci_runs run
 		WHERE j.id = $1 AND run.id = j.run_id AND run.cancel_requested = false

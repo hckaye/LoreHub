@@ -18,7 +18,7 @@
     "api:format:check": "cd services/api && files=$(gofmt -l .) && test -z \"$files\"",
     "api:lint": "cd services/api && go vet ./...",
     "api:test": "cd services/api && go test -p 1 ./...",
-    "api:build": "cd services/api && go build -o /dev/null ./cmd/lorehub",
+    "api:build": "cd services/api && go build -o /dev/null ./cmd/lorehub && go build -o /dev/null ./cmd/lorehub-runner",
     "cli:format:check": "cd cli && files=$(gofmt -l .) && test -z \"$files\"",
     "cli:lint": "cd cli && go vet ./...",
     "cli:test": "cd cli && go test -p 1 ./...",
