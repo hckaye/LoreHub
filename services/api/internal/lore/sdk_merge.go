@@ -27,9 +27,9 @@ func (client *SDKClient) operationPath(repository RepositoryRef, operationID str
 	if _, err := client.cachePath(repository.CacheKey); err != nil {
 		return "", err
 	}
-	endpointKey := "repository"
-	if client.dataPlaneOrigin != "" {
-		endpointKey = fmt.Sprintf("endpoint-%x", client.dataPlaneOrigin)
+	endpointKey, err := transportEndpointCacheKey(repository)
+	if err != nil {
+		return "", err
 	}
 	return filepath.Join(client.cacheDirectory, "operations", repository.CacheKey, endpointKey, operationID), nil
 }
@@ -81,7 +81,7 @@ func (client *SDKClient) cloneWorkspace(
 	targetRevision string,
 	credential Credential,
 ) error {
-	repository, err := client.transportRepositoryRef(repository)
+	repository, err := client.transportRepositoryRef(ctx, repository)
 	if err != nil {
 		return err
 	}
@@ -111,7 +111,7 @@ func (client *SDKClient) withWorkspace(
 	credential Credential,
 	fn func(string) error,
 ) error {
-	repository, err := client.transportRepositoryRef(repository)
+	repository, err := client.transportRepositoryRef(ctx, repository)
 	if err != nil {
 		return err
 	}
@@ -190,7 +190,7 @@ func (client *SDKClient) EnsureMergeWorkspace(
 	if err := ValidateCredential(repository, credential, credential.Scope); err != nil {
 		return err
 	}
-	repository, err := client.transportRepositoryRef(repository)
+	repository, err := client.transportRepositoryRef(ctx, repository)
 	if err != nil {
 		return err
 	}
@@ -580,7 +580,7 @@ func (client *SDKClient) RestartMerge(
 	if err := client.CleanupMergeWorkspace(ctx, repository, operationID); err != nil {
 		return MergeStartResult{}, err
 	}
-	repository, err := client.transportRepositoryRef(repository)
+	repository, err := client.transportRepositoryRef(ctx, repository)
 	if err != nil {
 		return MergeStartResult{}, err
 	}
@@ -807,6 +807,10 @@ func (client *SDKClient) CleanupMergeWorkspace(
 	operationID string,
 ) error {
 	if err := ctx.Err(); err != nil {
+		return err
+	}
+	repository, err := client.transportRepositoryRef(ctx, repository)
+	if err != nil {
 		return err
 	}
 	path, err := client.operationPath(repository, operationID)

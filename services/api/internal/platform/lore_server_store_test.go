@@ -12,7 +12,66 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/lorehub/lorehub/services/api/internal/auth"
+	loreclient "github.com/lorehub/lorehub/services/api/internal/lore"
 )
+
+func TestLoreTransportResolverUsesInstanceInternalAndRegisteredPublicAuthorities(t *testing.T) {
+	pool, store := identityIntegrationStore(t)
+	ctx := context.Background()
+	suffix := strings.ReplaceAll(uuid.NewString(), "-", "")[:10]
+	organizationID := uuid.NewString()
+	ownerID := uuid.NewString()
+	mustIdentityExec(t, pool, `
+		INSERT INTO users (id, username, display_name) VALUES ($1, $2, 'Lore transport owner')
+	`, ownerID, "lore-transport-owner-"+suffix)
+	mustIdentityExec(t, pool, `
+		INSERT INTO organizations (id, slug, display_name, visibility, created_by)
+		VALUES ($1, $2, 'Lore transport resolver', 'private', $3)
+	`, organizationID, "lore-transport-"+suffix, ownerID)
+	t.Cleanup(func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM organizations WHERE id = $1`, organizationID)
+		_, _ = pool.Exec(ctx, `DELETE FROM users WHERE id = $1`, ownerID)
+	})
+
+	instancePublicURL := "lores://instance-transport-" + suffix + ".example:41337"
+	instance, err := store.EnsureInstanceLoreServer(ctx, instancePublicURL)
+	if err != nil {
+		t.Fatalf("ensure instance Lore server: %v", err)
+	}
+	registered := insertLoreServerFixture(t, pool, organizationID, "registered-transport-"+suffix)
+	instanceInternalURL := "lores://internal-transport-" + suffix + ".example:41337"
+	resolver, err := NewLoreTransportResolver(store, instanceInternalURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	partition := "0123456789abcdef0123456789abcdef"
+	instanceTransport, err := resolver.ResolveTransport(ctx, instancePublicURL+"/"+partition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if instanceTransport.ServerID != instance.ID || instanceTransport.Authority != instanceInternalURL {
+		t.Fatalf("instance transport = %+v", instanceTransport)
+	}
+	registeredTransport, err := resolver.ResolveTransport(ctx, registered.PublicURL+"/"+partition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if registeredTransport.ServerID != registered.ID || registeredTransport.Authority != registered.PublicURL {
+		t.Fatalf("registered transport = %+v", registeredTransport)
+	}
+	mustIdentityExec(t, pool, `
+		UPDATE lore_servers SET status = 'revoked', revoked_at = now() WHERE id = $1
+	`, registered.ID)
+	_, err = resolver.ResolveTransport(ctx, registered.PublicURL+"/"+partition)
+	if !errors.Is(err, loreclient.ErrUnknownServerAuthority) {
+		t.Fatalf("revoked Lore server transport error = %v", err)
+	}
+	_, err = resolver.ResolveTransport(ctx, "lores://unknown-"+suffix+".example:41337/"+partition)
+	var unknownAuthority *loreclient.UnknownServerAuthorityError
+	if !errors.Is(err, loreclient.ErrUnknownServerAuthority) || !errors.As(err, &unknownAuthority) {
+		t.Fatalf("unknown transport authority error = %v", err)
+	}
+}
 
 func TestLoreServerResolverPrecedenceAndEntitlement(t *testing.T) {
 	pool, store := identityIntegrationStore(t)

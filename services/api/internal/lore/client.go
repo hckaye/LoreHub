@@ -28,10 +28,12 @@ type Repository struct {
 }
 
 type RepositoryRef struct {
-	CacheKey         string
-	URL              string
-	LoreRepositoryID string
-	DefaultBranch    string
+	CacheKey           string
+	URL                string
+	LoreRepositoryID   string
+	DefaultBranch      string
+	transportServerID  string
+	transportAuthority string
 }
 
 func (repository RepositoryRef) CanonicalPartition() string {
