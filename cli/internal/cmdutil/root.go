@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/lorehub/lorehub/cli/internal/api"
 	"github.com/lorehub/lorehub/cli/internal/config"
@@ -76,10 +77,14 @@ func NewRootCommand(options Options) *cobra.Command {
 	root.SetErr(state.errorOutput)
 	root.SetVersionTemplate("{{.Version}}\n")
 	root.PersistentPreRunE = func(_ *cobra.Command, _ []string) error {
-		_, err := state.repository()
+		if strings.TrimSpace(state.repoFlag) == "" {
+			return nil
+		}
+		_, err := ParseRepoContext(state.repoFlag)
 		return err
 	}
 	root.PersistentFlags().StringVar(&state.hostFlag, "host", "", "LoreHub host")
+	root.PersistentFlags().StringVar(&state.hostFlag, "hostname", "", "LoreHub host")
 	root.PersistentFlags().StringVar(&state.repoFlag, "repo", "", "repository in OWNER/NAME form")
 	root.PersistentFlags().BoolVar(&state.json, "json", false, "write JSON output")
 
@@ -87,6 +92,8 @@ func NewRootCommand(options Options) *cobra.Command {
 		newAuthCommand(state),
 		newAPICommand(state),
 		newRepoCommand(state),
+		newIssueCommand(state),
+		newPRCommand(state),
 		newVersionCommand(state),
 	)
 	return root
@@ -113,13 +120,6 @@ func newVersionCommand(state *rootState) *cobra.Command {
 
 func (state *rootState) host() string {
 	return config.ResolveHost(state.hostFlag, state.defaultHost)
-}
-
-func (state *rootState) repository() (string, error) {
-	if state.repoFlag == "" {
-		return "", nil
-	}
-	return config.ParseRepo(state.repoFlag)
 }
 
 func (state *rootState) loadHosts() (config.Hosts, error) {

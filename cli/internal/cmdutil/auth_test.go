@@ -38,7 +38,7 @@ func TestAuthLoginWithTokenValidatesAndStoresToken(t *testing.T) {
 	if authorization != "Bearer lhp_test-token" {
 		t.Fatalf("authorization = %q", authorization)
 	}
-	if requestPath != "/api/v1/dashboard" {
+	if requestPath != "/api/v1/account" {
 		t.Fatalf("validation path = %q", requestPath)
 	}
 	hosts, err := config.NewStore(configPath).Load()
