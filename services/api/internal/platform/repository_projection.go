@@ -18,7 +18,8 @@ const repositorySelect = `
 		       ), '[]'::jsonb),
 		       COUNT(DISTINCT i.id) FILTER (WHERE i.state = 'open'),
 		       COUNT(DISTINCT mr.id) FILTER (WHERE mr.state = 'open'),
-		       r.archived_at, r.lifecycle_state, COALESCE(r.provisioning_error, ''), r.updated_at
+		       r.archived_at, r.migrating_at, r.lifecycle_state,
+		       COALESCE(r.provisioning_error, ''), r.updated_at
 	FROM repositories r
 	JOIN organizations o ON o.id = r.organization_id AND o.active
 	LEFT JOIN issues i ON i.repository_id = r.id
@@ -51,6 +52,7 @@ func scanRepository(row rowScanner) (Repository, error) {
 		&repository.IssueCount,
 		&repository.MergeRequestCount,
 		&repository.ArchivedAt,
+		&repository.MigratingAt,
 		&repository.LifecycleState,
 		&repository.ProvisioningError,
 		&repository.UpdatedAt,

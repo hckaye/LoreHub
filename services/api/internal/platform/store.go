@@ -408,6 +408,7 @@ func (store *Store) RepositoryForWrite(
 	row := store.pool.QueryRow(ctx, repositorySelect+`
 		JOIN users actor_user ON actor_user.id = $3 AND actor_user.status = 'active'
 		WHERE o.slug = $1 AND r.slug = $2 AND r.archived_at IS NULL
+		  AND r.migrating_at IS NULL
 		  AND r.lifecycle_state = 'active'
 		  AND (
 			  EXISTS (
@@ -666,7 +667,8 @@ func (store *Store) writableRepository(
 		FROM repositories r
 		JOIN organizations o ON o.id = r.organization_id AND o.active
 		WHERE o.slug = $1 AND r.slug = $2 AND o.active
-		  AND r.archived_at IS NULL AND r.lifecycle_state = 'active'
+		  AND r.archived_at IS NULL AND r.migrating_at IS NULL
+		  AND r.lifecycle_state = 'active'
 	`, owner, slug, userID).Scan(&repositoryID, &organizationID, &allowed)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", "", ErrNotFound

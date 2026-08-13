@@ -42,7 +42,7 @@ func (api *API) getIssue(writer http.ResponseWriter, request *http.Request) {
 		if !ok {
 			return
 		}
-		issue.ViewerCanUpdate = repo.ArchivedAt == nil &&
+		issue.ViewerCanUpdate = !repositoryReadOnly(repo) &&
 			(issue.AuthorID == actor.ID || access.AtLeast(PermTriage))
 		issue.ViewerCanManageLabels = access.AtLeast(PermTriage)
 		issue.ViewerCanManageMilestone = access.AtLeast(PermTriage)
