@@ -16,6 +16,7 @@ import {
   Settings,
   ShieldCheck,
   Star,
+  Tag,
   Tags,
   Workflow,
 } from "lucide-react";
@@ -55,6 +56,7 @@ const tabs = [
 const moreTabs = [
   ["locks", LockKeyhole],
   ["releases", Tags],
+  ["tags", Tag],
 ] as const;
 
 const codeSubroutes = new Set(["blob", "commits", "commit", "branches", "compare", "tags"]);
