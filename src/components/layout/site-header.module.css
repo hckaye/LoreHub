@@ -6,16 +6,6 @@
   color: var(--header-fg);
 }
 
-.header[data-authenticated="true"] {
-  --header-bg: var(--canvas-subtle);
-  --header-border: var(--border);
-  --header-hover: var(--border-muted);
-  --header-fg: var(--fg-default);
-  --header-fg-muted: var(--fg-muted);
-  --header-input-bg: var(--canvas-default);
-  --header-input-border: var(--border);
-}
-
 .inner {
   display: flex;
   width: 100%;
@@ -80,7 +70,7 @@
 
 .header[data-authenticated="true"] .navigationOpen {
   position: absolute;
-  top: 56px;
+  top: 64px;
   left: 24px;
   display: flex;
   min-width: 260px;
@@ -103,6 +93,10 @@
 
 .navigationOpen .mobileOnly {
   display: inline-flex !important;
+}
+
+.mobileLocale {
+  display: none;
 }
 
 .notificationCount {
@@ -258,6 +252,17 @@
   .header[data-authenticated="true"] .iconAction,
   .localeAction {
     display: none;
+  }
+
+  .mobileLocale {
+    display: block;
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px solid var(--header-border);
+  }
+
+  .mobileLocale a {
+    min-height: 40px;
   }
 
   .authLinks a:first-child {
