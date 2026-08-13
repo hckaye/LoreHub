@@ -199,7 +199,7 @@ export function PullRequestDetail({
         {message}
       </div>
       <div className={styles.columns}>
-        <main className={styles.main}>
+        <div className={styles.main}>
           <PullRequestTab
             commits={commits}
             comments={comments}
@@ -234,7 +234,7 @@ export function PullRequestDetail({
               authenticated={session.status === "authenticated"}
             />
           )}
-        </main>
+        </div>
         <div className={styles.sidebar}>
           <PullRequestMetadata
             assignees={assignees}

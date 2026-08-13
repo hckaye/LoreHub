@@ -4,6 +4,7 @@ import Link from "next/link";
 import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
 import type { RepositoryInsightDay, RepositoryInsights } from "@/lib/api-types";
+import { formatDateTime } from "@/lib/format";
 import { repositoryPath } from "@/lib/routes";
 
 import { EmptyState } from "../ui/empty-state";
@@ -187,12 +188,6 @@ function formatDate(value: string, locale: Locale): string {
   const date = new Date(value.includes("T") ? value : `${value}T00:00:00Z`);
   if (Number.isNaN(date.getTime())) return value;
   return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeZone: "UTC" }).format(date);
-}
-
-function formatDateTime(value: string, locale: Locale): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 
 function replaceCount(template: string, count: string): string {

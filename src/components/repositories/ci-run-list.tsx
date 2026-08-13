@@ -2,6 +2,7 @@ import { CheckCircle2, CircleX, Clock3, LoaderCircle, PlayCircle } from "lucide-
 
 import type { Dictionary } from "@/i18n";
 import type { CIRun } from "@/lib/api-types";
+import { shortRevision } from "@/lib/format";
 
 import { EmptyState } from "../ui/empty-state";
 import { StatusBadge } from "../ui/status-badge";
@@ -74,8 +75,4 @@ function StatusIcon({ status, conclusion }: Pick<CIRun, "status" | "conclusion">
     return <CheckCircle2 aria-hidden="true" className={styles.success} size={18} />;
   }
   return <CircleX aria-hidden="true" className={styles.failure} size={18} />;
-}
-
-function shortRevision(revision: string): string {
-  return revision.length > 12 ? revision.slice(0, 12) : revision;
 }

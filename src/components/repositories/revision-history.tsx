@@ -4,12 +4,11 @@ import Link from "next/link";
 import { CopyButton } from "@/components/ui/copy-button";
 import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
-import { formatRelativeTime, formatTimestamp } from "@/lib/relative-time";
+import { formatRelativeTime, formatTimestamp, shortRevision } from "@/lib/format";
 import {
   groupRevisionRows,
   revisionHistoryPageHref,
   revisionSubject,
-  shortRevision,
   type RevisionHistoryQuery,
   type RevisionRow,
 } from "@/lib/revision-history";

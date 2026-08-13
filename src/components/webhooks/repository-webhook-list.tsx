@@ -3,6 +3,8 @@
 import { Pencil, RotateCcw, Trash2 } from "lucide-react";
 
 import type { Dictionary } from "@/i18n";
+import type { Locale } from "@/i18n/config";
+import { formatDateTime } from "@/lib/format";
 import type { RepositoryWebhook, WebhookDelivery } from "@/lib/webhook-client";
 
 import styles from "./repository-webhook-settings.module.css";
@@ -10,7 +12,7 @@ import styles from "./repository-webhook-settings.module.css";
 type RepositoryWebhookListProps = {
   copy: Dictionary["webhookSettings"];
   deliveries: Record<string, WebhookDelivery[]>;
-  locale: string;
+  locale: Locale;
   pendingAction: string;
   webhooks: RepositoryWebhook[];
   onDelete: (webhook: RepositoryWebhook) => void;
@@ -80,7 +82,7 @@ export function RepositoryWebhookList(props: RepositoryWebhookListProps) {
 type DeliveryTableProps = {
   copy: Dictionary["webhookSettings"];
   deliveries: WebhookDelivery[];
-  locale: string;
+  locale: Locale;
   pendingAction: string;
   webhook: RepositoryWebhook;
   onRedeliver: (delivery: WebhookDelivery) => void;
@@ -115,7 +117,7 @@ function DeliveryTable(props: DeliveryTableProps) {
                   <td>{delivery.responseStatus ?? (delivery.lastError || "-")}</td>
                   <td>{delivery.attemptCount}</td>
                   <td>
-                    <time dateTime={delivery.updatedAt}>{formatDate(delivery.updatedAt, props.locale)}</time>
+                    <time dateTime={delivery.updatedAt}>{formatDateTime(delivery.updatedAt, props.locale)}</time>
                   </td>
                   <td>
                     {canRedeliver(delivery) && (
@@ -147,10 +149,4 @@ function eventLabel(copy: Dictionary["webhookSettings"], event: string): string 
 
 function canRedeliver(delivery: WebhookDelivery): boolean {
   return delivery.status === "succeeded" || delivery.status === "failed" || delivery.status === "exhausted";
-}
-
-function formatDate(value: string, locale: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(date);
 }

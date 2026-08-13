@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 import type { Dictionary } from "@/i18n";
 import type { MergeStatusCheck, RevisionStatus, RevisionStatusState } from "@/lib/api-types";
+import { formatDateTime } from "@/lib/format";
 
 import styles from "./commit-status-list.module.css";
 
@@ -65,7 +66,7 @@ export function CommitStatusList(props: CommitStatusListProps) {
                 <small>
                   {copy.reportedBy
                     .replace("{creator}", statusCreator(status))
-                    .replace("{date}", formatDate(statusTimestamp(status), props.locale))}
+                    .replace("{date}", formatDateTime(statusTimestamp(status), props.locale))}
                 </small>
               </div>
               {status.targetUrl && (
@@ -112,8 +113,4 @@ function statusTimestamp(status: RevisionStatus | MergeStatusCheck): string {
 
 function statusKey(status: RevisionStatus | MergeStatusCheck): string {
   return isMergeStatus(status) ? `${status.context}-${status.updatedAt}` : status.id;
-}
-
-function formatDate(value: string, locale: "en" | "ja"): string {
-  return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }

@@ -15,6 +15,7 @@ import type {
   DiscussionSummary,
 } from "@/lib/api-types";
 import { deleteJson, patchJson, postJson, putJson } from "@/lib/auth-client";
+import { formatTimestamp } from "@/lib/format";
 import { mutationFailureMessage } from "@/lib/mutation-messages";
 import { loginUrl, repositoryPath } from "@/lib/routes";
 
@@ -208,7 +209,7 @@ export function DiscussionDetail(props: DiscussionDetailProps) {
           <header className={styles.cardHeader}>
             <strong>{discussion.author.displayName}</strong>
             <span>@{discussion.author.username}</span>
-            <time dateTime={discussion.createdAt}>{formatDate(discussion.createdAt, props.locale)}</time>
+            <time dateTime={discussion.createdAt}>{formatTimestamp(discussion.createdAt, props.locale)}</time>
           </header>
           <div className={`${styles.cardBody} ${styles.markdown}`}>
             <MarkdownContent body={discussion.body} />
@@ -279,12 +280,6 @@ export function DiscussionDetail(props: DiscussionDetailProps) {
         </p>
       ) : null}
     </div>
-  );
-}
-
-function formatDate(value: string, locale: Locale): string {
-  return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(
-    new Date(value),
   );
 }
 

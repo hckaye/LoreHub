@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 
 import type { Dictionary } from "@/i18n";
+import type { Locale } from "@/i18n/config";
 import type { AuthSession } from "@/lib/api-types";
 import {
   createRepositoryWebhook,
@@ -24,7 +25,7 @@ import styles from "./repository-webhook-settings.module.css";
 
 type RepositoryWebhookSettingsProps = {
   dictionary: Dictionary;
-  locale: string;
+  locale: Locale;
   owner: string;
   repository: string;
   session: Extract<AuthSession, { status: "authenticated" }>;

@@ -10,6 +10,7 @@ import type { Locale } from "@/i18n/config";
 import type { AuthSession, Repository } from "@/lib/api-types";
 import { deleteJsonWithBody, postJson } from "@/lib/auth-client";
 import type { FileLock, FileLockPage } from "@/lib/file-locks";
+import { formatDateTime } from "@/lib/format";
 import { mutationFailureMessage } from "@/lib/mutation-messages";
 import { brandedAuthUrl, repositoryPath } from "@/lib/routes";
 
@@ -191,9 +192,7 @@ function LockRow({
   release(lock: FileLock): Promise<void>;
 }) {
   const owner = lock.owner.displayName || lock.owner.username;
-  const date = new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(
-    new Date(lock.lockedAt),
-  );
+  const date = formatDateTime(lock.lockedAt, locale);
   return (
     <article className={styles.lockRow}>
       <FileLock2 aria-hidden="true" size={18} />
