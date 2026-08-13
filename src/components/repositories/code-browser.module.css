@@ -6,7 +6,8 @@
 
 .toolbar,
 .branchControls,
-.links {
+.toolbarActions,
+.secondaryToolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -17,29 +18,12 @@
   justify-content: space-between;
 }
 
-.branchBox {
-  display: flex;
-  min-width: 160px;
-  min-height: 32px;
-  align-items: center;
-  gap: 7px;
-  padding: 0 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--canvas-subtle);
-  box-shadow: 0 1px 0 rgb(31 35 40 / 4%);
-  color: var(--fg-default);
+.branchControls {
+  min-width: 0;
 }
 
-.branchBox select {
-  width: 100%;
-  min-width: 0;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: var(--fg-default);
-  font-size: 0.8rem;
-  font-weight: 600;
+.toolbarActions {
+  justify-content: flex-end;
 }
 
 .toolbarLink {
@@ -59,6 +43,147 @@
   border-color: var(--border);
   background: var(--canvas-subtle);
   color: var(--fg-default);
+}
+
+.fileFilter {
+  display: flex;
+  min-width: 180px;
+  min-height: 32px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--canvas-default);
+  color: var(--fg-muted);
+}
+
+.fileFilter:focus-within {
+  border-color: var(--accent-emphasis);
+  box-shadow: 0 0 0 3px var(--accent-border);
+}
+
+.fileFilter input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--fg-default);
+  font: inherit;
+  font-size: 0.8rem;
+}
+
+.codeMenu {
+  position: relative;
+}
+
+.codeButton {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 11px;
+  border: 1px solid var(--success-border);
+  border-radius: 6px;
+  background: var(--success-border);
+  color: var(--fg-on-emphasis);
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 600;
+  list-style: none;
+}
+
+.codeButton::-webkit-details-marker {
+  display: none;
+}
+
+.codeButton:hover,
+.codeMenu[open] .codeButton {
+  background: var(--success-fg);
+}
+
+.codePopover {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 6px);
+  right: 0;
+  width: min(430px, calc(100vw - 32px));
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-popover);
+}
+
+.codePopover strong,
+.codePopover label {
+  display: block;
+}
+
+.codePopover strong {
+  margin-bottom: 10px;
+  color: var(--fg-default);
+  font-size: 0.82rem;
+}
+
+.codePopover label {
+  margin-bottom: 5px;
+  color: var(--fg-muted);
+  font-size: 0.74rem;
+}
+
+.cloneURLRow {
+  display: flex;
+  gap: 6px;
+}
+
+.cloneURLRow input {
+  min-width: 0;
+  flex: 1;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--canvas-default);
+  color: var(--fg-default);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+}
+
+.cloneURLRow button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--canvas-subtle);
+  color: var(--fg-default);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.cloneURLRow button:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--canvas-default);
+}
+
+.cloneURLRow button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.codePopover p {
+  margin: 8px 0 0;
+  color: var(--danger-fg);
+  font-size: 0.74rem;
+}
+
+.secondaryToolbar {
+  justify-content: flex-end;
 }
 
 .tableWrap {
@@ -106,9 +231,9 @@
 
 .revisionBar {
   display: flex;
-  min-height: 46px;
+  min-height: 54px;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   padding: 8px 16px;
   border-bottom: 1px solid var(--border);
   background: var(--canvas-subtle);
@@ -116,30 +241,47 @@
   font-size: 0.78rem;
 }
 
-.revisionBar strong {
+.commitSummary {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.commitSummary strong {
+  flex: 0 0 auto;
   color: var(--fg-default);
   font-weight: 600;
 }
 
-.revisionBar code {
+.commitSummary span {
   overflow: hidden;
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
+  color: var(--fg-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.revisionBar a {
-  display: inline-flex;
+.commitMeta {
+  display: flex;
+  flex: 0 0 auto;
   align-items: center;
-  gap: 5px;
-  margin-left: auto;
+  gap: 9px;
   color: var(--fg-muted);
+}
+
+.commitMeta code {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+}
+
+.commitMeta a {
+  color: var(--accent-fg);
   text-decoration: none;
 }
 
-.revisionBar a:hover {
-  color: var(--accent-fg);
+.commitMeta a:hover {
+  text-decoration: underline;
 }
 
 .table {
@@ -218,30 +360,41 @@
 }
 
 @media (max-width: 640px) {
-  .toolbar,
-  .branchControls,
-  .links {
+  .toolbar {
     align-items: stretch;
   }
 
-  .branchControls {
+  .branchControls,
+  .toolbarActions {
     width: 100%;
   }
 
-  .branchBox {
+  .branchControls,
+  .toolbarActions {
+    align-items: stretch;
+  }
+
+  .toolbarActions {
+    justify-content: stretch;
+  }
+
+  .fileFilter {
     flex: 1;
   }
 
-  .links {
-    width: 100%;
+  .secondaryToolbar {
+    justify-content: flex-start;
   }
 
-  .toolbarLink {
-    justify-content: center;
+  .commitSummary {
+    display: grid;
+    gap: 2px;
   }
 
-  .revisionBar strong {
-    display: none;
+  .commitMeta {
+    align-items: flex-end;
+    flex-direction: column;
+    gap: 2px;
   }
 
   .table td {

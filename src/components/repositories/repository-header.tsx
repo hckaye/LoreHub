@@ -16,6 +16,7 @@ import {
   Settings,
   ShieldCheck,
   Star,
+  Tag,
   Tags,
   Workflow,
 } from "lucide-react";
@@ -54,6 +55,7 @@ const moreTabs = [
   ["locks", LockKeyhole],
   ["wiki", BookOpenText],
   ["releases", Tags],
+  ["tags", Tag],
 ] as const;
 
 export function RepositoryHeader({ repository, locale, dictionary, session }: RepositoryHeaderProps) {

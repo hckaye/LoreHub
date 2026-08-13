@@ -48,6 +48,7 @@ import type {
   RepositoryInsights,
   RepositoryIssuePage,
   RepositoryMergeRequestPage,
+  RepositoryTag,
   ReviewCandidate,
   ReviewRequestSummary,
   ReviewSummary,
@@ -459,6 +460,29 @@ export function getWikiRevision(
 export function getReleases(owner: string, repository: string, page: number): Promise<APIResult<ReleasePage>> {
   const query = new URLSearchParams({ page: String(page), perPage: "20" });
   return request(repositoryPath(owner, repository, `/releases?${query.toString()}`));
+}
+
+export async function getRepositoryTags(owner: string, repository: string): Promise<APIResult<RepositoryTag[]>> {
+  const tags = new Map<string, RepositoryTag>();
+  for (let page = 1; page <= 1_000; page += 1) {
+    const result = await getReleases(owner, repository, page);
+    if (!result.ok) {
+      return { ok: false, reason: result.reason, code: result.code };
+    }
+    for (const release of result.data.releases) {
+      if (release.state !== "published" || tags.has(release.tagName)) continue;
+      tags.set(release.tagName, {
+        name: release.tagName,
+        revision: release.revision,
+        createdAt: release.publishedAt ?? release.createdAt,
+        createdBy: release.publishedBy ?? release.createdBy,
+      });
+    }
+    if (!result.data.hasNext) {
+      return { ok: true, data: [...tags.values()] };
+    }
+  }
+  return { ok: true, data: [...tags.values()] };
 }
 
 export function getMilestones(
