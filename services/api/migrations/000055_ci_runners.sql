@@ -39,7 +39,10 @@ CREATE TABLE ci_runners (
     CONSTRAINT ci_runners_credential_key_id_check CHECK (
         credential_key_id ~ '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
     ),
-    CONSTRAINT ci_runners_credential_expiry_check CHECK (credential_expires_at > created_at),
+    CONSTRAINT ci_runners_credential_expiry_check CHECK (
+        credential_expires_at > created_at
+        AND credential_expires_at <= created_at + interval '366 days'
+    ),
     CONSTRAINT ci_runners_last_used_check CHECK (
         last_used_at IS NULL OR last_used_at >= created_at
     ),
