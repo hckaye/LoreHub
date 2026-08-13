@@ -1,0 +1,29 @@
+[Unit]
+Description=LoreHub Lore Server agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=lorehub-lores
+Group=lorehub-lores
+ExecStart=/usr/local/bin/lorehub-lores-agent run --config-dir /var/lib/lorehub-lores-agent
+EnvironmentFile=-/etc/lorehub/lorehub-lores-agent.env
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=15s
+KillSignal=SIGTERM
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectControlGroups=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/var/lib/lorehub-lores-agent
+
+[Install]
+WantedBy=multi-user.target
