@@ -9,7 +9,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { FlashNotice } from "@/components/ui/flash-notice";
 import { getDictionary } from "@/i18n";
 import { isLocale } from "@/i18n/config";
-import { getMergeRequests, getPublicRepository } from "@/lib/lorehub-api";
+import { getLabels, getMergeRequests, getMilestones, getPublicRepository } from "@/lib/lorehub-api";
 import {
   type RawRepositoryWorkItemSearchParams,
   parseRepositoryMergeRequestQuery,
@@ -30,10 +30,12 @@ export default async function PullRequestsPage({ params, searchParams }: PullReq
   const locale = isLocale(value) ? value : "en";
   const query = await searchParams;
   const filters = parseRepositoryMergeRequestQuery(query);
-  const [dictionary, mergeRequests, repositoryResult] = await Promise.all([
+  const [dictionary, mergeRequests, repositoryResult, labelsResult, milestonesResult] = await Promise.all([
     getDictionary(locale),
     getMergeRequests(owner, repository, filters),
     getPublicRepository(owner, repository),
+    getLabels(owner, repository),
+    getMilestones(owner, repository, "open", 1, 100),
   ]);
   const archived = repositoryResult.ok && repositoryResult.data.archivedAt !== null;
   const basePath = repositoryPath(locale, owner, repository, "pulls");
@@ -70,7 +72,9 @@ export default async function PullRequestsPage({ params, searchParams }: PullReq
           closedCount={mergeRequests.ok ? mergeRequests.data.closedCount : undefined}
           dictionary={dictionary}
           kind="pulls"
+          labels={labelsResult.ok ? labelsResult.data : []}
           mergedCount={mergeRequests.ok ? mergeRequests.data.mergedCount : undefined}
+          milestones={milestonesResult.ok ? milestonesResult.data.milestones : []}
           openCount={mergeRequests.ok ? mergeRequests.data.openCount : undefined}
           query={filters}
         />

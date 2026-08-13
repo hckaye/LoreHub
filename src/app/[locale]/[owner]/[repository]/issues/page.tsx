@@ -9,7 +9,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { FlashNotice } from "@/components/ui/flash-notice";
 import { getDictionary } from "@/i18n";
 import { isLocale } from "@/i18n/config";
-import { getIssues, getPublicRepository } from "@/lib/lorehub-api";
+import { getIssues, getLabels, getMilestones, getPublicRepository } from "@/lib/lorehub-api";
 import { type RawRepositoryWorkItemSearchParams, parseRepositoryIssueQuery } from "@/lib/repository-work-item-query";
 import { repositoryMilestonesPath, repositoryPath } from "@/lib/routes";
 
@@ -27,10 +27,12 @@ export default async function IssuesPage({ params, searchParams }: IssuesPagePro
   const locale = isLocale(value) ? value : "en";
   const query = await searchParams;
   const filters = parseRepositoryIssueQuery(query);
-  const [dictionary, issues, repositoryResult] = await Promise.all([
+  const [dictionary, issues, repositoryResult, labelsResult, milestonesResult] = await Promise.all([
     getDictionary(locale),
     getIssues(owner, repository, filters),
     getPublicRepository(owner, repository),
+    getLabels(owner, repository),
+    getMilestones(owner, repository, "open", 1, 100),
   ]);
   const archived = repositoryResult.ok && repositoryResult.data.archivedAt !== null;
   const basePath = repositoryPath(locale, owner, repository, "issues");
@@ -67,6 +69,8 @@ export default async function IssuesPage({ params, searchParams }: IssuesPagePro
           closedCount={issues.ok ? issues.data.closedCount : undefined}
           dictionary={dictionary}
           kind="issues"
+          labels={labelsResult.ok ? labelsResult.data : []}
+          milestones={milestonesResult.ok ? milestonesResult.data.milestones : []}
           openCount={issues.ok ? issues.data.openCount : undefined}
           query={filters}
         />
