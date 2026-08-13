@@ -82,7 +82,7 @@ func (issuer *Issuer) Issue(serverID string, issuedAt time.Time) (Certificate, e
 	if issuedAt.IsZero() {
 		return Certificate{}, errors.New("certificate issue time is required")
 	}
-	issuedAt = issuedAt.UTC()
+	issuedAt = issuedAt.UTC().Truncate(time.Second)
 	expiresAt := issuedAt.Add(Lifetime)
 	if !expiresAt.Before(issuer.certificate.NotAfter) {
 		expiresAt = issuer.certificate.NotAfter.UTC()
