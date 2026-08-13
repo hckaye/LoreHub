@@ -133,6 +133,7 @@ Installed $binary_destination.
 Installed $service_destination.
 
 Configure the agent as $service_user, then enable it:
-  sudo -u $service_user $binary_destination configure --url LOREHUB_URL --lores-url ADVERTISED_LORES_URL --config-dir $config_directory
+  sudo -u $service_user $binary_destination configure --url LOREHUB_URL \
+    --lores-url ADVERTISED_LORES_URL --config-dir $config_directory
   systemctl enable --now lorehub-lores-agent.service
 EOF

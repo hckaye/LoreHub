@@ -149,10 +149,11 @@ func TestRunnerClaimFiltersTargetLabelsAndScopePostgres(t *testing.T) {
 	if _, err := store.RunnerLeaseJob(ctx, claimed.ID, otherRunnerID); !errors.Is(err, ErrRunnerLeaseNotHeld) {
 		t.Fatalf("non-leaseholder read runner job: %v", err)
 	}
-	if err := store.RunnerHeartbeatJob(ctx, claimed.ID, otherRunnerID, time.Minute); !errors.Is(err, ErrRunnerLeaseNotHeld) {
+	err = store.RunnerHeartbeatJob(ctx, claimed.ID, otherRunnerID, time.Minute)
+	if !errors.Is(err, ErrRunnerLeaseNotHeld) {
 		t.Fatalf("non-leaseholder heartbeated runner job: %v", err)
 	}
-	if _, err := store.RunnerCancellationRequested(ctx, claimed.ID, otherRunnerID); !errors.Is(err, ErrRunnerLeaseNotHeld) {
+	if _, err = store.RunnerCancellationRequested(ctx, claimed.ID, otherRunnerID); !errors.Is(err, ErrRunnerLeaseNotHeld) {
 		t.Fatalf("non-leaseholder polled runner job cancellation: %v", err)
 	}
 	if err := store.RunnerHeartbeatJob(ctx, claimed.ID, runnerID, time.Minute); err != nil {

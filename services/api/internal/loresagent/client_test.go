@@ -29,7 +29,9 @@ func TestRegisterExchangesRegistrationToken(t *testing.T) {
 		}
 		writer.Header().Set("Content-Type", "application/json")
 		writer.WriteHeader(http.StatusCreated)
-		_, _ = io.WriteString(writer, `{"server":{"id":"server-1","name":"storage-1"},"credential":"lhss_credential","credentialExpiresAt":"2027-08-13T00:00:00Z"}`)
+		_, _ = io.WriteString(writer,
+			`{"server":{"id":"server-1","name":"storage-1"},`+
+				`"credential":"lhss_credential","credentialExpiresAt":"2027-08-13T00:00:00Z"}`)
 	}))
 	defer server.Close()
 
@@ -62,7 +64,8 @@ func TestHeartbeatReportsAuthenticationFailure(t *testing.T) {
 		}
 		writer.Header().Set("Content-Type", "application/json")
 		writer.WriteHeader(http.StatusUnauthorized)
-		_, _ = io.WriteString(writer, `{"error":{"code":"invalid_credential","detail":"The Lore server credential is invalid"}}`)
+		_, _ = io.WriteString(writer,
+			`{"error":{"code":"invalid_credential","detail":"The Lore server credential is invalid"}}`)
 	}))
 	defer server.Close()
 
@@ -78,7 +81,8 @@ func TestHeartbeatReportsAuthenticationFailure(t *testing.T) {
 	if err == nil || !IsAuthenticationError(err) {
 		t.Fatalf("heartbeat error = %v, want authentication error", err)
 	}
-	if got := err.Error(); got != "LoreHub API returned HTTP 401 (invalid_credential): The Lore server credential is invalid" {
+	want := "LoreHub API returned HTTP 401 (invalid_credential): The Lore server credential is invalid"
+	if got := err.Error(); got != want {
 		t.Fatalf("heartbeat error = %q", got)
 	}
 }
@@ -123,7 +127,8 @@ func fileMode(t *testing.T, path string) os.FileMode {
 
 func TestLoadConfigRejectsUnknownFields(t *testing.T) {
 	configDir := t.TempDir()
-	if err := os.WriteFile(ConfigPath(configDir), []byte(`{"lorehubUrl":"https://example","credential":"lhss_x","name":"x","extra":true}`), 0o600); err != nil {
+	payload := []byte(`{"lorehubUrl":"https://example","credential":"lhss_x","name":"x","extra":true}`)
+	if err := os.WriteFile(ConfigPath(configDir), payload, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := LoadConfig(configDir); err == nil {
