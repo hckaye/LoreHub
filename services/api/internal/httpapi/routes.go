@@ -48,6 +48,7 @@ func (api *API) registerCoreRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /.well-known/jwks.json", api.jwks)
 	mux.HandleFunc("GET /auth/lore/confirm", api.loreAuthConfirm)
 	mux.HandleFunc("POST /auth/lore/confirm", api.loreAuthConfirm)
+	mux.HandleFunc("POST /api/v1/actions/runner/register", api.registerRunner)
 	mux.HandleFunc("GET /api/v1/dashboard", api.dashboard)
 	mux.HandleFunc("GET /api/v1/issues", api.globalIssues)
 	mux.HandleFunc("GET /api/v1/pulls", api.globalPullRequests)
@@ -81,6 +82,12 @@ func (api *API) registerOrganizationRoutes(mux *http.ServeMux) {
 		api.upsertOrganizationActionsSetting)
 	mux.HandleFunc("DELETE /api/v1/organizations/{organization}/actions/settings/{valueKind}/{name}",
 		api.deleteOrganizationActionsSetting)
+	mux.HandleFunc("POST /api/v1/organizations/{organization}/actions/runners/registration-token",
+		api.createOrganizationRunnerRegistrationToken)
+	mux.HandleFunc("GET /api/v1/organizations/{organization}/actions/runners",
+		api.listOrganizationRunners)
+	mux.HandleFunc("DELETE /api/v1/organizations/{organization}/actions/runners/{runnerID}",
+		api.revokeOrganizationRunner)
 	mux.HandleFunc("GET /api/v1/organizations/{organization}/repositories", api.organizationRepositories)
 	mux.HandleFunc(
 		"GET /api/v1/organizations/{organization}/deleted-repositories",
@@ -131,6 +138,10 @@ func (api *API) registerActionsRoutes(mux *http.ServeMux) {
 		api.upsertRepositoryActionsSetting)
 	mux.HandleFunc("DELETE "+base+"/settings/{scopeKind}/{valueKind}/{name}",
 		api.deleteRepositoryActionsSetting)
+	mux.HandleFunc("POST "+base+"/runners/registration-token",
+		api.createRepositoryRunnerRegistrationToken)
+	mux.HandleFunc("GET "+base+"/runners", api.listRepositoryRunners)
+	mux.HandleFunc("DELETE "+base+"/runners/{runnerID}", api.revokeRepositoryRunner)
 	mux.HandleFunc("GET "+base+"/workflows", api.listActionWorkflows)
 	mux.HandleFunc("GET "+base+"/runs/{runNumber}", api.actionRunDetail)
 	mux.HandleFunc("POST "+base+"/workflows/{workflow}/dispatches", api.dispatchActionWorkflow)

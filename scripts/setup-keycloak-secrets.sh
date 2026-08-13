@@ -104,6 +104,8 @@ set_var LOREHUB_OIDC_CLIENT_SECRET "$(gen_secret 32)"
 set_var LOREHUB_AUTH_SECRET "$(gen_secret 32)"
 set_var LOREHUB_ACTIONS_SECRET_KEY_ID "local-actions-v1"
 set_var LOREHUB_ACTIONS_SECRET_KEY "$(gen_base64_key 32)"
+set_var LOREHUB_RUNNER_TOKEN_KEY_ID "local-runner-v1"
+set_var LOREHUB_RUNNER_TOKEN_KEY "$(gen_secret 32)"
 set_var LOREHUB_WEBHOOK_SECRET_KEY_ID "local-webhooks-v1"
 set_var LOREHUB_WEBHOOK_SECRET_KEY "$(gen_base64_key 32)"
 
