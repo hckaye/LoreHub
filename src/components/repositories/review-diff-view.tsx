@@ -120,8 +120,20 @@ export function ReviewDiffView(props: ReviewDiffViewProps) {
     setPending((current) => (current ? { ...current, commentCount: current.commentCount + 1 } : current));
   };
 
+  // Submitting publishes the batched comments and abandoning removes them, so
+  // the shown threads follow before the server data is reloaded.
   const finishPendingReview = (submitted: boolean) => {
     setPending(null);
+    setThreads((current) =>
+      current
+        .map((thread) => ({
+          ...thread,
+          comments: submitted
+            ? thread.comments.map((comment) => ({ ...comment, pending: false }))
+            : thread.comments.filter((comment) => !comment.pending),
+        }))
+        .filter((thread) => thread.comments.length > 0),
+    );
     setMessage(submitted ? props.dictionary.pendingReviews.submitted : "");
     router.refresh();
   };
