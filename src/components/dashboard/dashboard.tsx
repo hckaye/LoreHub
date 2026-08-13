@@ -31,7 +31,7 @@ export function Dashboard({ dashboard, locale, dictionary, unavailable, userName
         />
         <div className={styles.main}>
           <h1>{dictionary.home.homeTitle}</h1>
-          <DashboardActivity dashboard={dashboard} dictionary={dictionary} unavailable={unavailable} />
+          <DashboardActivity dashboard={dashboard} dictionary={dictionary} locale={locale} unavailable={unavailable} />
         </div>
         <DashboardExplore dashboard={dashboard} dictionary={dictionary} locale={locale} unavailable={unavailable} />
       </div>
@@ -50,6 +50,7 @@ type DashboardSidebarProps = {
 function DashboardSidebar(props: DashboardSidebarProps) {
   const repositories = props.dashboard?.repositories ?? [];
   const organizations = props.dashboard?.organizations ?? [];
+  const visibleRepositories = repositories.slice(0, 12);
   return (
     <aside className={styles.sidebar}>
       <p className={styles.identity}>{props.userName}</p>
@@ -60,17 +61,24 @@ function DashboardSidebar(props: DashboardSidebarProps) {
           {props.dictionary.common.newRepository}
         </Link>
       </div>
-      {repositories.length > 0 ? (
-        <ul className={styles.repositoryList}>
-          {repositories.slice(0, 12).map((repository) => (
-            <li key={repository.id}>
-              <Link href={repositoryPath(props.locale, repository.owner, repository.slug)}>
-                <Package aria-hidden="true" size={16} />
-                <span>{repository.owner}</span>/<strong>{repository.slug}</strong>
-              </Link>
-            </li>
-          ))}
-        </ul>
+      {visibleRepositories.length > 0 ? (
+        <>
+          <ul className={styles.repositoryList}>
+            {visibleRepositories.map((repository) => (
+              <li key={repository.id}>
+                <Link href={repositoryPath(props.locale, repository.owner, repository.slug)}>
+                  <Package aria-hidden="true" size={16} />
+                  <span>{repository.owner}</span>/<strong>{repository.slug}</strong>
+                </Link>
+              </li>
+            ))}
+          </ul>
+          {repositories.length > visibleRepositories.length && (
+            <Link className={styles.showMore} href={`/${props.locale}/profile`}>
+              {props.dictionary.home.showMore}
+            </Link>
+          )}
+        </>
       ) : (
         <p className={styles.sidebarEmpty}>
           {props.unavailable
@@ -79,16 +87,24 @@ function DashboardSidebar(props: DashboardSidebarProps) {
         </p>
       )}
       <h2 className={styles.organizationsTitle}>{props.dictionary.common.organizations}</h2>
-      <ul className={styles.organizationList}>
-        {organizations.map((organization) => (
-          <li key={organization.id}>
-            <Link href={`/${props.locale}/organizations/${encodeURIComponent(organization.slug)}`}>
-              <span aria-hidden="true">{organization.displayName.slice(0, 1).toLocaleUpperCase()}</span>
-              {organization.displayName}
-            </Link>
-          </li>
-        ))}
-      </ul>
+      {organizations.length > 0 ? (
+        <ul className={styles.organizationList}>
+          {organizations.map((organization) => (
+            <li key={organization.id}>
+              <Link href={`/${props.locale}/organizations/${encodeURIComponent(organization.slug)}`}>
+                <span aria-hidden="true">{organization.displayName.slice(0, 1).toLocaleUpperCase()}</span>
+                {organization.displayName}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className={styles.sidebarEmpty}>
+          {props.unavailable
+            ? props.dictionary.home.apiUnavailableBody
+            : props.dictionary.home.organizationsEmptyBody}
+        </p>
+      )}
     </aside>
   );
 }
@@ -96,10 +112,11 @@ function DashboardSidebar(props: DashboardSidebarProps) {
 type DashboardActivityProps = {
   dashboard: DashboardData | null;
   dictionary: Dictionary;
+  locale: Locale;
   unavailable: boolean;
 };
 
-function DashboardActivity({ dashboard, dictionary, unavailable }: DashboardActivityProps) {
+function DashboardActivity({ dashboard, dictionary, locale, unavailable }: DashboardActivityProps) {
   const notifications = dashboard?.notifications ?? [];
   return (
     <section className={styles.activity}>
@@ -111,7 +128,7 @@ function DashboardActivity({ dashboard, dictionary, unavailable }: DashboardActi
         <ul className={styles.notificationList}>
           {notifications.map((notification) => (
             <li data-unread={!notification.readAt} key={notification.id}>
-              <Link href={notification.href}>
+              <Link href={localizeHref(notification.href, locale)}>
                 <strong>{notification.title}</strong>
                 <span>{notification.body || notification.topic}</span>
               </Link>
@@ -146,12 +163,14 @@ function DashboardExplore({ dashboard, dictionary, locale, unavailable }: Dashbo
       </div>
       {unavailable ? (
         <p className={styles.sidebarEmpty}>{dictionary.home.apiUnavailableBody}</p>
-      ) : (
+      ) : repositories.length > 0 ? (
         <div className={styles.cards}>
           {repositories.slice(0, 4).map((repository) => (
             <RepositoryCard dictionary={dictionary} key={repository.id} locale={locale} repository={repository} />
           ))}
         </div>
+      ) : (
+        <p className={styles.sidebarEmpty}>{dictionary.home.discoverEmptyBody}</p>
       )}
       <a className={styles.docsLink} href="https://github.com/EpicGames/lore" rel="noreferrer" target="_blank">
         <BookOpenText aria-hidden="true" size={16} />
@@ -159,4 +178,11 @@ function DashboardExplore({ dashboard, dictionary, locale, unavailable }: Dashbo
       </a>
     </aside>
   );
+}
+
+function localizeHref(href: string, locale: Locale): string {
+  if (href === "/" || href.startsWith(`/${locale}/`)) {
+    return href === "/" ? `/${locale}` : href;
+  }
+  return `/${locale}${href.startsWith("/") ? href : `/${href}`}`;
 }
