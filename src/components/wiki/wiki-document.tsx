@@ -90,7 +90,7 @@ export function WikiDocument(props: WikiDocumentProps) {
 
   return (
     <div className={styles.layout}>
-      <main className={styles.document}>
+      <section className={styles.document}>
         {props.revision && (
           <div className={styles.revisionNotice}>
             <span>
@@ -169,7 +169,7 @@ export function WikiDocument(props: WikiDocumentProps) {
             <MarkdownContent body={displayed.body ?? ""} />
           </div>
         )}
-      </main>
+      </section>
       <aside className={styles.history}>
         <h2>
           <Clock3 aria-hidden="true" size={16} />
