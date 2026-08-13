@@ -32,6 +32,7 @@ import (
 	"github.com/lorehub/lorehub/services/api/internal/repodeletion"
 	"github.com/lorehub/lorehub/services/api/internal/reviewthreads"
 	"github.com/lorehub/lorehub/services/api/internal/runner"
+	"github.com/lorehub/lorehub/services/api/internal/servercert"
 	"github.com/lorehub/lorehub/services/api/internal/statuses"
 	"github.com/lorehub/lorehub/services/api/internal/webhooks"
 	"github.com/lorehub/lorehub/services/api/internal/wiki"
@@ -125,6 +126,12 @@ func run(logger *slog.Logger) error {
 	var cleanupStore auth.CleanupStore
 	var secretCodec *auth.SecretCodec
 	loresSecretCodec, err := auth.NewSecretCodec(settings.LoresTokenKey)
+	if err != nil {
+		return err
+	}
+	loreServerCertificateIssuer, err := servercert.NewIssuerFromFiles(
+		settings.LoreServerCACert, settings.LoreServerCAKey,
+	)
 	if err != nil {
 		return err
 	}
@@ -314,6 +321,7 @@ func run(logger *slog.Logger) error {
 		httpapi.WithRunners(store, runnerTokenCodec, settings.RunnerTokenKeyID),
 		httpapi.WithLoreServers(store, loresSecretCodec, settings.LoresTokenKeyID,
 			settings.LoreAllowPrivateServers),
+		httpapi.WithLoreServerCertificates(store, loreServerCertificateIssuer),
 		httpapi.WithRunnerControlPlane(actionsStore, actionsContext, actionsJobTokens, httpapi.RunnerControlConfig{
 			LeaseDuration:         settings.RunnerLeaseDuration,
 			LogMaxBytes:           settings.RunnerLogMaxBytes,

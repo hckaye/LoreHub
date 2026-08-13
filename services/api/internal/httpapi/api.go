@@ -26,6 +26,7 @@ import (
 	releasesapi "github.com/lorehub/lorehub/services/api/internal/releases"
 	reviewthreadsapi "github.com/lorehub/lorehub/services/api/internal/reviewthreads"
 	"github.com/lorehub/lorehub/services/api/internal/runner"
+	"github.com/lorehub/lorehub/services/api/internal/servercert"
 	statusesapi "github.com/lorehub/lorehub/services/api/internal/statuses"
 	wikiapi "github.com/lorehub/lorehub/services/api/internal/wiki"
 )
@@ -186,6 +187,15 @@ type LoreServerStore interface {
 	ValidateRepositoryImportServer(context.Context, platform.User, string, string, string) error
 }
 
+type LoreServerCertificateStore interface {
+	AuthenticateServer(context.Context, []byte, string, time.Time) (platform.LoreServer, error)
+	RecordServerCertificate(context.Context, string, string, time.Time, time.Time) error
+}
+
+type LoreServerCertificateIssuer interface {
+	Issue(string, time.Time) (servercert.Certificate, error)
+}
+
 type RunnerControlStore interface {
 	RunnerClaimJob(context.Context, []byte, string, time.Time, time.Duration) (*runner.Job, error)
 	RunnerLeaseJob(context.Context, string, string) (runner.Job, error)
@@ -259,6 +269,8 @@ type API struct {
 	loresSecrets            *auth.SecretCodec
 	loresTokenKeyID         string
 	loreAllowPrivateServers bool
+	loreServerCertificates  LoreServerCertificateStore
+	loreServerCertIssuer    LoreServerCertificateIssuer
 	runnerControl           RunnerControlStore
 	runnerExecutionContext  runner.ExecutionContextResolver
 	runnerJobTokenIssuer    runner.JobTokenIssuer
@@ -390,6 +402,16 @@ func WithLoreServers(
 		api.loresSecrets = secrets
 		api.loresTokenKeyID = strings.TrimSpace(tokenKeyID)
 		api.loreAllowPrivateServers = allowPrivateServers
+	}
+}
+
+func WithLoreServerCertificates(
+	store LoreServerCertificateStore,
+	issuer LoreServerCertificateIssuer,
+) Option {
+	return func(api *API) {
+		api.loreServerCertificates = store
+		api.loreServerCertIssuer = issuer
 	}
 }
 

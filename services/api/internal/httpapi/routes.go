@@ -80,6 +80,7 @@ func (api *API) registerCoreRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/explore/repositories", api.exploreRepositories)
 	mux.HandleFunc("POST /api/v1/lore-servers/register", api.registerLoreServer)
 	mux.HandleFunc("POST /api/v1/lore-servers/heartbeat", api.heartbeatLoreServer)
+	mux.HandleFunc("POST /api/v1/lore-servers/certificate", api.issueLoreServerCertificate)
 }
 
 func (api *API) registerOrganizationRoutes(mux *http.ServeMux) {

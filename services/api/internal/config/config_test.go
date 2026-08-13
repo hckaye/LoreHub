@@ -622,6 +622,7 @@ func setRequiredEnvironment(t *testing.T) {
 		"LOREHUB_AUTH_SIGNING_KEY_PATH", "LOREHUB_AUTH_SIGNING_KEY", "LOREHUB_AUTH_SIGNING_KEY_KID",
 		"LOREHUB_AUTH_PREVIOUS_KEYS", "LOREHUB_LORE_AUTH_TLS_CERT", "LOREHUB_LORE_AUTH_TLS_KEY",
 		"LOREHUB_POLICY_TLS_CERT", "LOREHUB_POLICY_TLS_KEY", "LOREHUB_POLICY_TLS_CLIENT_CA",
+		"LOREHUB_LORE_SERVER_CA_CERT", "LOREHUB_LORE_SERVER_CA_KEY",
 	} {
 		t.Setenv(name, "")
 	}
@@ -655,6 +656,8 @@ func setProductionEnvironment(t *testing.T) {
 	t.Setenv("LOREHUB_POLICY_TLS_CERT", "/tls/server.crt")
 	t.Setenv("LOREHUB_POLICY_TLS_KEY", "/tls/server.key")
 	t.Setenv("LOREHUB_POLICY_TLS_CLIENT_CA", "/tls/ca.crt")
+	t.Setenv("LOREHUB_LORE_SERVER_CA_CERT", "/tls/server-ca.crt")
+	t.Setenv("LOREHUB_LORE_SERVER_CA_KEY", "/tls/server-ca.key")
 	t.Setenv("LOREHUB_LORE_POLICY_ENDPOINT", "https://lorehub.example:8444/internal/lore/policy")
 	t.Setenv("LOREHUB_LORE_OBSERVATION_ENDPOINT", "https://lorehub.example:8444/internal/lore/observation")
 	t.Setenv("LOREHUB_LORE_PUBLIC_READER_SUBJECT", "00000000-0000-4000-8000-000000000001")

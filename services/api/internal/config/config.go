@@ -62,6 +62,8 @@ func LoadFor(command string) (Config, error) {
 	policyTLSCert := os.Getenv("LOREHUB_POLICY_TLS_CERT")
 	policyTLSKey := os.Getenv("LOREHUB_POLICY_TLS_KEY")
 	policyTLSCA := os.Getenv("LOREHUB_POLICY_TLS_CLIENT_CA")
+	loreServerCACert := os.Getenv("LOREHUB_LORE_SERVER_CA_CERT")
+	loreServerCAKey := os.Getenv("LOREHUB_LORE_SERVER_CA_KEY")
 	signingKeyKID := os.Getenv("LOREHUB_AUTH_SIGNING_KEY_KID")
 	loreCredentials, err := parseLoreCredentials(os.Getenv("LOREHUB_LORE_CREDENTIALS"))
 	if err != nil {
@@ -105,6 +107,8 @@ func LoadFor(command string) (Config, error) {
 		policyTLSCert = defaultIfEmpty(policyTLSCert, "/var/lib/lorehub/tls/server.crt")
 		policyTLSKey = defaultIfEmpty(policyTLSKey, "/var/lib/lorehub/tls/server.key")
 		policyTLSCA = defaultIfEmpty(policyTLSCA, "/var/lib/lorehub/tls/ca.crt")
+		loreServerCACert = defaultIfEmpty(loreServerCACert, "/var/lib/lorehub/tls/ca.crt")
+		loreServerCAKey = defaultIfEmpty(loreServerCAKey, "/var/lib/lorehub/tls-ca/ca.key")
 		signingKeyKID = defaultIfEmpty(signingKeyKID, "local-current")
 	}
 	loreInternalURL = defaultIfEmpty(loreInternalURL, lorePublicURL)
@@ -310,6 +314,8 @@ func LoadFor(command string) (Config, error) {
 		LoresTokenKey:                     loresTokenKey,
 		LoresTokenKeyID:                   loresTokenKeyID,
 		LoreAllowPrivateServers:           loreAllowPrivateServers,
+		LoreServerCACert:                  loreServerCACert,
+		LoreServerCAKey:                   loreServerCAKey,
 		LoreAuthAddress:                   envOrDefault("LOREHUB_LORE_AUTH_ADDRESS", ":8443"),
 		LoreAuthCompatAddress:             os.Getenv("LOREHUB_LORE_AUTH_COMPAT_ADDRESS"),
 		LoreAuthTLSCert:                   loreAuthTLSCert,
@@ -690,6 +696,16 @@ func validate(config Config, command string) error {
 		} {
 			if value == "" {
 				return fmt.Errorf("%s is required in production", name)
+			}
+		}
+		if command == "serve" {
+			for name, value := range map[string]string{
+				"LOREHUB_LORE_SERVER_CA_CERT": config.LoreServerCACert,
+				"LOREHUB_LORE_SERVER_CA_KEY":  config.LoreServerCAKey,
+			} {
+				if value == "" {
+					return fmt.Errorf("%s is required in production", name)
+				}
 			}
 		}
 	}
