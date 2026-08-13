@@ -24,6 +24,7 @@ import {
 } from "@/lib/comment-pagination";
 import { abbreviateCount, formatDate, formatRelativeTime } from "@/lib/format";
 import { mutationFailureMessage } from "@/lib/mutation-messages";
+import { repositoryReactionsPath } from "@/lib/reactions";
 import { repositoryPath } from "@/lib/routes";
 
 import { FlashNotice } from "../ui/flash-notice";
@@ -32,6 +33,7 @@ import { MarkdownContent } from "../wiki/markdown-content";
 import { ConversationPagination } from "./conversation-pagination";
 import styles from "./pull-request-conversation.module.css";
 import { PullRequestReviewers } from "./pull-request-reviewers";
+import { ReactionBar } from "./reaction-bar";
 
 type PullRequestConversationProps = {
   comments: CommentPage<MergeRequestComment> | null;
@@ -174,6 +176,9 @@ export function PullRequestConversation(props: PullRequestConversationProps) {
         locale={props.locale}
         mergeRequest={props.mergeRequest}
         onUpdate={updateMergeRequest}
+        owner={props.owner}
+        repository={props.repository}
+        session={props.session}
       />
       {props.mergeRequest.viewerCanUpdate && props.mergeRequest.state === "open" && (
         <DraftControl
@@ -206,6 +211,9 @@ export function PullRequestConversation(props: PullRequestConversationProps) {
               locale={props.locale}
               onDelete={deleteComment}
               onUpdate={updateComment}
+              owner={props.owner}
+              repository={props.repository}
+              session={props.session}
             />
           ))
         )}
@@ -261,6 +269,9 @@ type DescriptionProps = {
   locale: Locale;
   mergeRequest: MergeRequest;
   onUpdate(input: Partial<Pick<MergeRequest, "title" | "body" | "state">>): Promise<boolean>;
+  owner: string;
+  repository: string;
+  session: AuthSession;
 };
 
 function PullRequestDescription(props: DescriptionProps) {
@@ -321,6 +332,14 @@ function PullRequestDescription(props: DescriptionProps) {
           <MarkdownContent body={props.mergeRequest.body || labels.noDescription} />
         </div>
       )}
+      <ReactionBar
+        apiPath={repositoryReactionsPath(props.owner, props.repository)}
+        dictionary={props.dictionary}
+        reactions={props.mergeRequest.reactions}
+        session={props.session}
+        subjectId={props.mergeRequest.id}
+        subjectKind="merge_request"
+      />
       {props.mergeRequest.viewerCanUpdate && props.mergeRequest.state !== "merged" && !editing && (
         <button
           className={styles.stateButton}
@@ -342,6 +361,9 @@ type CommentProps = {
   locale: Locale;
   onDelete(commentID: string): Promise<void>;
   onUpdate(commentID: string, body: string): Promise<boolean>;
+  owner: string;
+  repository: string;
+  session: AuthSession;
 };
 
 function Comment(props: CommentProps) {
@@ -398,6 +420,14 @@ function Comment(props: CommentProps) {
           <MarkdownContent body={props.comment.body} />
         </div>
       )}
+      <ReactionBar
+        apiPath={repositoryReactionsPath(props.owner, props.repository)}
+        dictionary={props.dictionary}
+        reactions={props.comment.reactions}
+        session={props.session}
+        subjectId={props.comment.id}
+        subjectKind="merge_request_comment"
+      />
     </article>
   );
 }

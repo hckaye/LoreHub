@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import type { IssueComment, MergeRequestComment } from "./api-types";
 import type { CommentPage } from "./comment-page-types";
+import { optionalReactionsSchema } from "./reaction-contract";
 
 const timestamp = z.string().refine((value) => Number.isFinite(Date.parse(value)));
 
@@ -13,6 +14,7 @@ const issueCommentSchema = z
     body: z.string(),
     createdAt: timestamp,
     editedAt: timestamp.nullable(),
+    reactions: optionalReactionsSchema,
     viewerCanUpdate: z.boolean(),
   })
   .strict();
@@ -25,6 +27,7 @@ const mergeRequestCommentSchema = z
     body: z.string(),
     createdAt: timestamp,
     editedAt: timestamp.nullable(),
+    reactions: optionalReactionsSchema,
     viewerCanUpdate: z.boolean(),
   })
   .strict();
