@@ -88,9 +88,9 @@ func newLabelCreateCommand(state *rootState) *cobra.Command {
 			var response label
 			input := struct {
 				Name        string `json:"name"`
-				Color       string `json:"color"`
 				Description string `json:"description"`
-			}{Name: name, Color: color, Description: description}
+				Color       string `json:"color"`
+			}{Name: name, Description: description, Color: color}
 			if err := postJSON(command.Context(), client, methodPath(repository, "/labels"), input, &response); err != nil {
 				return statusError(command, "create label", err)
 			}

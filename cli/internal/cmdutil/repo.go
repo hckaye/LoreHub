@@ -43,7 +43,7 @@ func newRepoCloneCommand(state *rootState) *cobra.Command {
 			if err != nil || repoContext.Host != "" {
 				return fmt.Errorf("repository must be OWNER/NAME")
 			}
-			repoContext.Host = state.host()
+			repoContext.Host = state.commandHost()
 			client, err := state.clientForRepo(repoContext)
 			if err != nil {
 				return err
