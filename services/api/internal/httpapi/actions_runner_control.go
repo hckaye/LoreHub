@@ -10,6 +10,7 @@ import (
 	"unicode"
 
 	"github.com/lorehub/lorehub/services/api/internal/auth"
+	loreclient "github.com/lorehub/lorehub/services/api/internal/lore"
 	"github.com/lorehub/lorehub/services/api/internal/platform"
 	"github.com/lorehub/lorehub/services/api/internal/runner"
 )
@@ -113,7 +114,32 @@ func (api *API) runnerJobToken(writer http.ResponseWriter, request *http.Request
 		api.internalError(writer, request, "issue runner job token", err)
 		return
 	}
-	writeJSON(writer, http.StatusOK, token)
+	credentials := runner.JobCredentials{JobToken: token}
+	if api.loreCredentials != nil && api.serviceSubjects.ActionsRunner != "" {
+		repository := loreclient.RepositoryRef{
+			CacheKey: job.RepositoryID, URL: job.LoreURL, LoreRepositoryID: job.LoreRepositoryID,
+		}
+		partition, err := repository.ValidatedPartition()
+		if err != nil {
+			api.internalError(writer, request, "validate runner checkout repository", err)
+			return
+		}
+		checkout, err := api.loreCredentials.ForRepository(
+			request.Context(), loreclient.CredentialRequest{
+				Principal: loreclient.ServicePrincipal(
+					loreclient.ServicePurposeActionsRunner, api.serviceSubjects.ActionsRunner,
+				),
+				Repository: repository, Partition: partition, Scope: loreclient.ScopeRead,
+			},
+		)
+		if err != nil {
+			api.internalError(writer, request, "issue runner checkout credential", err)
+			return
+		}
+		encoded := runner.NewCheckoutCredential(checkout)
+		credentials.Checkout = &encoded
+	}
+	writeJSON(writer, http.StatusOK, credentials)
 }
 
 func (api *API) runnerJobLogs(writer http.ResponseWriter, request *http.Request) {

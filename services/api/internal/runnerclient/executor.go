@@ -6,11 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
+	loreclient "github.com/lorehub/lorehub/services/api/internal/lore"
 	"github.com/lorehub/lorehub/services/api/internal/runner"
 )
 
@@ -107,24 +109,18 @@ func (executor *ShellExecutor) Execute(
 	if err != nil {
 		return ExecutionResult{}, err
 	}
-	jobToken, err := client.JobToken(ctx, job.ID)
+	jobCredentials, err := client.JobToken(ctx, job.ID)
 	if err != nil {
 		return ExecutionResult{}, err
 	}
-	contextValues.Secrets["GITHUB_TOKEN"] = jobToken.Token
+	contextValues.Secrets["GITHUB_TOKEN"] = jobCredentials.Token
 	var logBuffer boundedBuffer
 	logBuffer.maximum = executor.config.LogMaxBytes
 	masker := runner.NewMaskingLogWriter(
 		&logBuffer, contextValues.Secrets, executor.config.LogMaxLineBytes, nil,
 	)
 	repositoryPath := filepath.Join(workspace, "repository")
-	clone := exec.CommandContext(
-		ctx, executor.config.LoreBinary, "clone", "--revision", job.Revision, job.LoreURL, repositoryPath,
-	)
-	clone.Stdout = masker
-	clone.Stderr = masker
-	clone.Env = append(safeCommandEnvironment(), "LOREHUB_ACTIONS_JOB_TOKEN="+jobToken.Token)
-	if err := clone.Run(); err != nil {
+	if err := executor.cloneRevision(ctx, job, repositoryPath, jobCredentials); err != nil {
 		_ = masker.Flush()
 		return executionFailure(logBuffer.Bytes(), fmt.Errorf("clone Lore revision: %w", err)), nil
 	}
@@ -196,6 +192,52 @@ func (executor *ShellExecutor) Execute(
 		}
 	}
 	return result, nil
+}
+
+func (executor *ShellExecutor) cloneRevision(
+	ctx context.Context,
+	job runner.Job,
+	destination string,
+	credentials runner.JobCredentials,
+) error {
+	if credentials.Checkout == nil {
+		return errors.New("runner checkout credential is unavailable")
+	}
+	checkout := credentials.Checkout.LoreCredential()
+	var client *loreclient.SDKClient
+	var err error
+	cacheDirectory := filepath.Join(executor.config.WorkDirectory, ".lore-cache")
+	if checkout.InsecureDevelopment {
+		client, err = loreclient.NewDevelopmentSDKClient(cacheDirectory)
+	} else {
+		authAuthority, authorityErr := checkoutAuthAuthority(checkout.AuthURL)
+		if authorityErr != nil {
+			return authorityErr
+		}
+		client, err = loreclient.NewSDKClientWithAuthAuthority(cacheDirectory, authAuthority)
+	}
+	if err != nil {
+		return err
+	}
+	if err := client.ConfigureBinary(executor.config.LoreBinary); err != nil {
+		return err
+	}
+	return client.CloneRevisionWithCredential(ctx, loreclient.RepositoryRef{
+		CacheKey: job.RepositoryID, URL: job.LoreURL, LoreRepositoryID: job.LoreRepositoryID,
+	}, checkout, job.Revision, destination)
+}
+
+func checkoutAuthAuthority(authURL string) (string, error) {
+	parsed, err := url.Parse(strings.TrimSpace(authURL))
+	if err != nil || parsed.Host == "" || parsed.User != nil ||
+		(parsed.Scheme != "ucs-auth" && parsed.Scheme != "https") {
+		return "", errors.New("runner checkout Auth URL is invalid")
+	}
+	authority := parsed.Host
+	if err := loreclient.ValidateAuthAuthority(authority); err != nil {
+		return "", err
+	}
+	return authority, nil
 }
 
 func (executor *ShellExecutor) readArtifacts(root string) ([]Artifact, error) {

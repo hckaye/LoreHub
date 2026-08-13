@@ -127,8 +127,8 @@ func (client *Client) ExecutionContext(
 	return response, err
 }
 
-func (client *Client) JobToken(ctx context.Context, jobID string) (runner.JobToken, error) {
-	var response runner.JobToken
+func (client *Client) JobToken(ctx context.Context, jobID string) (runner.JobCredentials, error) {
+	var response runner.JobCredentials
 	err := client.requestJSON(ctx, http.MethodPost, client.jobPath(jobID, "token"), nil, &response, nil)
 	return response, err
 }
