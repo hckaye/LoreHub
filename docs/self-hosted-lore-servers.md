@@ -35,6 +35,42 @@ The agent accepts `--lore-version` and `--hook-module-version` on `configure` an
 variables are `LOREHUB_LORE_VERSION` and `LOREHUB_HOOK_MODULE_VERSION`. The defaults are `0.8.6` and `1.0.0`.
 Override them when the Lore build or hook module uses another supported version.
 
+## Hook client certificate
+
+After registration, request the initial client certificate:
+
+```bash
+sudo -u lorehub-lores /usr/local/bin/lorehub-lores-agent renew-certificate \
+  --config-dir /var/lib/lorehub-lores-agent
+```
+
+The command authenticates with the saved `lhss_` credential and calls
+`POST /api/v1/lore-servers/certificate`. It writes `hook-client.crt` and `hook-client.key` into the configuration
+directory with mode `0600`. The certificate is valid for 30 days and has a CommonName of
+`lore-server-<server-id>`. LoreHub stores only its serial number, issue time, and expiry.
+
+Set the Lore hook certificate paths to the generated files. The CA file must trust the CA used by the LoreHub policy
+endpoint:
+
+```toml
+[hooks.lorehub_policy]
+ca_certificate = "/etc/lorehub/lorehub-ca.crt"
+client_certificate = "/var/lib/lorehub-lores-agent/hook-client.crt"
+client_key = "/var/lib/lorehub-lores-agent/hook-client.key"
+```
+
+The Lore process must be able to read the files without widening their permissions. Run Lore under the
+`lorehub-lores` account when using the default paths. The hook reads the certificate and key when Lore starts, so
+restart Lore after running `renew-certificate` manually.
+
+The agent requests a new certificate when the files are missing or the certificate has seven days or less remaining.
+It checks the expiry before every heartbeat. Reload or restart Lore after the agent logs a successful renewal if the
+running Lore version does not reload TLS files.
+
+LoreHub checks the server registration and repository assignment on every policy and observation request. A server
+certificate cannot authorize requests for repositories assigned to another server. Revoking the server makes existing
+certificates fail immediately.
+
 ## Install and start the agent
 
 Build the command and install the binary and systemd unit:
@@ -65,9 +101,9 @@ sudo -u lorehub-lores /usr/local/bin/lorehub-lores-agent configure \
 sudo systemctl enable --now lorehub-lores-agent.service
 ```
 
-`run` sends the first heartbeat immediately and sends another heartbeat every 60 seconds by default. Use
-`--interval 30s` to change the interval. Each request includes the build versions, process ID, start time, and
-uptime in `healthMetadata`.
+`run` obtains a hook certificate when one is missing, then sends the first heartbeat immediately. It sends another
+heartbeat every 60 seconds by default. Use `--interval 30s` to change the interval. Each request includes the build
+versions, process ID, start time, and uptime in `healthMetadata`.
 
 The agent exits with a clear authentication error when LoreHub returns 401, including after a server is revoked.
 Other heartbeat failures are logged and retried. SIGTERM stops the loop without an error.
