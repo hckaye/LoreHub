@@ -23,6 +23,15 @@ type prListFlags struct {
 	target    string
 }
 
+type mergeRequestComment struct {
+	ID             string     `json:"id"`
+	MergeRequestID string     `json:"mergeRequestId"`
+	Author         string     `json:"author"`
+	Body           string     `json:"body"`
+	CreatedAt      time.Time  `json:"createdAt"`
+	EditedAt       *time.Time `json:"editedAt"`
+}
+
 func newPRCommand(state *rootState) *cobra.Command {
 	prCommand := &cobra.Command{
 		Use:   "pr",
@@ -32,9 +41,130 @@ func newPRCommand(state *rootState) *cobra.Command {
 		newPRListCommand(state),
 		newPRViewCommand(state),
 		newPRCreateCommand(state),
+		newPREditCommand(state),
+		newPRCommentCommand(state),
+		newPRStateCommand(state, "close", "closed"),
+		newPRStateCommand(state, "reopen", "open"),
 		newPRMergeCommand(state),
 	)
 	return prCommand
+}
+
+func newPREditCommand(state *rootState) *cobra.Command {
+	var title string
+	var body string
+	command := &cobra.Command{
+		Use:   "edit NUMBER",
+		Short: "Edit a pull request",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(command *cobra.Command, args []string) error {
+			number, err := checkNumber(args[0])
+			if err != nil {
+				return err
+			}
+			input := map[string]string{}
+			if command.Flags().Changed("title") {
+				input["title"] = title
+			}
+			if command.Flags().Changed("body") {
+				input["body"] = body
+			}
+			if len(input) == 0 {
+				return fmt.Errorf("at least one of --title or --body is required")
+			}
+			repository, err := state.resolveRepo()
+			if err != nil {
+				return err
+			}
+			client, err := state.clientForRepo(repository)
+			if err != nil {
+				return err
+			}
+			var response mergeRequest
+			if err := patchJSON(command.Context(), client,
+				methodPath(repository, "/merge-requests/"+number), input, &response); err != nil {
+				return statusError(command, "edit pull request", err)
+			}
+			if state.json {
+				return state.writeJSON(response)
+			}
+			_, err = fmt.Fprintf(command.OutOrStdout(), "Edited pull request #%s\n", number)
+			return err
+		},
+	}
+	command.Flags().StringVar(&title, "title", "", "new pull request title")
+	command.Flags().StringVar(&body, "body", "", "new pull request body")
+	return command
+}
+
+func newPRCommentCommand(state *rootState) *cobra.Command {
+	var body string
+	command := &cobra.Command{
+		Use:   "comment NUMBER",
+		Short: "Comment on a pull request",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(command *cobra.Command, args []string) error {
+			number, err := checkNumber(args[0])
+			if err != nil {
+				return err
+			}
+			repository, err := state.resolveRepo()
+			if err != nil {
+				return err
+			}
+			client, err := state.clientForRepo(repository)
+			if err != nil {
+				return err
+			}
+			var response mergeRequestComment
+			if err := postJSON(command.Context(), client,
+				methodPath(repository, "/merge-requests/"+number+"/comments"),
+				map[string]string{"body": body}, &response); err != nil {
+				return statusError(command, "comment on pull request", err)
+			}
+			if state.json {
+				return state.writeJSON(response)
+			}
+			_, err = fmt.Fprintf(command.OutOrStdout(), "Commented on pull request #%s\n", number)
+			return err
+		},
+	}
+	command.Flags().StringVar(&body, "body", "", "comment body")
+	_ = command.MarkFlagRequired("body")
+	return command
+}
+
+func newPRStateCommand(state *rootState, verb string, targetState string) *cobra.Command {
+	return &cobra.Command{
+		Use:   verb + " NUMBER",
+		Short: verb + " a pull request",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(command *cobra.Command, args []string) error {
+			number, err := checkNumber(args[0])
+			if err != nil {
+				return err
+			}
+			repository, err := state.resolveRepo()
+			if err != nil {
+				return err
+			}
+			client, err := state.clientForRepo(repository)
+			if err != nil {
+				return err
+			}
+			var response mergeRequest
+			if err := patchJSON(command.Context(), client, methodPath(repository, "/merge-requests/"+number),
+				map[string]string{"state": targetState}, &response); err != nil {
+				return statusError(command, verb+" pull request", err)
+			}
+			if state.json {
+				return state.writeJSON(response)
+			}
+			label := strings.ToUpper(verb[:1]) + verb[1:]
+			_, err = fmt.Fprintf(command.OutOrStdout(), "%s pull request #%s\n", label, number)
+			return err
+		},
+	}
 }
 
 func newPRListCommand(state *rootState) *cobra.Command {

@@ -45,6 +45,9 @@ func (api *API) registerAdminRoutes(mux *http.ServeMux) {
 func (api *API) registerCoreRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /health/live", api.live)
 	mux.HandleFunc("GET /health/ready", api.ready)
+	if api.operations != nil {
+		mux.HandleFunc("GET /metrics", api.metrics)
+	}
 	mux.HandleFunc("GET /auth/login", api.login)
 	mux.HandleFunc("GET /auth/callback", api.callback)
 	mux.HandleFunc("POST /auth/logout", api.logout)

@@ -124,7 +124,9 @@ format、ファイル長制限、lint、型検査、test、production build、�
 - [Frontendの認証](docs/frontend-auth.ja.md)
 - [リポジトリのアクセス権限](docs/operations/control-plane-authorization.ja.md)
 - [ファイルロック](docs/file-locks.ja.md)
-- [Keycloak、ソーシャルログイン、メール、バックアップ](docs/operations/keycloak.ja.md)
+- [バックアップと復元](docs/operations/backup-and-recovery.ja.md)
+- [メトリクスとアクセス制限](docs/operations/observability.ja.md)
+- [Keycloak、ソーシャルログイン、メール](docs/operations/keycloak.ja.md)
 - [通知メール](docs/operations/email-notifications.ja.md)
 - [GitHub Actions互換範囲とrunner運用](docs/runner-actions.ja.md)
 

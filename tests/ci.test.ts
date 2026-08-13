@@ -19,3 +19,18 @@ test("Lore integration reuses the GitHub Actions cache and loaded images", async
   assert.match(integration, /docker tag "\$LORE_TEST_CLIENT_IMAGE"/);
   assert.match(integration, /build_option=--no-build/);
 });
+
+test("CI validates the CLI, clean Compose setup, and browser flow", async () => {
+  const [workflow, packageFile, browserTest] = await Promise.all([
+    readFile(".github/workflows/ci.yml", "utf8"),
+    readFile("package.json", "utf8"),
+    readFile("e2e/lorehub.spec.ts", "utf8"),
+  ]);
+  assert.match(workflow, /npm run cli:test/);
+  assert.match(workflow, /npm run compose:test/);
+  assert.match(workflow, /browser-e2e:/);
+  assert.match(workflow, /npm run e2e/);
+  assert.match(packageFile, /"e2e": "playwright test"/);
+  assert.match(browserTest, /Create Lore repository/);
+  assert.match(browserTest, /Create issue/);
+});

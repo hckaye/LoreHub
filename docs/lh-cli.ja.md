@@ -60,25 +60,30 @@ lh --host lorehub.example repo set-default acme/widget
 
 ## コマンド
 
-| コマンド                                                        | 説明                          |
-| --------------------------------------------------------------- | ----------------------------- |
-| `lh auth login`, `logout`, `status`                             | ホストごとの API トークン管理 |
-| `lh repo list`, `view`, `create`, `clone`                       | リポジトリの一覧と管理        |
-| `lh issue list`, `view`, `create`, `comment`, `close`, `reopen` | Issue の管理                  |
-| `lh pr list`, `view`, `create`, `merge`                         | プルリクエストの管理          |
-| `lh release list`, `view TAG-or-ID`, `create`                   | リリースの管理                |
-| `lh run list`, `view NUMBER`, `watch NUMBER`                    | Actions 実行の確認            |
-| `lh label list`, `create`, `delete NAME`                        | ラベルの管理                  |
-| `lh search repos QUERY`, `issues QUERY`, `prs QUERY`            | ホスト内の検索                |
-| `lh api PATH`                                                   | `/api/v1` への生リクエスト    |
+| コマンド                                                                      | 説明                          |
+| ----------------------------------------------------------------------------- | ----------------------------- |
+| `lh auth login`, `logout`, `status`                                           | ホストごとの API トークン管理 |
+| `lh repo list`, `view`, `create`, `clone`                                     | リポジトリの一覧と管理        |
+| `lh issue list`, `view`, `create`, `edit`, `comment`, `close`, `reopen`       | Issue の管理                  |
+| `lh pr list`, `view`, `create`, `edit`, `comment`, `close`, `reopen`, `merge` | プルリクエストの管理          |
+| `lh release list`, `view TAG-or-ID`, `create`, `edit`, `delete`               | リリースの管理                |
+| `lh run list`, `view NUMBER`, `watch NUMBER`, `cancel NUMBER`, `rerun NUMBER` | Actions 実行の管理            |
+| `lh label list`, `create`, `edit NAME`, `delete NAME`                         | ラベルの管理                  |
+| `lh search repos QUERY`, `issues QUERY`, `prs QUERY`                          | ホスト内の検索                |
+| `lh api PATH`                                                                 | `/api/v1` への生リクエスト    |
+| `lh config list`, `get`, `set`, `unset`                                       | 秘密値以外の設定管理          |
+| `lh completion bash`, `zsh`, `fish`, `powershell`                             | shell completion の生成       |
 
 コマンドの補足:
 
 - `lh repo clone` はリポジトリ URL で `lore` CLI にログインしてから `lore clone` を実行します。
 - `lh release create` は `--tag`、`--title`、`--notes`、`--branch` を受け付けます。
+- `lh release edit`と`delete`はreleaseのtagまたはIDを受け取り、現在のversionを指定して更新します。
 - `lh run watch` は `--interval` と `--timeout` を受け付け、結論が `success` の場合だけ正常終了します。
-- `lh label create` は `--name`、`--color`、`--description` を受け付けます。`delete` は名前をラベル ID に
-  解決します。
+- `lh label create`は`--name`、`--color`、`--description`を受け付けます。`edit`と`delete`は名前からlabel IDを
+  取得します。
+- `lh config`は保存済みtokenを表示せず、`default-repo`を読み書きします。`host`、`config-file`、
+  `token-source`は読み取り専用です。
 
 `lh repo clone`には`PATH`上の`lore`バイナリが必要です。実行前にAPI tokenの権限を確認します。必要な権限がない場合は
 不足している権限を表示し、`lore`を実行しません。

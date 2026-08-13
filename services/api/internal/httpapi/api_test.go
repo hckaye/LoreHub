@@ -7,7 +7,10 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/lorehub/lorehub/services/api/internal/auth"
 	loreclient "github.com/lorehub/lorehub/services/api/internal/lore"
@@ -156,5 +159,96 @@ func TestExploreRepositories(t *testing.T) {
 	}
 	if response.Header().Get("X-Content-Type-Options") != "nosniff" {
 		t.Fatal("security headers were not applied")
+	}
+}
+
+func TestOperationalMetricsRequireTokenAndUseRoutePatterns(t *testing.T) {
+	t.Parallel()
+	handler := New(
+		fakeStore{repositories: []platform.Repository{}},
+		fakeLore{},
+		auth.DisabledAuthenticator{},
+		healthy{},
+		"",
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		WithOperationalEndpoints(OperationalOptions{
+			MetricsToken:      strings.Repeat("m", 32),
+			RateLimitRequests: 10,
+			RateLimitWindow:   time.Minute,
+		}),
+	)
+
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/explore/repositories", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("explore status = %d", response.Code)
+	}
+
+	unauthorized := httptest.NewRecorder()
+	handler.ServeHTTP(unauthorized, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if unauthorized.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthorized metrics status = %d", unauthorized.Code)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	request.Header.Set("Authorization", "Bearer "+strings.Repeat("m", 32))
+	metrics := httptest.NewRecorder()
+	handler.ServeHTTP(metrics, request)
+	if metrics.Code != http.StatusOK {
+		t.Fatalf("metrics status = %d", metrics.Code)
+	}
+	body := metrics.Body.String()
+	if !strings.Contains(body,
+		`lorehub_http_requests_total{method="GET",route="/api/v1/explore/repositories",status="200"} 1`) {
+		t.Fatalf("metrics did not contain the normalized route:\n%s", body)
+	}
+}
+
+func TestRateLimitRejectsExcessRequests(t *testing.T) {
+	t.Parallel()
+	handler := New(
+		fakeStore{repositories: []platform.Repository{}},
+		fakeLore{},
+		auth.DisabledAuthenticator{},
+		healthy{},
+		"",
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		WithOperationalEndpoints(OperationalOptions{
+			RateLimitRequests: 2,
+			RateLimitWindow:   time.Minute,
+		}),
+	)
+
+	for attempt := 1; attempt <= 3; attempt++ {
+		request := httptest.NewRequest(http.MethodGet, "/api/v1/explore/repositories", nil)
+		request.RemoteAddr = "192.0.2.10:1234"
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if attempt < 3 && response.Code != http.StatusOK {
+			t.Fatalf("attempt %d status = %d", attempt, response.Code)
+		}
+		if attempt == 3 && (response.Code != http.StatusTooManyRequests ||
+			response.Header().Get("Retry-After") == "") {
+			t.Fatalf("rate-limited response = %d headers=%v", response.Code, response.Header())
+		}
+	}
+}
+
+func TestRateLimitTrustsForwardedAddressOnlyFromConfiguredProxy(t *testing.T) {
+	prefix := netip.MustParsePrefix("10.0.0.0/8")
+	limiter := &fixedWindowLimiter{trustedProxies: []netip.Prefix{prefix}}
+
+	trusted := httptest.NewRequest(http.MethodGet, "/api/v1/account", nil)
+	trusted.RemoteAddr = "10.0.0.2:443"
+	trusted.Header.Set("X-Forwarded-For", "198.51.100.9, 10.0.0.3")
+	if got := limiter.clientAddress(trusted); got != netip.MustParseAddr("198.51.100.9") {
+		t.Fatalf("trusted proxy client address = %s", got)
+	}
+
+	untrusted := httptest.NewRequest(http.MethodGet, "/api/v1/account", nil)
+	untrusted.RemoteAddr = "192.0.2.5:443"
+	untrusted.Header.Set("X-Forwarded-For", "198.51.100.9")
+	if got := limiter.clientAddress(untrusted); got != netip.MustParseAddr("192.0.2.5") {
+		t.Fatalf("untrusted proxy client address = %s", got)
 	}
 }

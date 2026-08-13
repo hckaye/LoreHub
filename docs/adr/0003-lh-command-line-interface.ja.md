@@ -84,9 +84,8 @@ api-key` を実行してから `lore` でクローンする。`lore` CLI がな�
   保存した既定。Lore 作業コピーからの導出は `lore` CLI が情報を公開してからのフォローアップとする。
   `lh repo clone` はメタデータ用の `read_api` に加えて Lore クレデンシャル交換用の `read_repository`
   （または `write_repository`）が必要で、コマンドは事前に両方を検証し、足りない方を明示する。
-- 同じエンドポイントを再利用できる安価な後続動詞（`issue edit`、`pr comment/close/reopen/edit`、`run
-cancel/rerun`、`label edit`、`release edit/delete`、`completion`、`config`）は初回イテレーションの直後に
-  追加する。
+- 同じendpointを再利用する`issue edit`、`pr comment/close/reopen/edit`、`run cancel/rerun`、`label edit`、
+  `release edit/delete`、`completion`、`config`も含める。
 - 出力: TTY では人間向けのテーブル、パイプ時はタブ区切りのプレーン出力、list/view 系には API レスポンスを
   そのまま出す `--json`。エラーは API の problem メッセージを表示して非ゼロで終了する。
 - ローカライズ: コマンド出力は `gh` と同じくまず英語のみ。Web の辞書は再利用しない。

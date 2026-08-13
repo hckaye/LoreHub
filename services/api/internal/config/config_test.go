@@ -39,6 +39,51 @@ func TestLoadParsesInstanceAdministratorUsernames(t *testing.T) {
 	}
 }
 
+func TestLoadParsesOperationalSettings(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("LOREHUB_METRICS_TOKEN", strings.Repeat("m", 32))
+	t.Setenv("LOREHUB_RATE_LIMIT_REQUESTS", "42")
+	t.Setenv("LOREHUB_RATE_LIMIT_WINDOW", "15s")
+	t.Setenv("LOREHUB_RATE_LIMIT_TRUSTED_PROXY_CIDRS", "10.0.0.0/8, 2001:db8::/32")
+
+	settings, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.RateLimitRequests != 42 || settings.RateLimitWindow != 15*time.Second ||
+		len(settings.RateLimitTrustedProxyCIDRs) != 2 || len(settings.MetricsToken) != 32 {
+		t.Fatalf("unexpected operational settings: %#v", settings)
+	}
+}
+
+func TestLoadRejectsInvalidOperationalSettings(t *testing.T) {
+	for _, testCase := range []struct {
+		name  string
+		key   string
+		value string
+	}{
+		{name: "request count", key: "LOREHUB_RATE_LIMIT_REQUESTS", value: "0"},
+		{name: "window", key: "LOREHUB_RATE_LIMIT_WINDOW", value: "2h"},
+		{name: "proxy prefix", key: "LOREHUB_RATE_LIMIT_TRUSTED_PROXY_CIDRS", value: "10.0.0.1"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			setRequiredEnvironment(t)
+			t.Setenv(testCase.key, testCase.value)
+			if _, err := Load(); err == nil {
+				t.Fatal("invalid operational setting was accepted")
+			}
+		})
+	}
+}
+
+func TestLoadRequiresProductionMetricsToken(t *testing.T) {
+	setProductionEnvironment(t)
+	t.Setenv("LOREHUB_METRICS_TOKEN", "short")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "LOREHUB_METRICS_TOKEN") {
+		t.Fatalf("expected a production metrics token error, got %v", err)
+	}
+}
+
 func TestLoadAllowsNoInstanceAdministrators(t *testing.T) {
 	setRequiredEnvironment(t)
 	t.Setenv("LOREHUB_INSTANCE_ADMIN_USERNAMES", " , ")
@@ -612,6 +657,10 @@ func setRequiredEnvironment(t *testing.T) {
 	t.Setenv("LOREHUB_SESSION_COOKIE_DOMAIN", "")
 	t.Setenv("LOREHUB_ALLOW_LEGACY_LORE_IDENTITY", "")
 	t.Setenv("LOREHUB_INSTANCE_ADMIN_USERNAMES", "")
+	t.Setenv("LOREHUB_METRICS_TOKEN", "")
+	t.Setenv("LOREHUB_RATE_LIMIT_REQUESTS", "")
+	t.Setenv("LOREHUB_RATE_LIMIT_WINDOW", "")
+	t.Setenv("LOREHUB_RATE_LIMIT_TRUSTED_PROXY_CIDRS", "")
 	for _, name := range []string{
 		"LOREHUB_LORE_AUTH_ISSUER", "LOREHUB_LORE_AUTH_AUDIENCE", "LOREHUB_LORE_ROOT_DOMAIN",
 		"LOREHUB_LORE_AUTH_JWKS_URL", "LOREHUB_LORE_AUTH_URL", "LOREHUB_LORE_AUTH_LOGIN_URL",
@@ -639,6 +688,7 @@ func setProductionEnvironment(t *testing.T) {
 	t.Setenv("LOREHUB_OIDC_REDIRECT_URL", "https://app.example/auth/callback")
 	t.Setenv("LOREHUB_PUBLIC_ORIGIN", "https://app.example")
 	t.Setenv("LOREHUB_AUTH_SECRET", strings.Repeat("a", 32))
+	t.Setenv("LOREHUB_METRICS_TOKEN", strings.Repeat("m", 32))
 	t.Setenv("LOREHUB_SESSION_TTL", "24h")
 	t.Setenv("LOREHUB_LOGIN_TRANSACTION_TTL", "10m")
 	t.Setenv("LOREHUB_LORE_ROOT_DOMAIN", "lorehub.example")

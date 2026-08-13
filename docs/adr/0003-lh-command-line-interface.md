@@ -84,9 +84,8 @@ Command notes:
   `lh repo set-default`. Deriving context from a Lore working copy is a follow-up once the `lore` CLI exposes
   it. `lh repo clone` needs `read_api` for metadata plus `read_repository` (or `write_repository`) for the Lore
   credential exchange; the command verifies both up front and says which is missing.
-- Cheap follow-up verbs that reuse the same endpoints land right after the first iteration: `issue edit`,
-  `pr comment/close/reopen/edit`, `run cancel/rerun`, `label edit`, `release edit/delete`, `completion`, and
-  `config`.
+- Commands that reuse the same endpoints are included: `issue edit`, `pr comment/close/reopen/edit`,
+  `run cancel/rerun`, `label edit`, `release edit/delete`, `completion`, and `config`.
 - Output: human-readable tables on a TTY, tab-separated plain output when piped, and `--json` on list/view
   commands emitting the API response for scripting. Errors print the API problem message and exit non-zero.
 - Localization: command output starts English-only, like `gh`. The web dictionaries are not reused.

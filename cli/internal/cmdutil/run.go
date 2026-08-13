@@ -85,8 +85,46 @@ func newRunCommand(state *rootState) *cobra.Command {
 		newRunListCommand(state),
 		newRunViewCommand(state),
 		newRunWatchCommand(state),
+		newRunMutationCommand(state, "cancel"),
+		newRunMutationCommand(state, "rerun"),
 	)
 	return runCommand
+}
+
+func newRunMutationCommand(state *rootState, operation string) *cobra.Command {
+	return &cobra.Command{
+		Use:   operation + " NUMBER",
+		Short: operation + " an Actions workflow run",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(command *cobra.Command, args []string) error {
+			number, err := checkNumber(args[0])
+			if err != nil {
+				return err
+			}
+			repository, err := state.resolveRepo()
+			if err != nil {
+				return err
+			}
+			client, err := state.clientForRepo(repository)
+			if err != nil {
+				return err
+			}
+			var response actionRun
+			path := methodPath(repository, "/actions/runs/"+number+"/"+operation)
+			if err := postJSON(command.Context(), client, path, nil, &response); err != nil {
+				return statusError(command, operation+" workflow run", err)
+			}
+			if state.json {
+				return state.writeJSON(response)
+			}
+			pastTense := "Cancelled"
+			if operation == "rerun" {
+				pastTense = "Reran"
+			}
+			_, err = fmt.Fprintf(command.OutOrStdout(), "%s workflow run #%s\n", pastTense, number)
+			return err
+		},
+	}
 }
 
 func newRunListCommand(state *rootState) *cobra.Command {

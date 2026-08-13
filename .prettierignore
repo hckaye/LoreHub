@@ -1,0 +1,12 @@
+.git/
+.worktrees/
+.cache/
+.next/
+.vinext/
+coverage/
+backups/
+dist/
+node_modules/
+out/
+playwright-report/
+test-results/

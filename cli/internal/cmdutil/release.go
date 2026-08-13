@@ -56,6 +56,8 @@ func newReleaseCommand(state *rootState) *cobra.Command {
 		newReleaseListCommand(state),
 		newReleaseViewCommand(state),
 		newReleaseCreateCommand(state),
+		newReleaseEditCommand(state),
+		newReleaseDeleteCommand(state),
 	)
 	return releaseCommand
 }
@@ -102,21 +104,119 @@ func newReleaseViewCommand(state *rootState) *cobra.Command {
 				return err
 			}
 
-			var response release
-			if looksLikeUUID(selector) {
-				path := methodPath(repository, "/releases/"+url.PathEscape(selector))
-				if err := getJSON(command.Context(), client, path, &response); err != nil {
-					return statusError(command, "get release", err)
-				}
-			} else {
-				response, err = findReleaseByTag(command, client, repository, selector)
-				if err != nil {
-					return err
-				}
+			response, err := resolveRelease(command, client, repository, selector)
+			if err != nil {
+				return err
 			}
 			return writeResource(command, state.json, response, []string{"Field", "Value"}, releaseDetailRows(response))
 		},
 	}
+}
+
+func newReleaseEditCommand(state *rootState) *cobra.Command {
+	var title string
+	var notes string
+	command := &cobra.Command{
+		Use:   "edit TAG-or-ID",
+		Short: "Edit a release",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(command *cobra.Command, args []string) error {
+			selector := strings.TrimSpace(args[0])
+			if selector == "" {
+				return fmt.Errorf("release tag or ID is required")
+			}
+			if !command.Flags().Changed("title") && !command.Flags().Changed("notes") {
+				return fmt.Errorf("at least one of --title or --notes is required")
+			}
+			repository, err := state.resolveRepo()
+			if err != nil {
+				return err
+			}
+			client, err := state.clientForRepo(repository)
+			if err != nil {
+				return err
+			}
+			current, err := resolveRelease(command, client, repository, selector)
+			if err != nil {
+				return err
+			}
+			input := map[string]any{"expectedVersion": current.Version}
+			if command.Flags().Changed("title") {
+				input["title"] = title
+			}
+			if command.Flags().Changed("notes") {
+				input["notes"] = notes
+			}
+			var response release
+			path := methodPath(repository, "/releases/"+url.PathEscape(current.ID))
+			if err := patchJSON(command.Context(), client, path, input, &response); err != nil {
+				return statusError(command, "edit release", err)
+			}
+			if state.json {
+				return state.writeJSON(response)
+			}
+			_, err = fmt.Fprintf(command.OutOrStdout(), "Edited release %s\n", response.TagName)
+			return err
+		},
+	}
+	command.Flags().StringVar(&title, "title", "", "new release title")
+	command.Flags().StringVar(&notes, "notes", "", "new release notes")
+	return command
+}
+
+func newReleaseDeleteCommand(state *rootState) *cobra.Command {
+	return &cobra.Command{
+		Use:   "delete TAG-or-ID",
+		Short: "Delete a release",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(command *cobra.Command, args []string) error {
+			selector := strings.TrimSpace(args[0])
+			if selector == "" {
+				return fmt.Errorf("release tag or ID is required")
+			}
+			repository, err := state.resolveRepo()
+			if err != nil {
+				return err
+			}
+			client, err := state.clientForRepo(repository)
+			if err != nil {
+				return err
+			}
+			current, err := resolveRelease(command, client, repository, selector)
+			if err != nil {
+				return err
+			}
+			path := methodPath(repository, "/releases/"+url.PathEscape(current.ID))
+			if err := client.DeleteJSON(command.Context(), path,
+				map[string]int64{"expectedVersion": current.Version}, nil); err != nil {
+				return statusError(command, "delete release", err)
+			}
+			if state.json {
+				return state.writeJSON(map[string]any{
+					"id": current.ID, "tagName": current.TagName, "deleted": true,
+				})
+			}
+			_, err = fmt.Fprintf(command.OutOrStdout(), "Deleted release %s\n", current.TagName)
+			return err
+		},
+	}
+}
+
+func resolveRelease(
+	command *cobra.Command,
+	client *api.Client,
+	repository RepoContext,
+	selector string,
+) (release, error) {
+	if !looksLikeUUID(selector) {
+		return findReleaseByTag(command, client, repository, selector)
+	}
+	var response release
+	path := methodPath(repository, "/releases/"+url.PathEscape(selector))
+	if err := getJSON(command.Context(), client, path, &response); err != nil {
+		return release{}, statusError(command, "get release", err)
+	}
+	return response, nil
 }
 
 func newReleaseCreateCommand(state *rootState) *cobra.Command {

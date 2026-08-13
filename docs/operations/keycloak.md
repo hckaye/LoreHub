@@ -184,13 +184,8 @@ SMTP password is supplied through the environment and is not written to bootstra
 
 ## Backup and upgrades
 
-The `keycloak-postgres-data` volume contains all Keycloak state. Back it up separately from the LoreHub `postgres-data`
-volume.
-
-```bash
-docker compose -f infra/compose.yaml exec keycloak-postgres \
-  pg_dump -U keycloak keycloak > keycloak-backup.sql
-```
+Use the [backup and recovery procedure](backup-and-recovery.md). It creates a separate logical dump of the Keycloak
+database and stops Keycloak while the backup is taken.
 
 Create a database backup before a Keycloak upgrade and follow the Keycloak upgrade guide. Update the
 `infra/keycloak/Dockerfile` base image and the `keycloak-bootstrap` image in `infra/compose.yaml` to the same release.

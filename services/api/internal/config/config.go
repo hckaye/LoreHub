@@ -135,6 +135,18 @@ func LoadFor(command string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	rateLimitRequests, err := intSetting("LOREHUB_RATE_LIMIT_REQUESTS", 600)
+	if err != nil {
+		return Config{}, err
+	}
+	rateLimitWindow, err := durationSetting("LOREHUB_RATE_LIMIT_WINDOW", time.Minute)
+	if err != nil {
+		return Config{}, err
+	}
+	rateLimitTrustedProxyCIDRs, err := prefixListSetting("LOREHUB_RATE_LIMIT_TRUSTED_PROXY_CIDRS")
+	if err != nil {
+		return Config{}, err
+	}
 	logMaxBytes, err := byteSetting("LOREHUB_RUNNER_LOG_MAX_BYTES", 10<<20)
 	if err != nil {
 		return Config{}, err
@@ -251,6 +263,10 @@ func LoadFor(command string) (Config, error) {
 		DatabaseURL:                       os.Getenv("DATABASE_URL"),
 		DatabaseTimeout:                   durationOrDefault("LOREHUB_DATABASE_TIMEOUT", 10*time.Second),
 		ShutdownTimeout:                   durationOrDefault("LOREHUB_SHUTDOWN_TIMEOUT", 15*time.Second),
+		MetricsToken:                      strings.TrimSpace(os.Getenv("LOREHUB_METRICS_TOKEN")),
+		RateLimitRequests:                 rateLimitRequests,
+		RateLimitWindow:                   rateLimitWindow,
+		RateLimitTrustedProxyCIDRs:        rateLimitTrustedProxyCIDRs,
 		AuthMode:                          authMode,
 		OIDCIssuer:                        oidcIssuer,
 		OIDCAudience:                      oidcAudience,
@@ -426,6 +442,9 @@ func authModeFromEnvironment(
 func validate(config Config, command string) error {
 	if config.DatabaseURL == "" {
 		return errors.New("DATABASE_URL is required")
+	}
+	if err := validateOperationalConfig(config, command); err != nil {
+		return err
 	}
 	if config.Environment != "development" && config.Environment != "local" &&
 		(strings.TrimSpace(config.DevLoreIdentity) != "" || config.DevLoreIdentityFallback) {

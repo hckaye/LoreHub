@@ -134,6 +134,10 @@ func (c *Client) PatchJSON(ctx context.Context, requestPath string, input any, o
 	return c.doJSON(ctx, http.MethodPatch, requestPath, input, output)
 }
 
+func (c *Client) DeleteJSON(ctx context.Context, requestPath string, input any, output any) error {
+	return c.doJSON(ctx, http.MethodDelete, requestPath, input, output)
+}
+
 func (c *Client) doJSON(ctx context.Context, method string, requestPath string, input any, output any) error {
 	var body io.Reader
 	if input != nil {

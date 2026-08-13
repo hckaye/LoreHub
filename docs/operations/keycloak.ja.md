@@ -191,13 +191,8 @@ SMTPパスワードは `.env` から環境変数として渡され、ブート�
 
 ## バックアップと移行
 
-- `keycloak-postgres-data` ボリュームがKeycloakの全状態を保持します。LoreHubアプリケーションDB
-  （`postgres-data`）とは別にバックアップしてください。
-- バックアップ例:
-  ```bash
-  docker compose -f infra/compose.yaml exec keycloak-postgres \
-    pg_dump -U keycloak keycloak > keycloak-backup.sql
-  ```
+- [バックアップと復元の手順](backup-and-recovery.ja.md)を使います。この手順ではKeycloakを停止し、
+  Keycloak用databaseをLoreHub用databaseとは別の論理バックアップとして保存します。
 - Keycloakバージョンアップ時は、先に `pg_dump` でDBをバックアップし、Keycloakのアップグレードガイドに
   従ってください。バージョンを更新するときは `infra/keycloak/Dockerfile` の `FROM` 行と
   `infra/compose.yaml` の `keycloak-bootstrap` サービスのイメージタグを、同じリリース版に揃えます。

@@ -47,6 +47,7 @@ jobs:
       - run: npm run limits
       - run: npm run keycloak:check
       - run: npm run keycloak:test
+      - run: npm run backup:test
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
@@ -55,6 +56,11 @@ jobs:
       - run: npm run api:lint
       - run: npm run api:test
       - run: npm run api:build
+      - run: npm run cli:format:check
+      - run: npm run cli:lint
+      - run: npm run cli:test
+      - run: npm run cli:build
+      - run: npm run compose:test
       - run: npm run security
       - run: npm run db:migrate
 
@@ -95,3 +101,23 @@ jobs:
           LORE_TEST_SERVER_IMAGE: lorehub/lore-integration-server:ci
           LORE_TEST_CLIENT_IMAGE: lorehub/lore-integration-client:ci
         run: scripts/lore-merge-integration.sh
+
+  browser-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: scripts/setup-keycloak-secrets.sh
+      - run: docker compose -f infra/compose.yaml up --build --detach --wait
+      - run: npm run e2e
+      - run: scripts/backup.sh --output "$RUNNER_TEMP/lorehub-backup"
+      - run: scripts/restore.sh --backup "$RUNNER_TEMP/lorehub-backup" --confirm-project lorehub --start
+      - run: npm run e2e
+      - if: always()
+        run: docker compose -f infra/compose.yaml down --volumes --remove-orphans

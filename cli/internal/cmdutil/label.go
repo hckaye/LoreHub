@@ -35,9 +35,71 @@ func newLabelCommand(state *rootState) *cobra.Command {
 	labelCommand.AddCommand(
 		newLabelListCommand(state),
 		newLabelCreateCommand(state),
+		newLabelEditCommand(state),
 		newLabelDeleteCommand(state),
 	)
 	return labelCommand
+}
+
+func newLabelEditCommand(state *rootState) *cobra.Command {
+	var newName string
+	var color string
+	var description string
+	command := &cobra.Command{
+		Use:   "edit NAME",
+		Short: "Edit a repository label",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(command *cobra.Command, args []string) error {
+			name := strings.TrimSpace(args[0])
+			if name == "" {
+				return fmt.Errorf("label name is required")
+			}
+			if !command.Flags().Changed("name") && !command.Flags().Changed("color") &&
+				!command.Flags().Changed("description") {
+				return fmt.Errorf("at least one of --name, --color or --description is required")
+			}
+			repository, err := state.resolveRepo()
+			if err != nil {
+				return err
+			}
+			client, err := state.clientForRepo(repository)
+			if err != nil {
+				return err
+			}
+			item, err := findLabel(command, client, repository, name)
+			if err != nil {
+				return err
+			}
+			if command.Flags().Changed("name") {
+				item.Name = newName
+			}
+			if command.Flags().Changed("color") {
+				item.Color = color
+			}
+			if command.Flags().Changed("description") {
+				item.Description = description
+			}
+			input := struct {
+				Name        string `json:"name"`
+				Description string `json:"description"`
+				Color       string `json:"color"`
+			}{Name: item.Name, Description: item.Description, Color: item.Color}
+			var response label
+			path := methodPath(repository, "/labels/"+url.PathEscape(item.ID))
+			if err := patchJSON(command.Context(), client, path, input, &response); err != nil {
+				return statusError(command, "edit label", err)
+			}
+			if state.json {
+				return state.writeJSON(response)
+			}
+			_, err = fmt.Fprintf(command.OutOrStdout(), "Edited label %s\n", response.Name)
+			return err
+		},
+	}
+	command.Flags().StringVar(&newName, "name", "", "new label name")
+	command.Flags().StringVar(&color, "color", "", "new label color")
+	command.Flags().StringVar(&description, "description", "", "new label description")
+	return command
 }
 
 func newLabelListCommand(state *rootState) *cobra.Command {

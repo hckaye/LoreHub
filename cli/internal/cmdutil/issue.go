@@ -27,11 +27,59 @@ func newIssueCommand(state *rootState) *cobra.Command {
 		newIssueListCommand(state),
 		newIssueViewCommand(state),
 		newIssueCreateCommand(state),
+		newIssueEditCommand(state),
 		newIssueCommentCommand(state),
 		newIssueStateCommand(state, "close", "closed"),
 		newIssueStateCommand(state, "reopen", "open"),
 	)
 	return issueCommand
+}
+
+func newIssueEditCommand(state *rootState) *cobra.Command {
+	var title string
+	var body string
+	command := &cobra.Command{
+		Use:   "edit NUMBER",
+		Short: "Edit an issue",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(command *cobra.Command, args []string) error {
+			number, err := checkNumber(args[0])
+			if err != nil {
+				return err
+			}
+			input := map[string]string{}
+			if command.Flags().Changed("title") {
+				input["title"] = title
+			}
+			if command.Flags().Changed("body") {
+				input["body"] = body
+			}
+			if len(input) == 0 {
+				return fmt.Errorf("at least one of --title or --body is required")
+			}
+			repository, err := state.resolveRepo()
+			if err != nil {
+				return err
+			}
+			client, err := state.clientForRepo(repository)
+			if err != nil {
+				return err
+			}
+			var response issue
+			if err := patchJSON(command.Context(), client, methodPath(repository, "/issues/"+number),
+				input, &response); err != nil {
+				return statusError(command, "edit issue", err)
+			}
+			if state.json {
+				return state.writeJSON(response)
+			}
+			_, err = fmt.Fprintf(command.OutOrStdout(), "Edited issue #%s\n", number)
+			return err
+		},
+	}
+	command.Flags().StringVar(&title, "title", "", "new issue title")
+	command.Flags().StringVar(&body, "body", "", "new issue body")
+	return command
 }
 
 func newIssueListCommand(state *rootState) *cobra.Command {

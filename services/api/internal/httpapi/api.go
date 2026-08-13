@@ -214,6 +214,7 @@ type API struct {
 	instanceAdminUsernames  map[string]struct{}
 	globalWorkItems         GlobalWorkItemStore
 	deletionRetention       time.Duration
+	operations              *operationalState
 }
 
 func WithRepositoryDeletion(retention time.Duration) Option {
@@ -249,7 +250,7 @@ func New(
 	}
 	mux := http.NewServeMux()
 	api.registerRoutes(mux)
-	return api.recoverPanic(api.securityHeaders(api.requestLog(mux)))
+	return api.recoverPanic(api.securityHeaders(api.requestLog(api.operationalMiddleware(api.recoverPanic(mux)))))
 }
 
 // WithCollaboration mounts the collaboration API using the same actor and
@@ -875,12 +876,19 @@ func (api *API) requestLog(next http.Handler) http.Handler {
 			requestID = uuid.NewString()
 		}
 		writer.Header().Set("X-Request-ID", requestID)
-		next.ServeHTTP(writer, request)
+		response := &statusResponseWriter{ResponseWriter: writer}
+		next.ServeHTTP(response, request)
+		status := response.status
+		if status == 0 {
+			status = http.StatusOK
+		}
 		api.logger.Info(
 			"HTTP request",
 			"request_id", requestID,
 			"method", request.Method,
 			"path", request.URL.Path,
+			"route", strings.TrimPrefix(request.Pattern, request.Method+" "),
+			"status", status,
 			"duration_ms", time.Since(started).Milliseconds(),
 		)
 	})

@@ -27,8 +27,8 @@ assert_no_secret_output() {
       ;;
   esac
   for key in POSTGRES_PASSWORD KEYCLOAK_ADMIN_PASSWORD KEYCLOAK_DB_PASSWORD \
-    LOREHUB_OIDC_CLIENT_SECRET LOREHUB_AUTH_SECRET LOREHUB_ACTIONS_SECRET_KEY \
-    LOREHUB_WEBHOOK_SECRET_KEY; do
+    LOREHUB_OIDC_CLIENT_SECRET LOREHUB_AUTH_SECRET LOREHUB_METRICS_TOKEN LOREHUB_ACTIONS_SECRET_KEY \
+    LOREHUB_WEBHOOK_SECRET_KEY LOREHUB_LORES_TOKEN_KEY; do
     secret=$(value_for "$key")
     case "$output_text" in
       *"$secret"*)
@@ -50,13 +50,14 @@ output=$("${root}/scripts/setup-keycloak-secrets.sh" --env-file "$env_file")
 assert_no_secret_output "$output"
 test "$(file_mode "$env_file")" = 600
 for key in POSTGRES_PASSWORD KEYCLOAK_ADMIN_PASSWORD KEYCLOAK_DB_PASSWORD \
-  LOREHUB_OIDC_CLIENT_SECRET LOREHUB_AUTH_SECRET LOREHUB_ACTIONS_SECRET_KEY \
-  LOREHUB_RUNNER_TOKEN_KEY LOREHUB_WEBHOOK_SECRET_KEY; do
+  LOREHUB_OIDC_CLIENT_SECRET LOREHUB_AUTH_SECRET LOREHUB_METRICS_TOKEN LOREHUB_ACTIONS_SECRET_KEY \
+  LOREHUB_RUNNER_TOKEN_KEY LOREHUB_WEBHOOK_SECRET_KEY LOREHUB_LORES_TOKEN_KEY; do
   test -n "$(value_for "$key")"
 done
 test "$(value_for LOREHUB_ACTIONS_SECRET_KEY_ID)" = local-actions-v1
 test "$(value_for LOREHUB_RUNNER_TOKEN_KEY_ID)" = local-runner-v1
 test "$(value_for LOREHUB_WEBHOOK_SECRET_KEY_ID)" = local-webhooks-v1
+test "$(value_for LOREHUB_LORES_TOKEN_KEY_ID)" = local-lores-v1
 
 printf '%s\n' \
   'MY_POSTGRES_PASSWORD=must-stay' \
@@ -64,9 +65,11 @@ printf '%s\n' \
   'MY_KEYCLOAK_DB_PASSWORD=must-stay' \
   'MY_LOREHUB_OIDC_CLIENT_SECRET=must-stay' \
   'MY_LOREHUB_AUTH_SECRET=must-stay' \
+  'MY_LOREHUB_METRICS_TOKEN=must-stay' \
   'MY_LOREHUB_ACTIONS_SECRET_KEY=must-stay' \
   'MY_LOREHUB_RUNNER_TOKEN_KEY=must-stay' \
   'MY_LOREHUB_WEBHOOK_SECRET_KEY=must-stay' \
+  'MY_LOREHUB_LORES_TOKEN_KEY=must-stay' \
   'POSTGRES_PASSWORD=preserve-me' \
   'NON_SECRET_SETTING=keep-me' >"$env_file"
 chmod 644 "$env_file"
@@ -79,19 +82,22 @@ test "$(value_for MY_KEYCLOAK_ADMIN_PASSWORD)" = must-stay
 test "$(value_for MY_KEYCLOAK_DB_PASSWORD)" = must-stay
 test "$(value_for MY_LOREHUB_OIDC_CLIENT_SECRET)" = must-stay
 test "$(value_for MY_LOREHUB_AUTH_SECRET)" = must-stay
+test "$(value_for MY_LOREHUB_METRICS_TOKEN)" = must-stay
 test "$(value_for MY_LOREHUB_ACTIONS_SECRET_KEY)" = must-stay
 test "$(value_for MY_LOREHUB_RUNNER_TOKEN_KEY)" = must-stay
 test "$(value_for MY_LOREHUB_WEBHOOK_SECRET_KEY)" = must-stay
+test "$(value_for MY_LOREHUB_LORES_TOKEN_KEY)" = must-stay
 test "$(value_for NON_SECRET_SETTING)" = keep-me
 for key in POSTGRES_PASSWORD KEYCLOAK_ADMIN_PASSWORD KEYCLOAK_DB_PASSWORD \
-  LOREHUB_OIDC_CLIENT_SECRET LOREHUB_AUTH_SECRET LOREHUB_ACTIONS_SECRET_KEY \
-  LOREHUB_RUNNER_TOKEN_KEY LOREHUB_WEBHOOK_SECRET_KEY; do
+  LOREHUB_OIDC_CLIENT_SECRET LOREHUB_AUTH_SECRET LOREHUB_METRICS_TOKEN LOREHUB_ACTIONS_SECRET_KEY \
+  LOREHUB_RUNNER_TOKEN_KEY LOREHUB_WEBHOOK_SECRET_KEY LOREHUB_LORES_TOKEN_KEY; do
   test "$(count_for "$key")" = 1
   test -n "$(value_for "$key")"
 done
 test "$(value_for LOREHUB_ACTIONS_SECRET_KEY_ID)" = local-actions-v1
 test "$(value_for LOREHUB_RUNNER_TOKEN_KEY_ID)" = local-runner-v1
 test "$(value_for LOREHUB_WEBHOOK_SECRET_KEY_ID)" = local-webhooks-v1
+test "$(value_for LOREHUB_LORES_TOKEN_KEY_ID)" = local-lores-v1
 
 preserved=$(value_for POSTGRES_PASSWORD)
 output=$("${root}/scripts/setup-keycloak-secrets.sh" --env-file "$env_file" --force)
@@ -100,13 +106,14 @@ forced=$(value_for POSTGRES_PASSWORD)
 test "$forced" != "$preserved"
 test "$(file_mode "$env_file")" = 600
 for key in POSTGRES_PASSWORD KEYCLOAK_ADMIN_PASSWORD KEYCLOAK_DB_PASSWORD \
-  LOREHUB_OIDC_CLIENT_SECRET LOREHUB_AUTH_SECRET LOREHUB_ACTIONS_SECRET_KEY \
-  LOREHUB_RUNNER_TOKEN_KEY LOREHUB_WEBHOOK_SECRET_KEY; do
+  LOREHUB_OIDC_CLIENT_SECRET LOREHUB_AUTH_SECRET LOREHUB_METRICS_TOKEN LOREHUB_ACTIONS_SECRET_KEY \
+  LOREHUB_RUNNER_TOKEN_KEY LOREHUB_WEBHOOK_SECRET_KEY LOREHUB_LORES_TOKEN_KEY; do
   test "$(count_for "$key")" = 1
 done
 test "$(count_for LOREHUB_ACTIONS_SECRET_KEY_ID)" = 1
 test "$(count_for LOREHUB_RUNNER_TOKEN_KEY_ID)" = 1
 test "$(count_for LOREHUB_WEBHOOK_SECRET_KEY_ID)" = 1
+test "$(count_for LOREHUB_LORES_TOKEN_KEY_ID)" = 1
 test "$(value_for NON_SECRET_SETTING)" = keep-me
 
 echo "Keycloak secret setup behavior passed."

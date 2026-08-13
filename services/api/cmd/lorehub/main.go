@@ -351,6 +351,12 @@ func run(logger *slog.Logger) error {
 		httpapi.WithLegacyLoreIdentityAllowed(settings.AllowLegacyLoreIdentity),
 		httpapi.WithLoreCredentials(loreCredentials),
 		httpapi.WithRepositoryDeletion(settings.RepositoryDeletionRetention),
+		httpapi.WithOperationalEndpoints(httpapi.OperationalOptions{
+			MetricsToken:      settings.MetricsToken,
+			RateLimitRequests: settings.RateLimitRequests,
+			RateLimitWindow:   settings.RateLimitWindow,
+			TrustedProxyCIDRs: settings.RateLimitTrustedProxyCIDRs,
+		}),
 		httpapi.WithLoreServiceSubjects(loreclient.ServiceSubjects{
 			PublicReader:           settings.LorePublicReaderSubject,
 			ActionsRunner:          settings.LoreActionsRunnerSubject,

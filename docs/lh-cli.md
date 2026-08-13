@@ -60,24 +60,30 @@ lh --host lorehub.example repo set-default acme/widget
 
 ## Commands
 
-| Command                                                         | Description                    |
-| --------------------------------------------------------------- | ------------------------------ |
-| `lh auth login`, `logout`, `status`                             | Manage the API token per host. |
-| `lh repo list`, `view`, `create`, `clone`                       | List and manage repositories.  |
-| `lh issue list`, `view`, `create`, `comment`, `close`, `reopen` | Manage issues.                 |
-| `lh pr list`, `view`, `create`, `merge`                         | Manage pull requests.          |
-| `lh release list`, `view TAG-or-ID`, `create`                   | Manage releases.               |
-| `lh run list`, `view NUMBER`, `watch NUMBER`                    | Inspect Actions workflow runs. |
-| `lh label list`, `create`, `delete NAME`                        | Manage repository labels.      |
-| `lh search repos QUERY`, `issues QUERY`, `prs QUERY`            | Search the host.               |
-| `lh api PATH`                                                   | Send a raw `/api/v1` request.  |
+| Command                                                                       | Description                    |
+| ----------------------------------------------------------------------------- | ------------------------------ |
+| `lh auth login`, `logout`, `status`                                           | Manage the API token per host. |
+| `lh repo list`, `view`, `create`, `clone`                                     | List and manage repositories.  |
+| `lh issue list`, `view`, `create`, `edit`, `comment`, `close`, `reopen`       | Manage issues.                 |
+| `lh pr list`, `view`, `create`, `edit`, `comment`, `close`, `reopen`, `merge` | Manage pull requests.          |
+| `lh release list`, `view TAG-or-ID`, `create`, `edit`, `delete`               | Manage releases.               |
+| `lh run list`, `view NUMBER`, `watch NUMBER`, `cancel NUMBER`, `rerun NUMBER` | Manage Actions workflow runs.  |
+| `lh label list`, `create`, `edit NAME`, `delete NAME`                         | Manage repository labels.      |
+| `lh search repos QUERY`, `issues QUERY`, `prs QUERY`                          | Search the host.               |
+| `lh api PATH`                                                                 | Send a raw `/api/v1` request.  |
+| `lh config list`, `get`, `set`, `unset`                                       | Manage non-secret settings.    |
+| `lh completion bash`, `zsh`, `fish`, `powershell`                             | Generate shell completion.     |
 
 Command notes:
 
 - `lh repo clone` logs the `lore` CLI in with the repository URL, then runs `lore clone`.
 - `lh release create` accepts `--tag`, `--title`, `--notes`, and `--branch`.
+- `lh release edit` and `delete` accept a release tag or ID and use the current release version when updating it.
 - `lh run watch` accepts `--interval` and `--timeout` and exits successfully only for a `success` conclusion.
-- `lh label create` accepts `--name`, `--color`, and `--description`. `delete` resolves the name to a label ID.
+- `lh label create` accepts `--name`, `--color`, and `--description`. `edit` and `delete` resolve the name to a
+  label ID.
+- `lh config` reads and changes `default-repo` without printing saved tokens. `host`, `config-file`, and `token-source`
+  are read-only.
 
 `lh repo clone` requires the `lore` binary on `PATH`. It checks the API token permissions before starting the Lore
 authentication. If a required permission is missing, it reports the missing permission and does not run `lore`.

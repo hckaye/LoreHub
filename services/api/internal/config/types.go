@@ -1,6 +1,7 @@
 package config
 
 import (
+	"net/netip"
 	"time"
 
 	loreclient "github.com/lorehub/lorehub/services/api/internal/lore"
@@ -12,6 +13,10 @@ type Config struct {
 	DatabaseURL                       string
 	DatabaseTimeout                   time.Duration
 	ShutdownTimeout                   time.Duration
+	MetricsToken                      string
+	RateLimitRequests                 int
+	RateLimitWindow                   time.Duration
+	RateLimitTrustedProxyCIDRs        []netip.Prefix
 	AuthMode                          string
 	OIDCIssuer                        string
 	OIDCAudience                      string

@@ -2,6 +2,7 @@
 .github
 .next
 .cache
+backups
 node_modules
 npm-debug.log
 services/api/lorehub
