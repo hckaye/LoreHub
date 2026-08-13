@@ -24,6 +24,9 @@
   --danger-fg: #cf222e;
   --danger-bg: #ffebe9;
   --danger-border: #cf222e;
+  --done-fg: #8250df;
+  --done-bg: #fbefff;
+  --done-border: #8250df;
   --attention-fg: #9a6700;
   --attention-bg: #fff8c5;
   --attention-border: #bf8700;
@@ -69,6 +72,9 @@
     --danger-fg: #ff7b72;
     --danger-bg: #2d1617;
     --danger-border: #da3633;
+    --done-fg: #a371f7;
+    --done-bg: #211047;
+    --done-border: #a371f7;
     --attention-fg: #d29922;
     --attention-bg: #2b2111;
     --attention-border: #9e6a03;

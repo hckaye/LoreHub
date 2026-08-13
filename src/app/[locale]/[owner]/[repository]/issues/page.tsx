@@ -6,18 +6,11 @@ import { RepositorySection } from "@/components/repositories/repository-section"
 import { WorkItemListPagination } from "@/components/repositories/work-item-list-pagination";
 import { WorkItemListToolbar } from "@/components/repositories/work-item-list-toolbar";
 import { EmptyState } from "@/components/ui/empty-state";
-import { FilterTabs } from "@/components/ui/filter-tabs";
 import { FlashNotice } from "@/components/ui/flash-notice";
 import { getDictionary } from "@/i18n";
 import { isLocale } from "@/i18n/config";
 import { getIssues, getPublicRepository } from "@/lib/lorehub-api";
-import {
-  parseRepositoryIssueQuery,
-  repositoryWorkItemSearchParams,
-  type IssueFilter,
-  type RawRepositoryWorkItemSearchParams,
-  type RepositoryIssueQuery,
-} from "@/lib/repository-work-item-query";
+import { type RawRepositoryWorkItemSearchParams, parseRepositoryIssueQuery } from "@/lib/repository-work-item-query";
 import { repositoryMilestonesPath, repositoryPath } from "@/lib/routes";
 
 import styles from "@/components/repositories/repository-section.module.css";
@@ -34,7 +27,6 @@ export default async function IssuesPage({ params, searchParams }: IssuesPagePro
   const locale = isLocale(value) ? value : "en";
   const query = await searchParams;
   const filters = parseRepositoryIssueQuery(query);
-  const state = filters.state ?? "open";
   const [dictionary, issues, repositoryResult] = await Promise.all([
     getDictionary(locale),
     getIssues(owner, repository, filters),
@@ -47,10 +39,10 @@ export default async function IssuesPage({ params, searchParams }: IssuesPagePro
       actions={
         <div className={styles.panelActions}>
           <Link className={styles.secondaryButton} href={repositoryPath(locale, owner, repository, "labels")}>
-            {dictionary.labelsPage.title}
+            {dictionary.issuesPage.labelsButton}
           </Link>
           <Link className={styles.secondaryButton} href={repositoryMilestonesPath(locale, owner, repository)}>
-            {dictionary.milestonesPage.milestonesLink}
+            {dictionary.issuesPage.milestonesButton}
           </Link>
           {!archived && (
             <Link className={styles.primaryButton} href={`${repositoryPath(locale, owner, repository, "issues")}/new`}>
@@ -69,36 +61,14 @@ export default async function IssuesPage({ params, searchParams }: IssuesPagePro
           tone="success"
         />
       )}
-      <WorkItemListToolbar
-        basePath={basePath}
-        dictionary={dictionary}
-        kind="issues"
-        query={filters}
-        totalCount={issues.ok ? issues.data.totalCount : undefined}
-      />
       <div className={styles.workItemList}>
-        <FilterTabs
-          label={dictionary.issuesPage.filterLabel}
-          tabs={[
-            {
-              active: state === "open",
-              count: issues.ok ? issues.data.openCount : undefined,
-              href: stateHref(basePath, filters, "open"),
-              label: dictionary.common.open,
-            },
-            {
-              active: state === "closed",
-              count: issues.ok ? issues.data.closedCount : undefined,
-              href: stateHref(basePath, filters, "closed"),
-              label: dictionary.common.closed,
-            },
-            {
-              active: state === "all",
-              count: issues.ok ? issues.data.openCount + issues.data.closedCount : undefined,
-              href: stateHref(basePath, filters, "all"),
-              label: dictionary.common.all,
-            },
-          ]}
+        <WorkItemListToolbar
+          basePath={basePath}
+          closedCount={issues.ok ? issues.data.closedCount : undefined}
+          dictionary={dictionary}
+          kind="issues"
+          openCount={issues.ok ? issues.data.openCount : undefined}
+          query={filters}
         />
         {issues.ok ? (
           <IssueList
@@ -123,14 +93,11 @@ export default async function IssuesPage({ params, searchParams }: IssuesPagePro
           dictionary={dictionary}
           hasNext={issues.data.hasNext}
           page={issues.data.page}
+          perPage={issues.data.perPage}
           query={filters}
+          totalCount={issues.data.totalCount}
         />
       )}
     </RepositorySection>
   );
-}
-
-function stateHref(basePath: string, query: RepositoryIssueQuery, state: IssueFilter): string {
-  const params = repositoryWorkItemSearchParams(query, { state, page: 1 });
-  return params.size > 0 ? `${basePath}?${params}` : basePath;
 }

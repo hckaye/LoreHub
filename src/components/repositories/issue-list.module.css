@@ -1,7 +1,5 @@
 .list {
   overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 8px;
   background: var(--surface);
 }
 
@@ -25,7 +23,7 @@
 }
 
 .stateIcon[data-state="closed"] {
-  color: var(--fg-muted);
+  color: var(--done-fg);
 }
 
 .content {
@@ -44,18 +42,12 @@
   justify-content: flex-end;
 }
 
-.assignees span {
-  align-items: center;
-  background: var(--canvas-subtle);
-  border: 1px solid var(--surface);
-  border-radius: 50%;
+.assignees a {
   display: inline-flex;
-  font-size: 0.65rem;
-  font-weight: 650;
-  height: 1.5rem;
-  justify-content: center;
-  margin-left: -0.3rem;
-  width: 1.5rem;
+  margin-left: -5px;
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+  overflow: hidden;
 }
 
 .row h3 {
@@ -69,12 +61,12 @@
 }
 
 .label {
-  padding: 1px 7px;
-  border: 1px solid;
+  padding: 1px 8px;
+  border: 0;
   border-radius: 2em;
-  color: var(--fg-default);
   font-size: 0.68rem;
   font-weight: 600;
+  line-height: 1.5;
 }
 
 .row h3 a {

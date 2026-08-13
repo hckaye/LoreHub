@@ -17,19 +17,19 @@ export default async function GlobalIssuesPage({ params, searchParams }: GlobalI
   const [{ locale: value }, input] = await Promise.all([params, searchParams]);
   const locale = isLocale(value) ? value : "en";
   const [dictionary, session] = await Promise.all([getDictionary(locale), getAuthSession()]);
-  const query = globalWorkItemQuery("issue", input);
-  const result = session.status === "authenticated" ? await getGlobalIssues(query) : null;
   if (session.status !== "authenticated") {
     return <AuthRequired dictionary={dictionary} returnTo={`/${locale}/issues`} session={session} />;
   }
+  const query = globalWorkItemQuery("issue", input);
+  const result = await getGlobalIssues(query);
   return (
     <GlobalWorkItemList
       dictionary={dictionary}
       kind="issue"
       locale={locale}
-      page={result?.ok ? result.data : null}
+      page={result.ok ? result.data : null}
       query={query}
-      unavailable={Boolean(result && !result.ok)}
+      unavailable={!result.ok}
     />
   );
 }

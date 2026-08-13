@@ -1,8 +1,16 @@
-import { Search } from "lucide-react";
-import Link from "next/link";
+"use client";
+
+import { Check, ChevronDown, CircleDot, Search } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 
 import type { Dictionary } from "@/i18n";
-import type { RepositoryIssueQuery, RepositoryMergeRequestQuery } from "@/lib/repository-work-item-query";
+import type {
+  RepositoryIssueQuery,
+  RepositoryMergeRequestQuery,
+  RepositoryWorkItemDirection,
+  RepositoryWorkItemSort,
+} from "@/lib/repository-work-item-query";
 import { repositoryWorkItemSearchParams } from "@/lib/repository-work-item-query";
 
 import styles from "./work-item-list-toolbar.module.css";
@@ -12,136 +20,306 @@ type WorkItemListToolbarProps = {
   dictionary: Dictionary;
   kind: "issues" | "pulls";
   query: RepositoryIssueQuery | RepositoryMergeRequestQuery;
-  totalCount?: number;
+  openCount?: number;
+  closedCount?: number;
+  mergedCount?: number;
 };
 
 export function WorkItemListToolbar(props: WorkItemListToolbarProps) {
   const copy = props.dictionary.workItemLists;
-  const clear = repositoryWorkItemSearchParams({ state: props.query.state });
-  const clearHref = clear.size > 0 ? `${props.basePath}?${clear}` : props.basePath;
+  const router = useRouter();
+  const state = props.query.state ?? "open";
+  const isPulls = props.kind === "pulls";
+  const openCount = props.openCount ?? 0;
+  const closedCount = props.closedCount ?? 0;
+  const mergedCount = props.mergedCount ?? 0;
+
+  function navigate(changes: Partial<RepositoryMergeRequestQuery>) {
+    const params = repositoryWorkItemSearchParams(props.query, { ...changes, page: 1 });
+    router.push(params.size > 0 ? `${props.basePath}?${params}` : props.basePath);
+  }
+
   return (
-    <section aria-label={copy.filters} className={styles.toolbar}>
-      <div className={styles.summary}>
-        {props.totalCount !== undefined && <strong>{copy.results.replace("{count}", String(props.totalCount))}</strong>}
-        <Link href={clearHref}>{copy.clear}</Link>
-      </div>
-      <form action={props.basePath} className={styles.form} method="get">
-        {props.query.state && props.query.state !== "open" && (
-          <input name="state" type="hidden" value={props.query.state} />
+    <section aria-label={copy.filters} className={styles.bar}>
+      <div className={styles.stateToggle}>
+        <button
+          aria-current={state === "open" ? "true" : undefined}
+          className={state === "open" ? styles.stateActive : styles.stateLink}
+          onClick={() => navigate({ state: "open" })}
+          type="button"
+        >
+          <CircleDot aria-hidden="true" size={16} />
+          {copy.openWithCount.replace("{count}", String(openCount))}
+        </button>
+        <button
+          aria-current={state === "closed" ? "true" : undefined}
+          className={state === "closed" ? styles.stateActive : styles.stateLink}
+          onClick={() => navigate({ state: "closed" })}
+          type="button"
+        >
+          <Check aria-hidden="true" size={16} />
+          {copy.closedWithCount.replace("{count}", String(closedCount))}
+        </button>
+        {isPulls && (
+          <button
+            aria-current={state === "merged" ? "true" : undefined}
+            className={state === "merged" ? styles.stateActive : styles.stateLink}
+            onClick={() => navigate({ state: "merged" })}
+            type="button"
+          >
+            <Check aria-hidden="true" size={16} />
+            {copy.mergedWithCount.replace("{count}", String(mergedCount))}
+          </button>
         )}
-        <label className={styles.searchField}>
-          <span>{copy.search}</span>
-          <div>
-            <Search aria-hidden="true" size={16} />
-            <input
-              defaultValue={props.query.q}
-              maxLength={256}
-              name="q"
-              placeholder={copy.searchPlaceholder}
-              type="search"
-            />
-          </div>
-        </label>
-        <FilterInput
-          defaultValue={props.query.author}
+      </div>
+
+      <SearchForm basePath={props.basePath} copy={copy} defaultValue={props.query.q} navigate={navigate} />
+
+      <div className={styles.dropdowns}>
+        <FilterDropdown
+          copy={copy.author}
+          currentValue={props.query.author}
           label={copy.author}
-          name="author"
+          navigate={navigate}
+          paramName="author"
           placeholder={copy.authorPlaceholder}
         />
-        <FilterInput
-          defaultValue={props.query.assignee}
+        <FilterDropdown
+          copy={copy.assignee}
+          currentValue={props.query.assignee}
           label={copy.assignee}
-          name="assignee"
+          navigate={navigate}
+          paramName="assignee"
           placeholder={copy.assigneePlaceholder}
         />
-        <FilterInput
-          defaultValue={props.query.labels?.join(", ")}
+        <FilterDropdown
+          copy={copy.label}
+          currentValue={props.query.labels?.join(", ")}
           label={copy.label}
-          name="label"
+          navigate={navigate}
+          paramName="label"
           placeholder={copy.labelPlaceholder}
         />
-        <FilterInput
-          defaultValue={props.query.milestone}
+        <FilterDropdown
+          copy={copy.milestone}
+          currentValue={props.query.milestone}
           label={copy.milestone}
-          name="milestone"
+          navigate={navigate}
+          paramName="milestone"
           placeholder={copy.milestonePlaceholder}
         />
-        {props.kind === "pulls" && isPullRequestQuery(props.query) && (
-          <PullRequestFilters dictionary={props.dictionary} query={props.query} />
-        )}
-        <label>
-          <span>{copy.sort}</span>
-          <select defaultValue={props.query.sort ?? "updated"} name="sort">
-            <option value="updated">{copy.sortUpdated}</option>
-            <option value="created">{copy.sortCreated}</option>
-            <option value="comments">{copy.sortComments}</option>
-          </select>
-        </label>
-        <label>
-          <span>{copy.direction}</span>
-          <select defaultValue={props.query.direction ?? "desc"} name="direction">
-            <option value="desc">{copy.descending}</option>
-            <option value="asc">{copy.ascending}</option>
-          </select>
-        </label>
-        <button type="submit">{copy.apply}</button>
-      </form>
+        <SortDropdown
+          copy={copy}
+          currentDirection={props.query.direction ?? "desc"}
+          currentSort={props.query.sort ?? "updated"}
+          navigate={navigate}
+        />
+      </div>
     </section>
   );
 }
 
-function FilterInput(props: {
+type NavigateFn = (changes: Partial<RepositoryMergeRequestQuery>) => void;
+
+function SearchForm(props: {
+  basePath: string;
+  copy: Dictionary["workItemLists"];
   defaultValue?: string;
+  navigate: NavigateFn;
+}) {
+  const router = useRouter();
+  const [value, setValue] = useState(props.defaultValue ?? "");
+  return (
+    <form
+      className={styles.searchForm}
+      onSubmit={(event) => {
+        event.preventDefault();
+        const trimmed = value.trim();
+        if (trimmed === (props.defaultValue ?? "").trim()) return;
+        const params = new URLSearchParams();
+        // Preserve existing params except q and page
+        const current = new URLSearchParams(window.location.search);
+        for (const [key, val] of current.entries()) {
+          if (key !== "q" && key !== "page") params.set(key, val);
+        }
+        if (trimmed) params.set("q", trimmed);
+        router.push(params.size > 0 ? `${props.basePath}?${params}` : props.basePath);
+      }}
+      role="search"
+    >
+      <Search aria-hidden="true" className={styles.searchIcon} size={14} />
+      <input
+        className={styles.searchInput}
+        maxLength={256}
+        onChange={(event) => setValue(event.target.value)}
+        placeholder={props.copy.searchPlaceholder}
+        type="search"
+        value={value}
+      />
+    </form>
+  );
+}
+
+function FilterDropdown(props: {
+  copy: string;
+  currentValue?: string;
   label: string;
-  maxLength?: number;
-  name: string;
+  navigate: NavigateFn;
+  paramName: "author" | "assignee" | "label" | "milestone";
   placeholder: string;
 }) {
+  const ref = useRef<HTMLDetailsElement>(null);
+  const [value, setValue] = useState(props.currentValue ?? "");
+  useCloseOnOutsideClickAndEscape(ref);
+  const displayValue = props.currentValue ? props.currentValue : props.label;
   return (
-    <label>
-      <span>{props.label}</span>
-      <input
-        defaultValue={props.defaultValue}
-        maxLength={props.maxLength ?? 100}
-        name={props.name}
-        placeholder={props.placeholder}
-      />
-    </label>
+    <details className={styles.dropdown} ref={ref}>
+      <summary className={styles.dropdownTrigger}>
+        <span>{displayValue}</span>
+        <ChevronDown aria-hidden="true" size={14} />
+      </summary>
+      <div className={styles.dropdownMenu}>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            const trimmed = value.trim();
+            if (props.paramName === "label") {
+              const labels = trimmed
+                ? trimmed
+                    .split(",")
+                    .map((l) => l.trim())
+                    .filter(Boolean)
+                : [];
+              props.navigate({ labels: labels.length > 0 ? labels : undefined, page: 1 });
+              if (ref.current) ref.current.open = false;
+              return;
+            }
+            props.navigate({
+              [props.paramName]: trimmed || undefined,
+              page: 1,
+            } as Partial<RepositoryMergeRequestQuery>);
+            if (ref.current) ref.current.open = false;
+          }}
+        >
+          <input
+            autoFocus
+            className={styles.dropdownInput}
+            maxLength={props.paramName === "milestone" ? 30 : 100}
+            onChange={(event) => setValue(event.target.value)}
+            placeholder={props.placeholder}
+            type="text"
+            value={value}
+          />
+          <button className={styles.dropdownSubmit} type="submit">
+            {props.copy}
+          </button>
+        </form>
+      </div>
+    </details>
   );
 }
 
-function PullRequestFilters(props: { dictionary: Dictionary; query: RepositoryMergeRequestQuery }) {
-  const copy = props.dictionary.workItemLists;
+function SortDropdown(props: {
+  copy: Dictionary["workItemLists"];
+  currentDirection: RepositoryWorkItemDirection;
+  currentSort: RepositoryWorkItemSort;
+  navigate: NavigateFn;
+}) {
+  const ref = useRef<HTMLDetailsElement>(null);
+  useCloseOnOutsideClickAndEscape(ref);
+  const sortLabel =
+    props.currentSort === "created"
+      ? props.copy.sortCreated
+      : props.currentSort === "comments"
+        ? props.copy.sortComments
+        : props.copy.sortUpdated;
   return (
-    <>
-      <FilterInput
-        defaultValue={props.query.source}
-        label={copy.sourceBranch}
-        maxLength={255}
-        name="source"
-        placeholder={copy.branchPlaceholder}
-      />
-      <FilterInput
-        defaultValue={props.query.target}
-        label={copy.targetBranch}
-        maxLength={255}
-        name="target"
-        placeholder={copy.branchPlaceholder}
-      />
-      <label>
-        <span>{copy.draft}</span>
-        <select defaultValue={props.query.draft === undefined ? "" : String(props.query.draft)} name="draft">
-          <option value="">{copy.draftAny}</option>
-          <option value="true">{copy.draftOnly}</option>
-          <option value="false">{copy.readyOnly}</option>
-        </select>
-      </label>
-    </>
+    <details className={styles.dropdown} ref={ref}>
+      <summary className={styles.dropdownTrigger}>
+        <span>{sortLabel}</span>
+        <ChevronDown aria-hidden="true" size={14} />
+      </summary>
+      <div className={styles.dropdownMenu}>
+        <SortOption
+          copy={props.copy.sortUpdated}
+          current={props.currentSort}
+          navigate={props.navigate}
+          sort="updated"
+        />
+        <SortOption
+          copy={props.copy.sortCreated}
+          current={props.currentSort}
+          navigate={props.navigate}
+          sort="created"
+        />
+        <SortOption
+          copy={props.copy.sortComments}
+          current={props.currentSort}
+          navigate={props.navigate}
+          sort="comments"
+        />
+        <div className={styles.dropdownDivider} />
+        <SortOption
+          copy={props.copy.descending}
+          current={props.currentDirection}
+          navigate={props.navigate}
+          sort="direction-desc"
+        />
+        <SortOption
+          copy={props.copy.ascending}
+          current={props.currentDirection}
+          navigate={props.navigate}
+          sort="direction-asc"
+        />
+      </div>
+    </details>
   );
 }
 
-function isPullRequestQuery(
-  query: RepositoryIssueQuery | RepositoryMergeRequestQuery,
-): query is RepositoryMergeRequestQuery {
-  return "source" in query || "target" in query || "draft" in query;
+function SortOption(props: {
+  copy: string;
+  current: string;
+  navigate: NavigateFn;
+  sort: RepositoryWorkItemSort | `direction-${RepositoryWorkItemDirection}`;
+}) {
+  const isActive =
+    props.sort === props.current ||
+    (props.sort === `direction-${props.current}` && props.sort.startsWith("direction-"));
+  return (
+    <button
+      className={styles.dropdownItem}
+      data-active={isActive ? "true" : undefined}
+      onClick={() => {
+        if (props.sort.startsWith("direction-")) {
+          const direction = props.sort.replace("direction-", "") as RepositoryWorkItemDirection;
+          props.navigate({ direction, page: 1 });
+        } else {
+          props.navigate({ sort: props.sort as RepositoryWorkItemSort, page: 1 });
+        }
+      }}
+      type="button"
+    >
+      {isActive && <Check aria-hidden="true" size={14} />}
+      {props.copy}
+    </button>
+  );
+}
+
+function useCloseOnOutsideClickAndEscape(ref: React.RefObject<HTMLDetailsElement | null>) {
+  useEffect(() => {
+    function handleClick(event: MouseEvent) {
+      const el = ref.current;
+      if (!el || !el.open) return;
+      if (!el.contains(event.target as Node)) el.open = false;
+    }
+    function handleKey(event: KeyboardEvent) {
+      if (event.key === "Escape" && ref.current?.open) ref.current.open = false;
+    }
+    document.addEventListener("click", handleClick);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("click", handleClick);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [ref]);
 }

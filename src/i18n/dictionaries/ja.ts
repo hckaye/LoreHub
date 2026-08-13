@@ -457,6 +457,8 @@ const ja = {
     emptyTitle: "この表示条件のIssueはありません",
     emptyBody: "具体的な作業を追跡するときにIssueを作成してください。",
     createdNotice: "Issueを作成しました。",
+    labelsButton: "ラベル",
+    milestonesButton: "マイルストーン",
   },
   labelsPage: {
     title: "ラベル",
@@ -492,6 +494,9 @@ const ja = {
     ),
     forbiddenTitle: "ラベルを表示できません",
     forbiddenBody: "このリポジトリのラベルを表示する権限がありません。",
+    countWithTotal: "{count}個のラベル",
+    filterPlaceholder: "ラベルを絞り込む",
+    newLabel: "ラベルを作成",
   },
   issueDetail: issueDetail.ja,
   pullRequestsPage: {
@@ -506,6 +511,8 @@ const ja = {
     emptyTitle: "この表示条件のプルリクエストはありません",
     emptyBody: "レビューする変更がソースブランチにあるときに作成してください。",
     createdNotice: "プルリクエストを作成しました。",
+    labelsButton: "ラベル",
+    milestonesButton: "マイルストーン",
   },
   notificationsPage: {
     title: "通知",

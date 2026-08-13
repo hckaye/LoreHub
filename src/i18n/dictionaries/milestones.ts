@@ -38,6 +38,9 @@ export const milestones = {
     assignmentUnavailable: "Milestones could not be loaded.",
     removeAssignment: "No milestone",
     milestonesLink: "Milestones",
+    openWithCount: "{count} Open",
+    closedWithCount: "{count} Closed",
+    allWithCount: "{count} All",
   },
   ja: {
     title: "マイルストーン",
@@ -78,5 +81,8 @@ export const milestones = {
     assignmentUnavailable: "マイルストーンを読み込めませんでした。",
     removeAssignment: "割り当てなし",
     milestonesLink: "マイルストーン",
+    openWithCount: "{count} オープン",
+    closedWithCount: "{count} クローズ",
+    allWithCount: "{count} すべて",
   },
 } as const;

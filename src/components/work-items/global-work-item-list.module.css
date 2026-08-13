@@ -37,62 +37,102 @@
 
 .filters {
   display: grid;
-  gap: 12px;
-  padding: 14px;
+  gap: 0;
   border: 1px solid var(--border);
   border-radius: 6px 6px 0 0;
   background: var(--canvas-subtle);
+  overflow: hidden;
 }
 
-.filterLinks {
+.filterRow {
   display: flex;
   align-items: center;
-  gap: 4px;
-  overflow-x: auto;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  flex-wrap: wrap;
 }
 
-.filterLinks > span {
-  min-width: 88px;
-  color: var(--fg-muted);
-  font-size: 0.78rem;
-  font-weight: 600;
+.tabGroup {
+  display: flex;
+  gap: 2px;
 }
 
-.filterLinks a {
-  padding: 4px 9px;
+.tab,
+.tabActive {
+  padding: 5px 12px;
+  border: 1px solid transparent;
   border-radius: 6px;
   color: var(--fg-default);
-  font-size: 0.8rem;
+  font-size: 0.82rem;
+  font-weight: 600;
   text-decoration: none;
   white-space: nowrap;
 }
 
-.filterLinks a[aria-current="page"] {
-  color: var(--fg-on-emphasis);
-  background: var(--fg-default);
+.tab:hover {
+  background: var(--canvas-default);
+}
+
+.tabActive {
+  background: var(--canvas-default);
+  border-color: var(--border);
+}
+
+.stateRow {
+  display: flex;
+  gap: 2px;
+  padding: 0 12px 10px;
+  flex-wrap: wrap;
+}
+
+.stateLink,
+.stateActive {
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--fg-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.stateLink:hover {
+  color: var(--fg-default);
+  background: var(--canvas-default);
+}
+
+.stateActive {
+  color: var(--fg-default);
+  background: var(--canvas-default);
+  border-color: var(--border);
 }
 
 .search {
+  position: relative;
   display: flex;
-  gap: 8px;
+  align-items: center;
+  flex: 1 1 240px;
+  min-width: 160px;
+}
+
+.searchIcon {
+  position: absolute;
+  left: 9px;
+  color: var(--fg-muted);
+  pointer-events: none;
 }
 
 .search input[type="search"] {
-  width: min(480px, 100%);
-  padding: 7px 10px;
+  width: 100%;
+  padding: 6px 10px 6px 30px;
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--fg-default);
   background: var(--surface);
-}
-
-.search button {
-  padding: 7px 12px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--fg-default);
-  background: var(--surface);
-  font-weight: 600;
+  font: inherit;
+  font-size: 0.82rem;
 }
 
 .list {
@@ -123,8 +163,15 @@
   color: var(--success-fg);
 }
 
-.row[data-state="closed"] .stateIcon,
+.row[data-state="closed"] .stateIcon {
+  color: var(--done-fg);
+}
+
 .row[data-state="merged"] .stateIcon {
+  color: var(--done-fg);
+}
+
+.row[data-state="draft"] .stateIcon {
   color: var(--fg-muted);
 }
 
@@ -163,26 +210,30 @@
   text-decoration: none;
 }
 
-.draft,
-.labels span {
+.draft {
   padding: 1px 6px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: 999px;
   color: var(--fg-muted);
   font-size: 0.7rem;
   font-weight: 600;
 }
 
-.branches,
-.labels {
+.labelChip {
+  padding: 1px 8px;
+  border: 0;
+  border-radius: 2em;
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.branches {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 7px;
-}
-
-.branches {
   color: var(--fg-muted);
   font-size: 0.72rem;
 }
@@ -191,10 +242,6 @@
   padding: 1px 4px;
   border-radius: 3px;
   background: var(--canvas-subtle);
-}
-
-.labels span {
-  color: var(--fg-default);
 }
 
 .trailing {
@@ -215,18 +262,12 @@
   display: flex;
 }
 
-.assignees span {
-  display: grid;
-  width: 24px;
-  height: 24px;
+.assignees a {
+  display: inline-flex;
   margin-left: -5px;
-  border: 1px solid var(--surface);
+  border: 2px solid var(--surface);
   border-radius: 50%;
-  place-items: center;
-  color: var(--fg-default);
-  background: var(--canvas-subtle);
-  font-size: 0.68rem;
-  font-weight: 700;
+  overflow: hidden;
 }
 
 .pagination {
@@ -249,13 +290,13 @@
     align-self: flex-start;
   }
 
-  .filterLinks {
-    align-items: flex-start;
-    flex-wrap: wrap;
+  .filterRow {
+    flex-direction: column;
+    align-items: stretch;
   }
 
-  .filterLinks > span {
-    width: 100%;
+  .tabGroup {
+    flex-wrap: wrap;
   }
 
   .row {
