@@ -22,11 +22,19 @@ import (
 
 func (api *API) registerRoutes(mux *http.ServeMux) {
 	api.registerCoreRoutes(mux)
+	api.registerAdminRoutes(mux)
 	api.registerOrganizationRoutes(mux)
 	api.registerRepositoryRoutes(mux)
 	api.registerActionsRoutes(mux)
 	api.registerCodeScanningRoutes(mux)
 	api.registerFeatureRoutes(mux)
+}
+
+func (api *API) registerAdminRoutes(mux *http.ServeMux) {
+	base := "/api/v1/admin/entitlements"
+	mux.Handle("GET "+base, api.requireInstanceAdmin(http.HandlerFunc(api.listEntitlements)))
+	mux.Handle("POST "+base, api.requireInstanceAdmin(http.HandlerFunc(api.grantEntitlement)))
+	mux.Handle("DELETE "+base, api.requireInstanceAdmin(http.HandlerFunc(api.revokeEntitlement)))
 }
 
 func (api *API) registerCoreRoutes(mux *http.ServeMux) {
