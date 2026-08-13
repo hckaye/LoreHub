@@ -195,6 +195,247 @@ func TestRunnerClaimFiltersTargetLabelsAndScopePostgres(t *testing.T) {
 	}
 }
 
+func TestPerJobSchedulingRoutesDependenciesAndAggregatesPostgres(t *testing.T) {
+	databaseURL := os.Getenv("LOREHUB_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("LOREHUB_TEST_DATABASE_URL is not configured")
+	}
+	ctx := context.Background()
+	pool, err := database.Open(ctx, databaseURL, 10*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if err := database.Migrate(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	fixture := newActionsFixture(t, pool)
+	defer fixture.cleanup(t)
+	store := NewStore(pool)
+	repository := Repository{
+		ID: fixture.repositoryID, Owner: fixture.owner, Slug: fixture.repositorySlug,
+		LoreURL: "lore://fixture/repository", DefaultBranch: "main",
+	}
+	workflow := perJobWorkflowDefinition(".github/workflows/mixed.yml", []WorkflowJobDefinition{
+		{JobName: "build", RunnerLabels: []string{"ubuntu-latest"}, Needs: []string{}},
+		{JobName: "package", RunnerLabels: []string{"linux", "self-hosted"}, Needs: []string{}},
+		{
+			JobName: "test", RunnerLabels: []string{"ubuntu-latest"},
+			Needs: []string{"build", "package"},
+		},
+	})
+	if _, err := store.ObserveBranch(ctx, repository, ObservedBranch{
+		ID: "main", Name: "main", LatestRevision: "revision-1",
+	}, workflow); err != nil {
+		t.Fatal(err)
+	}
+	access, err := store.RepositoryForActions(ctx, fixture.owner, fixture.repositorySlug, fixture.userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := store.DispatchWorkflow(ctx, access, workflow.Path, "main", "revision-1", nil, fixture.userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	type scheduledJob struct {
+		target string
+		labels []string
+		needs  []string
+	}
+	jobs := make(map[string]scheduledJob)
+	rows, err := pool.Query(ctx, `
+		SELECT job_name, execution_target, runner_labels, needs
+		FROM ci_jobs WHERE run_id = $1
+	`, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var jobName, target string
+		var labelsJSON, needsJSON []byte
+		if err := rows.Scan(&jobName, &target, &labelsJSON, &needsJSON); err != nil {
+			rows.Close()
+			t.Fatal(err)
+		}
+		var labels, needs []string
+		if err := json.Unmarshal(labelsJSON, &labels); err != nil {
+			rows.Close()
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(needsJSON, &needs); err != nil {
+			rows.Close()
+			t.Fatal(err)
+		}
+		jobs[jobName] = scheduledJob{target: target, labels: labels, needs: needs}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if len(jobs) != 3 || jobs["build"].target != "managed" ||
+		!equalRunnerLabels(jobs["build"].labels, []string{"ubuntu-latest"}) ||
+		jobs["package"].target != "self_hosted" ||
+		!equalRunnerLabels(jobs["package"].labels, []string{"linux", "self-hosted"}) ||
+		!equalRunnerLabels(jobs["test"].needs, []string{"build", "package"}) {
+		t.Fatalf("unexpected per-job scheduling rows: %#v", jobs)
+	}
+
+	digest := bytes.Repeat([]byte{9}, 32)
+	runnerID := insertRoutingRunner(t, pool, fixture, digest, []string{"linux", "self-hosted"})
+	managedJob, err := store.ClaimJob(ctx, "managed-worker", time.Minute)
+	if err != nil || managedJob == nil || managedJob.JobName != "build" {
+		t.Fatalf("managed build job was not routed correctly: %#v, %v", managedJob, err)
+	}
+	selfHostedJob, err := store.RunnerClaimJob(
+		ctx, digest, "routing-test-key", time.Now().UTC(), time.Minute,
+	)
+	if err != nil || selfHostedJob == nil || selfHostedJob.JobName != "package" {
+		t.Fatalf("self-hosted package job was not routed correctly: %#v, %v", selfHostedJob, err)
+	}
+	if err := store.CompleteJob(ctx, *managedJob, "managed-worker", "success", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	if blocked, err := store.ClaimJob(ctx, "blocked-worker", time.Minute); err != nil || blocked != nil {
+		t.Fatalf("dependent job was claimable before all needs succeeded: %#v, %v", blocked, err)
+	}
+	if err := store.CompleteJob(ctx, *selfHostedJob, runnerID, "success", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	dependent, err := store.ClaimJob(ctx, "dependent-worker", time.Minute)
+	if err != nil || dependent == nil || dependent.JobName != "test" {
+		t.Fatalf("dependent job did not become claimable: %#v, %v", dependent, err)
+	}
+	if err := store.CompleteJob(ctx, *dependent, "dependent-worker", "success", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	var runStatus, runConclusion string
+	if err := pool.QueryRow(ctx, `
+		SELECT status, COALESCE(conclusion, '') FROM ci_runs WHERE id = $1
+	`, run.ID).Scan(&runStatus, &runConclusion); err != nil {
+		t.Fatal(err)
+	}
+	if runStatus != "completed" || runConclusion != "success" {
+		t.Fatalf("multi-job run was not aggregated: %s/%s", runStatus, runConclusion)
+	}
+
+	if _, err := pool.Exec(ctx, `
+		UPDATE entitlements SET revoked_at = now()
+		WHERE organization_id = $1 AND feature = 'hosted_runners' AND revoked_at IS NULL
+	`, fixture.organizationID); err != nil {
+		t.Fatal(err)
+	}
+	failedRun, err := store.DispatchWorkflow(
+		ctx, access, workflow.Path, "main", "revision-1", nil, fixture.userID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if failedRun.Status != "completed" || failedRun.Conclusion == nil || *failedRun.Conclusion != "failure" ||
+		failedRun.FailureReason == nil || *failedRun.FailureReason != "entitlement_required" {
+		t.Fatalf("mixed run without managed entitlement did not fail: %#v", failedRun)
+	}
+	var failedJobs, cancelledJobs int
+	if err := pool.QueryRow(ctx, `
+		SELECT COUNT(*) FILTER (WHERE conclusion = 'failure'),
+		       COUNT(*) FILTER (WHERE conclusion = 'cancelled')
+		FROM ci_jobs WHERE run_id = $1
+	`, failedRun.ID).Scan(&failedJobs, &cancelledJobs); err != nil {
+		t.Fatal(err)
+	}
+	if failedJobs != 1 || cancelledJobs != 2 {
+		t.Fatalf("entitlement failure did not cancel sibling jobs: failure=%d cancelled=%d", failedJobs, cancelledJobs)
+	}
+}
+
+func TestFailedJobSkipsDependentJobsPostgres(t *testing.T) {
+	databaseURL := os.Getenv("LOREHUB_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("LOREHUB_TEST_DATABASE_URL is not configured")
+	}
+	ctx := context.Background()
+	pool, err := database.Open(ctx, databaseURL, 10*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if err := database.Migrate(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	fixture := newActionsFixture(t, pool)
+	defer fixture.cleanup(t)
+	store := NewStore(pool)
+	workflow := perJobWorkflowDefinition(".github/workflows/failure.yml", []WorkflowJobDefinition{
+		{JobName: "build", RunnerLabels: []string{"ubuntu-latest"}, Needs: []string{}},
+		{JobName: "test", RunnerLabels: []string{"ubuntu-latest"}, Needs: []string{"build"}},
+		{JobName: "deploy", RunnerLabels: []string{"ubuntu-latest"}, Needs: []string{"test"}},
+	})
+	repository := Repository{
+		ID: fixture.repositoryID, Owner: fixture.owner, Slug: fixture.repositorySlug,
+		LoreURL: "lore://fixture/repository", DefaultBranch: "main",
+	}
+	if _, err := store.ObserveBranch(ctx, repository, ObservedBranch{
+		ID: "main", Name: "main", LatestRevision: "revision-1",
+	}, workflow); err != nil {
+		t.Fatal(err)
+	}
+	access, err := store.RepositoryForActions(ctx, fixture.owner, fixture.repositorySlug, fixture.userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := store.DispatchWorkflow(ctx, access, workflow.Path, "main", "revision-1", nil, fixture.userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	build, err := store.ClaimJob(ctx, "failure-worker", time.Minute)
+	if err != nil || build == nil || build.JobName != "build" {
+		t.Fatalf("root job was not claimable: %#v, %v", build, err)
+	}
+	if err := store.CompleteJob(ctx, *build, "failure-worker", "failure", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := pool.Query(ctx, `
+		SELECT job_name, status, COALESCE(conclusion, '')
+		FROM ci_jobs WHERE run_id = $1 ORDER BY job_name
+	`, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	statuses := make(map[string]string)
+	for rows.Next() {
+		var jobName, status, conclusion string
+		if err := rows.Scan(&jobName, &status, &conclusion); err != nil {
+			t.Fatal(err)
+		}
+		statuses[jobName] = status + "/" + conclusion
+	}
+	if statuses["build"] != "completed/failure" || statuses["test"] != "completed/skipped" ||
+		statuses["deploy"] != "completed/skipped" {
+		t.Fatalf("failed dependency did not skip dependents: %#v", statuses)
+	}
+	var status, conclusion string
+	if err := pool.QueryRow(ctx, `
+		SELECT status, COALESCE(conclusion, '') FROM ci_runs WHERE id = $1
+	`, run.ID).Scan(&status, &conclusion); err != nil {
+		t.Fatal(err)
+	}
+	if status != "completed" || conclusion != "failure" {
+		t.Fatalf("failed multi-job run was not aggregated: %s/%s", status, conclusion)
+	}
+	if claimed, err := store.ClaimJob(ctx, "unexpected-worker", time.Minute); err != nil || claimed != nil {
+		t.Fatalf("skipped dependent remained claimable: %#v, %v", claimed, err)
+	}
+}
+
+func perJobWorkflowDefinition(path string, jobs []WorkflowJobDefinition) WorkflowDefinition {
+	config := map[string]any{"workflow_dispatch": map[string]any{}, "jobs": jobs}
+	workflow := workflowWithTriggerConfig(path, "Per-job", config)
+	workflow.WorkflowDispatch = true
+	workflow.Jobs = jobs
+	return workflow
+}
+
 func insertRoutingRunner(
 	t *testing.T,
 	pool *pgxpool.Pool,

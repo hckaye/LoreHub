@@ -60,7 +60,15 @@ type WorkflowDefinition struct {
 	DispatchInputs     map[string]WorkflowDispatchInput
 	Environment        string
 	RunnerLabels       []string
+	Jobs               []WorkflowJobDefinition
 	TriggerConfig      json.RawMessage
+}
+
+type WorkflowJobDefinition struct {
+	JobName      string   `json:"job_name"`
+	RunnerLabels []string `json:"runner_labels"`
+	Needs        []string `json:"needs"`
+	Environment  string   `json:"environment,omitempty"`
 }
 
 func DiscoverWorkflows(workspace string, platformImages ...map[string]string) ([]WorkflowDefinition, error) {
@@ -167,6 +175,7 @@ func workflowFromTriggerConfig(
 		RepositoryDispatch *RepositoryDispatchTrigger `json:"repository_dispatch"`
 		Environment        string                     `json:"environment"`
 		RunnerLabels       []string                   `json:"runner_labels"`
+		Jobs               []WorkflowJobDefinition    `json:"jobs"`
 	}
 	if len(triggerConfig) > 0 && string(triggerConfig) != "null" {
 		if err := json.Unmarshal(triggerConfig, &config); err != nil {
@@ -184,7 +193,7 @@ func workflowFromTriggerConfig(
 		}(),
 		PullRequest: config.PullRequest, Schedules: config.Schedules,
 		RepositoryDispatch: config.RepositoryDispatch, Environment: config.Environment,
-		RunnerLabels:  config.RunnerLabels,
+		RunnerLabels: config.RunnerLabels, Jobs: config.Jobs,
 		TriggerConfig: triggerConfig,
 	}, nil
 }
@@ -299,14 +308,12 @@ func parseWorkflowFile(
 	if err := validateJobRuntimeDefinitions(jobs); err != nil {
 		return workflow, err
 	}
-	workflow.Environment, err = workflowEnvironmentFromJobs(jobs)
+	workflow.Jobs, err = workflowJobDefinitions(jobs, platformImages)
 	if err != nil {
 		return workflow, err
 	}
-	workflow.RunnerLabels, err = validateWorkflowRunnerLabels(filePath, platformImages)
-	if err != nil {
-		return workflow, err
-	}
+	workflow.Environment = commonWorkflowEnvironment(workflow.Jobs)
+	workflow.RunnerLabels = combinedRunnerLabels(workflow.Jobs)
 	on := mappingValue(root, "on")
 	if on == nil {
 		return workflow, errors.New("workflow must define an on trigger")
@@ -323,7 +330,7 @@ func parseWorkflowFile(
 	workflow.RepositoryDispatch = repositoryDispatch
 	workflow.TriggerConfig, err = encodeTriggerConfig(
 		push, dispatch, dispatchInputs, pullRequest, schedules, repositoryDispatch,
-		workflow.Environment, workflow.RunnerLabels,
+		workflow.Environment, workflow.RunnerLabels, workflow.Jobs,
 	)
 	if err != nil {
 		return workflow, err
