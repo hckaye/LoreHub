@@ -47,6 +47,8 @@ docker compose -f infra/compose.yaml down
 - [Personal access token](docs/personal-access-tokens.ja.md)によるLore CLIとAPI clientの認証
 - 英語と日本語の画面
 - GitHub Actions互換workflow、log、artifact、variables、secrets、SARIF結果
+- セルフホステッドActionsランナーと[セルフホステッドLore Server](docs/self-hosted-lore-servers.ja.md)の登録
+- [lh CLI](docs/lh-cli.ja.md)によるターミナルからの操作
 - [Webhook](docs/webhooks.ja.md)による外部サービスへのイベント通知と配信履歴
 
 LoreHubは開発中です。GitHubとGitLabにあるすべての画面やAPIにはまだ対応していません。

@@ -48,6 +48,8 @@ docker compose -f infra/compose.yaml down
 - Authenticate the Lore CLI and API clients with [personal access tokens](docs/personal-access-tokens.md)
 - Use the interface in English or Japanese
 - Run GitHub Actions-compatible workflows with logs, artifacts, variables, secrets, and SARIF results
+- Register self-hosted Actions runners and [self-hosted Lore Servers](docs/self-hosted-lore-servers.md)
+- Script LoreHub from the terminal with the [lh CLI](docs/lh-cli.md)
 - Send repository events to external services with [webhooks](docs/webhooks.md) and delivery history
 
 LoreHub is under active development. It does not yet provide every screen or API available in GitHub and GitLab.
