@@ -1,16 +1,11 @@
 import { ServerOff } from "lucide-react";
 import { notFound } from "next/navigation";
 
-import { FileHistory } from "@/components/repositories/file-history";
-import { RepositoryPanel } from "@/components/repositories/repository-section";
+import { BlobView } from "@/components/repositories/blob-view";
 import { EmptyState } from "@/components/ui/empty-state";
-import { MarkdownContent } from "@/components/wiki/markdown-content";
 import { getDictionary } from "@/i18n";
 import { isLocale } from "@/i18n/config";
-import { getFileHistory, getLoreFile, getPublicRepository } from "@/lib/lorehub-api";
-import { createRepositoryReadmeURLTransform } from "@/lib/repository-readme";
-
-import styles from "@/components/repositories/code-detail.module.css";
+import { getFileHistory, getLoreFile, getLoreTree, getPublicRepository } from "@/lib/lorehub-api";
 
 type FilePageProps = {
   params: Promise<{ locale: string; owner: string; repository: string }>;
@@ -30,8 +25,9 @@ export default async function FilePage({ params, searchParams }: FilePageProps) 
     return (
       <EmptyState
         body={dictionary.codeBrowser.unavailable}
-        icon={<ServerOff />}
+        icon={<ServerOff aria-hidden="true" />}
         title={dictionary.repository.unavailable}
+        tone="warning"
       />
     );
   }
@@ -40,69 +36,32 @@ export default async function FilePage({ params, searchParams }: FilePageProps) 
     return (
       <EmptyState
         body={dictionary.codeBrowser.unavailable}
-        icon={<ServerOff />}
+        icon={<ServerOff aria-hidden="true" />}
         title={dictionary.repository.unavailable}
+        tone="warning"
       />
     );
   }
-  const rawQuery = new URLSearchParams({ revision: file.data.revision, path: file.data.path }).toString();
-  const rawPath = `/api/v1/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/raw?${rawQuery}`;
-  const readme = /(^|\/)readme(?:\.md|\.markdown)?$/i.test(file.data.path);
-  const history =
+  const parentPath = file.data.path.split("/").slice(0, -1).join("/");
+  const [tree, history] = await Promise.all([
+    getLoreTree(owner, slug, { revision: file.data.revision, path: parentPath }),
     file.data.kind === "file"
-      ? await getFileHistory(owner, slug, { revision: file.data.revision, path: file.data.path })
-      : null;
+      ? getFileHistory(owner, slug, { revision: file.data.revision, path: file.data.path })
+      : Promise.resolve(null),
+  ]);
+  const entries = tree.ok ? tree.data.entries : [];
+  const historyEntries = history?.ok ? history.data.entries : [];
   return (
-    <RepositoryPanel description={file.data.path} title={dictionary.codeBrowser.fileTitle}>
-      <div className={styles.panel}>
-        <div className={styles.heading}>
-          <div>
-            <h2>{file.data.path}</h2>
-            <p className={styles.meta}>
-              {dictionary.codeBrowser.revision}: <code>{file.data.revision}</code> · {file.data.size}{" "}
-              {dictionary.codeBrowser.bytes}
-            </p>
-          </div>
-          <div className={styles.actions}>
-            <a href={rawPath}>{dictionary.codeBrowser.raw}</a>
-          </div>
-        </div>
-        {file.data.truncated ? (
-          <div className={styles.status} data-tone="warning">
-            {dictionary.codeBrowser.tooLarge}
-          </div>
-        ) : file.data.binary ? (
-          <div className={styles.status}>{dictionary.codeBrowser.binary}</div>
-        ) : readme ? (
-          <MarkdownContent
-            body={file.data.content ?? ""}
-            urlTransform={createRepositoryReadmeURLTransform({
-              locale,
-              owner,
-              repository: slug,
-              revision: file.data.revision,
-              readmePath: file.data.path,
-              entries: [],
-            })}
-          />
-        ) : (
-          <div className={styles.source}>
-            <pre>{file.data.content ?? ""}</pre>
-          </div>
-        )}
-        {history?.ok && (
-          <section aria-labelledby="file-history-title">
-            <h3 id="file-history-title">{dictionary.codeBrowser.fileHistory}</h3>
-            <FileHistory
-              dictionary={dictionary}
-              entries={history.data.entries}
-              locale={locale}
-              owner={owner}
-              repository={slug}
-            />
-          </section>
-        )}
-      </div>
-    </RepositoryPanel>
+    <BlobView
+      branch={query.branch}
+      dictionary={dictionary}
+      entries={entries}
+      file={file.data}
+      history={historyEntries}
+      locale={locale}
+      owner={owner}
+      repository={slug}
+      repositoryName={repository.data.slug}
+    />
   );
 }
