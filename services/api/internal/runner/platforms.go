@@ -71,28 +71,34 @@ func DiscoverRunnerLabels(workflowPath string) ([]string, error) {
 	return runnerLabelsFromJobs(mappingValue(root, "jobs"))
 }
 
-func validateWorkflowRunnerLabels(path string, images map[string]string) error {
+func validateWorkflowRunnerLabels(path string, images map[string]string) ([]string, error) {
 	labels, err := DiscoverRunnerLabels(path)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := ValidateRunnerPlatformImages(images); err != nil {
-		return err
+		return nil, err
+	}
+	if containsRunnerLabel(labels, "self-hosted") {
+		return labels, nil
+	}
+	if len(labels) != 1 {
+		return nil, errors.New("managed workflow runs-on must use one platform label")
 	}
 	for _, label := range labels {
 		if _, ok := images[label]; !ok {
-			return fmt.Errorf("workflow runner label %q is not mapped for act", label)
+			return nil, fmt.Errorf("workflow runner label %q is not mapped for act", label)
 		}
 	}
-	return nil
+	return labels, nil
 }
 
 func runnerLabelsFromJobs(jobs *yaml.Node) ([]string, error) {
 	if jobs == nil || jobs.Kind != yaml.MappingNode || len(jobs.Content) == 0 {
 		return nil, errors.New("workflow must define jobs before resolving runner labels")
 	}
-	labels := make([]string, 0, len(jobs.Content)/2)
-	seen := make(map[string]struct{})
+	var workflowLabels []string
+	firstJobID := ""
 	for index := 0; index+1 < len(jobs.Content); index += 2 {
 		jobID := jobs.Content[index].Value
 		job := jobs.Content[index+1]
@@ -100,20 +106,87 @@ func runnerLabelsFromJobs(jobs *yaml.Node) ([]string, error) {
 			return nil, fmt.Errorf("job %q must be a map", jobID)
 		}
 		runsOn := mappingValue(job, "runs-on")
-		if runsOn == nil || runsOn.Kind != yaml.ScalarNode || isNullNode(runsOn) {
-			return nil, fmt.Errorf("job %q runs-on must be one literal runner label", jobID)
+		labels, err := normalizedRunsOnLabels(runsOn, jobID)
+		if err != nil {
+			return nil, err
 		}
-		label, err := scalarString(runsOn, fmt.Sprintf("job %q runs-on", jobID))
-		if err != nil || !runnerLabelPattern.MatchString(label) {
-			return nil, fmt.Errorf("job %q runs-on must be one literal runner label", jobID)
+		if workflowLabels == nil {
+			workflowLabels = labels
+			firstJobID = jobID
+			continue
 		}
-		if _, ok := seen[label]; !ok {
-			seen[label] = struct{}{}
-			labels = append(labels, label)
+		if !equalRunnerLabels(workflowLabels, labels) {
+			return nil, fmt.Errorf(
+				"all jobs in a workflow must use the same normalized runs-on labels; job %q uses %v while job %q uses %v",
+				firstJobID, workflowLabels, jobID, labels,
+			)
 		}
+	}
+	return workflowLabels, nil
+}
+
+func normalizedRunsOnLabels(node *yaml.Node, jobID string) ([]string, error) {
+	if node == nil || isNullNode(node) {
+		return nil, fmt.Errorf("job %q runs-on must contain literal runner labels", jobID)
+	}
+	values := make([]string, 0, 1)
+	switch node.Kind {
+	case yaml.ScalarNode:
+		value, err := scalarString(node, fmt.Sprintf("job %q runs-on", jobID))
+		if err != nil {
+			return nil, fmt.Errorf("job %q runs-on must contain literal runner labels", jobID)
+		}
+		values = append(values, value)
+	case yaml.SequenceNode:
+		for _, item := range node.Content {
+			value, err := scalarString(item, fmt.Sprintf("job %q runs-on label", jobID))
+			if err != nil {
+				return nil, fmt.Errorf("job %q runs-on must contain literal runner labels", jobID)
+			}
+			values = append(values, value)
+		}
+	default:
+		return nil, fmt.Errorf("job %q runs-on must contain literal runner labels", jobID)
+	}
+	if len(values) == 0 || len(values) > 100 {
+		return nil, fmt.Errorf("job %q runs-on must contain 1 to 100 literal runner labels", jobID)
+	}
+	labels := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		label := strings.ToLower(strings.TrimSpace(value))
+		if !runnerLabelPattern.MatchString(label) {
+			return nil, fmt.Errorf("job %q runs-on label %q is invalid", jobID, value)
+		}
+		if _, ok := seen[label]; ok {
+			continue
+		}
+		seen[label] = struct{}{}
+		labels = append(labels, label)
 	}
 	sort.Strings(labels)
 	return labels, nil
+}
+
+func equalRunnerLabels(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func containsRunnerLabel(labels []string, expected string) bool {
+	for _, label := range labels {
+		if label == expected {
+			return true
+		}
+	}
+	return false
 }
 
 func workflowEnvironmentName(workflowPath string) (string, error) {

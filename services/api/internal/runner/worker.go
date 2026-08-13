@@ -330,7 +330,7 @@ func (worker *Worker) runJob(ctx context.Context, job Job, logKey string) (strin
 	if err := validateWorkflowFile(workflowPath); err != nil {
 		return logKey, nil, err
 	}
-	if err := validateWorkflowRunnerLabels(workflowPath, worker.config.PlatformImages); err != nil {
+	if _, err := validateWorkflowRunnerLabels(workflowPath, worker.config.PlatformImages); err != nil {
 		return logKey, nil, err
 	}
 	workflowEnvironment, err := workflowEnvironmentName(workflowPath)

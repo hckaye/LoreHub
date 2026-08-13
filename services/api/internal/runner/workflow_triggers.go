@@ -494,6 +494,7 @@ func encodeTriggerConfig(
 	schedules []ScheduleTrigger,
 	repositoryDispatch *RepositoryDispatchTrigger,
 	environment string,
+	runnerLabels []string,
 ) (json.RawMessage, error) {
 	config := make(map[string]any, 5)
 	if push != nil {
@@ -513,6 +514,9 @@ func encodeTriggerConfig(
 	}
 	if environment != "" {
 		config["environment"] = environment
+	}
+	if len(runnerLabels) > 0 {
+		config["runner_labels"] = runnerLabels
 	}
 	encoded, err := json.Marshal(config)
 	if err != nil {

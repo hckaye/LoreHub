@@ -37,22 +37,23 @@ type WorkflowRecord struct {
 }
 
 type RunRecord struct {
-	ID           string     `json:"id"`
-	WorkflowID   string     `json:"workflowId"`
-	WorkflowName string     `json:"workflowName"`
-	WorkflowPath string     `json:"workflowPath"`
-	RunNumber    int64      `json:"runNumber"`
-	RunAttempt   int        `json:"runAttempt"`
-	RerunOf      *string    `json:"rerunOf,omitempty"`
-	EventName    string     `json:"eventName"`
-	Branch       string     `json:"branch"`
-	Revision     string     `json:"revision"`
-	ActorID      *string    `json:"actorId,omitempty"`
-	Status       string     `json:"status"`
-	Conclusion   *string    `json:"conclusion"`
-	QueuedAt     time.Time  `json:"queuedAt"`
-	StartedAt    *time.Time `json:"startedAt"`
-	CompletedAt  *time.Time `json:"completedAt"`
+	ID            string     `json:"id"`
+	WorkflowID    string     `json:"workflowId"`
+	WorkflowName  string     `json:"workflowName"`
+	WorkflowPath  string     `json:"workflowPath"`
+	RunNumber     int64      `json:"runNumber"`
+	RunAttempt    int        `json:"runAttempt"`
+	RerunOf       *string    `json:"rerunOf,omitempty"`
+	EventName     string     `json:"eventName"`
+	Branch        string     `json:"branch"`
+	Revision      string     `json:"revision"`
+	ActorID       *string    `json:"actorId,omitempty"`
+	Status        string     `json:"status"`
+	Conclusion    *string    `json:"conclusion"`
+	FailureReason *string    `json:"failureReason,omitempty"`
+	QueuedAt      time.Time  `json:"queuedAt"`
+	StartedAt     *time.Time `json:"startedAt"`
+	CompletedAt   *time.Time `json:"completedAt"`
 }
 
 type JobRecord struct {
@@ -790,7 +791,8 @@ const actionRunQuery = `
 	       COALESCE(workflow.name, revision_workflow.name, ''),
 	       COALESCE(workflow.path, revision_workflow.path, ''),
 	       run.run_number, run.run_attempt, run.rerun_of, run.event_name, run.branch, run.revision,
-	       run.actor_id, run.status, run.conclusion, run.queued_at, run.started_at, run.completed_at
+	       run.actor_id, run.status, run.conclusion, run.failure_reason,
+	       run.queued_at, run.started_at, run.completed_at
 	FROM ci_runs run
 	LEFT JOIN ci_workflows workflow ON workflow.id = run.workflow_id
 	LEFT JOIN ci_workflow_revisions revision_workflow ON revision_workflow.id = run.workflow_revision_id
@@ -814,6 +816,6 @@ func scanActionRun(row rowScanner) (RunRecord, error) {
 	var run RunRecord
 	err := row.Scan(&run.ID, &run.WorkflowID, &run.WorkflowName, &run.WorkflowPath, &run.RunNumber,
 		&run.RunAttempt, &run.RerunOf, &run.EventName, &run.Branch, &run.Revision, &run.ActorID, &run.Status,
-		&run.Conclusion, &run.QueuedAt, &run.StartedAt, &run.CompletedAt)
+		&run.Conclusion, &run.FailureReason, &run.QueuedAt, &run.StartedAt, &run.CompletedAt)
 	return run, err
 }
