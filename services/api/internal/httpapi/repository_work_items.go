@@ -42,7 +42,18 @@ func (api *API) listIssues(writer http.ResponseWriter, request *http.Request) {
 	if !ok {
 		return
 	}
-	page, err := reader.ListIssuesForRepository(request.Context(), repository.ID, query)
+	viewerUsername := ""
+	if actor != nil {
+		viewerUsername = actor.Username
+	}
+	var page collab.RepositoryIssuePage
+	if enriched, supported := api.collabStore.(collab.ReactionReadStore); supported {
+		page, err = enriched.ListIssuesForRepositoryWithReactions(
+			request.Context(), repository.ID, query, viewerUsername,
+		)
+	} else {
+		page, err = reader.ListIssuesForRepository(request.Context(), repository.ID, query)
+	}
 	if err != nil {
 		api.repositoryWorkItemError(writer, request, "list issues", err)
 		return
@@ -89,7 +100,18 @@ func (api *API) listMergeRequests(writer http.ResponseWriter, request *http.Requ
 	if !ok {
 		return
 	}
-	page, err := reader.ListMergeRequestsForRepository(request.Context(), repository.ID, query)
+	viewerUsername := ""
+	if actor != nil {
+		viewerUsername = actor.Username
+	}
+	var page collab.RepositoryMergeRequestPage
+	if enriched, supported := api.collabStore.(collab.ReactionReadStore); supported {
+		page, err = enriched.ListMergeRequestsForRepositoryWithReactions(
+			request.Context(), repository.ID, query, viewerUsername,
+		)
+	} else {
+		page, err = reader.ListMergeRequestsForRepository(request.Context(), repository.ID, query)
+	}
 	if err != nil {
 		api.repositoryWorkItemError(writer, request, "list pull requests", err)
 		return

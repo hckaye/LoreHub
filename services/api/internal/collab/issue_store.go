@@ -63,6 +63,26 @@ func (s *store) GetIssue(ctx context.Context, repoID string, number int64) (Issu
 	return issue, nil
 }
 
+func (s *store) GetIssueWithReactions(
+	ctx context.Context,
+	repoID string,
+	number int64,
+	viewerUsername string,
+) (Issue, error) {
+	issue, err := s.GetIssue(ctx, repoID, number)
+	if err != nil {
+		return Issue{}, err
+	}
+	reactions, err := loadReactions(
+		ctx, s.pool, repoID, reactionIssue, []string{issue.ID}, viewerUsername,
+	)
+	if err != nil {
+		return Issue{}, err
+	}
+	issue.Reactions = reactions[issue.ID]
+	return issue, nil
+}
+
 func scanIssue(row pgx.Row) (Issue, error) {
 	var issue Issue
 	var assignees, labels json.RawMessage

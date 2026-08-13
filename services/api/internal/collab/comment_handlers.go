@@ -27,7 +27,14 @@ func (api *API) listIssueComments(writer http.ResponseWriter, request *http.Requ
 		writeProblem(writer, http.StatusBadRequest, "invalid_input", err.Error())
 		return
 	}
-	result, err := api.store.ListIssueComments(requestContext(request), repo.ID, number, page)
+	var result Result[IssueComment]
+	if reader, supported := api.store.(ReactionReadStore); supported {
+		result, err = reader.ListIssueCommentsWithReactions(
+			requestContext(request), repo.ID, number, page, reactionViewer(actor),
+		)
+	} else {
+		result, err = api.store.ListIssueComments(requestContext(request), repo.ID, number, page)
+	}
 	if err != nil {
 		storeError(writer, request, "list issue comments", err, api.logger)
 		return
@@ -41,6 +48,9 @@ func (api *API) listIssueComments(writer http.ResponseWriter, request *http.Requ
 			result.Items[index].ViewerCanUpdate = repo.ArchivedAt == nil &&
 				(result.Items[index].AuthorID == actor.ID || access.AtLeast(PermTriage))
 		}
+	}
+	for index := range result.Items {
+		result.Items[index].Reactions = ensureReactions(result.Items[index].Reactions)
 	}
 	writeJSON(writer, http.StatusOK, result)
 }
@@ -69,6 +79,7 @@ func (api *API) createIssueComment(writer http.ResponseWriter, request *http.Req
 		return
 	}
 	comment.ViewerCanUpdate = true
+	comment.Reactions = ensureReactions(comment.Reactions)
 	writeLocation(writer, request, comment.ID)
 	writeJSON(writer, http.StatusCreated, comment)
 }
@@ -104,6 +115,7 @@ func (api *API) patchIssueComment(writer http.ResponseWriter, request *http.Requ
 		return
 	}
 	updated.ViewerCanUpdate = true
+	updated.Reactions = ensureReactions(updated.Reactions)
 	writeJSON(writer, http.StatusOK, updated)
 }
 

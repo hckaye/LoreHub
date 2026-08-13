@@ -146,6 +146,8 @@ func validationError(writer http.ResponseWriter, err error) bool {
 	case errors.Is(err, ErrBlankBody),
 		errors.Is(err, ErrTitleTooLong),
 		errors.Is(err, ErrBodyTooLong),
+		errors.Is(err, ErrInvalidReaction),
+		errors.Is(err, ErrInvalidReactionSubject),
 		errors.Is(err, ErrInvalidState),
 		errors.Is(err, ErrInvalidColor),
 		errors.Is(err, ErrInvalidLabel),

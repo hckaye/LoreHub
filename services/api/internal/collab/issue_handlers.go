@@ -26,7 +26,13 @@ func (api *API) getIssue(writer http.ResponseWriter, request *http.Request) {
 	if !ok {
 		return
 	}
-	issue, err := api.store.GetIssue(requestContext(request), repo.ID, number)
+	var issue Issue
+	var err error
+	if reader, supported := api.store.(ReactionReadStore); supported {
+		issue, err = reader.GetIssueWithReactions(requestContext(request), repo.ID, number, reactionViewer(actor))
+	} else {
+		issue, err = api.store.GetIssue(requestContext(request), repo.ID, number)
+	}
 	if err != nil {
 		storeError(writer, request, "get issue", err, api.logger)
 		return
@@ -42,6 +48,7 @@ func (api *API) getIssue(writer http.ResponseWriter, request *http.Request) {
 		issue.ViewerCanManageMilestone = access.AtLeast(PermTriage)
 		issue.ViewerCanManageAssignees = access.AtLeast(PermTriage)
 	}
+	issue.Reactions = ensureReactions(issue.Reactions)
 	writeJSON(writer, http.StatusOK, issue)
 }
 
@@ -81,6 +88,7 @@ func (api *API) patchIssue(writer http.ResponseWriter, request *http.Request) {
 	issue.ViewerCanManageLabels = access.AtLeast(PermTriage)
 	issue.ViewerCanManageMilestone = access.AtLeast(PermTriage)
 	issue.ViewerCanManageAssignees = access.AtLeast(PermTriage)
+	issue.Reactions = ensureReactions(issue.Reactions)
 	writeJSON(writer, http.StatusOK, issue)
 }
 

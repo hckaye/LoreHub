@@ -17,6 +17,26 @@ func (s *store) ListIssueComments(
 	number int64,
 	page Page,
 ) (Result[IssueComment], error) {
+	return s.listIssueCommentsForViewer(ctx, repoID, number, page, "")
+}
+
+func (s *store) ListIssueCommentsWithReactions(
+	ctx context.Context,
+	repoID string,
+	number int64,
+	page Page,
+	viewerUsername string,
+) (Result[IssueComment], error) {
+	return s.listIssueCommentsForViewer(ctx, repoID, number, page, viewerUsername)
+}
+
+func (s *store) listIssueCommentsForViewer(
+	ctx context.Context,
+	repoID string,
+	number int64,
+	page Page,
+	viewerUsername string,
+) (Result[IssueComment], error) {
 	offset, err := pageOffset(page)
 	if err != nil {
 		return Result[IssueComment]{}, err
@@ -68,6 +88,19 @@ func (s *store) ListIssueComments(
 	comments, err := scanComments(rows)
 	if err != nil {
 		return Result[IssueComment]{}, err
+	}
+	subjectIDs := make([]string, 0, len(comments))
+	for _, comment := range comments {
+		subjectIDs = append(subjectIDs, comment.ID)
+	}
+	reactions, err := loadReactions(
+		ctx, tx, repoID, reactionIssueComment, subjectIDs, viewerUsername,
+	)
+	if err != nil {
+		return Result[IssueComment]{}, err
+	}
+	for index := range comments {
+		comments[index].Reactions = reactions[comments[index].ID]
 	}
 	result := paginate(comments, limit, offset)
 	result.TotalCount = &totalCount

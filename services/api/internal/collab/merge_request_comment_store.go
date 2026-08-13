@@ -29,6 +29,26 @@ func (s *store) ListMergeRequestComments(
 	number int64,
 	page Page,
 ) (Result[MergeRequestComment], error) {
+	return s.listMergeRequestCommentsForViewer(ctx, repoID, number, page, "")
+}
+
+func (s *store) ListMergeRequestCommentsWithReactions(
+	ctx context.Context,
+	repoID string,
+	number int64,
+	page Page,
+	viewerUsername string,
+) (Result[MergeRequestComment], error) {
+	return s.listMergeRequestCommentsForViewer(ctx, repoID, number, page, viewerUsername)
+}
+
+func (s *store) listMergeRequestCommentsForViewer(
+	ctx context.Context,
+	repoID string,
+	number int64,
+	page Page,
+	viewerUsername string,
+) (Result[MergeRequestComment], error) {
 	offset, err := pageOffset(page)
 	if err != nil {
 		return Result[MergeRequestComment]{}, err
@@ -90,6 +110,19 @@ func (s *store) ListMergeRequestComments(
 	}
 	if err := rows.Err(); err != nil {
 		return Result[MergeRequestComment]{}, fmt.Errorf("list pull request comments: %w", err)
+	}
+	subjectIDs := make([]string, 0, len(comments))
+	for _, comment := range comments {
+		subjectIDs = append(subjectIDs, comment.ID)
+	}
+	reactions, err := loadReactions(
+		ctx, tx, repoID, reactionMergeRequestComment, subjectIDs, viewerUsername,
+	)
+	if err != nil {
+		return Result[MergeRequestComment]{}, err
+	}
+	for index := range comments {
+		comments[index].Reactions = reactions[comments[index].ID]
 	}
 	result := paginate(comments, limit, offset)
 	result.TotalCount = &totalCount

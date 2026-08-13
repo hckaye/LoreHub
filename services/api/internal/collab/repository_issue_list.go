@@ -26,6 +26,24 @@ func (s *store) ListIssuesForRepository(
 	repositoryID string,
 	query RepositoryIssueQuery,
 ) (RepositoryIssuePage, error) {
+	return s.listIssuesForRepositoryWithViewer(ctx, repositoryID, query, "")
+}
+
+func (s *store) ListIssuesForRepositoryWithReactions(
+	ctx context.Context,
+	repositoryID string,
+	query RepositoryIssueQuery,
+	viewerUsername string,
+) (RepositoryIssuePage, error) {
+	return s.listIssuesForRepositoryWithViewer(ctx, repositoryID, query, viewerUsername)
+}
+
+func (s *store) listIssuesForRepositoryWithViewer(
+	ctx context.Context,
+	repositoryID string,
+	query RepositoryIssueQuery,
+	viewerUsername string,
+) (RepositoryIssuePage, error) {
 	query, err := NormalizeRepositoryIssueQuery(query)
 	if err != nil {
 		return RepositoryIssuePage{}, err
@@ -47,7 +65,7 @@ func (s *store) ListIssuesForRepository(
 	} else if query.State == "closed" {
 		totalCount = closedCount
 	}
-	issues, err := listRepositoryIssues(ctx, tx, repositoryID, query)
+	issues, err := listRepositoryIssues(ctx, tx, repositoryID, query, viewerUsername)
 	if err != nil {
 		return RepositoryIssuePage{}, err
 	}
@@ -84,6 +102,7 @@ func listRepositoryIssues(
 	tx pgx.Tx,
 	repositoryID string,
 	query RepositoryIssueQuery,
+	viewerUsername string,
 ) ([]Issue, error) {
 	builder := buildRepositoryIssueFilter(repositoryID, query, true)
 	limit := builder.bind(query.PerPage)
@@ -137,6 +156,17 @@ func listRepositoryIssues(
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate repository issues: %w", err)
+	}
+	subjectIDs := make([]string, 0, len(issues))
+	for _, issue := range issues {
+		subjectIDs = append(subjectIDs, issue.ID)
+	}
+	reactions, err := loadReactions(ctx, tx, repositoryID, reactionIssue, subjectIDs, viewerUsername)
+	if err != nil {
+		return nil, err
+	}
+	for index := range issues {
+		issues[index].Reactions = reactions[issues[index].ID]
 	}
 	return issues, nil
 }
