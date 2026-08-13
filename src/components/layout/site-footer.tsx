@@ -16,9 +16,7 @@ export function SiteFooter({ dictionary }: SiteFooterProps) {
           <a href="https://github.com/EpicGames/lore" rel="noreferrer" target="_blank">
             {dictionary.common.documentation}
           </a>
-          <a href="https://github.com/hckaye/LoreHub/blob/main/LICENSE" rel="noreferrer" target="_blank">
-            {dictionary.common.license}
-          </a>
+          <span>{dictionary.common.license}</span>
         </div>
       </div>
     </footer>
