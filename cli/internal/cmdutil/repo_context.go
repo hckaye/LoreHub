@@ -29,17 +29,25 @@ func (repo RepoContext) apiPath(suffix string) string {
 // ResolveRepo returns the first repository selected by the ADR precedence:
 // command flag, LH_REPO, then the stored default.
 func ResolveRepo(explicit string, environment string, storedDefault string) (string, error) {
+	repository, err := resolveRepoContext(explicit, environment, storedDefault)
+	if err != nil {
+		return "", err
+	}
+	return repository.String(), nil
+}
+
+func resolveRepoContext(explicit string, environment string, storedDefault string) (RepoContext, error) {
 	for _, value := range []string{explicit, environment, storedDefault} {
 		if strings.TrimSpace(value) == "" {
 			continue
 		}
 		repository, err := ParseRepoContext(value)
 		if err != nil {
-			return "", err
+			return RepoContext{}, err
 		}
-		return repository.String(), nil
+		return repository, nil
 	}
-	return "", fmt.Errorf("repository is required; use --repo OWNER/NAME or set LH_REPO")
+	return RepoContext{}, fmt.Errorf("repository is required; use --repo OWNER/NAME or set LH_REPO")
 }
 
 func ParseRepoContext(value string) (RepoContext, error) {
@@ -110,31 +118,11 @@ func (state *rootState) resolveRepo() (RepoContext, error) {
 		return RepoContext{}, err
 	}
 
-	explicit := strings.TrimSpace(state.repoFlag)
-	environment := strings.TrimSpace(os.Getenv("LH_REPO"))
-	selected := explicit
-	if selected == "" {
-		selected = environment
-	}
-	if selected != "" {
-		repository, err := ParseRepoContext(selected)
-		if err != nil {
-			return RepoContext{}, err
-		}
-		if repository.Host == "" {
-			repository.Host = state.repoHost(hosts)
-		}
-		return repository, nil
-	}
-
 	host := state.repoHost(hosts)
-	entry, found := state.selectedHostEntry(hosts, host)
-	if !found || strings.TrimSpace(entry.DefaultRepo) == "" {
-		return RepoContext{}, fmt.Errorf("repository is required; use --repo OWNER/NAME or set LH_REPO")
-	}
-	repository, err := ParseRepoContext(entry.DefaultRepo)
+	entry, _ := state.selectedHostEntry(hosts, host)
+	repository, err := resolveRepoContext(state.repoFlag, os.Getenv("LH_REPO"), entry.DefaultRepo)
 	if err != nil {
-		return RepoContext{}, fmt.Errorf("parse stored default repository: %w", err)
+		return RepoContext{}, err
 	}
 	if repository.Host == "" {
 		repository.Host = host

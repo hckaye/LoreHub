@@ -160,7 +160,7 @@ type mergeReadiness struct {
 }
 
 type issueView struct {
-	Issue    issue       `json:"issue"`
+	issue
 	Comments commentPage `json:"comments"`
 }
 

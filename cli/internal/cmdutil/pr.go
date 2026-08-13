@@ -266,6 +266,9 @@ func waitForMergeOperation(
 	for {
 		switch operation.State {
 		case "ready_to_push":
+			if len(operation.ConflictPaths) > 0 {
+				return nil, mergeOperationError(operation)
+			}
 			return operation, nil
 		case "pushed", "merged":
 			return operation, nil

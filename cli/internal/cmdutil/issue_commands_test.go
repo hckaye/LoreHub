@@ -71,7 +71,7 @@ func TestIssueCommandsUseAPIEndpoints(t *testing.T) {
 	if err := json.Unmarshal(output.Bytes(), &view); err != nil {
 		t.Fatal(err)
 	}
-	if view.Issue.Number != 7 || len(view.Comments.Items) != 1 {
+	if view.Number != 7 || len(view.Comments.Items) != 1 {
 		t.Fatalf("issue view = %#v", view)
 	}
 

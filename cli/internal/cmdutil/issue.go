@@ -108,7 +108,7 @@ func newIssueViewCommand(state *rootState) *cobra.Command {
 			if err := getJSON(command.Context(), client, methodPath(repository, "/issues/"+number+"/comments"), &comments); err != nil {
 				return statusError(command, "list issue comments", err)
 			}
-			view := issueView{Issue: response, Comments: comments}
+			view := issueView{issue: response, Comments: comments}
 			if state.json {
 				return state.writeJSON(view)
 			}
