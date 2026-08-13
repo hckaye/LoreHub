@@ -85,7 +85,7 @@ Runner control-plane API (new):
   credential belongs to the leaseholder runner. Uploads are bound to job, attempt, and lease, with size limits
   and idempotent retry semantics.
 - The managed fleet keeps using the in-process worker path; it claims only jobs with `execution_target =
-  'managed'`.
+'managed'`.
 
 Routing:
 
@@ -119,7 +119,7 @@ Registration and identity:
   instance server is one `instance`-scoped row created from configuration at startup.
 - New table `lore_server_registration_tokens` with the same shape and atomic consume as runner registration.
   Organization settings issue a token with prefix `lhsr_`; on the Lore Server host, `lorehub-lores-agent
-  configure` exchanges it (stdin-first, like the runner) for a server credential with prefix `lhss_`, records the
+configure` exchanges it (stdin-first, like the runner) for a server credential with prefix `lhss_`, records the
   advertised `lores://` URL, and `lorehub-lores-agent run` starts a daemon that reports health, build version,
   and hook module status to LoreHub over the normal HTTP API.
 - Registration validates the Lore build and hook module version against a supported range, because the policy
@@ -155,12 +155,12 @@ Server selection and data plane:
 
 Reachability and health:
 
-| Connection | Direction | Purpose |
-| --- | --- | --- |
-| LoreHub API to Lore Server | outbound from LoreHub | provisioning, branch reads, merges, deletion |
-| Lore clients to Lore Server | from user machines | clone, sync, push |
-| Lore Server to LoreHub | outbound from server | Lore Auth, JWKS, policy, observation |
-| Agent to LoreHub | outbound from server host | registration, heartbeat, health |
+| Connection                  | Direction                 | Purpose                                      |
+| --------------------------- | ------------------------- | -------------------------------------------- |
+| LoreHub API to Lore Server  | outbound from LoreHub     | provisioning, branch reads, merges, deletion |
+| Lore clients to Lore Server | from user machines        | clone, sync, push                            |
+| Lore Server to LoreHub      | outbound from server      | Lore Auth, JWKS, policy, observation         |
+| Agent to LoreHub            | outbound from server host | registration, heartbeat, health              |
 
 - The agent heartbeat proves the host is up, not that the data plane is reachable. Server health combines the
   heartbeat with an active TLS probe from the API host, and provisioning fails fast with a health error when the
@@ -172,13 +172,13 @@ Reachability and health:
 
 ### Enforcement summary
 
-| Action | Without entitlement | With entitlement |
-| --- | --- | --- |
-| Create repository, no server registered | Rejected in the provisioning transaction, with guidance | Provisions on instance server |
-| Create repository, owner default server set | Provisions on that server | Same, instance server also selectable |
-| Import repository | Requires a registered server id | Same, instance server also allowed |
-| Run with `runs-on: self-hosted` | Routes to registered runners | Same |
-| Run with `runs-on: ubuntu-latest` | Recorded as failed with `failure_reason` | Routes to managed fleet |
+| Action                                      | Without entitlement                                     | With entitlement                      |
+| ------------------------------------------- | ------------------------------------------------------- | ------------------------------------- |
+| Create repository, no server registered     | Rejected in the provisioning transaction, with guidance | Provisions on instance server         |
+| Create repository, owner default server set | Provisions on that server                               | Same, instance server also selectable |
+| Import repository                           | Requires a registered server id                         | Same, instance server also allowed    |
+| Run with `runs-on: self-hosted`             | Routes to registered runners                            | Same                                  |
+| Run with `runs-on: ubuntu-latest`           | Recorded as failed with `failure_reason`                | Routes to managed fleet               |
 
 Grandfathered organizations hold both entitlements via migration grants, so their behavior does not change at
 upgrade time.
