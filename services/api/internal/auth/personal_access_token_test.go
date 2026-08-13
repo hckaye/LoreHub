@@ -56,14 +56,19 @@ func TestPersonalAccessTokenAuthenticatorVerifiesTokenAndPreservesScopes(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
+	expiresAt := time.Now().UTC().Add(24 * time.Hour)
+	lastUsedAt := time.Now().UTC().Add(-time.Hour)
 	verifier := &personalAccessTokenVerifierStub{identity: PersonalAccessTokenIdentity{
 		TokenID:         "token-id",
+		Prefix:          PersonalAccessTokenPrefix(raw),
 		UserID:          "user-id",
 		Username:        "alice",
 		DisplayName:     "Alice",
 		Email:           "alice@example.com",
 		PreferredLocale: "ja",
 		Scopes:          []string{ScopeReadAPI, ScopeWriteRepository},
+		ExpiresAt:       expiresAt,
+		LastUsedAt:      &lastUsedAt,
 	}}
 	fallback := &authenticatorStub{}
 	authenticator, err := NewPersonalAccessTokenAuthenticator(fallback, verifier, secrets)
@@ -76,6 +81,10 @@ func TestPersonalAccessTokenAuthenticatorVerifiesTokenAndPreservesScopes(t *test
 	}
 	if principal.InternalUserID != "user-id" || principal.CredentialKind != CredentialPersonalAccessToken ||
 		principal.CredentialID != "token-id" || principal.Username != "alice" ||
+		principal.CredentialPrefix != verifier.identity.Prefix ||
+		!principal.CredentialExpiresAt.Equal(expiresAt) ||
+		principal.CredentialLastUsedAt == nil ||
+		!principal.CredentialLastUsedAt.Equal(lastUsedAt) ||
 		!reflect.DeepEqual(principal.Scopes, verifier.identity.Scopes) {
 		t.Fatalf("unexpected principal: %+v", principal)
 	}

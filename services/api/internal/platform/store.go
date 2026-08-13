@@ -41,10 +41,12 @@ func NewStoreWithNotificationEmail(pool *pgxpool.Pool, available bool) *Store {
 func (store *Store) ActiveUser(ctx context.Context, userID string) (User, error) {
 	var user User
 	err := store.pool.QueryRow(ctx, `
-		SELECT id, username, display_name, COALESCE(email, ''), locale
+		SELECT id, username, display_name, avatar_url, COALESCE(email, ''), locale
 		FROM users
 		WHERE id = $1 AND status = 'active'
-	`, userID).Scan(&user.ID, &user.Username, &user.DisplayName, &user.Email, &user.Locale)
+	`, userID).Scan(
+		&user.ID, &user.Username, &user.DisplayName, &user.AvatarURL, &user.Email, &user.Locale,
+	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return User{}, ErrForbidden
 	}
@@ -58,7 +60,7 @@ func (store *Store) EnsureUser(ctx context.Context, principal auth.Principal) (U
 	var user User
 	var status string
 	err := store.pool.QueryRow(ctx, `
-		SELECT u.id, u.username, u.display_name, COALESCE(u.email, ''), u.locale, u.status
+		SELECT u.id, u.username, u.display_name, u.avatar_url, COALESCE(u.email, ''), u.locale, u.status
 		FROM user_identities i
 		JOIN users u ON u.id = i.user_id
 		WHERE i.issuer = $1 AND i.subject = $2
@@ -66,6 +68,7 @@ func (store *Store) EnsureUser(ctx context.Context, principal auth.Principal) (U
 		&user.ID,
 		&user.Username,
 		&user.DisplayName,
+		&user.AvatarURL,
 		&user.Email,
 		&user.Locale,
 		&status,
@@ -91,11 +94,12 @@ func (store *Store) EnsureUser(ctx context.Context, principal auth.Principal) (U
 			UPDATE users
 			SET display_name = $2, email = NULLIF($3, ''), locale = $4, updated_at = now()
 			WHERE id = $1 AND status = 'active'
-			RETURNING id, username, display_name, COALESCE(email, ''), locale
+			RETURNING id, username, display_name, avatar_url, COALESCE(email, ''), locale
 		`, user.ID, displayName, email, locale).Scan(
 			&user.ID,
 			&user.Username,
 			&user.DisplayName,
+			&user.AvatarURL,
 			&user.Email,
 			&user.Locale,
 		); err != nil {

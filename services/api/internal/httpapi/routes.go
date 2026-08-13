@@ -54,6 +54,7 @@ func (api *API) registerCoreRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/search", api.search)
 	mux.HandleFunc("GET /api/v1/users/{username}", api.userProfile)
 	mux.HandleFunc("GET /api/v1/users/{username}/repositories", api.userRepositories)
+	mux.HandleFunc("GET /api/v1/account", api.account)
 	mux.HandleFunc("PATCH /api/v1/account/profile", api.updateProfile)
 	mux.HandleFunc("GET /api/v1/account/personal-access-tokens", api.listPersonalAccessTokens)
 	mux.HandleFunc("POST /api/v1/account/personal-access-tokens", api.createPersonalAccessToken)
