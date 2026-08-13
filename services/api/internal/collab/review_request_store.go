@@ -733,6 +733,15 @@ func finishReviewRequestMutation(
 	); err != nil {
 		return err
 	}
+	if change == "created" {
+		if err := RecordWorkItemEvent(ctx, tx, WorkItemEventRecord{
+			RepositoryID: requestContext.RepositoryID, ItemKind: WorkItemMergeRequest,
+			ItemID: requestContext.MergeRequestID, ActorID: actorID, Kind: EventReviewRequested,
+			Payload: WorkItemEventPayload{Reviewer: request.Slug},
+		}); err != nil {
+			return err
+		}
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit review request mutation: %w", err)
 	}

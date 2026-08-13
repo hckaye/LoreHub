@@ -63,6 +63,13 @@ func (store *store) AssignIssue(
 	if err := insertOutbox(ctx, tx, "issue.milestone.updated", issueID+":"+uuid.NewString(), payload); err != nil {
 		return collab.MilestoneSummary{}, err
 	}
+	if err := collab.RecordWorkItemEvent(ctx, tx, collab.WorkItemEventRecord{
+		RepositoryID: repository.ID, ItemKind: collab.WorkItemIssue, ItemID: issueID,
+		ActorID: actor.ID, Kind: collab.EventMilestoned,
+		Payload: collab.WorkItemEventPayload{Milestone: &milestone},
+	}); err != nil {
+		return collab.MilestoneSummary{}, err
+	}
 	if err := commit(ctx, tx, "milestone assignment"); err != nil {
 		return collab.MilestoneSummary{}, err
 	}
@@ -108,6 +115,12 @@ func (store *store) RemoveIssue(
 		return err
 	}
 	if err := insertOutbox(ctx, tx, "issue.milestone.updated", issueID+":"+uuid.NewString(), payload); err != nil {
+		return err
+	}
+	if err := collab.RecordWorkItemEvent(ctx, tx, collab.WorkItemEventRecord{
+		RepositoryID: repository.ID, ItemKind: collab.WorkItemIssue, ItemID: issueID,
+		ActorID: actor.ID, Kind: collab.EventDemilestoned,
+	}); err != nil {
 		return err
 	}
 	return commit(ctx, tx, "milestone removal")

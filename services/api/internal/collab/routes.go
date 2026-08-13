@@ -15,6 +15,7 @@ import (
 //
 //	GET    /api/v1/repositories/{owner}/{repository}/issues/{number}
 //	PATCH  /api/v1/repositories/{owner}/{repository}/issues/{number}
+//	GET    /api/v1/repositories/{owner}/{repository}/issues/{number}/events
 //	GET    /api/v1/repositories/{owner}/{repository}/issues/{number}/comments
 //	POST   /api/v1/repositories/{owner}/{repository}/issues/{number}/comments
 //	PATCH  /api/v1/repositories/{owner}/{repository}/issues/{number}/comments/{commentID}
@@ -29,6 +30,7 @@ import (
 //	PATCH  /api/v1/repositories/{owner}/{repository}/merge-requests/{number}
 //	PUT    /api/v1/repositories/{owner}/{repository}/merge-requests/{number}/draft
 //	DELETE /api/v1/repositories/{owner}/{repository}/merge-requests/{number}/draft
+//	GET    /api/v1/repositories/{owner}/{repository}/merge-requests/{number}/events
 //	GET    /api/v1/repositories/{owner}/{repository}/merge-requests/{number}/reviews
 //	POST   /api/v1/repositories/{owner}/{repository}/merge-requests/{number}/reviews
 //	PUT    /api/v1/repositories/{owner}/{repository}/star
@@ -54,6 +56,8 @@ func Register(mux *http.ServeMux, store Store, actors ActorResolver, logger *slo
 	mux.HandleFunc("PATCH "+base+"/issues/{number}/comments/{commentID}", api.patchIssueComment)
 	mux.HandleFunc("DELETE "+base+"/issues/{number}/comments/{commentID}", api.deleteIssueComment)
 
+	mux.HandleFunc("GET "+base+"/issues/{number}/events", api.listIssueEvents)
+
 	mux.HandleFunc("GET "+base+"/labels", api.listLabels)
 	mux.HandleFunc("POST "+base+"/labels", api.createLabel)
 	mux.HandleFunc("PATCH "+base+"/labels/{labelID}", api.patchLabel)
@@ -68,6 +72,7 @@ func Register(mux *http.ServeMux, store Store, actors ActorResolver, logger *slo
 	mux.HandleFunc("POST "+base+"/merge-requests/{number}/comments", api.createMergeRequestComment)
 	mux.HandleFunc("PATCH "+base+"/merge-requests/{number}/comments/{commentID}", api.patchMergeRequestComment)
 	mux.HandleFunc("DELETE "+base+"/merge-requests/{number}/comments/{commentID}", api.deleteMergeRequestComment)
+	mux.HandleFunc("GET "+base+"/merge-requests/{number}/events", api.listMergeRequestEvents)
 	mux.HandleFunc("GET "+base+"/merge-requests/{number}/reviews", api.listReviews)
 	mux.HandleFunc("POST "+base+"/merge-requests/{number}/reviews", api.createReview)
 	mux.HandleFunc("GET "+base+"/merge-requests/{number}/review-requests", api.listReviewRequests)

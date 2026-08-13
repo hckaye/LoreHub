@@ -384,6 +384,18 @@ func finishIssueAssigneeMutation(
 	); err != nil {
 		return err
 	}
+	eventKind := EventAssigned
+	if change == "removed" {
+		eventKind = EventUnassigned
+	}
+	assigned := assignee
+	if err := RecordWorkItemEvent(ctx, tx, WorkItemEventRecord{
+		RepositoryID: repositoryID, ItemKind: WorkItemIssue, ItemID: issueID,
+		ActorID: actorID, Kind: eventKind,
+		Payload: WorkItemEventPayload{Assignee: &assigned},
+	}); err != nil {
+		return err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit issue assignee mutation: %w", err)
 	}

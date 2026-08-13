@@ -139,6 +139,10 @@ func (s *store) UpdateIssue(
 	}
 	defer rollback(ctx, tx)
 
+	previousTitle, previousState, err := lockIssueForUpdate(ctx, tx, repoID, number)
+	if err != nil {
+		return Issue{}, err
+	}
 	now := nowUTC()
 	query, args, err := buildIssueUpdateQuery(repoID, number, actor.ID, input, now)
 	if err != nil {
@@ -175,6 +179,11 @@ func (s *store) UpdateIssue(
 	if err := insertAudit(ctx, tx, actor.ID, orgID, repoID, action, "issue", issue.ID); err != nil {
 		return Issue{}, err
 	}
+	if err := recordStateChangeEvents(ctx, tx, WorkItemEventRecord{
+		RepositoryID: repoID, ItemKind: WorkItemIssue, ItemID: issue.ID, ActorID: actor.ID,
+	}, previousTitle, previousState, input.Title, input.State); err != nil {
+		return Issue{}, err
+	}
 	if err := insertOutbox(ctx, tx, "issue.updated", issue.ID+":"+uuidArg(), issue); err != nil {
 		return Issue{}, err
 	}
@@ -182,6 +191,29 @@ func (s *store) UpdateIssue(
 		return Issue{}, fmt.Errorf("commit issue update: %w", err)
 	}
 	return issue, nil
+}
+
+// lockIssueForUpdate takes the row lock for an issue edit and returns the values
+// the timeline events compare against.
+func lockIssueForUpdate(
+	ctx context.Context,
+	tx pgx.Tx,
+	repoID string,
+	number int64,
+) (string, string, error) {
+	var title, state string
+	err := tx.QueryRow(ctx, `
+		SELECT title, state FROM issues
+		WHERE repository_id = $1 AND number = $2
+		FOR UPDATE
+	`, repoID, number).Scan(&title, &state)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", "", platform.ErrNotFound
+	}
+	if err != nil {
+		return "", "", fmt.Errorf("lock issue for update: %w", err)
+	}
+	return title, state, nil
 }
 
 // checkIssueMutation permits the issue author or an actor with triage+ access

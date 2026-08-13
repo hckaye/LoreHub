@@ -672,6 +672,13 @@ func (s *store) FinalizeMerged(
 	if err := insertOutbox(ctx, tx, "merge_request.merged", mr.ID+":"+uuidArg(), mr); err != nil {
 		return MergeRequest{}, err
 	}
+	if err := RecordWorkItemEvent(ctx, tx, WorkItemEventRecord{
+		RepositoryID: repositoryID, ItemKind: WorkItemMergeRequest, ItemID: mr.ID,
+		ActorID: actor.ID, Kind: EventMerged,
+		Payload: WorkItemEventPayload{Revision: pushedRevision},
+	}); err != nil {
+		return MergeRequest{}, err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return MergeRequest{}, fmt.Errorf("commit merge finalization: %w", err)
 	}
