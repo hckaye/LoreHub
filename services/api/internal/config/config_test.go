@@ -137,6 +137,8 @@ func TestLoadForProductionRunnerDoesNotRequireWebAuthentication(t *testing.T) {
 	t.Setenv("LOREHUB_OIDC_CLIENT_SECRET", "")
 	t.Setenv("LOREHUB_OIDC_REDIRECT_URL", "")
 	t.Setenv("LOREHUB_AUTH_SECRET", "")
+	t.Setenv("LOREHUB_RUNNER_TOKEN_KEY_ID", "")
+	t.Setenv("LOREHUB_RUNNER_TOKEN_KEY", "")
 	t.Setenv("LOREHUB_WEBHOOK_SECRET_KEY_ID", "")
 	t.Setenv("LOREHUB_WEBHOOK_SECRET_KEY", "")
 	t.Setenv("LOREHUB_WEBHOOK_ALLOW_PRIVATE_TARGETS", "invalid")

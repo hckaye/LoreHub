@@ -173,6 +173,44 @@ func TestRunnerRegistrationTokenAtomicConsumeIntegration(t *testing.T) {
 	}
 }
 
+func TestRunnerAuthenticationRejectsExpiredTokensIntegration(t *testing.T) {
+	pool, store := identityIntegrationStore(t)
+	fixture := newRunnerStoreFixture(t, store)
+	ctx := context.Background()
+	codec, _ := auth.NewSecretCodec("runner expiry integration secret")
+	registrationRaw, registrationDigest, err := auth.NewRunnerRegistrationToken(codec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustIdentityExec(t, pool, `
+		INSERT INTO runner_registration_tokens (
+			id, organization_id, token_digest, expires_at, created_by, created_at
+		) VALUES ($1, $2, $3, now() - interval '1 hour', $4, now() - interval '2 hours')
+	`, uuid.NewString(), fixture.organizationID, registrationDigest, fixture.owner.ID)
+	if _, err := store.ConsumeRegistrationToken(
+		ctx, codec.Digest(registrationRaw),
+	); !errors.Is(err, auth.ErrInvalidRunnerToken) {
+		t.Fatalf("expired registration token error = %v", err)
+	}
+
+	credentialRaw, credentialDigest, err := auth.NewRunnerCredential(codec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustIdentityExec(t, pool, `
+		INSERT INTO ci_runners (
+			id, organization_id, name, labels, credential_digest, credential_key_id,
+			credential_expires_at, runner_version, created_at
+		) VALUES ($1, $2, 'Expired runner', '["self-hosted"]', $3, 'runner-v1',
+		          now() - interval '1 hour', '1.0.0', now() - interval '2 hours')
+	`, uuid.NewString(), fixture.organizationID, credentialDigest)
+	if _, err := store.AuthenticateRunner(
+		ctx, codec.Digest(credentialRaw), "runner-v1", time.Now().UTC(),
+	); !errors.Is(err, auth.ErrInvalidRunnerToken) {
+		t.Fatalf("expired runner credential error = %v", err)
+	}
+}
+
 func TestRunnerScopeAuthorizationIntegration(t *testing.T) {
 	_, store := identityIntegrationStore(t)
 	fixture := newRunnerStoreFixture(t, store)
