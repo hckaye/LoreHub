@@ -60,6 +60,15 @@ func (api *API) search(writer http.ResponseWriter, request *http.Request) {
 		writeProblem(writer, http.StatusBadRequest, "invalid_query", "The search query is invalid")
 		return
 	}
+	if parameters.Kind == "code" {
+		codeQuery, err := parseCodeSearchQuery(parameters.Query)
+		if err != nil {
+			writeProblem(writer, http.StatusBadRequest, "invalid_query", err.Error())
+			return
+		}
+		api.codeSearch(writer, request, viewer, codeQuery)
+		return
+	}
 	results, err := api.identityStore.Search(
 		request.Context(), viewer, parameters.Query, parameters.Kind,
 		parameters.Page, parameters.PerPage,
@@ -154,7 +163,7 @@ func strictPositiveSearchValue(
 
 func validSearchType(value string) bool {
 	switch value {
-	case "all", "repositories", "organizations", "users", "issues", "pulls":
+	case "all", "repositories", "organizations", "users", "issues", "pulls", "code":
 		return true
 	default:
 		return false

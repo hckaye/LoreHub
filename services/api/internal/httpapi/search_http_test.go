@@ -107,8 +107,22 @@ func TestSearchHTTPRejectsInvalidQueries(t *testing.T) {
 	}
 }
 
+func TestSearchHTTPRequiresRepositoryQualifierForCode(t *testing.T) {
+	store := &searchHTTPStore{}
+	handler := newIdentityTestAPI(t, store)
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/search?q=needle&type=code", nil)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), "repo:OWNER/SLUG") {
+		t.Fatalf("missing repository qualifier detail: %s", response.Body.String())
+	}
+}
+
 func TestParseSearchParametersTypes(t *testing.T) {
-	for _, kind := range []string{"all", "repositories", "organizations", "users", "issues", "pulls"} {
+	for _, kind := range []string{"all", "repositories", "organizations", "users", "issues", "pulls", "code"} {
 		parameters, err := parseSearchParameters(map[string][]string{"q": {"needle"}, "type": {kind}})
 		if err != nil || parameters.Kind != kind || parameters.Page != 1 || parameters.PerPage != 20 {
 			t.Errorf("kind %q parameters = %#v, error = %v", kind, parameters, err)
