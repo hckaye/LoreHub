@@ -1,83 +1,336 @@
 .files {
   display: grid;
-  gap: 1rem;
+  gap: 16px;
+  min-width: 0;
+}
+
+.statHeader {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  min-height: 48px;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--canvas-default);
+}
+
+.statSummary {
+  align-items: center;
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  gap: 12px;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.statSummary strong {
+  color: var(--fg-default);
+  font-weight: 600;
+}
+
+.statCount,
+.fileCounts {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.additions {
+  color: var(--success-fg);
+  font-weight: 600;
+}
+
+.deletions {
+  color: var(--danger-fg);
+  font-weight: 600;
+}
+
+.diffBar {
+  align-items: stretch;
+  display: flex;
+  flex: 0 1 240px;
+  gap: 2px;
+  height: 8px;
+  min-width: 96px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--border-muted);
+}
+
+.diffBarSquare {
+  flex: 1 1 0;
+  min-width: 2px;
+}
+
+.diffBarSquare[data-kind="additions"] {
+  background: var(--success-fg);
+}
+
+.diffBarSquare[data-kind="deletions"] {
+  background: var(--danger-fg);
+}
+
+.diffBarSquare[data-kind="empty"] {
+  background: var(--border-strong);
+}
+
+.message,
+.meta {
+  color: var(--fg-muted);
+  font-size: 13px;
+}
+
+.message {
+  min-height: 18px;
+  margin: 0;
+}
+
+.reviewLayout {
+  align-items: start;
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 16px;
+  min-width: 0;
+}
+
+.fileTree {
+  position: sticky;
+  top: 16px;
+  min-width: 0;
+}
+
+.treeDetails {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--canvas-default);
+}
+
+.treeSummary,
+.treeFolderSummary {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.treeSummary::-webkit-details-marker,
+.treeFolderSummary::-webkit-details-marker {
+  display: none;
+}
+
+.treeSummary {
+  min-height: 40px;
+  padding: 8px 10px;
+  background: var(--canvas-subtle);
+  color: var(--fg-default);
+  font-size: 13px;
+}
+
+.treeSummary strong {
+  flex: 1;
+  font-weight: 600;
+}
+
+.treeCount {
+  min-width: 20px;
+  padding: 1px 5px;
+  border-radius: 10px;
+  background: var(--border-muted);
+  color: var(--fg-muted);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  text-align: center;
+}
+
+.treeChevron,
+.chevron {
+  flex: 0 0 auto;
+  color: var(--fg-muted);
+  transition: transform 120ms ease;
+}
+
+.treeDetails:not([open]) > .treeSummary .treeChevron,
+.treeFolder:not([open]) > .treeFolderSummary .treeChevron,
+.file:not([open]) > .fileHeader .chevron {
+  transform: rotate(-90deg);
+}
+
+.treeList,
+.treeListNested {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+}
+
+.treeList {
+  max-height: calc(100vh - 180px);
+  overflow: auto;
+}
+
+.treeListNested {
+  margin: 2px 0 2px 7px;
+  padding: 2px 0 2px 8px;
+  border-left: 1px solid var(--border-muted);
+}
+
+.treeFolderSummary {
+  min-height: 28px;
+  padding: 4px 6px;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.treeFolderSummary:hover,
+.treeFile:hover {
+  background: var(--canvas-subtle);
+  color: var(--fg-default);
+}
+
+.treeFile {
+  align-items: center;
+  display: flex;
+  min-height: 28px;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  color: var(--fg-muted);
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.statusDot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+}
+
+.statusDot[data-status="added"] {
+  background: var(--success-fg);
+}
+
+.statusDot[data-status="removed"] {
+  background: var(--danger-fg);
+}
+
+.statusDot[data-status="modified"] {
+  background: var(--attention-fg);
+}
+
+.treeFileName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fileList {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
 }
 
 .file {
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  min-width: 0;
   overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--canvas-default);
+  scroll-margin-top: 16px;
 }
 
 .fileHeader {
   align-items: center;
-  background: var(--canvas-subtle);
-  border-bottom: 1px solid var(--border);
   display: flex;
-  gap: 1rem;
-  justify-content: space-between;
-  padding: 0.65rem 0.8rem;
+  flex-wrap: wrap;
+  min-height: 44px;
+  gap: 8px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--canvas-subtle);
+  color: var(--fg-muted);
+  cursor: pointer;
+  list-style: none;
 }
 
 .fileHeader::-webkit-details-marker {
   display: none;
 }
 
-.fileHeader {
-  cursor: pointer;
-  list-style: none;
+.filePathGroup {
+  align-items: center;
+  display: flex;
+  flex: 1 1 220px;
+  min-width: 0;
+  gap: 2px;
 }
 
-.fileHeader::before {
-  border-bottom: 1px solid currentColor;
-  border-right: 1px solid currentColor;
-  content: "";
-  flex: 0 0 0.45rem;
-  height: 0.45rem;
-  transform: rotate(-45deg);
-}
-
-.file[open] > .fileHeader::before {
-  transform: rotate(45deg) translate(-0.1rem, -0.1rem);
-}
-
-.fileHeader h3 {
+.filePath {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fg-default);
   font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 0.9rem;
-  margin: 0;
-  overflow-wrap: anywhere;
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.fileHeader span,
-.meta,
-.message {
-  color: var(--fg-muted);
-  font-size: 0.85rem;
+.filePathGroup > span:last-child {
+  display: inline-flex;
+  flex: 0 0 auto;
 }
 
-.summary {
+.fileCounts {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.viewed {
+  align-items: center;
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 6px;
   color: var(--fg-muted);
-  font-size: 0.85rem;
+  cursor: pointer;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.viewed input {
   margin: 0;
 }
 
 .diffTable {
+  width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
-  width: 100%;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 12px;
+  line-height: 20px;
 }
 
 .diffTable td {
-  border: 0;
   padding: 0;
+  border: 0;
 }
 
 .hunk td {
+  padding: 4px 12px;
   background: var(--canvas-subtle);
   color: var(--accent-fg);
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 0.78rem;
-  padding: 0.35rem 0.7rem;
+  font-size: 12px;
+  line-height: 20px;
 }
 
 .line[data-kind="added"] {
@@ -89,24 +342,25 @@
 }
 
 .lineNumber {
+  width: 48px;
   border-right: 1px solid var(--border-muted) !important;
   color: var(--fg-muted);
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 0.75rem;
+  font-size: 12px;
+  line-height: 20px;
   text-align: right;
   user-select: none;
-  width: 3.4rem;
 }
 
 .lineNumber button {
-  background: transparent;
+  width: 100%;
+  height: 100%;
+  padding: 0 8px;
   border: 0;
+  background: transparent;
   color: inherit;
   cursor: pointer;
   font: inherit;
-  height: 100%;
-  padding: 0.15rem 0.45rem;
-  width: 100%;
+  line-height: 20px;
 }
 
 .lineNumber button:hover,
@@ -116,58 +370,58 @@
 }
 
 .code {
-  font-family: var(--font-mono), ui-monospace, monospace;
-  font-size: 0.78rem;
   overflow-x: auto;
-  padding: 0.15rem 0.7rem !important;
+  padding: 0 12px !important;
+  font-size: 12px;
+  line-height: 20px;
   white-space: pre;
 }
 
 .inline {
-  padding: 0.65rem clamp(0.5rem, 5vw, 4rem) !important;
+  padding: 10px clamp(8px, 5vw, 64px) !important;
 }
 
 .composer,
 .reply {
   display: grid;
-  gap: 0.55rem;
+  gap: 8px;
 }
 
 .composer textarea,
 .reply textarea,
 .comment textarea {
-  background: var(--surface);
+  width: 100%;
+  padding: 10px;
   border: 1px solid var(--border);
-  border-radius: 0.4rem;
+  border-radius: 6px;
+  background: var(--surface);
   color: var(--fg-default);
   font: inherit;
-  padding: 0.65rem;
   resize: vertical;
-  width: 100%;
 }
 
 .actions,
 .textActions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.45rem;
+  gap: 6px;
   justify-content: flex-end;
 }
 
 .actions button,
 .textActions button {
-  background: var(--surface);
+  padding: 6px 10px;
   border: 1px solid var(--border);
-  border-radius: 0.4rem;
+  border-radius: 6px;
+  background: var(--surface);
   color: var(--fg-default);
   cursor: pointer;
   font: inherit;
-  padding: 0.4rem 0.65rem;
 }
 
 .actions button:last-child {
-  background: var(--accent-emphasis);
   border-color: var(--accent-emphasis);
+  background: var(--accent-emphasis);
   color: var(--fg-on-emphasis);
 }
 
@@ -178,11 +432,11 @@
 }
 
 .thread {
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
   display: grid;
-  gap: 0.65rem;
+  gap: 10px;
   overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
 }
 
 .thread[data-resolved="true"] {
@@ -191,43 +445,43 @@
 
 .thread > header {
   align-items: center;
-  background: var(--canvas-subtle);
-  border-bottom: 1px solid var(--border);
   display: flex;
   flex-wrap: wrap;
-  gap: 0.55rem;
-  padding: 0.55rem 0.7rem;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--canvas-subtle);
 }
 
-.thread > header span {
-  color: var(--fg-muted);
-  font-size: 0.8rem;
-}
-
+.thread > header span,
 .thread > header time {
   color: var(--fg-muted);
-  font-size: 0.8rem;
+  font-size: 12px;
+}
+
+.thread > header time,
+.commentHeader time {
   margin-left: auto;
 }
 
 .anchorLine {
-  background: var(--canvas-subtle);
-  margin: 0 0.7rem;
   overflow-x: auto;
-  padding: 0.45rem;
+  margin: 0 10px;
+  padding: 6px;
+  background: var(--canvas-subtle);
   white-space: pre;
 }
 
 .comment,
 .reply {
-  margin: 0 0.7rem;
+  margin: 0 10px;
 }
 
 .comment {
-  border-bottom: 1px solid var(--border-muted);
   display: grid;
-  gap: 0.35rem;
-  padding-bottom: 0.65rem;
+  gap: 6px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-muted);
 }
 
 .comment p {
@@ -238,13 +492,12 @@
 .commentHeader {
   align-items: center;
   display: flex;
-  gap: 0.45rem;
+  gap: 6px;
 }
 
 .commentHeader time {
   color: var(--fg-muted);
-  font-size: 0.78rem;
-  margin-left: auto;
+  font-size: 12px;
 }
 
 .commentBody {
@@ -252,33 +505,48 @@
 }
 
 .textActions button {
+  padding: 2px;
   border: 0;
   color: var(--accent-fg);
-  padding: 0.2rem;
 }
 
 .outdated {
   display: grid;
-  gap: 0.7rem;
+  gap: 10px;
 }
 
 .outdated h3,
-.meta,
-.message {
+.meta {
   margin: 0;
 }
 
-.thread > .message {
-  min-height: 1.2rem;
-  padding: 0 0.7rem 0.5rem;
+.meta {
+  padding: 12px;
 }
 
-@media (max-width: 42rem) {
+.thread > .message {
+  min-height: 18px;
+  padding: 0 10px 8px;
+}
+
+@media (max-width: 768px) {
+  .reviewLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .fileTree {
+    position: static;
+  }
+
+  .treeList {
+    max-height: none;
+  }
+
   .lineNumber {
-    width: 2.7rem;
+    width: 40px;
   }
 
   .inline {
-    padding: 0.5rem !important;
+    padding: 8px !important;
   }
 }
