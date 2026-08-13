@@ -26,6 +26,32 @@ func TestLoadDefaultsToDeterministicDisabledMode(t *testing.T) {
 	}
 }
 
+func TestLoadParsesInstanceAdministratorUsernames(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("LOREHUB_INSTANCE_ADMIN_USERNAMES", " Alice, bob ,,ALICE ")
+
+	settings, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"alice", "bob"}; !reflect.DeepEqual(settings.InstanceAdminUsernames, want) {
+		t.Fatalf("instance administrator usernames = %v, want %v", settings.InstanceAdminUsernames, want)
+	}
+}
+
+func TestLoadAllowsNoInstanceAdministrators(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("LOREHUB_INSTANCE_ADMIN_USERNAMES", " , ")
+
+	settings, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(settings.InstanceAdminUsernames) != 0 {
+		t.Fatalf("instance administrator usernames = %v, want none", settings.InstanceAdminUsernames)
+	}
+}
+
 func TestLocalLoreDefaultsFollowTheConfiguredRootDomain(t *testing.T) {
 	setRequiredEnvironment(t)
 	t.Setenv("LOREHUB_ENV", "development")
@@ -535,6 +561,7 @@ func setRequiredEnvironment(t *testing.T) {
 	t.Setenv("LOREHUB_SESSION_COOKIE_PATH", "")
 	t.Setenv("LOREHUB_SESSION_COOKIE_DOMAIN", "")
 	t.Setenv("LOREHUB_ALLOW_LEGACY_LORE_IDENTITY", "")
+	t.Setenv("LOREHUB_INSTANCE_ADMIN_USERNAMES", "")
 	for _, name := range []string{
 		"LOREHUB_LORE_AUTH_ISSUER", "LOREHUB_LORE_AUTH_AUDIENCE", "LOREHUB_LORE_ROOT_DOMAIN",
 		"LOREHUB_LORE_AUTH_JWKS_URL", "LOREHUB_LORE_AUTH_URL", "LOREHUB_LORE_AUTH_LOGIN_URL",
