@@ -1,9 +1,9 @@
 import { ServerOff } from "lucide-react";
 import { notFound, redirect } from "next/navigation";
 
+import { CommitHeader } from "@/components/repositories/commit-detail";
 import { CommitStatusList } from "@/components/repositories/commit-status-list";
 import { DiffView } from "@/components/repositories/diff-view";
-import { RepositoryPanel } from "@/components/repositories/repository-section";
 import { RevisionComments } from "@/components/repositories/revision-comments";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getDictionary } from "@/i18n";
@@ -22,7 +22,7 @@ import {
   revisionCommentPageHref,
 } from "@/lib/revision-comments";
 
-import styles from "@/components/repositories/code-detail.module.css";
+import styles from "@/components/repositories/commit-detail.module.css";
 
 type RevisionPageProps = {
   params: Promise<{ locale: string; owner: string; repository: string }>;
@@ -72,33 +72,23 @@ export default async function RevisionPage({ params, searchParams }: RevisionPag
     if (commentPage > lastPage) redirect(revisionCommentPageHref(basePath, revision.data.revision, lastPage));
   }
   return (
-    <RepositoryPanel
-      description={revision.data.message ?? dictionary.codeBrowser.revision}
-      title={revision.data.revision}
-    >
-      <div className={styles.panel}>
-        <div className={styles.status}>
-          <p>{revision.data.message || dictionary.codeBrowser.revision}</p>
-          <p className={styles.meta}>
-            {dictionary.pullRequestDetail.commits}: {revision.data.number}
-          </p>
-        </div>
-        <CommitStatusList dictionary={dictionary} locale={locale} {...statusListProps(statuses)} />
-        {diff?.ok && <DiffView diff={diff.data} dictionary={dictionary} />}
-        <RevisionComments
-          basePath={basePath}
-          comments={comments.ok ? comments.data : null}
-          dictionary={dictionary}
-          locale={locale}
-          owner={owner}
-          readOnly={Boolean(repository.data.archivedAt)}
-          repository={slug}
-          revision={revision.data.revision}
-          session={session}
-          unavailableReason={commentUnavailableReason(comments)}
-        />
-      </div>
-    </RepositoryPanel>
+    <div className={styles.detail}>
+      <CommitHeader dictionary={dictionary} locale={locale} owner={owner} repository={slug} revision={revision.data} />
+      <CommitStatusList dictionary={dictionary} locale={locale} {...statusListProps(statuses)} />
+      {diff?.ok && <DiffView diff={diff.data} dictionary={dictionary} />}
+      <RevisionComments
+        basePath={basePath}
+        comments={comments.ok ? comments.data : null}
+        dictionary={dictionary}
+        locale={locale}
+        owner={owner}
+        readOnly={Boolean(repository.data.archivedAt)}
+        repository={slug}
+        revision={revision.data.revision}
+        session={session}
+        unavailableReason={commentUnavailableReason(comments)}
+      />
+    </div>
   );
 }
 
