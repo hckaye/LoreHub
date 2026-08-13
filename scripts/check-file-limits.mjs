@@ -5,6 +5,7 @@ const root = new URL("../", import.meta.url);
 const ignoredDirectories = new Set([
   ".git",
   ".lore",
+  ".worktrees",
   ".next",
   ".cache",
   ".tmp",

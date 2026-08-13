@@ -21,11 +21,19 @@ func TestReleaseCommandsUseAPIEndpoints(t *testing.T) {
 		switch {
 		case request.Method == http.MethodGet && request.URL.Path == "/api/v1/repositories/acme/widget/releases" &&
 			request.URL.Query().Get("page") == "":
-			_, _ = writer.Write([]byte(`{"releases":[{"id":"release-1","tagName":"v1.0.0","title":"First","state":"draft","sourceBranch":"main","revision":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}],"page":1,"perPage":20,"hasNext":false}`))
-		case request.Method == http.MethodGet && request.URL.Path == "/api/v1/repositories/acme/widget/releases/11111111-1111-1111-1111-111111111111":
-			_, _ = writer.Write([]byte(`{"id":"11111111-1111-1111-1111-111111111111","tagName":"v1.0.0","title":"First","state":"published","sourceBranch":"main"}`))
+			_, _ = writer.Write([]byte(
+				`{"releases":[{"id":"release-1","tagName":"v1.0.0","title":"First","state":"draft","s` +
+					`ourceBranch":"main","revision":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa` +
+					`aaaaaaaaaaaa"}],"page":1,"perPage":20,"hasNext":false}`))
+		case request.Method == http.MethodGet &&
+			request.URL.Path == "/api/v1/repositories/acme/widget/releases/11111111-1111-1111-1111-111111111111":
+			_, _ = writer.Write([]byte(
+				`{"id":"11111111-1111-1111-1111-111111111111","tagName":"v1.0.0","title":"First","sta` +
+					`te":"published","sourceBranch":"main"}`))
 		case request.Method == http.MethodGet && request.URL.Path == "/api/v1/repositories/acme/widget/branches":
-			_, _ = writer.Write([]byte(`{"branches":[{"name":"main","latestRevision":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","archived":false}]}`))
+			_, _ = writer.Write([]byte(
+				`{"branches":[{"name":"main","latestRevision":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb` +
+					`bbbbbbbbbbbbbbbbbbbbbbbbbb","archived":false}]}`))
 		case request.Method == http.MethodPost && request.URL.Path == "/api/v1/repositories/acme/widget/releases":
 			var input map[string]string
 			if err := json.NewDecoder(request.Body).Decode(&input); err != nil {
@@ -35,7 +43,9 @@ func TestReleaseCommandsUseAPIEndpoints(t *testing.T) {
 				input["revision"] != strings.Repeat("b", 64) {
 				t.Errorf("release input = %#v", input)
 			}
-			_, _ = writer.Write([]byte(`{"id":"release-2","tagName":"v2.0.0","title":"Second","state":"draft","sourceBranch":"main"}`))
+			_, _ = writer.Write([]byte(
+				`{"id":"release-2","tagName":"v2.0.0","title":"Second","state":"draft","sourceBranch"` +
+					`:"main"}`))
 		default:
 			writer.WriteHeader(http.StatusNotFound)
 			_, _ = writer.Write([]byte(`{"error":{"code":"not_found","detail":"missing"}}`))
@@ -64,10 +74,12 @@ func TestReleaseCommandsUseAPIEndpoints(t *testing.T) {
 	}
 
 	output.Reset()
-	if err := executeCLI(t, configPath, server.URL, &output, "release", "view", "11111111-1111-1111-1111-111111111111"); err != nil {
+	if err := executeCLI(t, configPath, server.URL, &output,
+		"release", "view", "11111111-1111-1111-1111-111111111111"); err != nil {
 		t.Fatal(err)
 	}
-	if err := executeCLI(t, configPath, server.URL, &output, "release", "create", "--tag", "v2.0.0", "--title", "Second", "--notes", "Notes", "--branch", "main"); err != nil {
+	if err := executeCLI(t, configPath, server.URL, &output,
+		"release", "create", "--tag", "v2.0.0", "--title", "Second", "--notes", "Notes", "--branch", "main"); err != nil {
 		t.Fatal(err)
 	}
 	joined := strings.Join(paths, ",")
@@ -89,7 +101,9 @@ func TestRunWatchPollsUntilTerminalAndUsesConclusion(t *testing.T) {
 		writer.Header().Set("Content-Type", "application/json")
 		switch request.URL.Path {
 		case "/api/v1/repositories/acme/widget/actions/runs":
-			_, _ = writer.Write([]byte(`{"runs":[{"runNumber":7,"workflowName":"CI","status":"in_progress","branch":"main","eventName":"push"}],"totalCount":1,"page":1,"perPage":30,"hasMore":false}`))
+			_, _ = writer.Write([]byte(
+				`{"runs":[{"runNumber":7,"workflowName":"CI","status":"in_progress","branch":"main","` +
+					`eventName":"push"}],"totalCount":1,"page":1,"perPage":30,"hasMore":false}`))
 		case "/api/v1/repositories/acme/widget/actions/runs/7":
 			watchCalls++
 			if watchCalls == 1 {
@@ -114,7 +128,8 @@ func TestRunWatchPollsUntilTerminalAndUsesConclusion(t *testing.T) {
 		t.Fatalf("run list output = %q", output.String())
 	}
 	output.Reset()
-	if err := executeCLI(t, configPath, server.URL, &output, "run", "watch", "7", "--interval", "1ms", "--timeout", "1s"); err != nil {
+	if err := executeCLI(t, configPath, server.URL, &output,
+		"run", "watch", "7", "--interval", "1ms", "--timeout", "1s"); err != nil {
 		t.Fatal(err)
 	}
 	if watchCalls != 2 || !strings.Contains(output.String(), "success") {
@@ -133,7 +148,9 @@ func TestLabelDeleteResolvesNameToID(t *testing.T) {
 		writer.Header().Set("Content-Type", "application/json")
 		switch {
 		case request.Method == http.MethodGet && request.URL.Path == "/api/v1/repositories/acme/widget/labels":
-			_, _ = writer.Write([]byte(`{"items":[{"id":"label-7","name":"bug","color":"ff0000","description":"A bug"}],"hasMore":false}`))
+			_, _ = writer.Write([]byte(
+				`{"items":[{"id":"label-7","name":"bug","color":"ff0000","description":"A bug"}],"has` +
+					`More":false}`))
 		case request.Method == http.MethodPost && request.URL.Path == "/api/v1/repositories/acme/widget/labels":
 			_, _ = writer.Write([]byte(`{"id":"label-8","name":"feature","color":"00ff00","description":"A feature"}`))
 		case request.Method == http.MethodDelete:
@@ -150,7 +167,8 @@ func TestLabelDeleteResolvesNameToID(t *testing.T) {
 	if err := executeCLI(t, configPath, server.URL, &output, "label", "list"); err != nil {
 		t.Fatal(err)
 	}
-	if err := executeCLI(t, configPath, server.URL, &output, "label", "create", "--name", "feature", "--color", "00ff00"); err != nil {
+	if err := executeCLI(t, configPath, server.URL, &output,
+		"label", "create", "--name", "feature", "--color", "00ff00"); err != nil {
 		t.Fatal(err)
 	}
 	if err := executeCLI(t, configPath, server.URL, &output, "label", "delete", "bug"); err != nil {
@@ -170,7 +188,11 @@ func TestSearchCommandsSendAPIType(t *testing.T) {
 		}
 		types[request.URL.Query().Get("q")] = request.URL.Query().Get("type")
 		writer.Header().Set("Content-Type", "application/json")
-		_, _ = writer.Write([]byte(`{"repositories":[{"owner":"acme","slug":"widget","displayName":"Widget","visibility":"public"}],"organizations":[],"users":[],"issues":[{"repository":{"owner":"acme","slug":"widget"},"number":1,"title":"Bug","state":"open","author":{"username":"alice"}}],"pullRequests":[],"counts":{},"page":1,"perPage":20}`))
+		_, _ = writer.Write([]byte(
+			`{"repositories":[{"owner":"acme","slug":"widget","displayName":"Widget","visibility"` +
+				`:"public"}],"organizations":[],"users":[],"issues":[{"repository":{"owner":"acme","s` +
+				`lug":"widget"},"number":1,"title":"Bug","state":"open","author":{"username":"alice"}` +
+				`}],"pullRequests":[],"counts":{},"page":1,"perPage":20}`))
 	}))
 	defer server.Close()
 	configPath := cliTestConfig(t, server.URL)
@@ -200,7 +222,9 @@ func TestRepoCloneUsesRepositoryURLAndFakeLore(t *testing.T) {
 		}
 		switch request.URL.Path {
 		case "/api/v1/repositories/acme/widget":
-			_, _ = writer.Write([]byte(`{"owner":"acme","slug":"widget","loreUrl":"lores://lore.example/0123456789abcdef0123456789abcdef"}`))
+			_, _ = writer.Write([]byte(
+				`{"owner":"acme","slug":"widget","loreUrl":"lores://lore.example/0123456789abcdef0123` +
+					`456789abcdef"}`))
 		case "/api/v1/account":
 			_, _ = writer.Write([]byte(`{"user":{"username":"alice"},"token":{"permissions":["read_api","read_repository"]}}`))
 		default:
@@ -266,5 +290,10 @@ func runDetailJSON(status string, conclusion string) []byte {
 		contents, _ := json.Marshal(conclusion)
 		conclusionJSON = string(contents)
 	}
-	return []byte(`{"run":{"runNumber":7,"workflowName":"CI","status":"` + status + `","conclusion":` + conclusionJSON + `,"branch":"main","eventName":"push"},"workflow":{},"jobs":[],"artifacts":[]}`)
+	return []byte(
+		`{"run":{"runNumber":7,"workflowName":"CI","status":"` +
+			status +
+			`","conclusion":` +
+			conclusionJSON +
+			`,"branch":"main","eventName":"push"},"workflow":{},"jobs":[],"artifacts":[]}`)
 }
