@@ -183,7 +183,8 @@ func findReleaseByTag(command *cobra.Command, client *api.Client, repository Rep
 			values.Set("perPage", strconv.Itoa(perPage))
 		}
 		var page releasePage
-		if err := getJSON(command.Context(), client, queryPath(methodPath(repository, "/releases"), values), &page); err != nil {
+		path := queryPath(methodPath(repository, "/releases"), values)
+		if err := getJSON(command.Context(), client, path, &page); err != nil {
 			return release{}, statusError(command, "list releases", err)
 		}
 		if page.PerPage > 0 {
