@@ -18,6 +18,7 @@ type authorizationRepository struct {
 	Visibility        string
 	LifecycleState    string
 	Archived          bool
+	Migrating         bool
 	AllowLinks        bool
 	ObliterateEnabled bool
 }
@@ -33,7 +34,7 @@ func (store *Store) authorizationRepository(
 	var repository authorizationRepository
 	err := store.pool.QueryRow(ctx, `
 		SELECT r.id, r.organization_id, r.lore_repository_id, r.visibility,
-		       r.lifecycle_state, r.archived_at IS NOT NULL,
+		       r.lifecycle_state, r.archived_at IS NOT NULL, r.migrating_at IS NOT NULL,
 		       p.allow_cross_repository_links, p.obliterate_enabled
 		FROM repositories r
 		JOIN organizations o ON o.id = r.organization_id AND o.active
@@ -46,6 +47,7 @@ func (store *Store) authorizationRepository(
 		&repository.Visibility,
 		&repository.LifecycleState,
 		&repository.Archived,
+		&repository.Migrating,
 		&repository.AllowLinks,
 		&repository.ObliterateEnabled,
 	)
@@ -104,7 +106,8 @@ func (store *Store) EffectivePermissions(
 	if err == nil {
 		permissions := policyServicePermissions(servicePermissions, serviceKind, serviceVisibility,
 			serviceObliterateEnabled)
-		if repository.Archived && serviceKind != "lifecycle" {
+		if (repository.Archived || repository.Migrating) &&
+			serviceKind != "lifecycle" && serviceKind != "provisioner" {
 			permissions = archivedPermissionList(permissions)
 		}
 		return authz.ResourcePermissions{
@@ -208,7 +211,7 @@ func (store *Store) EffectivePermissions(
 		return authz.ResourcePermissions{}, fmt.Errorf("iterate team repository roles: %w", err)
 	}
 	rows.Close()
-	if repository.Archived {
+	if repository.Archived || repository.Migrating {
 		return authz.ResourcePermissions{
 			ResourceID: resourceID, Permissions: archivedPermissionMap(permissions),
 		}, nil

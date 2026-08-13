@@ -21,9 +21,11 @@ func (api *API) listCategories(writer http.ResponseWriter, request *http.Request
 		return
 	}
 	writeJSON(writer, http.StatusOK, map[string]any{
-		"categories":        categories,
-		"viewerCanManage":   actor != nil && access.CanManageBranchRules() && repository.ArchivedAt == nil,
-		"viewerCanModerate": actor != nil && access.AtLeast(collab.PermWrite) && repository.ArchivedAt == nil,
+		"categories": categories,
+		"viewerCanManage": actor != nil && access.CanManageBranchRules() &&
+			repository.ArchivedAt == nil && repository.MigratingAt == nil,
+		"viewerCanModerate": actor != nil && access.AtLeast(collab.PermWrite) &&
+			repository.ArchivedAt == nil && repository.MigratingAt == nil,
 	})
 }
 

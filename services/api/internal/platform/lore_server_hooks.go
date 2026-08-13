@@ -72,9 +72,19 @@ func (store *Store) LoreServerOwnsRepository(
 		SELECT EXISTS (
 			SELECT 1
 			FROM repositories repository
-			JOIN lore_servers server ON server.id = repository.lore_server_id
-			WHERE repository.lore_repository_id = $1 AND server.id = $2
+			JOIN lore_servers server ON server.id = $2
+			WHERE repository.lore_repository_id = $1
 			  AND server.status = 'active' AND server.revoked_at IS NULL
+			  AND (
+				  server.id = repository.lore_server_id
+				  OR EXISTS (
+					  SELECT 1
+					  FROM repository_migrations migration
+					  WHERE migration.repository_id = repository.id
+						AND migration.to_server_id = server.id
+						AND migration.state IN ('pending', 'mirroring', 'repointing')
+				  )
+				)
 		)
 	`, loreRepositoryID, serverID).Scan(&owns)
 	if err != nil {

@@ -242,8 +242,10 @@ func managedRepository(
 	lock bool,
 ) (repositoryRef, error) {
 	lockClause := ""
+	migrationClause := ""
 	if lock {
 		lockClause = " FOR SHARE OF r, o"
+		migrationClause = " AND r.migrating_at IS NULL"
 	}
 	var reference repositoryRef
 	err := tx.QueryRow(ctx, `
@@ -252,7 +254,8 @@ func managedRepository(
 		JOIN organizations o ON o.id = r.organization_id AND o.active
 		JOIN users actor ON actor.id = $3 AND actor.status = 'active'
 		WHERE lower(o.slug) = lower($1) AND lower(r.slug) = lower($2)
-		  AND r.lifecycle_state = 'active' AND r.archived_at IS NULL
+		  AND r.lifecycle_state = 'active'
+		  AND r.archived_at IS NULL`+migrationClause+`
 		  AND (
 		    EXISTS (
 		        SELECT 1 FROM organization_memberships membership

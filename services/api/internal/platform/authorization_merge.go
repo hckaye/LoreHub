@@ -60,6 +60,10 @@ func (store *Store) PrepareMergeAuthorization(
 		JOIN merge_requests mr
 		  ON mr.id = mo.merge_request_id AND mr.repository_id = mo.repository_id
 		WHERE mo.id = $1
+		  AND EXISTS (
+			SELECT 1 FROM repositories repository
+			WHERE repository.id = mo.repository_id AND repository.migrating_at IS NULL
+		  )
 		FOR UPDATE
 	`, operationID).Scan(&operationRepository, &operationActor, &operationSource, &operationTarget,
 		&operationStaged, &operationBranch, &operationState)
@@ -129,7 +133,7 @@ func (store *Store) consumePreparedMergeAuthorization(
 				  ON organization.id = repository.organization_id AND organization.active
 				WHERE repository.id = lore_merge_authorizations.repository_id
 				  AND repository.lifecycle_state = 'active'
-				  AND repository.archived_at IS NULL
+				  AND repository.archived_at IS NULL AND repository.migrating_at IS NULL
 			  )
 			  AND EXISTS (
 				SELECT 1
@@ -151,7 +155,7 @@ func (store *Store) consumePreparedMergeAuthorization(
 		JOIN repositories repository
 		  ON repository.id = consumed.repository_id
 		 AND repository.lifecycle_state = 'active'
-		 AND repository.archived_at IS NULL
+		 AND repository.archived_at IS NULL AND repository.migrating_at IS NULL
 		JOIN organizations organization
 		  ON organization.id = repository.organization_id AND organization.active
 	`, repositoryID, userID, branchID, branchName, currentRevision, proposedRevision).

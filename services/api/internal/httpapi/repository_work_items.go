@@ -65,9 +65,10 @@ func (api *API) listIssues(writer http.ResponseWriter, request *http.Request) {
 			return
 		}
 		for index := range page.Issues {
-			page.Issues[index].ViewerCanUpdate = repository.ArchivedAt == nil &&
+			page.Issues[index].ViewerCanUpdate = repository.ArchivedAt == nil && repository.MigratingAt == nil &&
 				(page.Issues[index].AuthorID == actor.ID || access.AtLeast(collab.PermTriage))
-			canManage := repository.ArchivedAt == nil && access.AtLeast(collab.PermTriage)
+			canManage := repository.ArchivedAt == nil && repository.MigratingAt == nil &&
+				access.AtLeast(collab.PermTriage)
 			page.Issues[index].ViewerCanManageLabels = canManage
 			page.Issues[index].ViewerCanManageMilestone = canManage
 			page.Issues[index].ViewerCanManageAssignees = canManage
@@ -124,9 +125,11 @@ func (api *API) listMergeRequests(writer http.ResponseWriter, request *http.Requ
 		}
 		for index := range page.MergeRequests {
 			item := &page.MergeRequests[index]
-			item.ViewerCanUpdate = repository.ArchivedAt == nil && item.State != "merged" &&
+			item.ViewerCanUpdate = repository.ArchivedAt == nil && repository.MigratingAt == nil &&
+				item.State != "merged" &&
 				(item.AuthorID == actor.ID || access.AtLeast(collab.PermTriage))
-			item.ViewerCanReview = repository.ArchivedAt == nil && item.AuthorID != actor.ID &&
+			item.ViewerCanReview = repository.ArchivedAt == nil && repository.MigratingAt == nil &&
+				item.AuthorID != actor.ID &&
 				item.State == "open" && access.AtLeast(collab.PermRead)
 		}
 	}

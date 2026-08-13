@@ -465,7 +465,8 @@ func lockMergeRequestForMetadata(
 		FROM merge_requests merge_request
 		JOIN repositories repository
 		  ON repository.id = merge_request.repository_id
-		 AND repository.lifecycle_state = 'active' AND repository.archived_at IS NULL
+		 AND repository.lifecycle_state = 'active'
+		 AND repository.archived_at IS NULL AND repository.migrating_at IS NULL
 		JOIN organizations organization
 		  ON organization.id = repository.organization_id AND organization.active
 		WHERE merge_request.repository_id = $1 AND merge_request.number = $2

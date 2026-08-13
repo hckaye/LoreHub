@@ -180,7 +180,8 @@ func lockMergeRequestDraft(
 		       )
 		FROM merge_requests request
 		JOIN repositories repository ON repository.id = request.repository_id
-		 AND repository.lifecycle_state = 'active' AND repository.archived_at IS NULL
+		 AND repository.lifecycle_state = 'active'
+		 AND repository.archived_at IS NULL AND repository.migrating_at IS NULL
 		JOIN organizations organization ON organization.id = repository.organization_id
 		 AND organization.active
 		WHERE request.repository_id = $1 AND request.number = $2

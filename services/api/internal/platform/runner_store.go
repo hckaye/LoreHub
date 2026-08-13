@@ -396,7 +396,7 @@ func (store *Store) AuthenticateRunner(
 		          WHERE repository.id = runner.repository_id
 		            AND repository.organization_id = runner.organization_id
 		            AND repository.lifecycle_state = 'active'
-		            AND repository.archived_at IS NULL
+		            AND repository.archived_at IS NULL AND repository.migrating_at IS NULL
 		      )
 		  )
 		FOR UPDATE
@@ -447,7 +447,7 @@ func authorizeRunnerScopeManagement(
 				  ON organization.id = repository.organization_id AND organization.active
 				WHERE repository.id = $1 AND repository.organization_id = $2
 				  AND repository.lifecycle_state = 'active'
-				  AND repository.archived_at IS NULL
+				  AND repository.archived_at IS NULL AND repository.migrating_at IS NULL
 			)
 		`, scope.RepositoryID, scope.OrganizationID).Scan(&scopeExists)
 	}

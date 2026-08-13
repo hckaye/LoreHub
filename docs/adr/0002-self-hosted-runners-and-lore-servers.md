@@ -168,7 +168,7 @@ Reachability and health:
 - Because tenants supply the URLs LoreHub connects to, the resolver rejects private and reserved addresses unless
   the operator explicitly allows private networks (`LOREHUB_LORE_ALLOW_PRIVATE_SERVERS`), and applies connection
   timeouts.
-- Moving an existing repository between servers is out of scope. A future ADR covers migration tooling.
+- Moving an existing repository between servers is covered by ADR 0004. The migration is operator-driven and offline.
 
 ### Enforcement summary
 

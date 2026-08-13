@@ -49,6 +49,10 @@ func (api *API) setRepositoryEngagement(
 	if !ok {
 		return
 	}
+	if repository.MigratingAt != nil {
+		writeProblem(writer, http.StatusForbidden, "repository_read_only", "The repository is read-only")
+		return
+	}
 	var snapshot RepositoryEngagement
 	var err error
 	if kind == "star" {

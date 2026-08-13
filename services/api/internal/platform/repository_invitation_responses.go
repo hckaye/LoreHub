@@ -95,13 +95,14 @@ func (store *Store) RespondRepositoryInvitation(
 	defer func() { _ = transaction.Rollback(context.WithoutCancel(ctx)) }()
 	var boundary repositoryInvitationBoundary
 	var inviteeID, status, repositoryState string
-	var organizationActive, repositoryArchived bool
+	var organizationActive, repositoryArchived, repositoryMigrating bool
 	var unexpired bool
 	err = transaction.QueryRow(ctx, `
 		SELECT invitation.invitee_user_id::text, invitation.status, invitation.expires_at > now(),
 		       invitation.repository_id::text, invitation.organization_id::text,
 		       organization.slug, repository.slug, repository.display_name,
-		       organization.active, repository.lifecycle_state, repository.archived_at IS NOT NULL
+		       organization.active, repository.lifecycle_state,
+		       repository.archived_at IS NOT NULL, repository.migrating_at IS NOT NULL
 		FROM repository_invitations invitation
 		JOIN organizations organization ON organization.id = invitation.organization_id
 		JOIN repositories repository ON repository.id = invitation.repository_id
@@ -122,6 +123,7 @@ func (store *Store) RespondRepositoryInvitation(
 		&organizationActive,
 		&repositoryState,
 		&repositoryArchived,
+		&repositoryMigrating,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return RepositoryInvitation{}, ErrNotFound
@@ -152,7 +154,7 @@ func (store *Store) RespondRepositoryInvitation(
 		}
 		return RepositoryInvitation{}, fmt.Errorf("%w: repository invitation has expired", ErrConflict)
 	}
-	if accept && (!organizationActive || repositoryState != "active" || repositoryArchived) {
+	if accept && (!organizationActive || repositoryState != "active" || repositoryArchived || repositoryMigrating) {
 		if err := store.transitionRepositoryInvitation(
 			ctx,
 			transaction,

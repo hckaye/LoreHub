@@ -220,6 +220,9 @@ func (s *store) UpdateIssueComment(
 	if err != nil {
 		return IssueComment{}, err
 	}
+	if existing.Migrating {
+		return IssueComment{}, platform.ErrForbidden
+	}
 	access, err := s.permFromRef(ctx, actor, existing.RepoID, existing.OrgID)
 	if err != nil {
 		return IssueComment{}, err
@@ -278,6 +281,9 @@ func (s *store) DeleteIssueComment(
 	if err != nil {
 		return err
 	}
+	if existing.Migrating {
+		return platform.ErrForbidden
+	}
 	access, err := s.permFromRef(ctx, actor, existing.RepoID, existing.OrgID)
 	if err != nil {
 		return err
@@ -320,8 +326,9 @@ func (s *store) DeleteIssueComment(
 
 type commentRef struct {
 	IssueComment
-	RepoID string
-	OrgID  string
+	RepoID    string
+	OrgID     string
+	Migrating bool
 }
 
 func (s *store) findCommentForMutation(
@@ -333,7 +340,8 @@ func (s *store) findCommentForMutation(
 	var ref commentRef
 	err := s.pool.QueryRow(ctx, `
 		SELECT c.id, c.issue_id, author.username, c.author_id, c.body,
-		       c.created_at, c.edited_at, r.id, r.organization_id
+		       c.created_at, c.edited_at, r.id, r.organization_id,
+		       r.migrating_at IS NOT NULL
 		FROM issue_comments c
 		JOIN users author ON author.id = c.author_id
 		JOIN issues i ON i.id = c.issue_id
@@ -341,7 +349,7 @@ func (s *store) findCommentForMutation(
 		WHERE c.id = $1 AND r.id = $2 AND i.number = $3
 	`, commentID, repoID, issueNumber).Scan(
 		&ref.ID, &ref.IssueID, &ref.Author, &ref.AuthorID, &ref.Body,
-		&ref.CreatedAt, &ref.EditedAt, &ref.RepoID, &ref.OrgID,
+		&ref.CreatedAt, &ref.EditedAt, &ref.RepoID, &ref.OrgID, &ref.Migrating,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return commentRef{}, platform.ErrNotFound

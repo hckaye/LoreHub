@@ -85,7 +85,7 @@ func lookupRepository(
 		           SELECT 1 FROM repository_watches watch
 		           WHERE watch.repository_id = r.id AND watch.user_id = $3
 		       ),
-		       r.archived_at, r.updated_at
+		       r.archived_at, r.migrating_at, r.updated_at
 		FROM repositories r
 		JOIN organizations o ON o.id = r.organization_id AND o.active
 		JOIN users actor_user ON actor_user.id = $3 AND actor_user.status = 'active'
@@ -153,7 +153,7 @@ func lookupPublicRepository(
 		           JOIN users watcher ON watcher.id = watch.user_id AND watcher.status = 'active'
 		           WHERE watch.repository_id = r.id
 		       ),
-		       false, false, r.archived_at, r.updated_at
+		       false, false, r.archived_at, r.migrating_at, r.updated_at
 		FROM repositories r
 		JOIN organizations o ON o.id = r.organization_id AND o.active
 		WHERE o.slug = $1 AND r.slug = $2 AND r.lifecycle_state = 'active'
@@ -235,10 +235,14 @@ func repositoryPermission(
 	if team := rolePermission(teamRole); team > access.Permission {
 		access.Permission = team
 	}
-	if repo.ArchivedAt != nil && access.Permission > PermRead {
+	if repositoryReadOnly(repo) && access.Permission > PermRead {
 		access.Permission = PermRead
 	}
 	return access, nil
+}
+
+func repositoryReadOnly(repo Repository) bool {
+	return repo.ArchivedAt != nil || repo.MigratingAt != nil
 }
 
 func combineRoles(repoRole *string, orgRole *string, visibility ...string) Permission {
@@ -313,6 +317,7 @@ func scanRepositoryRow(row pgx.Row) (Repository, error) {
 		&repo.ViewerHasStarred,
 		&repo.ViewerIsWatching,
 		&repo.ArchivedAt,
+		&repo.MigratingAt,
 		&repo.UpdatedAt,
 	)
 	if err == nil {
