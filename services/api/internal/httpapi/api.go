@@ -146,6 +146,14 @@ type PersonalAccessTokenStore interface {
 	RevokePersonalAccessToken(context.Context, platform.User, string) error
 }
 
+type EntitlementStore interface {
+	Grant(
+		context.Context, platform.User, platform.EntitlementSubject, string,
+	) (platform.Entitlement, error)
+	Revoke(context.Context, platform.User, platform.EntitlementSubject, string) error
+	List(context.Context) ([]platform.Entitlement, error)
+}
+
 type API struct {
 	store                   Store
 	actions                 ActionsStore
@@ -189,6 +197,8 @@ type API struct {
 	loginProviders          []string
 	webhooksStore           webhooksManager
 	personalAccessTokens    PersonalAccessTokenStore
+	entitlements            EntitlementStore
+	instanceAdminUsernames  map[string]struct{}
 	globalWorkItems         GlobalWorkItemStore
 	deletionRetention       time.Duration
 }
@@ -288,6 +298,22 @@ func WithPersonalAccessTokens(store PersonalAccessTokenStore, secrets *auth.Secr
 		api.personalAccessTokens = store
 		if api.secrets == nil {
 			api.secrets = secrets
+		}
+	}
+}
+
+func WithEntitlements(store EntitlementStore) Option {
+	return func(api *API) { api.entitlements = store }
+}
+
+func WithInstanceAdminUsernames(usernames []string) Option {
+	return func(api *API) {
+		api.instanceAdminUsernames = make(map[string]struct{}, len(usernames))
+		for _, value := range usernames {
+			username := strings.ToLower(strings.TrimSpace(value))
+			if username != "" {
+				api.instanceAdminUsernames[username] = struct{}{}
+			}
 		}
 	}
 }

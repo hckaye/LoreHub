@@ -262,6 +262,7 @@ func LoadFor(command string) (Config, error) {
 		SessionTTL:                        sessionTTL,
 		LoginTransactionTTL:               transactionTTL,
 		IdentityProviders:                 configuredIdentityProviders(),
+		InstanceAdminUsernames:            commaSeparatedUsernames(os.Getenv("LOREHUB_INSTANCE_ADMIN_USERNAMES")),
 		LoreCacheDir:                      envOrDefault("LOREHUB_LORE_CACHE_DIR", ".cache/lorehub/repositories"),
 		LoreIdentity:                      os.Getenv("LOREHUB_LORE_IDENTITY"),
 		AllowLegacyLoreIdentity:           allowLegacyLoreIdentity,
@@ -393,6 +394,23 @@ func configuredIdentityProviders() []string {
 		}
 	}
 	return providers
+}
+
+func commaSeparatedUsernames(value string) []string {
+	usernames := make([]string, 0)
+	seen := make(map[string]struct{})
+	for _, entry := range strings.Split(value, ",") {
+		username := strings.ToLower(strings.TrimSpace(entry))
+		if username == "" {
+			continue
+		}
+		if _, duplicate := seen[username]; duplicate {
+			continue
+		}
+		seen[username] = struct{}{}
+		usernames = append(usernames, username)
+	}
+	return usernames
 }
 
 type identityProviderSetting struct {
