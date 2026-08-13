@@ -195,9 +195,11 @@ func newPRMergeCommand(state *rootState) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			mergeContext, cancel := context.WithTimeout(command.Context(), timeout)
+			defer cancel()
 			readinessPath := methodPath(repository, "/merge-requests/"+number+"/merge-readiness")
 			var readiness mergeReadiness
-			if err := getJSON(command.Context(), client, readinessPath, &readiness); err != nil {
+			if err := getJSON(mergeContext, client, readinessPath, &readiness); err != nil {
 				return statusError(command, "check merge readiness", err)
 			}
 			if !readiness.Ready {
@@ -210,16 +212,14 @@ func newPRMergeCommand(state *rootState) *cobra.Command {
 			operation := readiness.Operation
 			startPath := methodPath(repository, "/merge-requests/"+number+"/merge/start")
 			var started mergeOperation
-			if err := postJSON(command.Context(), client, startPath, nil, &started); err != nil {
+			if err := postJSON(mergeContext, client, startPath, nil, &started); err != nil {
 				return statusError(command, "start merge", err)
 			}
 			operation = &started
 
-			pollContext, cancel := context.WithTimeout(command.Context(), timeout)
-			defer cancel()
-			operation, err = waitForMergeOperation(pollContext, client, repository, number, operation, pollInterval)
+			operation, err = waitForMergeOperation(mergeContext, client, repository, number, operation, pollInterval)
 			if err != nil {
-				if pollContext.Err() != nil {
+				if mergeContext.Err() != nil {
 					return fmt.Errorf("merge timed out after %s", timeout)
 				}
 				return err
@@ -234,7 +234,7 @@ func newPRMergeCommand(state *rootState) *cobra.Command {
 
 			pushPath := methodPath(repository, "/merge-requests/"+number+"/merge/push")
 			var merged any
-			if err := postJSON(command.Context(), client, pushPath, nil, &merged); err != nil {
+			if err := postJSON(mergeContext, client, pushPath, nil, &merged); err != nil {
 				return statusError(command, "push merge", err)
 			}
 			if state.json {
