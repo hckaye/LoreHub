@@ -34,31 +34,48 @@ GitHub の利用者は同じ種類のワークフローを `gh` CLI で動かし
 
 - `lh auth login` はホストごとにパーソナルアクセストークンを保存する。対話モードはトークンの入力を促し、
   スクリプト用に `--with-token` が標準入力から読む。`lh auth logout` は保存したトークンを削除し、
-  `lh auth status` はホスト、（API で確認した）認証済みユーザー、トークンの権限を表示する。
-- ホストとトークンは `~/.config/lh/hosts.yml`（`XDG_CONFIG_HOME` を尊重、モード 0600）にホストごとに
-  保存する。環境変数の優先は `gh` の慣例に従う: `LH_TOKEN` が hosts ファイルより優先、リポジトリ文脈の
-  外では `LH_HOST` がホストを選ぶ。
+  `lh auth status` はホスト、認証済みユーザー、トークンの権限と有効期限を表示する。
+- API に `GET /api/v1/account` を新設する。パーソナルアクセストークン認証を受け付け、認証済みユーザーと、
+  呼び出し元がトークンの場合はそのトークンの id・プレフィックス・権限・有効期限を返すエンドポイントで
+  ある。現状これができるエンドポイントはなく（`/api/v1/auth/session` はブラウザ Cookie しか見ず、トークン
+  管理エンドポイントはトークンからの呼び出しを拒否する）、これなしには `auth status` と「自分の
+  リポジトリ一覧」が実装できない。CLI はログイン検証にこのエンドポイントを使う。
+- クレデンシャル保管は OS のクレデンシャルストア（Keychain、Secret Service、Windows Credential Manager）
+  を優先し、利用できない場合のみ hosts ファイルへの平文保存にフォールバックし、その旨をログイン時に
+  明示する。ホストと秘密でない設定は `~/.config/lh/hosts.yml`（`XDG_CONFIG_HOME` を尊重）に置く。平文
+  フォールバックは親ディレクトリを 0700、一時ファイルを最初から 0600 で作って原子的にリネームし、緩んだ
+  モードを見つけたら締め直す。
+- ホストは HTTPS・小文字 authority・パスと userinfo なしに正規化する。平文 HTTP のホストへトークンを送る
+  にはログイン時に明示的な `--insecure-http`（ローカル開発向け）が必要である。トークンをエラー出力、
+  デバッグトレース、サブプロセスの argv に出さない。
+- ホストとリポジトリの優先順位は具体的なものから順に: `--hostname` / ホスト付きの `--repo
+HOST/owner/name`、次に `LH_REPO`、次に保存済みの既定リポジトリ、次に `LH_HOST`、最後に唯一の設定済み
+  ホスト。`LH_TOKEN` は明示的に選ばれたホストにだけ適用し、暗黙に導かれたホストには送らない。
 - パーソナルアクセストークンでは他のトークンを管理できないため、`lh auth login` がトークンを作ることは
   なく、Web UI のどこで作るかを案内する。将来のデバイス認可フローは、コマンド表面を変えずにトークン貼り
   付けを置き換えられる。
 
 ### コマンド体系（初回イテレーション）
 
-| コマンド | 動詞 | 備考 |
-| --- | --- | --- |
-| `lh auth` | `login`, `logout`, `status` | トークンベース、ホストごと |
-| `lh repo` | `list`, `view`, `create`, `clone` | `clone` はリポジトリの `lores://` URL を解決し、保存済みトークンで `lore auth login --token-type api-key` を実行してから `lore` でクローンする。`lore` CLI がない場合は案内付きで失敗する |
-| `lh issue` | `list`, `view`, `create`, `comment`, `close`, `reopen` | フィルターは Web の一覧と同じ（state、author、assignee、label、milestone、検索） |
-| `lh pr` | `list`, `view`, `create`, `merge` | `merge` はサーバー側の Lore マージフローを進め、ブロッカーを報告する。Lore には切り離された PR ref がないためローカルチェックアウトは範囲外 |
-| `lh release` | `list`, `view`, `create` | |
-| `lh run` | `list`, `view`, `watch` | Actions の実行。`watch` は完了までポーリング |
-| `lh label` | `list`, `create`, `delete` | |
-| `lh search` | `repos`, `issues`, `prs` | 検索 API に対応 |
-| `lh api` | 生リクエスト | `lh api repos/{owner}/{repo} --method POST --field k=v` で生 JSON を出力。未ラップ機能の逃げ道 |
+| コマンド     | 動詞                                                   | 備考                                                                                                                                                                                                                                                                              |
+| ------------ | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lh auth`    | `login`, `logout`, `status`                            | トークンベース、ホストごと                                                                                                                                                                                                                                                        |
+| `lh repo`    | `list`, `view`, `create`, `clone`                      | `clone` はリポジトリの `lores://` URL を解決し、保存済みトークンで `lore auth login --token-type api-key` を実行してから `lore` でクローンする。`lore` CLI がない場合は案内付きで失敗する                                                                                         |
+| `lh issue`   | `list`, `view`, `create`, `comment`, `close`, `reopen` | フィルターは Web の一覧と同じ（state、author、assignee、label、milestone、検索）                                                                                                                                                                                                  |
+| `lh pr`      | `list`, `view`, `create`, `merge`                      | 初回イテレーションの `merge` は範囲を限定する: マージ準備状態を確認し、サーバー側マージを開始し、コンフリクトなしで ready 状態に達した場合だけプッシュする。それ以外はブロッカーを表示して非ゼロで終了する。Lore には切り離された PR ref がないためローカルチェックアウトは範囲外 |
+| `lh release` | `list`, `view`, `create`                               |                                                                                                                                                                                                                                                                                   |
+| `lh run`     | `list`, `view`, `watch`                                | Actions の実行。`watch` は完了までポーリング                                                                                                                                                                                                                                      |
+| `lh label`   | `list`, `create`, `delete`                             |                                                                                                                                                                                                                                                                                   |
+| `lh search`  | `repos`, `issues`, `prs`                               | 検索 API に対応                                                                                                                                                                                                                                                                   |
+| `lh api`     | 生リクエスト                                           | `lh api repos/{owner}/{repo} --method POST --field k=v` で生 JSON を出力。未ラップ機能の逃げ道                                                                                                                                                                                    |
 
-- リポジトリ文脈: `--repo owner/name` フラグが常に最優先。Lore の作業コピーは `lore` CLI が管理しており
-  そこから文脈を導けないため、初回イテレーションでは `--repo` か `lh repo set-default` で設定した既定を
-  必須とする。Lore 作業コピーからの導出は `lore` CLI が情報を公開してからのフォローアップとする。
+- リポジトリ文脈: `--repo [HOST/]owner/name` が常に最優先、次に `LH_REPO`、次に `lh repo set-default` で
+  保存した既定。Lore 作業コピーからの導出は `lore` CLI が情報を公開してからのフォローアップとする。
+  `lh repo clone` はメタデータ用の `read_api` に加えて Lore クレデンシャル交換用の `read_repository`
+  （または `write_repository`）が必要で、コマンドは事前に両方を検証し、足りない方を明示する。
+- 同じエンドポイントを再利用できる安価な後続動詞（`issue edit`、`pr comment/close/reopen/edit`、`run
+cancel/rerun`、`label edit`、`release edit/delete`、`completion`、`config`）は初回イテレーションの直後に
+  追加する。
 - 出力: TTY では人間向けのテーブル、パイプ時はタブ区切りのプレーン出力、list/view 系には API レスポンスを
   そのまま出す `--json`。エラーは API の problem メッセージを表示して非ゼロで終了する。
 - ローカライズ: コマンド出力は `gh` と同じくまず英語のみ。Web の辞書は再利用しない。
