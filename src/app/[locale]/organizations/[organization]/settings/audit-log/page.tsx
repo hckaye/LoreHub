@@ -1,10 +1,9 @@
 import { History, LockKeyhole, ServerOff } from "lucide-react";
-import Link from "next/link";
 
 import { AuthRequired } from "@/components/auth/auth-required";
 import { OrganizationAuditLog } from "@/components/organizations/organization-audit-log";
 import { RepositorySection } from "@/components/repositories/repository-section";
-import sectionStyles from "@/components/repositories/repository-section.module.css";
+import { OrganizationSettingsTabs } from "@/components/settings/settings-tabs";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getDictionary } from "@/i18n";
 import { isLocale } from "@/i18n/config";
@@ -35,15 +34,8 @@ export default async function AuditLogPage({ params, searchParams }: AuditLogPag
   const before = singleValue(search.before);
   const result = await getOrganizationAuditLog(organization, query, before);
   return (
-    <RepositorySection
-      actions={
-        <Link className={sectionStyles.secondaryButton} href={settingsPath}>
-          {dictionary.common.settings}
-        </Link>
-      }
-      description={copy.description}
-      title={copy.title}
-    >
+    <RepositorySection description={copy.description} title={copy.title}>
+      <OrganizationSettingsTabs active="auditLog" dictionary={dictionary} locale={locale} organization={organization} />
       {result.ok ? (
         <OrganizationAuditLog
           data={result.data}

@@ -7,10 +7,12 @@ import { commentPagination } from "./comment-pagination";
 import { commitHistory } from "./commit-history";
 import { commitStatuses } from "./commit-statuses";
 import { discussions } from "./discussions";
+import { entitlements } from "./entitlements";
 import { fileLocks } from "./file-locks";
 import { globalWorkItems } from "./global-work-items";
 import { insights } from "./insights";
 import { issueDetail } from "./issue-detail";
+import { loreServers } from "./lore-servers";
 import { metadata } from "./metadata";
 import { milestones } from "./milestones";
 import { personalAccessTokens } from "./personal-access-tokens";
@@ -20,7 +22,9 @@ import { releases } from "./releases";
 import { repositoryInvitations } from "./repository-invitations";
 import { repositoryLifecycle } from "./repository-lifecycle";
 import { revisionComments } from "./revision-comments";
+import { runners } from "./runners";
 import { search } from "./search";
+import { settingsNavigation } from "./settings-navigation";
 import { webhooks } from "./webhooks";
 import { wiki } from "./wiki";
 import { workItemLists } from "./work-item-lists";
@@ -50,6 +54,10 @@ const ja = {
   revisionComments: revisionComments.ja,
   searchPage: search.ja,
   metadata: metadata.ja,
+  settingsNav: settingsNavigation.ja,
+  runnerSettings: runners.ja,
+  loreServerSettings: loreServers.ja,
+  entitlementSettings: entitlements.ja,
   common: {
     productName: "LoreHub",
     explore: "探す",

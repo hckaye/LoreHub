@@ -1,12 +1,11 @@
 import { ServerOff } from "lucide-react";
-import Link from "next/link";
 
 import { ActionsContextSettings } from "@/components/actions/actions-context-settings";
 import { AuthRequired } from "@/components/auth/auth-required";
 import { DeletedRepositorySettings } from "@/components/organizations/deleted-repository-settings";
 import { OrganizationTeamSettings } from "@/components/organizations/organization-team-settings";
 import { RepositoryPanel, RepositorySection } from "@/components/repositories/repository-section";
-import sectionStyles from "@/components/repositories/repository-section.module.css";
+import { OrganizationSettingsTabs } from "@/components/settings/settings-tabs";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getDictionary } from "@/i18n";
 import { isLocale } from "@/i18n/config";
@@ -57,19 +56,10 @@ export default async function OrganizationSettingsPage({ params }: OrganizationS
       : null;
   return (
     <RepositorySection
-      actions={
-        organizationResult.ok && organizationResult.data.role === "owner" ? (
-          <Link
-            className={sectionStyles.secondaryButton}
-            href={`/${locale}/organizations/${encodeURIComponent(organization)}/settings/audit-log`}
-          >
-            {dictionary.auditLog.open}
-          </Link>
-        ) : undefined
-      }
       description={dictionary.organizationSettingsPage.description}
       title={dictionary.organizationSettingsPage.title}
     >
+      <OrganizationSettingsTabs active="general" dictionary={dictionary} locale={locale} organization={organization} />
       <RepositoryPanel
         description={dictionary.actionsSettings.organizationDescription}
         title={dictionary.actionsSettings.title}
