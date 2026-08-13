@@ -501,17 +501,24 @@ func loadTLSConfig(certPath string, keyPath string, clientCAPath string, require
 	config.ClientCAs = clientCAs
 	config.ClientAuth = tls.RequireAndVerifyClientCert
 	config.VerifyConnection = func(state tls.ConnectionState) error {
-		if len(state.PeerCertificates) == 0 || state.PeerCertificates[0].Subject.CommonName != "lore-policy-hook" {
+		if len(state.PeerCertificates) == 0 {
 			return errors.New("policy hook client certificate is invalid")
 		}
-		for _, usage := range state.PeerCertificates[0].ExtKeyUsage {
-			if usage == x509.ExtKeyUsageClientAuth {
-				return nil
-			}
-		}
-		return errors.New("policy hook client certificate lacks client authentication usage")
+		return validatePolicyClientCertificate(state.PeerCertificates[0])
 	}
 	return config, nil
+}
+
+func validatePolicyClientCertificate(certificate *x509.Certificate) error {
+	if certificate == nil || !servercert.ValidCommonName(certificate.Subject.CommonName) {
+		return errors.New("policy hook client certificate is invalid")
+	}
+	for _, usage := range certificate.ExtKeyUsage {
+		if usage == x509.ExtKeyUsageClientAuth {
+			return nil
+		}
+	}
+	return errors.New("policy hook client certificate lacks client authentication usage")
 }
 
 func newSigningKeyProvider(settings config.Config) (*loreauth.RSAKeyProvider, error) {

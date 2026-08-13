@@ -271,6 +271,7 @@ type API struct {
 	loreAllowPrivateServers bool
 	loreServerCertificates  LoreServerCertificateStore
 	loreServerCertIssuer    LoreServerCertificateIssuer
+	loreHookServers         loreHookServerStore
 	runnerControl           RunnerControlStore
 	runnerExecutionContext  runner.ExecutionContextResolver
 	runnerJobTokenIssuer    runner.JobTokenIssuer

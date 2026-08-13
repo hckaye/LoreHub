@@ -12,6 +12,7 @@ import (
 
 	"github.com/lorehub/lorehub/services/api/internal/authz"
 	"github.com/lorehub/lorehub/services/api/internal/platform"
+	"github.com/lorehub/lorehub/services/api/internal/servercert"
 )
 
 func registerAuthorizationRoutes(mux *http.ServeMux, api *API) {
@@ -619,6 +620,13 @@ type loreBranchCreationPreparer interface {
 	PrepareLoreBranchCreation(ctx context.Context, actorID, loreRepositoryID, branchID, branchName string) error
 }
 
+type loreHookServerStore interface {
+	ActiveLoreServerForHook(context.Context, string) (platform.LoreServer, error)
+	LoreServerOwnsRepository(context.Context, string, string) (bool, error)
+}
+
+type loreHookServerContextKey struct{}
+
 type loreObservationRequest struct {
 	UserID     string  `json:"userId"`
 	ResourceID string  `json:"resourceId"`
@@ -640,6 +648,9 @@ func (api *API) InternalPolicyHandler() http.Handler {
 		}
 		if input.UserID == "" || input.ResourceID == "" || input.Operation == "" {
 			writeProblem(writer, http.StatusBadRequest, "invalid_input", "The policy request is incomplete")
+			return
+		}
+		if !api.authorizeLoreHookRepository(writer, request, input.ResourceID) {
 			return
 		}
 		decision, err := api.authorization.CheckPolicy(request.Context(), authz.PolicyCheck{
@@ -675,6 +686,9 @@ func (api *API) InternalPolicyHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/internal/lore/policy", policy)
 	mux.HandleFunc("/internal/lore/observation", api.internalLoreObservation)
+	if api.loreHookServers != nil {
+		return api.authenticateLoreHookServer(mux)
+	}
 	return mux
 }
 
@@ -701,7 +715,61 @@ func NewInternalPolicyHandler(store AuthorizationStore, loggers ...*slog.Logger)
 	if len(loggers) > 0 {
 		logger = loggers[0]
 	}
-	return (&API{authorization: store, logger: logger}).InternalPolicyHandler()
+	api := &API{authorization: store, logger: logger}
+	if hookServers, ok := store.(loreHookServerStore); ok {
+		api.loreHookServers = hookServers
+	}
+	return api.InternalPolicyHandler()
+}
+
+func (api *API) authenticateLoreHookServer(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.TLS == nil || len(request.TLS.PeerCertificates) == 0 {
+			writeProblem(writer, http.StatusForbidden, "policy_client_denied",
+				"The policy client certificate is not authorized")
+			return
+		}
+		commonName := request.TLS.PeerCertificates[0].Subject.CommonName
+		if commonName == servercert.LegacyCommonName {
+			next.ServeHTTP(writer, request)
+			return
+		}
+		serverID, ok := servercert.ServerIDFromCommonName(commonName)
+		if !ok {
+			writeProblem(writer, http.StatusForbidden, "policy_client_denied",
+				"The policy client certificate is not authorized")
+			return
+		}
+		server, err := api.loreHookServers.ActiveLoreServerForHook(request.Context(), serverID)
+		if err != nil || server.ID != serverID {
+			writeProblem(writer, http.StatusForbidden, "policy_client_denied",
+				"The policy client certificate is not authorized")
+			return
+		}
+		contextWithServer := context.WithValue(request.Context(), loreHookServerContextKey{}, server.ID)
+		next.ServeHTTP(writer, request.WithContext(contextWithServer))
+	})
+}
+
+func (api *API) authorizeLoreHookRepository(
+	writer http.ResponseWriter,
+	request *http.Request,
+	resourceID string,
+) bool {
+	serverID, ok := request.Context().Value(loreHookServerContextKey{}).(string)
+	if !ok {
+		return true
+	}
+	loreRepositoryID := strings.TrimPrefix(resourceID, "urc-")
+	owns, err := api.loreHookServers.LoreServerOwnsRepository(
+		request.Context(), serverID, loreRepositoryID,
+	)
+	if err != nil || !owns {
+		writeProblem(writer, http.StatusForbidden, "server_repository_mismatch",
+			"The Lore server is not assigned to this repository")
+		return false
+	}
+	return true
 }
 
 func (api *API) internalLoreObservation(writer http.ResponseWriter, request *http.Request) {
@@ -720,6 +788,9 @@ func (api *API) internalLoreObservation(writer http.ResponseWriter, request *htt
 	}
 	if !authz.ValidResourceID(input.ResourceID) || input.UserID == "" || input.BranchID == "" {
 		writeProblem(writer, http.StatusBadRequest, "invalid_input", "The Lore observation is incomplete")
+		return
+	}
+	if !api.authorizeLoreHookRepository(writer, request, input.ResourceID) {
 		return
 	}
 	loreRepositoryID := strings.TrimPrefix(input.ResourceID, "urc-")
