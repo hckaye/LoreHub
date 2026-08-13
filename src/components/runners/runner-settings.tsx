@@ -168,9 +168,9 @@ function RunnerRow({
           <strong>{runner.name}</strong>
           <StatusBadge tone={statusTone[status]}>{copy.status[status]}</StatusBadge>
         </div>
-        <div className={styles.pills} aria-label={copy.labels}>
+        <div aria-label={copy.labels} className={styles.pills} role="list">
           {runner.labels.map((label) => (
-            <span className={styles.pill} key={label}>
+            <span className={styles.pill} key={label} role="listitem">
               {label}
             </span>
           ))}

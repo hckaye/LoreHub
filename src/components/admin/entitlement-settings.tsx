@@ -114,7 +114,9 @@ export function EntitlementSettings(props: EntitlementSettingsProps) {
           <label>
             {copy.feature}
             <select
-              onChange={(event) => isEntitlementFeature(event.target.value) && setFeature(event.target.value)}
+              onChange={(event) => {
+                if (isEntitlementFeature(event.target.value)) setFeature(event.target.value);
+              }}
               value={feature}
             >
               {entitlementFeatures.map((value) => (
