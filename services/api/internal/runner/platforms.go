@@ -72,33 +72,19 @@ func DiscoverRunnerLabels(workflowPath string) ([]string, error) {
 }
 
 func validateWorkflowRunnerLabels(path string, images map[string]string) ([]string, error) {
-	labels, err := DiscoverRunnerLabels(path)
+	jobs, err := workflowJobDefinitionsFromFile(path, images)
 	if err != nil {
 		return nil, err
 	}
-	if err := ValidateRunnerPlatformImages(images); err != nil {
-		return nil, err
-	}
-	if containsRunnerLabel(labels, "self-hosted") {
-		return labels, nil
-	}
-	if len(labels) != 1 {
-		return nil, errors.New("managed workflow runs-on must use one platform label")
-	}
-	for _, label := range labels {
-		if _, ok := images[label]; !ok {
-			return nil, fmt.Errorf("workflow runner label %q is not mapped for act", label)
-		}
-	}
-	return labels, nil
+	return combinedRunnerLabels(jobs), nil
 }
 
 func runnerLabelsFromJobs(jobs *yaml.Node) ([]string, error) {
 	if jobs == nil || jobs.Kind != yaml.MappingNode || len(jobs.Content) == 0 {
 		return nil, errors.New("workflow must define jobs before resolving runner labels")
 	}
-	var workflowLabels []string
-	firstJobID := ""
+	allLabels := make([]string, 0)
+	seen := make(map[string]struct{})
 	for index := 0; index+1 < len(jobs.Content); index += 2 {
 		jobID := jobs.Content[index].Value
 		job := jobs.Content[index+1]
@@ -106,23 +92,245 @@ func runnerLabelsFromJobs(jobs *yaml.Node) ([]string, error) {
 			return nil, fmt.Errorf("job %q must be a map", jobID)
 		}
 		runsOn := mappingValue(job, "runs-on")
-		labels, err := normalizedRunsOnLabels(runsOn, jobID)
+		jobLabels, err := normalizedRunsOnLabels(runsOn, jobID)
 		if err != nil {
 			return nil, err
 		}
-		if workflowLabels == nil {
-			workflowLabels = labels
-			firstJobID = jobID
-			continue
-		}
-		if !equalRunnerLabels(workflowLabels, labels) {
-			return nil, fmt.Errorf(
-				"all jobs in a workflow must use the same normalized runs-on labels; job %q uses %v while job %q uses %v",
-				firstJobID, workflowLabels, jobID, labels,
-			)
+		for _, label := range jobLabels {
+			if _, ok := seen[label]; ok {
+				continue
+			}
+			seen[label] = struct{}{}
+			allLabels = append(allLabels, label)
 		}
 	}
-	return workflowLabels, nil
+	sort.Strings(allLabels)
+	return allLabels, nil
+}
+
+func workflowJobDefinitionsFromFile(path string, images map[string]string) ([]WorkflowJobDefinition, error) {
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read workflow jobs: %w", err)
+	}
+	var document yaml.Node
+	if err := yaml.Unmarshal(contents, &document); err != nil {
+		return nil, fmt.Errorf("parse workflow jobs: %w", err)
+	}
+	root, err := documentRoot(&document)
+	if err != nil {
+		return nil, err
+	}
+	return workflowJobDefinitions(mappingValue(root, "jobs"), images)
+}
+
+func workflowJobDefinitions(jobs *yaml.Node, images map[string]string) ([]WorkflowJobDefinition, error) {
+	if jobs == nil || jobs.Kind != yaml.MappingNode || len(jobs.Content) == 0 {
+		return nil, errors.New("workflow must define at least one job")
+	}
+	if err := ValidateRunnerPlatformImages(images); err != nil {
+		return nil, err
+	}
+	definitions := make([]WorkflowJobDefinition, 0, len(jobs.Content)/2)
+	jobNames := make(map[string]struct{}, len(jobs.Content)/2)
+	for index := 0; index+1 < len(jobs.Content); index += 2 {
+		jobName, err := scalarString(jobs.Content[index], "workflow job name")
+		if err != nil || len(jobName) > 255 || strings.ContainsAny(jobName, "\x00\r\n") {
+			return nil, errors.New("workflow job name must be a literal string of at most 255 characters")
+		}
+		if _, duplicate := jobNames[jobName]; duplicate {
+			return nil, fmt.Errorf("workflow job %q is defined more than once", jobName)
+		}
+		jobNames[jobName] = struct{}{}
+		job := jobs.Content[index+1]
+		if job.Kind != yaml.MappingNode {
+			return nil, fmt.Errorf("job %q must be a map", jobName)
+		}
+		labels, err := normalizedRunsOnLabels(mappingValue(job, "runs-on"), jobName)
+		if err != nil {
+			return nil, err
+		}
+		if err := validateJobRunnerPlatform(jobName, labels, images); err != nil {
+			return nil, err
+		}
+		needs, err := jobNeeds(jobName, mappingValue(job, "needs"))
+		if err != nil {
+			return nil, err
+		}
+		environment, err := jobEnvironment(jobName, mappingValue(job, "environment"))
+		if err != nil {
+			return nil, err
+		}
+		definitions = append(definitions, WorkflowJobDefinition{
+			JobName: jobName, RunnerLabels: labels, Needs: needs, Environment: environment,
+		})
+	}
+	if err := validateWorkflowJobDependencies(definitions, jobNames); err != nil {
+		return nil, err
+	}
+	return definitions, nil
+}
+
+func validateJobRunnerPlatform(jobName string, labels []string, images map[string]string) error {
+	if containsRunnerLabel(labels, "self-hosted") {
+		return nil
+	}
+	if len(labels) != 1 {
+		return fmt.Errorf("managed job %q runs-on must use one platform label", jobName)
+	}
+	if _, ok := images[labels[0]]; !ok {
+		return fmt.Errorf("workflow runner label %q is not mapped for act", labels[0])
+	}
+	return nil
+}
+
+func jobNeeds(jobName string, node *yaml.Node) ([]string, error) {
+	if node == nil || isNullNode(node) {
+		return []string{}, nil
+	}
+	values := make([]string, 0, 1)
+	switch node.Kind {
+	case yaml.ScalarNode:
+		value, err := scalarString(node, fmt.Sprintf("job %q needs", jobName))
+		if err != nil {
+			return nil, err
+		}
+		values = append(values, value)
+	case yaml.SequenceNode:
+		for _, item := range node.Content {
+			value, err := scalarString(item, fmt.Sprintf("job %q needs entry", jobName))
+			if err != nil {
+				return nil, err
+			}
+			values = append(values, value)
+		}
+	default:
+		return nil, fmt.Errorf("job %q needs must contain literal job names", jobName)
+	}
+	needs := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		if len(value) > 255 || strings.ContainsAny(value, "\x00\r\n") {
+			return nil, fmt.Errorf("job %q needs contains an invalid job name", jobName)
+		}
+		if _, duplicate := seen[value]; duplicate {
+			continue
+		}
+		seen[value] = struct{}{}
+		needs = append(needs, value)
+	}
+	return needs, nil
+}
+
+func jobEnvironment(jobName string, node *yaml.Node) (string, error) {
+	if node == nil || isNullNode(node) {
+		return "", nil
+	}
+	if node.Kind == yaml.MappingNode {
+		node = mappingValue(node, "name")
+	}
+	value, err := scalarString(node, fmt.Sprintf("job %q environment", jobName))
+	if err != nil || strings.Contains(value, "${{") || !validActionsEnvironmentName(value) {
+		return "", fmt.Errorf("job %q environment must be one literal name", jobName)
+	}
+	return value, nil
+}
+
+func validateWorkflowJobDependencies(
+	jobs []WorkflowJobDefinition,
+	jobNames map[string]struct{},
+) error {
+	dependencies := make(map[string][]string, len(jobs))
+	for _, job := range jobs {
+		dependencies[job.JobName] = job.Needs
+		for _, dependency := range job.Needs {
+			if _, ok := jobNames[dependency]; !ok {
+				return fmt.Errorf("job %q needs unknown job %q", job.JobName, dependency)
+			}
+		}
+	}
+	state := make(map[string]uint8, len(jobs))
+	var visit func(string) error
+	visit = func(jobName string) error {
+		if state[jobName] == 1 {
+			return fmt.Errorf("workflow job dependency cycle includes %q", jobName)
+		}
+		if state[jobName] == 2 {
+			return nil
+		}
+		state[jobName] = 1
+		for _, dependency := range dependencies[jobName] {
+			if err := visit(dependency); err != nil {
+				return err
+			}
+		}
+		state[jobName] = 2
+		return nil
+	}
+	for _, job := range jobs {
+		if err := visit(job.JobName); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func combinedRunnerLabels(jobs []WorkflowJobDefinition) []string {
+	seen := make(map[string]struct{})
+	labels := make([]string, 0)
+	for _, job := range jobs {
+		for _, label := range job.RunnerLabels {
+			if _, ok := seen[label]; ok {
+				continue
+			}
+			seen[label] = struct{}{}
+			labels = append(labels, label)
+		}
+	}
+	sort.Strings(labels)
+	return labels
+}
+
+func commonWorkflowEnvironment(jobs []WorkflowJobDefinition) string {
+	environment := ""
+	for _, job := range jobs {
+		if job.Environment == "" {
+			continue
+		}
+		if environment != "" && !strings.EqualFold(environment, job.Environment) {
+			return ""
+		}
+		environment = job.Environment
+	}
+	return environment
+}
+
+func workflowJobForExecution(
+	path string,
+	jobName string,
+	images map[string]string,
+) (WorkflowJobDefinition, error) {
+	if jobName == "" {
+		labels, err := validateWorkflowRunnerLabels(path, images)
+		if err != nil {
+			return WorkflowJobDefinition{}, err
+		}
+		environment, err := workflowEnvironmentName(path)
+		if err != nil {
+			return WorkflowJobDefinition{}, err
+		}
+		return WorkflowJobDefinition{RunnerLabels: labels, Needs: []string{}, Environment: environment}, nil
+	}
+	jobs, err := workflowJobDefinitionsFromFile(path, images)
+	if err != nil {
+		return WorkflowJobDefinition{}, err
+	}
+	for _, job := range jobs {
+		if job.JobName == jobName {
+			return job, nil
+		}
+	}
+	return WorkflowJobDefinition{}, fmt.Errorf("workflow job %q no longer exists", jobName)
 }
 
 func normalizedRunsOnLabels(node *yaml.Node, jobID string) ([]string, error) {

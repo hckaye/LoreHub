@@ -330,14 +330,15 @@ func (worker *Worker) runJob(ctx context.Context, job Job, logKey string) (strin
 	if err := validateWorkflowFile(workflowPath); err != nil {
 		return logKey, nil, err
 	}
-	if _, err := validateWorkflowRunnerLabels(workflowPath, worker.config.PlatformImages); err != nil {
-		return logKey, nil, err
-	}
-	workflowEnvironment, err := workflowEnvironmentName(workflowPath)
+	workflowJob, err := workflowJobForExecution(workflowPath, job.JobName, worker.config.PlatformImages)
 	if err != nil {
 		return logKey, nil, err
 	}
-	if workflowEnvironment != job.Environment {
+	if job.JobName != "" && (!equalRunnerLabels(workflowJob.RunnerLabels, job.RunnerLabels) ||
+		executionTargetForLabels(workflowJob.RunnerLabels) != job.ExecutionTarget) {
+		return logKey, nil, errors.New("workflow job routing does not match the queued job")
+	}
+	if workflowJob.Environment != job.Environment {
 		return logKey, nil, errors.New("workflow environment does not match its approved deployment")
 	}
 	execution, err := resolveExecutionContext(ctx, worker.config.ExecutionResolver, ExecutionContextRequest{
@@ -345,7 +346,7 @@ func (worker *Worker) runJob(ctx context.Context, job Job, logKey string) (strin
 		RepositoryID:   job.RepositoryID,
 		OrganizationID: job.OrganizationID,
 		JobID:          job.ID,
-		Environment:    workflowEnvironment,
+		Environment:    workflowJob.Environment,
 		RequestedScope: "actions:execute",
 	})
 	if err != nil {
@@ -483,6 +484,9 @@ func actArguments(
 		"--env", "GITHUB_SERVER_URL=" + config.GitHub.ServerURL,
 		"--env", "GITHUB_API_URL=" + config.GitHub.APIURL,
 		"--env", "GITHUB_GRAPHQL_URL=" + config.GitHub.GraphQLURL,
+	}
+	if job.JobName != "" {
+		arguments = append(arguments, "--job", job.JobName)
 	}
 	labels := make([]string, 0, len(config.PlatformImages))
 	for label := range config.PlatformImages {
