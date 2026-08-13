@@ -142,7 +142,7 @@ export function BranchManagement(props: BranchManagementProps) {
                 {copy.columnRevision}
               </span>
               <span className={styles.columnActions} role="columnheader">
-                <span className="sr-only">{copy.columnActions}</span>
+                <span className="visually-hidden">{copy.columnActions}</span>
               </span>
             </div>
             {filteredBranches.map((branch) => {
