@@ -32,6 +32,7 @@ type Job struct {
 	ID               string          `json:"id"`
 	Attempt          int             `json:"attempt"`
 	RunID            string          `json:"runId"`
+	JobName          string          `json:"jobName,omitempty"`
 	ActorID          string          `json:"actorId,omitempty"`
 	WorkflowPath     string          `json:"workflowPath"`
 	RepositoryID     string          `json:"repositoryId"`
@@ -421,16 +422,14 @@ func (store *Store) enqueueRun(
 	actorID string,
 	rerunOf *string,
 ) (uuid.UUID, error) {
-	runnerLabels, err := workflowRunnerLabels(ctx, transaction, workflowID, workflowRevisionID)
+	jobs, err := workflowSchedulingJobs(
+		ctx, transaction, workflowID, workflowRevisionID, workflowName, environment,
+	)
 	if err != nil {
 		return uuid.Nil, err
 	}
-	executionTarget := "managed"
-	if containsRunnerLabel(runnerLabels, "self-hosted") {
-		executionTarget = "self_hosted"
-	}
 	managedEntitled := true
-	if executionTarget == "managed" {
+	if hasManagedSchedulingJob(jobs) {
 		if err := transaction.QueryRow(ctx, `
 			SELECT EXISTS (
 				SELECT 1
@@ -486,69 +485,54 @@ func (store *Store) enqueueRun(
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("enqueue CI run: %w", err)
 	}
-	jobID := uuid.New()
-	_, err = transaction.Exec(ctx, `
-		INSERT INTO ci_jobs (
-			id, run_id, name, status, conclusion, runner_labels, execution_target, completed_at
-		)
-		VALUES (
-			$1, $2, $3, $4::varchar, NULLIF($5, ''), $6, $7,
-			CASE WHEN $4::varchar = 'completed' THEN now() ELSE NULL END
-		)
-	`, jobID, runID, workflowName, runStatus, runConclusion, runnerLabels, executionTarget)
-	if err != nil {
-		return uuid.Nil, fmt.Errorf("enqueue CI job: %w", err)
+	entitlementFailureRecorded := false
+	for _, job := range jobs {
+		jobID := uuid.New()
+		jobStatus := "queued"
+		jobConclusion := ""
+		executionTarget := executionTargetForLabels(job.RunnerLabels)
+		if !managedEntitled {
+			if executionTarget == "managed" && !entitlementFailureRecorded {
+				jobStatus = "completed"
+				jobConclusion = "failure"
+				entitlementFailureRecorded = true
+			} else {
+				jobStatus = "cancelled"
+				jobConclusion = "cancelled"
+			}
+		}
+		jobDisplayName := job.JobName
+		if jobDisplayName == "" {
+			jobDisplayName = workflowName
+		}
+		_, err = transaction.Exec(ctx, `
+			INSERT INTO ci_jobs (
+				id, run_id, name, job_name, needs, status, conclusion, runner_labels,
+				execution_target, completed_at
+			)
+			VALUES (
+				$1, $2, $3, $4, $5, $6::varchar, NULLIF($7, ''), $8, $9,
+				CASE WHEN $6::varchar IN ('completed', 'cancelled') THEN now() ELSE NULL END
+			)
+		`, jobID, runID, jobDisplayName, job.JobName, job.Needs, jobStatus, jobConclusion,
+			job.RunnerLabels, executionTarget)
+		if err != nil {
+			return uuid.Nil, fmt.Errorf("enqueue CI job %q: %w", job.JobName, err)
+		}
+		if managedEntitled && job.Environment != "" {
+			if err := store.enqueueDeployment(
+				ctx, transaction, repository, runID, jobID, job.Environment, actorID, branch, revision,
+			); err != nil {
+				return uuid.Nil, err
+			}
+		}
 	}
 	if !managedEntitled {
 		if err := recordCompletionEvents(ctx, transaction, runID.String(), "failure"); err != nil {
 			return uuid.Nil, err
 		}
-		return runID, nil
-	}
-	if environment != "" {
-		if err := store.enqueueDeployment(
-			ctx, transaction, repository, runID, jobID, environment, actorID, branch, revision,
-		); err != nil {
-			return uuid.Nil, err
-		}
 	}
 	return runID, nil
-}
-
-func workflowRunnerLabels(
-	ctx context.Context,
-	transaction pgx.Tx,
-	workflowID string,
-	workflowRevisionID *uuid.UUID,
-) ([]string, error) {
-	var triggerConfig json.RawMessage
-	var err error
-	if workflowRevisionID != nil {
-		err = transaction.QueryRow(ctx, `
-			SELECT trigger_config FROM ci_workflow_revisions WHERE id = $1
-		`, *workflowRevisionID).Scan(&triggerConfig)
-	} else {
-		err = transaction.QueryRow(ctx, `
-			SELECT trigger_config FROM ci_workflows WHERE id = NULLIF($1, '')::uuid
-		`, workflowID).Scan(&triggerConfig)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("read workflow runner labels: %w", err)
-	}
-	var config struct {
-		RunnerLabels []string `json:"runner_labels"`
-	}
-	if err := json.Unmarshal(triggerConfig, &config); err != nil {
-		return nil, fmt.Errorf("decode workflow runner labels: %w", err)
-	}
-	if len(config.RunnerLabels) == 0 {
-		return []string{"ubuntu-latest"}, nil
-	}
-	labels := append([]string(nil), config.RunnerLabels...)
-	for index := range labels {
-		labels[index] = strings.ToLower(strings.TrimSpace(labels[index]))
-	}
-	return labels, nil
 }
 
 func (store *Store) ClaimJob(ctx context.Context, workerID string, lease time.Duration) (*Job, error) {
@@ -567,6 +551,15 @@ func (store *Store) ClaimJob(ctx context.Context, workerID string, lease time.Du
 		WHERE run.status IN ('queued', 'in_progress')
 		  AND run.cancel_requested = false
 		  AND j.execution_target = 'managed'
+		  AND NOT EXISTS (
+		    SELECT 1
+		    FROM jsonb_array_elements_text(j.needs) required(job_name)
+		    LEFT JOIN ci_jobs dependency
+		      ON dependency.run_id = j.run_id AND dependency.job_name = required.job_name
+		    WHERE dependency.id IS NULL
+		       OR dependency.status <> 'completed'
+		       OR dependency.conclusion <> 'success'
+		  )
 		  AND (
 		    deployment.id IS NULL
 		    OR (
@@ -603,6 +596,15 @@ func (store *Store) ClaimJob(ctx context.Context, workerID string, lease time.Du
 		FROM ci_runs run
 		WHERE j.id = $1 AND run.id = j.run_id AND run.cancel_requested = false
 		  AND (j.status = 'queued' OR j.lease_expires_at < now())
+		  AND NOT EXISTS (
+		    SELECT 1
+		    FROM jsonb_array_elements_text(j.needs) required(job_name)
+		    LEFT JOIN ci_jobs dependency
+		      ON dependency.run_id = j.run_id AND dependency.job_name = required.job_name
+		    WHERE dependency.id IS NULL
+		       OR dependency.status <> 'completed'
+		       OR dependency.conclusion <> 'success'
+		  )
 	`, jobID, workerID, lease.String())
 	if err != nil {
 		return nil, fmt.Errorf("claim CI job: %w", err)
@@ -619,12 +621,13 @@ func (store *Store) ClaimJob(ctx context.Context, workerID string, lease time.Du
 	}
 
 	var job Job
+	var runnerLabelsJSON []byte
 	err = transaction.QueryRow(ctx, `
-		SELECT j.id, j.attempt, run.id, COALESCE(run.actor_id::text, ''),
+		SELECT j.id, j.attempt, run.id, j.job_name, COALESCE(run.actor_id::text, ''),
 		       COALESCE(workflow.path, workflow_revision.path, ''), r.id,
 		       o.id, o.slug, r.slug, r.lore_repository_id, r.lore_url,
 		       run.revision, run.branch, run.event_name, run.event_payload,
-		       COALESCE(deployment.environment_name, '')
+		       COALESCE(deployment.environment_name, ''), j.runner_labels, j.execution_target
 		FROM ci_jobs j
 		JOIN ci_runs run ON run.id = j.run_id
 		LEFT JOIN ci_workflows workflow ON workflow.id = run.workflow_id
@@ -637,6 +640,7 @@ func (store *Store) ClaimJob(ctx context.Context, workerID string, lease time.Du
 		&job.ID,
 		&job.Attempt,
 		&job.RunID,
+		&job.JobName,
 		&job.ActorID,
 		&job.WorkflowPath,
 		&job.RepositoryID,
@@ -650,9 +654,14 @@ func (store *Store) ClaimJob(ctx context.Context, workerID string, lease time.Du
 		&job.EventName,
 		&job.EventPayload,
 		&job.Environment,
+		&runnerLabelsJSON,
+		&job.ExecutionTarget,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("load claimed CI job: %w", err)
+	}
+	if err := json.Unmarshal(runnerLabelsJSON, &job.RunnerLabels); err != nil {
+		return nil, fmt.Errorf("decode claimed CI job runner labels: %w", err)
 	}
 	if _, err := transaction.Exec(ctx, `
 		UPDATE ci_runs
@@ -796,40 +805,14 @@ func (store *Store) CompleteJob(
 			return fmt.Errorf("record CI artifact: %w", err)
 		}
 	}
-	var activeJobs, failedJobs, timedOutJobs, cancelledJobs int64
-	err = transaction.QueryRow(ctx, `
-		SELECT COUNT(*) FILTER (WHERE status IN ('queued', 'in_progress')),
-		       COUNT(*) FILTER (WHERE conclusion = 'failure'),
-		       COUNT(*) FILTER (WHERE conclusion = 'timed_out'),
-		       COUNT(*) FILTER (WHERE conclusion = 'cancelled')
-		FROM ci_jobs WHERE run_id = $1
-	`, job.RunID).Scan(&activeJobs, &failedJobs, &timedOutJobs, &cancelledJobs)
-	if err != nil {
-		return fmt.Errorf("aggregate CI run jobs: %w", err)
+	if err := skipJobsWithFailedDependencies(ctx, transaction, job.RunID); err != nil {
+		return err
 	}
-	if activeJobs > 0 {
-		if _, err := transaction.Exec(ctx, `
-			UPDATE ci_runs SET status = 'in_progress' WHERE id = $1
-		`, job.RunID); err != nil {
-			return fmt.Errorf("refresh CI run status: %w", err)
-		}
-	} else {
-		runConclusion := conclusion
-		if cancelledJobs > 0 || conclusion == "cancelled" {
-			runConclusion = "cancelled"
-		} else if timedOutJobs > 0 || conclusion == "timed_out" {
-			runConclusion = "timed_out"
-		} else if failedJobs > 0 || conclusion == "failure" {
-			runConclusion = "failure"
-		}
-		_, err = transaction.Exec(ctx, `
-			UPDATE ci_runs
-			SET status = 'completed', conclusion = $2, completed_at = now()
-			WHERE id = $1 AND status <> 'cancelled'
-		`, job.RunID, runConclusion)
-		if err != nil {
-			return fmt.Errorf("complete CI run: %w", err)
-		}
+	completed, runConclusion, err := aggregateRunJobs(ctx, transaction, job.RunID)
+	if err != nil {
+		return err
+	}
+	if completed {
 		if err := recordCompletionEvents(ctx, transaction, job.RunID, runConclusion); err != nil {
 			return err
 		}

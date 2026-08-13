@@ -108,6 +108,15 @@ func (store *Store) RunnerClaimJob(
 		    FROM jsonb_array_elements_text(job.runner_labels) required(label)
 		    WHERE NOT ($3::jsonb ? required.label)
 		  )
+		  AND NOT EXISTS (
+		    SELECT 1
+		    FROM jsonb_array_elements_text(job.needs) required(job_name)
+		    LEFT JOIN ci_jobs dependency
+		      ON dependency.run_id = job.run_id AND dependency.job_name = required.job_name
+		    WHERE dependency.id IS NULL
+		       OR dependency.status <> 'completed'
+		       OR dependency.conclusion <> 'success'
+		  )
 		  AND (
 		    deployment.id IS NULL
 		    OR (deployment.status IN ('queued', 'waiting') AND deployment.wait_until <= now())
@@ -145,6 +154,15 @@ func (store *Store) RunnerClaimJob(
 		WHERE job.id = $1 AND run.id = job.run_id AND NOT run.cancel_requested
 		  AND job.execution_target = 'self_hosted'
 		  AND (job.status = 'queued' OR job.lease_expires_at < now())
+		  AND NOT EXISTS (
+		    SELECT 1
+		    FROM jsonb_array_elements_text(job.needs) required(job_name)
+		    LEFT JOIN ci_jobs dependency
+		      ON dependency.run_id = job.run_id AND dependency.job_name = required.job_name
+		    WHERE dependency.id IS NULL
+		       OR dependency.status <> 'completed'
+		       OR dependency.conclusion <> 'success'
+		  )
 	`, jobID, runnerID, lease.String())
 	if err != nil {
 		return nil, fmt.Errorf("claim runner CI job: %w", err)
@@ -471,7 +489,7 @@ func loadRunnerJob(
 	var job Job
 	var runnerLabelsJSON []byte
 	err := database.QueryRow(ctx, `
-		SELECT job.id, job.attempt, run.id, COALESCE(run.actor_id::text, ''),
+		SELECT job.id, job.attempt, run.id, job.job_name, COALESCE(run.actor_id::text, ''),
 		       COALESCE(workflow.path, workflow_revision.path, ''), repository.id,
 		       organization.id, organization.slug, repository.slug,
 		       repository.lore_repository_id, repository.lore_url,
@@ -487,7 +505,7 @@ func loadRunnerJob(
 		LEFT JOIN deployments deployment ON deployment.job_id = job.id
 		WHERE job.id = $1
 	`+extraSQL, arguments...).Scan(
-		&job.ID, &job.Attempt, &job.RunID, &job.ActorID, &job.WorkflowPath,
+		&job.ID, &job.Attempt, &job.RunID, &job.JobName, &job.ActorID, &job.WorkflowPath,
 		&job.RepositoryID, &job.OrganizationID, &job.Owner, &job.Repository,
 		&job.LoreRepositoryID, &job.LoreURL, &job.Revision, &job.Branch,
 		&job.EventName, &job.EventPayload, &job.Environment, &runnerLabelsJSON,

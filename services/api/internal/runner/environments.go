@@ -573,19 +573,17 @@ func (store *Store) ReviewDeployment(
 		if jobCommand.RowsAffected() != 1 {
 			return DeploymentRecord{}, ErrActionConflict
 		}
-		runCommand, err := tx.Exec(ctx, `
-			UPDATE ci_runs
-			SET status = 'completed', conclusion = 'failure', completed_at = now()
-			WHERE id = $1 AND status = 'queued'
-		`, runID)
-		if err != nil {
-			return DeploymentRecord{}, fmt.Errorf("reject deployment run: %w", err)
-		}
-		if runCommand.RowsAffected() != 1 {
-			return DeploymentRecord{}, ErrActionConflict
-		}
-		if err := recordCompletionEvents(ctx, tx, runID, "failure"); err != nil {
+		if err := skipJobsWithFailedDependencies(ctx, tx, runID); err != nil {
 			return DeploymentRecord{}, err
+		}
+		completed, conclusion, err := aggregateRunJobs(ctx, tx, runID)
+		if err != nil {
+			return DeploymentRecord{}, err
+		}
+		if completed {
+			if err := recordCompletionEvents(ctx, tx, runID, conclusion); err != nil {
+				return DeploymentRecord{}, err
+			}
 		}
 	}
 	if err := recordEnvironmentEvent(

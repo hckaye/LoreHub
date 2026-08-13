@@ -495,6 +495,7 @@ func encodeTriggerConfig(
 	repositoryDispatch *RepositoryDispatchTrigger,
 	environment string,
 	runnerLabels []string,
+	jobs []WorkflowJobDefinition,
 ) (json.RawMessage, error) {
 	config := make(map[string]any, 5)
 	if push != nil {
@@ -517,6 +518,9 @@ func encodeTriggerConfig(
 	}
 	if len(runnerLabels) > 0 {
 		config["runner_labels"] = runnerLabels
+	}
+	if len(jobs) > 0 {
+		config["jobs"] = jobs
 	}
 	encoded, err := json.Marshal(config)
 	if err != nil {

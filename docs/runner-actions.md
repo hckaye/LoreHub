@@ -7,6 +7,22 @@ LoreHub Actions keeps `act` as the workflow engine. The runner clones the exact 
 invokes `act` with exactly one workflow file and the stored event JSON. `actions/checkout` remains in the workflow;
 the runner adapter copies the prepared Lore workspace into the remote job.
 
+## Job scheduling
+
+Each YAML job is queued separately with its normalized `runs-on` labels. Managed and self-hosted jobs may be used in
+the same workflow. A runner claims only jobs for its execution target, and invokes `act --job` with the queued job
+name. The managed-runner entitlement is checked for each managed job when the run is queued. If it is missing, the run
+fails with `failure_reason=entitlement_required` and its other queued jobs are cancelled.
+
+A job with `needs` becomes claimable after every named dependency completes successfully. A failed, timed-out, or
+cancelled dependency marks downstream jobs as skipped. The run finishes after every job is terminal, including skipped
+jobs.
+
+Artifacts remain attached to the run and are available through the existing artifact download API. Each scheduled job
+has a separate workspace and `act` artifact directory. Dependency scheduling does not copy files or job outputs into a
+later job. A later job that needs a file must download the persisted artifact explicitly; job outputs are not propagated
+between separate `act` invocations.
+
 ## Trust boundary
 
 The default Compose profile does not start a runner and never mounts `/var/run/docker.sock`. The `runner` profile uses

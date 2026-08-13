@@ -91,6 +91,32 @@ func TestActArgumentsPassVariablesAndSecretFilePathOnly(t *testing.T) {
 	}
 }
 
+func TestActArgumentsFilterNamedJob(t *testing.T) {
+	job := Job{JobName: "build", EventName: "push", Revision: "revision", Branch: "main"}
+	args := actArguments(
+		job, "/work/repository", "/work/repository/.github/workflows/ci.yml",
+		"/work/event.json", "/work/artifacts", "job-network", "",
+		actInvocation{PlatformImages: DefaultRunnerPlatformImages()},
+	)
+	assertArgumentValue(t, args, "--job", "build")
+	externalArgs := ExternalActArguments(
+		job, "/work/repository", "/work/repository/.github/workflows/ci.yml",
+		"/work/event.json", "/work/artifacts",
+		ExternalActInvocation{PlatformImages: DefaultRunnerPlatformImages()},
+	)
+	assertArgumentValue(t, externalArgs, "--job", "build")
+
+	job.JobName = ""
+	legacyArgs := actArguments(
+		job, "/work/repository", "/work/repository/.github/workflows/ci.yml",
+		"/work/event.json", "/work/artifacts", "job-network", "",
+		actInvocation{PlatformImages: DefaultRunnerPlatformImages()},
+	)
+	if countArgument(legacyArgs, "--job") != 0 {
+		t.Fatalf("legacy workflow job received an act job filter: %#v", legacyArgs)
+	}
+}
+
 func TestRemoveStaleWorkspacesOnlyRemovesMatchingJob(t *testing.T) {
 	workDir := t.TempDir()
 	worker := &Worker{config: WorkerConfig{WorkDir: workDir}}

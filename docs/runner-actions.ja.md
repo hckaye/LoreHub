@@ -7,6 +7,20 @@ LoreHub Actionsは`act`をworkflow engineとして使います。runnerは指定
 一つのworkflow fileを`act`へ渡します。workflow内の`actions/checkout`はそのまま記述できます。runner adapterが
 準備済みのLore workspaceをremote jobへ配置します。
 
+## Job scheduling
+
+YAMLのjobごとに、正規化した`runs-on` labelを持つqueue項目を作成します。一つのworkflowでmanaged jobと
+self-hosted jobを併用できます。runnerは自分の実行先に一致するjobだけを取得し、`act --job`にjob名を指定して
+実行します。managed runnerのentitlementはmanaged jobごとにrunの登録時に確認します。entitlementがない場合、runは
+`failure_reason=entitlement_required`で失敗し、queueに残る他のjobをcancelします。
+
+`needs`を指定したjobは、指定したすべての依存jobが成功すると取得可能になります。依存jobが失敗、timeout、cancelの
+いずれかで終了した場合、後続jobはskippedになります。skippedを含むすべてのjobが終了するとrunも終了します。
+
+artifactはrunに紐付けて保存し、既存のartifact download APIから取得できます。各jobは別のworkspaceと`act`用artifact
+directoryを使います。依存関係の処理では、後続jobへfileやjob outputをコピーしません。後続jobでfileが必要な場合は、
+保存済みartifactを明示的にdownloadしてください。別々の`act`実行間でjob outputは引き継がれません。
+
 ## Trust boundary
 
 Composeの既定profileはrunnerを起動せず、`/var/run/docker.sock`をmountしません。`runner` profileは
