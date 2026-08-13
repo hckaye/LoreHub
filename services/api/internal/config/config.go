@@ -279,6 +279,8 @@ func LoadFor(command string) (Config, error) {
 		ActionsSecretKeyID:                os.Getenv("LOREHUB_ACTIONS_SECRET_KEY_ID"),
 		ActionsSecretKey:                  os.Getenv("LOREHUB_ACTIONS_SECRET_KEY"),
 		ActionsJobTokenAudience:           envOrDefault("LOREHUB_ACTIONS_JOB_TOKEN_AUDIENCE", publicAPIURL),
+		RunnerTokenKeyID:                  os.Getenv("LOREHUB_RUNNER_TOKEN_KEY_ID"),
+		RunnerTokenKey:                    os.Getenv("LOREHUB_RUNNER_TOKEN_KEY"),
 		WebhookSecretKeyID:                os.Getenv("LOREHUB_WEBHOOK_SECRET_KEY_ID"),
 		WebhookSecretKey:                  os.Getenv("LOREHUB_WEBHOOK_SECRET_KEY"),
 		WebhookPollPeriod:                 webhookPollPeriod,
@@ -342,6 +344,9 @@ func LoadFor(command string) (Config, error) {
 	}
 
 	if err := validateWebhookConfig(config, command); err != nil {
+		return Config{}, err
+	}
+	if err := validateRunnerTokenConfig(config, command); err != nil {
 		return Config{}, err
 	}
 	if err := validateRepositoryDeletionConfig(config, command); err != nil {

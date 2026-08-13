@@ -137,6 +137,8 @@ func TestLoadForProductionRunnerDoesNotRequireWebAuthentication(t *testing.T) {
 	t.Setenv("LOREHUB_OIDC_CLIENT_SECRET", "")
 	t.Setenv("LOREHUB_OIDC_REDIRECT_URL", "")
 	t.Setenv("LOREHUB_AUTH_SECRET", "")
+	t.Setenv("LOREHUB_RUNNER_TOKEN_KEY_ID", "")
+	t.Setenv("LOREHUB_RUNNER_TOKEN_KEY", "")
 	t.Setenv("LOREHUB_WEBHOOK_SECRET_KEY_ID", "")
 	t.Setenv("LOREHUB_WEBHOOK_SECRET_KEY", "")
 	t.Setenv("LOREHUB_WEBHOOK_ALLOW_PRIVATE_TARGETS", "invalid")
@@ -158,6 +160,23 @@ func TestLoadRequiresDedicatedWebhookEncryptionKey(t *testing.T) {
 	_, err := Load()
 	if err == nil || !strings.Contains(err.Error(), "LOREHUB_WEBHOOK_SECRET_KEY") {
 		t.Fatalf("expected an invalid webhook encryption key to fail, got %v", err)
+	}
+}
+
+func TestLoadRequiresDedicatedRunnerTokenKey(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("LOREHUB_RUNNER_TOKEN_KEY", "short")
+
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "LOREHUB_RUNNER_TOKEN_KEY") {
+		t.Fatalf("expected an invalid runner token key to fail, got %v", err)
+	}
+
+	setRequiredEnvironment(t)
+	t.Setenv("LOREHUB_RUNNER_TOKEN_KEY_ID", "invalid key id")
+	_, err = Load()
+	if err == nil || !strings.Contains(err.Error(), "LOREHUB_RUNNER_TOKEN_KEY_ID") {
+		t.Fatalf("expected an invalid runner token key ID to fail, got %v", err)
 	}
 }
 
@@ -514,6 +533,8 @@ func setRequiredEnvironment(t *testing.T) {
 		"MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
 	)
 	t.Setenv("LOREHUB_ACTIONS_JOB_TOKEN_AUDIENCE", "")
+	t.Setenv("LOREHUB_RUNNER_TOKEN_KEY_ID", "test-runner-v1")
+	t.Setenv("LOREHUB_RUNNER_TOKEN_KEY", strings.Repeat("r", 32))
 	t.Setenv("LOREHUB_WEBHOOK_SECRET_KEY_ID", "test-webhooks-v1")
 	t.Setenv(
 		"LOREHUB_WEBHOOK_SECRET_KEY",

@@ -139,6 +139,10 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	runnerTokenCodec, err := auth.NewSecretCodec(settings.RunnerTokenKey)
+	if err != nil {
+		return err
+	}
 	localWebhookTargets := settings.Environment == "development" || settings.Environment == "test" ||
 		settings.Environment == "local" || settings.Environment == "local-insecure"
 	webhookTargets, err := webhooks.NewTargetPolicy(
@@ -296,6 +300,7 @@ func run(logger *slog.Logger) error {
 		httpapi.WithGlobalWorkItems(store),
 		httpapi.WithPersonalAccessTokens(store, secretCodec),
 		httpapi.WithEntitlements(store),
+		httpapi.WithRunners(store, runnerTokenCodec, settings.RunnerTokenKeyID),
 		httpapi.WithInstanceAdminUsernames(settings.InstanceAdminUsernames),
 		httpapi.WithConfiguredLoginProviders(settings.IdentityProviders),
 		httpapi.WithCollaboration(collaborationStore),
