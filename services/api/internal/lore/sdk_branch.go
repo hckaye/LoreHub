@@ -39,7 +39,7 @@ func (client *SDKClient) CreateBranch(
 		return Branch{}, fmt.Errorf("create Lore branch workspace: %w", err)
 	}
 	defer func() { _ = os.RemoveAll(workspace) }()
-	transportURL, err := client.transportRepositoryURL(repository.URL)
+	transportURL, err := client.transportRepositoryURL(ctx, repository.URL)
 	if err != nil {
 		return Branch{}, err
 	}
@@ -94,7 +94,7 @@ func (client *SDKClient) ArchiveBranch(
 		return fmt.Errorf("create Lore branch archive workspace: %w", err)
 	}
 	defer func() { _ = os.RemoveAll(workspace) }()
-	transportURL, err := client.transportRepositoryURL(repository.URL)
+	transportURL, err := client.transportRepositoryURL(ctx, repository.URL)
 	if err != nil {
 		return err
 	}

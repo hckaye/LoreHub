@@ -1,13 +1,24 @@
 package lore
 
 import (
+	"context"
 	"errors"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+type serverResolverFunc func(context.Context, string) (ServerTransport, error)
+
+func (resolve serverResolverFunc) ResolveTransport(
+	ctx context.Context,
+	repositoryURL string,
+) (ServerTransport, error) {
+	return resolve(ctx, repositoryURL)
+}
 
 func loreTestTempDir(t *testing.T) string {
 	t.Helper()
@@ -38,7 +49,12 @@ func TestCredentialCachePathSeparatesUserAndServiceState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	repository := RepositoryRef{CacheKey: "repository-1", LoreRepositoryID: "partition-1"}
+	repository, err := client.transportRepositoryRef(t.Context(), RepositoryRef{
+		CacheKey: "repository-1", URL: "lores://lore.example/partition-1", LoreRepositoryID: "partition-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	userA := Credential{Principal: UserPrincipal("user-a")}
 	userB := Credential{Principal: UserPrincipal("user-b")}
 	service := Credential{Principal: ServicePrincipal(ServicePurposePublicReader, "public-reader-subject")}
@@ -93,57 +109,121 @@ func TestProductionSDKRejectsInsecureDevelopmentCredential(t *testing.T) {
 	}
 }
 
-func TestSDKClientRewritesOnlyTheDataPlaneAuthority(t *testing.T) {
-	client, err := NewSDKClientWithEndpoints(
+func TestSDKClientResolvesPerServerTransport(t *testing.T) {
+	resolver := serverResolverFunc(func(_ context.Context, repositoryURL string) (ServerTransport, error) {
+		parsed, err := url.Parse(repositoryURL)
+		if err != nil {
+			return ServerTransport{}, err
+		}
+		switch strings.ToLower(parsed.Host) {
+		case "public.lorehub.example:41337":
+			return ServerTransport{
+				Authority: "lores://internal.lorehub.example:41337", ServerID: "instance-server",
+			}, nil
+		case "tenant.example:41337":
+			return ServerTransport{
+				Authority: "lores://tenant.example:41337", ServerID: "registered-server",
+			}, nil
+		default:
+			return ServerTransport{}, &UnknownServerAuthorityError{Authority: parsed.Host}
+		}
+	})
+	client, err := NewSDKClientWithServerResolver(
 		t.TempDir(),
 		"auth.lorehub.example:8443",
-		"lores://lore.lorehub.example:41337",
+		resolver,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	transportURL, err := client.transportRepositoryURL(
-		"lores://lorehub.example:41341/0123456789abcdef0123456789abcdef",
+	instanceURL, err := client.transportRepositoryURL(
+		t.Context(), "lores://public.lorehub.example:41337/0123456789abcdef0123456789abcdef",
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if transportURL != "lores://lore.lorehub.example:41337/0123456789abcdef0123456789abcdef" {
-		t.Fatalf("unexpected Lore transport URL: %q", transportURL)
+	if instanceURL != "lores://internal.lorehub.example:41337/0123456789abcdef0123456789abcdef" {
+		t.Fatalf("unexpected instance Lore transport URL: %q", instanceURL)
 	}
-	if _, err := NewSDKClientWithEndpoints(t.TempDir(), "auth.lorehub.example:8443", "https://lore"); err == nil {
-		t.Fatal("non-Lore data-plane origin was accepted")
+	registeredURL, err := client.transportRepositoryURL(
+		t.Context(), "lores://tenant.example:41337/0123456789abcdef0123456789abcdef",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if registeredURL != "lores://tenant.example:41337/0123456789abcdef0123456789abcdef" {
+		t.Fatalf("unexpected registered Lore transport URL: %q", registeredURL)
+	}
+	_, err = client.transportRepositoryURL(
+		t.Context(), "lores://unknown.example:41337/0123456789abcdef0123456789abcdef",
+	)
+	var unknownAuthority *UnknownServerAuthorityError
+	if !errors.Is(err, ErrUnknownServerAuthority) || !errors.As(err, &unknownAuthority) ||
+		unknownAuthority.Authority != "unknown.example:41337" {
+		t.Fatalf("unknown Lore authority error = %v", err)
 	}
 }
 
-func TestCredentialCachePathChangesWithTheDataPlaneOrigin(t *testing.T) {
-	repository := RepositoryRef{
-		CacheKey:         "repository-1",
-		URL:              "lores://lorehub.example:41337/0123456789abcdef0123456789abcdef",
-		LoreRepositoryID: "0123456789abcdef0123456789abcdef",
-	}
+func TestCredentialCachePathSeparatesServerAndTransportAuthority(t *testing.T) {
+	resolver := serverResolverFunc(func(_ context.Context, repositoryURL string) (ServerTransport, error) {
+		parsed, err := url.Parse(repositoryURL)
+		if err != nil {
+			return ServerTransport{}, err
+		}
+		switch parsed.Host {
+		case "server-a.example:41337":
+			return ServerTransport{Authority: "lores://SHARED.example:41337", ServerID: "server-a"}, nil
+		case "server-b.example:41337":
+			return ServerTransport{Authority: "lores://shared.example:41337", ServerID: "server-b"}, nil
+		default:
+			return ServerTransport{Authority: "lores://other.example:41337", ServerID: "server-a"}, nil
+		}
+	})
 	credential := Credential{Principal: UserPrincipal("user-a")}
-	publicClient, err := NewSDKClient(t.TempDir())
+	client, err := NewSDKClientWithServerResolver(t.TempDir(), "auth.example:8443", resolver)
 	if err != nil {
 		t.Fatal(err)
 	}
-	internalClient, err := NewSDKClientWithEndpoints(
-		t.TempDir(), "auth.lorehub.example:8443", "lores://lore.lorehub.example:41337",
-	)
-	if err != nil {
-		t.Fatal(err)
+	resolved := make([]RepositoryRef, 0, 3)
+	for _, authority := range []string{
+		"server-a.example:41337", "server-b.example:41337", "server-c.example:41337",
+	} {
+		repository, resolveErr := client.transportRepositoryRef(t.Context(), RepositoryRef{
+			CacheKey: "repository-1",
+			URL:      "lores://" + authority + "/0123456789abcdef0123456789abcdef",
+		})
+		if resolveErr != nil {
+			t.Fatal(resolveErr)
+		}
+		resolved = append(resolved, repository)
 	}
-	publicPath, err := publicClient.credentialCachePath(repository, credential)
-	if err != nil {
-		t.Fatal(err)
+	paths := make([]string, 0, len(resolved))
+	for _, repository := range resolved {
+		path, pathErr := client.credentialCachePath(repository, credential)
+		if pathErr != nil {
+			t.Fatal(pathErr)
+		}
+		paths = append(paths, path)
 	}
-	internalPath, err := internalClient.credentialCachePath(repository, credential)
-	if err != nil {
-		t.Fatal(err)
+	endpointKey := func(path string) string {
+		return filepath.Base(filepath.Dir(filepath.Dir(path)))
 	}
-	if filepath.Base(filepath.Dir(filepath.Dir(publicPath))) ==
-		filepath.Base(filepath.Dir(filepath.Dir(internalPath))) {
-		t.Fatalf("public and internal endpoints shared a Lore cache: %q %q", publicPath, internalPath)
+	if endpointKey(paths[0]) == endpointKey(paths[1]) || endpointKey(paths[0]) == endpointKey(paths[2]) {
+		t.Fatalf("Lore server transports shared a credential cache: %q", paths)
+	}
+	operationPaths := make([]string, 0, len(resolved))
+	for _, repository := range resolved {
+		path, pathErr := client.operationPath(repository, "merge-1")
+		if pathErr != nil {
+			t.Fatal(pathErr)
+		}
+		operationPaths = append(operationPaths, path)
+	}
+	if operationPaths[0] == operationPaths[1] || operationPaths[0] == operationPaths[2] {
+		t.Fatalf("Lore server transports shared a merge workspace: %q", operationPaths)
+	}
+	if resolved[0].transportAuthority != "lores://shared.example:41337" {
+		t.Fatalf("transport authority was not normalized: %q", resolved[0].transportAuthority)
 	}
 }
 
