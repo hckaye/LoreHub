@@ -550,6 +550,10 @@ func (client *SDKClient) AbortMerge(
 	if err := ValidateCredential(repository, credential, ScopeWrite); err != nil {
 		return err
 	}
+	repository, err := client.transportRepositoryRef(ctx, repository)
+	if err != nil {
+		return err
+	}
 	exists, err := client.workspaceExists(repository, operationID)
 	if err != nil || !exists {
 		return err
