@@ -1,10 +1,11 @@
 import { AuthRequired } from "@/components/auth/auth-required";
 import { NotificationInbox } from "@/components/notifications/notification-inbox";
-import { RepositorySection } from "@/components/repositories/repository-section";
 import { getDictionary } from "@/i18n";
 import { isLocale } from "@/i18n/config";
 import { getAuthSession } from "@/lib/auth-api";
 import { getNotifications } from "@/lib/lorehub-api";
+
+import styles from "./notifications.module.css";
 
 type NotificationsPageProps = {
   params: Promise<{ locale: string }>;
@@ -18,26 +19,24 @@ export default async function NotificationsPage({ params }: NotificationsPagePro
   const [dictionary, session] = await Promise.all([getDictionary(locale), getAuthSession()]);
   if (session.status !== "authenticated") {
     return (
-      <RepositorySection
-        description={dictionary.notificationsPage.description}
-        title={dictionary.notificationsPage.title}
-      >
+      <div className={styles.page}>
         <AuthRequired dictionary={dictionary} returnTo={`/${locale}/notifications`} session={session} />
-      </RepositorySection>
+      </div>
     );
   }
   const notifications = await getNotifications();
   return (
-    <RepositorySection
-      description={dictionary.notificationsPage.description}
-      title={dictionary.notificationsPage.title}
-    >
+    <div className={styles.page}>
+      <header className={styles.heading}>
+        <h1>{dictionary.notificationsPage.title}</h1>
+        <p>{dictionary.notificationsPage.description}</p>
+      </header>
       <NotificationInbox
         dictionary={dictionary}
         initialItems={notifications.ok ? notifications.data : []}
         locale={locale}
         session={session}
       />
-    </RepositorySection>
+    </div>
   );
 }

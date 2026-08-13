@@ -21,12 +21,16 @@ export default async function PublicUserPage({ params }: PublicUserPageProps) {
     getUserProfile(owner),
     getUserRepositories(owner),
   ]);
+  if (!profile.ok && profile.reason === "not-found") {
+    notFound();
+  }
   return (
     <UserProfilePage
       dictionary={dictionary}
       locale={value}
       profile={profile.ok ? profile.data : null}
       repositories={repositories.ok ? repositories.data : null}
+      unavailable={!profile.ok}
     />
   );
 }

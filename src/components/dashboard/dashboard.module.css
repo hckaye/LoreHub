@@ -49,7 +49,7 @@
   border: 1px solid var(--success-border);
   border-radius: 6px;
   background: var(--success-border);
-  color: #ffffff;
+  color: var(--fg-on-emphasis);
   font-size: 0.72rem;
   font-weight: 600;
   text-decoration: none;
@@ -100,6 +100,19 @@
 
 .repositoryList strong {
   font-weight: 600;
+}
+
+.showMore {
+  display: inline-block;
+  margin-top: 10px;
+  padding: 4px 4px;
+  color: var(--accent-fg);
+  font-size: 0.78rem;
+  text-decoration: none;
+}
+
+.showMore:hover {
+  text-decoration: underline;
 }
 
 .organizationsTitle {
