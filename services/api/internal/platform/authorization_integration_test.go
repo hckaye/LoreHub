@@ -662,6 +662,13 @@ func TestAuthorizationIntegrationRejectsCrossRepositoryMergeOperation(t *testing
 func TestAuthorizationIntegrationProvisioningPrincipalsAndObservation(t *testing.T) {
 	fixture := authorizationIntegrationFixture(t)
 	ctx := context.Background()
+	if _, err := fixture.store.EnsureInstanceLoreServer(ctx, "lores://lorehub.localhost:41337"); err != nil {
+		t.Fatalf("ensure instance Lore server: %v", err)
+	}
+	authorizationMustExec(t, fixture.pool, `
+		INSERT INTO entitlements (organization_id, feature, granted_by, grant_source)
+		VALUES ($1, 'hosted_lore_server', $2, 'admin')
+	`, fixture.orgID, fixture.manager.ID)
 	resourceA := "urc-" + fixture.loreA
 	if err := fixture.store.SetServicePrincipalGrant(ctx, fixture.manager, "lorehub-anonymous-reader",
 		fixture.orgSlug, "a", []string{authz.PermissionRead}, true); err != nil {
@@ -698,7 +705,7 @@ func TestAuthorizationIntegrationProvisioningPrincipalsAndObservation(t *testing
 	repository, err := fixture.store.BeginRepositoryProvisioning(ctx, fixture.manager, fixture.orgSlug,
 		ProvisionRepositoryInput{
 			Slug: "managed", DisplayName: "管理対象", Visibility: "public", DefaultBranch: "main",
-		}, "lores://lorehub.localhost:41337")
+		}, "")
 	if err != nil {
 		t.Fatalf("begin provisioning: %v", err)
 	}
@@ -723,7 +730,7 @@ func TestAuthorizationIntegrationProvisioningPrincipalsAndObservation(t *testing
 	retried, err := fixture.store.BeginRepositoryProvisioning(ctx, fixture.manager, fixture.orgSlug,
 		ProvisionRepositoryInput{
 			Slug: "managed", DisplayName: "管理対象", Visibility: "public", DefaultBranch: "main",
-		}, "lores://lorehub.localhost:41337")
+		}, "")
 	if err != nil || retried.ID != repository.ID || retried.LoreRepositoryID != repository.LoreRepositoryID {
 		t.Fatalf("provision retry = %+v, err %v", retried, err)
 	}

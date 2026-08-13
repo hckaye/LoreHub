@@ -228,31 +228,31 @@ func (store *Store) RegisterRepository(
 	if err := validateSlug(input.Slug); err != nil {
 		return Repository{}, err
 	}
-	var organizationID string
-	var role string
-	err := store.pool.QueryRow(ctx, `
-		SELECT o.id, m.role
-		FROM organizations o
-		JOIN organization_memberships m ON m.organization_id = o.id AND m.active
-		JOIN users u ON u.id = m.user_id AND u.status = 'active'
-		WHERE o.slug = $1 AND m.user_id = $2
-	`, organizationSlug, actor.ID).Scan(&organizationID, &role)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return Repository{}, ErrForbidden
-	}
-	if err != nil {
-		return Repository{}, fmt.Errorf("check organization permission: %w", err)
-	}
-	if role != "owner" && role != "maintainer" {
-		return Repository{}, ErrForbidden
-	}
 	if !isLorePartitionID(input.LoreRepositoryID) {
 		return Repository{}, errors.New("Lore repository ID must be the canonical 32-character partition ID")
 	}
 	if err := validatePublicLoreURL(input.LoreURL); err != nil {
 		return Repository{}, err
 	}
-
+	if _, err := uuid.Parse(input.LoreServerID); err != nil {
+		return Repository{}, ErrInvalidInput
+	}
+	transaction, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return Repository{}, fmt.Errorf("begin repository transaction: %w", err)
+	}
+	defer func() { _ = transaction.Rollback(context.WithoutCancel(ctx)) }()
+	organizationID, err := requireLoreServerOrganizationRole(ctx, transaction, actor.ID, organizationSlug, false)
+	if err != nil {
+		return Repository{}, err
+	}
+	server, err := resolveServerForNewRepository(ctx, transaction, organizationID, input.LoreServerID)
+	if err != nil {
+		return Repository{}, err
+	}
+	if !loreServerAuthoritiesMatch(server.PublicURL, input.LoreURL) {
+		return Repository{}, ErrInvalidInput
+	}
 	repository := Repository{
 		ID:               uuid.NewString(),
 		OrganizationID:   organizationID,
@@ -263,23 +263,19 @@ func (store *Store) RegisterRepository(
 		Visibility:       input.Visibility,
 		LoreRepositoryID: input.LoreRepositoryID,
 		LoreURL:          input.LoreURL,
+		LoreServerID:     server.ID,
 		DefaultBranch:    input.DefaultBranch,
 		UpdatedAt:        time.Now().UTC(),
 	}
-	transaction, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
-	if err != nil {
-		return Repository{}, fmt.Errorf("begin repository transaction: %w", err)
-	}
-	defer func() { _ = transaction.Rollback(context.WithoutCancel(ctx)) }()
 
 	_, err = transaction.Exec(ctx, `
 		INSERT INTO repositories (
 			id, organization_id, slug, display_name, description, visibility,
-			lore_repository_id, lore_url, default_branch, created_by, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
+			lore_repository_id, lore_url, lore_server_id, default_branch, created_by, created_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12)
 	`, repository.ID, repository.OrganizationID, repository.Slug, repository.DisplayName,
 		repository.Description, repository.Visibility, repository.LoreRepositoryID, repository.LoreURL,
-		repository.DefaultBranch, actor.ID, repository.UpdatedAt)
+		repository.LoreServerID, repository.DefaultBranch, actor.ID, repository.UpdatedAt)
 	if err != nil {
 		return Repository{}, translateConstraintError("register repository", err)
 	}

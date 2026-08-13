@@ -37,6 +37,10 @@ func LoadFor(command string) (Config, error) {
 		return loadMigrationConfig()
 	}
 	environment := envOrDefault("LOREHUB_ENV", "development")
+	loresTokenKey, loresTokenKeyID, loreAllowPrivateServers, err := loadLoreServerConfig(environment, command)
+	if err != nil {
+		return Config{}, err
+	}
 	loreAuthIssuer := os.Getenv("LOREHUB_LORE_AUTH_ISSUER")
 	loreAuthLoginURL := os.Getenv("LOREHUB_LORE_AUTH_LOGIN_URL")
 	loreAuthURL := os.Getenv("LOREHUB_LORE_AUTH_URL")
@@ -303,6 +307,9 @@ func LoadFor(command string) (Config, error) {
 		LoreAuthURL:                       loreAuthURL,
 		LorePublicURL:                     lorePublicURL,
 		LoreInternalURL:                   loreInternalURL,
+		LoresTokenKey:                     loresTokenKey,
+		LoresTokenKeyID:                   loresTokenKeyID,
+		LoreAllowPrivateServers:           loreAllowPrivateServers,
 		LoreAuthAddress:                   envOrDefault("LOREHUB_LORE_AUTH_ADDRESS", ":8443"),
 		LoreAuthCompatAddress:             os.Getenv("LOREHUB_LORE_AUTH_COMPAT_ADDRESS"),
 		LoreAuthTLSCert:                   loreAuthTLSCert,
@@ -693,6 +700,9 @@ func validate(config Config, command string) error {
 		if len(config.AuthSecret) < 32 {
 			return errors.New("LOREHUB_AUTH_SECRET must contain at least 32 characters")
 		}
+	}
+	if err := validateLoreServerConfig(config, command); err != nil {
+		return err
 	}
 	if command != "serve" || config.AuthMode != AuthModeInteractive {
 		return validateRunner(config)

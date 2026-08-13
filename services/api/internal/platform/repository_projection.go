@@ -9,7 +9,8 @@ import (
 
 const repositorySelect = `
 		SELECT r.id, r.organization_id, o.slug, r.slug, r.display_name, r.description,
-		       r.visibility, r.lore_repository_id, r.lore_url, r.default_branch,
+		       r.visibility, r.lore_repository_id, r.lore_url,
+		       COALESCE(r.lore_server_id::text, ''), r.default_branch,
 		       r.homepage_url, r.allow_issues, r.allow_merge_requests,
 		       COALESCE((
 		           SELECT jsonb_agg(topic.topic ORDER BY topic.topic)
@@ -41,6 +42,7 @@ func scanRepository(row rowScanner) (Repository, error) {
 		&repository.Visibility,
 		&repository.LoreRepositoryID,
 		&repository.LoreURL,
+		&repository.LoreServerID,
 		&repository.DefaultBranch,
 		&repository.HomepageURL,
 		&repository.AllowIssues,

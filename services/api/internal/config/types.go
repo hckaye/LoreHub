@@ -84,6 +84,9 @@ type Config struct {
 	LoreAuthURL                       string
 	LorePublicURL                     string
 	LoreInternalURL                   string
+	LoresTokenKey                     string
+	LoresTokenKeyID                   string
+	LoreAllowPrivateServers           bool
 	LoreAuthAddress                   string
 	LoreAuthCompatAddress             string
 	LoreAuthTLSCert                   string

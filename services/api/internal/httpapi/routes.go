@@ -70,6 +70,8 @@ func (api *API) registerCoreRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PATCH /api/v1/notifications/{notificationID}/read", api.markNotificationRead)
 	mux.HandleFunc("POST /api/v1/notifications/read-all", api.markAllNotificationsRead)
 	mux.HandleFunc("GET /api/v1/explore/repositories", api.exploreRepositories)
+	mux.HandleFunc("POST /api/v1/lore-servers/register", api.registerLoreServer)
+	mux.HandleFunc("POST /api/v1/lore-servers/heartbeat", api.heartbeatLoreServer)
 }
 
 func (api *API) registerOrganizationRoutes(mux *http.ServeMux) {
@@ -107,6 +109,12 @@ func (api *API) registerOrganizationRoutes(mux *http.ServeMux) {
 	)
 	mux.HandleFunc("POST /api/v1/organizations/{organization}/repositories", api.registerRepository)
 	mux.HandleFunc("POST /api/v1/organizations/{organization}/repositories/import", api.importRepository)
+	loreServers := "/api/v1/organizations/{organization}/lore-servers"
+	mux.HandleFunc("POST "+loreServers+"/registration-tokens", api.createLoreServerRegistrationToken)
+	mux.HandleFunc("GET "+loreServers, api.listLoreServers)
+	mux.HandleFunc("DELETE "+loreServers+"/{loreServerID}", api.revokeLoreServer)
+	mux.HandleFunc("GET "+loreServers+"/default", api.getDefaultLoreServer)
+	mux.HandleFunc("PUT "+loreServers+"/default", api.setDefaultLoreServer)
 }
 
 func (api *API) registerRepositoryRoutes(mux *http.ServeMux) {
