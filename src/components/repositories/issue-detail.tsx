@@ -1,6 +1,7 @@
 "use client";
 
-import { CircleDot, CircleSlash2 } from "lucide-react";
+import { CircleCheck, CircleDot } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -17,12 +18,12 @@ import {
 import { assignIssueUser, removeIssueUser } from "@/lib/issue-assignee-client";
 import { assignIssueMilestone, removeIssueMilestone } from "@/lib/milestone-client";
 import { mutationFailureMessage } from "@/lib/mutation-messages";
-import { repositoryPath } from "@/lib/routes";
+import { localizedPath, repositoryPath } from "@/lib/routes";
 
-import { AuthRequired } from "../auth/auth-required";
 import { IssueConversation } from "./issue-conversation";
 import styles from "./issue-detail.module.css";
 import { IssueSidebar } from "./issue-sidebar";
+import { RelativeTime } from "./issue-timeline-item";
 
 type IssueDetailProps = {
   comments: CommentPage<IssueComment> | null;
@@ -65,10 +66,25 @@ export function IssueDetail(props: IssueDetailProps) {
     return true;
   }
 
-  async function createComment(body: string): Promise<boolean> {
+  async function submitComment(body: string, nextState: "open" | "closed" | null): Promise<boolean> {
     if (!csrfToken) return false;
     setBusyAction("new-comment");
     setMessage(null);
+    if (nextState) {
+      const stateResult = await patchJson<Issue>(apiPath, { state: nextState }, csrfToken, {
+        "If-Match": `"${issue.updatedAt}"`,
+      });
+      if (!stateResult.ok) {
+        setBusyAction(null);
+        setMessage(mutationFailureMessage(stateResult.kind, dictionary));
+        return false;
+      }
+    }
+    if (!body.trim()) {
+      setBusyAction(null);
+      router.refresh();
+      return true;
+    }
     const result = await postJson<IssueComment>(`${apiPath}/comments`, { body }, csrfToken);
     setBusyAction(null);
     if (!result.ok) {
@@ -174,14 +190,10 @@ export function IssueDetail(props: IssueDetailProps) {
     router.refresh();
   }
 
-  const openedText = formatActivity(
-    issue.state === "closed" && issue.closedBy && issue.closedAt
-      ? dictionary.issueDetail.closedBy
-      : dictionary.issueDetail.openedBy,
-    issue.state === "closed" && issue.closedBy ? issue.closedBy : issue.author,
-    issue.state === "closed" && issue.closedAt ? issue.closedAt : issue.createdAt,
-    props.locale,
-  );
+  const closed = issue.state === "closed" && issue.closedBy && issue.closedAt;
+  const actor = closed && issue.closedBy ? issue.closedBy : issue.author;
+  const timestamp = closed && issue.closedAt ? issue.closedAt : issue.createdAt;
+  const activity = closed ? dictionary.issueDetail.closedThisIssue : dictionary.issueDetail.openedThisIssue;
   return (
     <div className={styles.page}>
       <header className={styles.heading}>
@@ -190,11 +202,17 @@ export function IssueDetail(props: IssueDetailProps) {
         </h1>
         <div className={styles.statusLine}>
           <span className={styles.state} data-state={issue.state}>
-            {issue.state === "open" ? <CircleDot aria-hidden="true" /> : <CircleSlash2 aria-hidden="true" />}
+            {issue.state === "open" ? <CircleDot aria-hidden="true" /> : <CircleCheck aria-hidden="true" />}
             {issue.state === "open" ? dictionary.common.open : dictionary.common.closed}
           </span>
-          <span>{openedText}</span>
-          <span>{dictionary.issueDetail.commentCount.replace("{count}", String(issue.commentCount))}</span>
+          <span className={styles.activity}>
+            <Link className={styles.author} href={localizedPath(props.locale, actor)}>
+              {actor}
+            </Link>
+            <RelativeTime locale={props.locale} template={activity} value={timestamp} />
+            <span aria-hidden="true">·</span>
+            <span>{dictionary.issueDetail.commentCount.replace("{count}", String(issue.commentCount))}</span>
+          </span>
         </div>
       </header>
       {message && (
@@ -210,8 +228,8 @@ export function IssueDetail(props: IssueDetailProps) {
           dictionary={dictionary}
           issue={issue}
           locale={props.locale}
-          onCreateComment={createComment}
           onDeleteComment={deleteComment}
+          onSubmitComment={submitComment}
           onUpdateComment={updateComment}
           onUpdateIssue={updateIssue}
           session={props.session}
@@ -226,30 +244,18 @@ export function IssueDetail(props: IssueDetailProps) {
           milestonesAvailable={props.milestonesAvailable}
           assignableUsers={props.assignableUsers}
           assigneesAvailable={props.assigneesAvailable}
+          locale={props.locale}
           onSetAssignee={setAssignee}
           onSetMilestone={setMilestone}
-          onUpdateState={(state) => updateIssue({ state })}
           onToggleLabel={toggleLabel}
           owner={props.owner}
           repository={props.repository}
         />
       </div>
-      {props.session.status !== "authenticated" && (
-        <AuthRequired dictionary={dictionary} returnTo={returnTo} session={props.session} />
-      )}
     </div>
   );
 }
 
 function issueAPIPath(owner: string, repository: string, number: number): string {
   return `/api/v1/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/issues/${number}`;
-}
-
-function formatActivity(template: string, author: string, value: string, locale: Locale): string {
-  const date = new Intl.DateTimeFormat(locale, {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "UTC",
-  }).format(new Date(value));
-  return template.replace("{author}", author).replace("{date}", date);
 }

@@ -8,6 +8,7 @@ import { discussions } from "./discussions";
 import { fileLocks } from "./file-locks";
 import { globalWorkItems } from "./global-work-items";
 import { insights } from "./insights";
+import { issueDetail } from "./issue-detail";
 import { metadata } from "./metadata";
 import { milestones } from "./milestones";
 import { personalAccessTokens } from "./personal-access-tokens";
@@ -461,28 +462,7 @@ const ja = {
     forbiddenTitle: "ラベルを表示できません",
     forbiddenBody: "このリポジトリのラベルを表示する権限がありません。",
   },
-  issueDetail: {
-    openedBy: "{author}さんが{date}にこのIssueを作成しました",
-    closedBy: "{author}さんが{date}にこのIssueをクローズしました",
-    commentCount: "コメント {count}件",
-    editIssue: "Issueを編集",
-    saveChanges: "変更を保存",
-    closeIssue: "Issueをクローズ",
-    reopenIssue: "Issueを再オープン",
-    addComment: "コメントを追加",
-    commentPlaceholder: "コメントを入力",
-    submitComment: "コメントする",
-    noDescription: "説明はありません。",
-    edited: "編集済み",
-    editComment: "編集",
-    deleteComment: "削除",
-    deleteCommentConfirm: "このコメントを削除しますか？",
-    labels: "ラベル",
-    noLabels: "ラベルはありません",
-    manageLabels: "ラベルを編集",
-    labelsUnavailable: "ラベルを読み込めませんでした。",
-    commentsUnavailable: "コメントを読み込めませんでした。",
-  },
+  issueDetail: issueDetail.ja,
   pullRequestsPage: {
     title: "プルリクエスト",
     // prettier-ignore
