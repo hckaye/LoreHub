@@ -6,6 +6,7 @@ import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
 import type { AuthSession, Issue, IssueComment } from "@/lib/api-types";
 import type { CommentPage } from "@/lib/comment-page-types";
+import { mergeConversationTimeline, type WorkItemEvent } from "@/lib/work-item-events";
 
 import { AuthRequired } from "../auth/auth-required";
 import { MarkdownContent } from "../wiki/markdown-content";
@@ -14,12 +15,14 @@ import { CommentComposer } from "./issue-comment-composer";
 import styles from "./issue-detail.module.css";
 import { MarkdownField } from "./issue-markdown-field";
 import { TimelineItem } from "./issue-timeline-item";
+import { WorkItemEventRow } from "./work-item-event-row";
 
 type ConversationProps = {
   busyAction: string | null;
   basePath: string;
   comments: CommentPage<IssueComment> | null;
   dictionary: Dictionary;
+  events: WorkItemEvent[];
   issue: Issue;
   locale: Locale;
   onDeleteComment: (commentID: string) => Promise<boolean>;
@@ -44,17 +47,21 @@ export function IssueConversation(props: ConversationProps) {
         />
       )}
       {!props.comments && <p className={styles.notice}>{props.dictionary.issueDetail.commentsUnavailable}</p>}
-      {(props.comments?.items ?? []).map((comment) => (
-        <CommentCard
-          busy={props.busyAction === comment.id}
-          comment={comment}
-          dictionary={props.dictionary}
-          key={comment.id}
-          locale={props.locale}
-          onDelete={props.onDeleteComment}
-          onUpdate={props.onUpdateComment}
-        />
-      ))}
+      {mergeConversationTimeline(props.comments, props.events).map((entry) =>
+        entry.kind === "comment" ? (
+          <CommentCard
+            busy={props.busyAction === entry.comment.id}
+            comment={entry.comment}
+            dictionary={props.dictionary}
+            key={entry.id}
+            locale={props.locale}
+            onDelete={props.onDeleteComment}
+            onUpdate={props.onUpdateComment}
+          />
+        ) : (
+          <WorkItemEventRow dictionary={props.dictionary} event={entry.event} key={entry.id} locale={props.locale} />
+        ),
+      )}
       {props.comments && (
         <ConversationPagination
           basePath={props.basePath}

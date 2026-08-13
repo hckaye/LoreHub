@@ -27,12 +27,14 @@ import { search } from "./search";
 import { settingsNavigation } from "./settings-navigation";
 import { webhooks } from "./webhooks";
 import { wiki } from "./wiki";
+import { workItemEvents } from "./work-item-events";
 import { workItemLists } from "./work-item-lists";
 
 const concat = (...parts: string[]) => parts.join("");
 
 const ja = {
   commentPagination: commentPagination.ja,
+  workItemEvents: workItemEvents.ja,
   workItemLists: workItemLists.ja,
   codeBrowser: codeBrowser.ja,
   commitHistory: commitHistory.ja,

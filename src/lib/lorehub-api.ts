@@ -95,6 +95,7 @@ import {
 } from "./revision-comments";
 import { normalizeRunnerList, runnersPath, type Runner, type RunnerTarget } from "./runners";
 import { parseSearchResults, searchPageSize, type SearchResults, type SearchType } from "./search";
+import { parseWorkItemEvents, workItemEventsPath, type WorkItemEvent } from "./work-item-events";
 
 export type {
   IssueFilter,
@@ -413,6 +414,30 @@ export async function getIssueComments(
   if (!result.ok) return result;
   const comments = parseIssueCommentPage(result.data, page, conversationCommentPageSize);
   return comments ? { ok: true, data: comments } : { ok: false, reason: "unavailable" };
+}
+
+export function getIssueEvents(owner: string, repository: string, number: number): Promise<APIResult<WorkItemEvent[]>> {
+  return getWorkItemEvents(owner, repository, "issues", number);
+}
+
+export function getMergeRequestEvents(
+  owner: string,
+  repository: string,
+  number: number,
+): Promise<APIResult<WorkItemEvent[]>> {
+  return getWorkItemEvents(owner, repository, "merge-requests", number);
+}
+
+async function getWorkItemEvents(
+  owner: string,
+  repository: string,
+  resource: string,
+  number: number,
+): Promise<APIResult<WorkItemEvent[]>> {
+  const result = await request<unknown>(workItemEventsPath(owner, repository, resource, number));
+  if (!result.ok) return result;
+  const events = parseWorkItemEvents(result.data);
+  return events ? { ok: true, data: events } : { ok: false, reason: "unavailable" };
 }
 
 export async function getLabels(owner: string, repository: string): Promise<APIResult<Label[]>> {

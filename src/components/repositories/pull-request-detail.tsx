@@ -41,6 +41,7 @@ import { postJson } from "@/lib/auth-client";
 import type { CommentPage } from "@/lib/comment-page-types";
 import { abbreviateCount, shortRevision } from "@/lib/format";
 import { repositoryPath } from "@/lib/routes";
+import type { WorkItemEvent } from "@/lib/work-item-events";
 
 import type { Dictionary } from "@/i18n";
 
@@ -59,6 +60,7 @@ type PullRequestDetailProps = {
   diff: LoreDiff | null;
   commits: RevisionHistoryEntry[];
   comments: CommentPage<MergeRequestComment> | null;
+  events: WorkItemEvent[];
   assignees: Assignee[];
   assigneesAvailable: boolean;
   labels: Label[];
@@ -88,6 +90,7 @@ export function PullRequestDetail({
   diff,
   commits,
   comments,
+  events,
   assignees,
   assigneesAvailable,
   labels,
@@ -204,6 +207,7 @@ export function PullRequestDetail({
             commits={commits}
             comments={comments}
             diff={diff}
+            events={events}
             dictionary={dictionary}
             mergeRequest={mergeRequest}
             readiness={readiness}
@@ -266,6 +270,7 @@ function PullRequestTab({
   reviewCandidates,
   reviewRequests,
   comments,
+  events,
   reviewThreads,
   reviewThreadsAvailable,
   commits,
@@ -284,6 +289,7 @@ function PullRequestTab({
   reviewCandidates: ReviewCandidate[];
   reviewRequests: ReviewRequestSummary | null;
   comments: CommentPage<MergeRequestComment> | null;
+  events: WorkItemEvent[];
   readiness: MergeReadiness | null;
   readinessUnavailableReason: "forbidden" | "unavailable";
   reviewThreads: ReviewThread[];
@@ -308,6 +314,7 @@ function PullRequestTab({
         <PullRequestConversation
           comments={comments}
           dictionary={dictionary}
+          events={events}
           locale={locale}
           mergeRequest={mergeRequest}
           owner={owner}
