@@ -9,6 +9,7 @@ import { discussions } from "./discussions";
 import { fileLocks } from "./file-locks";
 import { globalWorkItems } from "./global-work-items";
 import { insights } from "./insights";
+import { issueDetail } from "./issue-detail";
 import { metadata } from "./metadata";
 import { milestones } from "./milestones";
 import { personalAccessTokens } from "./personal-access-tokens";
@@ -425,28 +426,7 @@ const en = {
     forbiddenTitle: "Labels are not available",
     forbiddenBody: "You do not have access to this repository's labels.",
   },
-  issueDetail: {
-    openedBy: "{author} opened this issue on {date}",
-    closedBy: "{author} closed this issue on {date}",
-    commentCount: "{count} comments",
-    editIssue: "Edit issue",
-    saveChanges: "Save changes",
-    closeIssue: "Close issue",
-    reopenIssue: "Reopen issue",
-    addComment: "Add a comment",
-    commentPlaceholder: "Leave a comment",
-    submitComment: "Comment",
-    noDescription: "No description provided.",
-    edited: "edited",
-    editComment: "Edit",
-    deleteComment: "Delete",
-    deleteCommentConfirm: "Delete this comment?",
-    labels: "Labels",
-    noLabels: "No labels",
-    manageLabels: "Edit labels",
-    labelsUnavailable: "Labels could not be loaded.",
-    commentsUnavailable: "Comments could not be loaded.",
-  },
+  issueDetail: issueDetail.en,
   pullRequestsPage: {
     title: "Pull requests",
     description: "Review proposed changes between Lore branches using their current revisions.",

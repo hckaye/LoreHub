@@ -27,6 +27,9 @@
   --attention-fg: #9a6700;
   --attention-bg: #fff8c5;
   --attention-border: #bf8700;
+  --done-fg: #8250df;
+  --done-emphasis: #8250df;
+  --done-border: #6639ba;
   --header-bg: #25292e;
   --header-border: #3d444d;
   --header-hover: #32383f;
@@ -69,6 +72,9 @@
     --attention-fg: #d29922;
     --attention-bg: #2b2111;
     --attention-border: #9e6a03;
+    --done-fg: #a371f7;
+    --done-emphasis: #8957e5;
+    --done-border: #6e40c9;
     --header-bg: #010409;
     --header-border: #30363d;
     --header-hover: #21262d;

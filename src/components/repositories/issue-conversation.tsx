@@ -1,14 +1,19 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 
 import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
 import type { AuthSession, Issue, IssueComment } from "@/lib/api-types";
 import type { CommentPage } from "@/lib/comment-page-types";
 
+import { AuthRequired } from "../auth/auth-required";
+import { MarkdownContent } from "../wiki/markdown-content";
 import { ConversationPagination } from "./conversation-pagination";
+import { CommentComposer } from "./issue-comment-composer";
 import styles from "./issue-detail.module.css";
+import { MarkdownField } from "./issue-markdown-field";
+import { TimelineItem } from "./issue-timeline-item";
 
 type ConversationProps = {
   busyAction: string | null;
@@ -17,8 +22,8 @@ type ConversationProps = {
   dictionary: Dictionary;
   issue: Issue;
   locale: Locale;
-  onCreateComment: (body: string) => Promise<boolean>;
   onDeleteComment: (commentID: string) => Promise<boolean>;
+  onSubmitComment: (body: string, nextState: "open" | "closed" | null) => Promise<boolean>;
   onUpdateComment: (commentID: string, body: string) => Promise<boolean>;
   onUpdateIssue: (input: Partial<Pick<Issue, "title" | "body" | "state">>) => Promise<boolean>;
   session: AuthSession;
@@ -27,7 +32,7 @@ type ConversationProps = {
 export function IssueConversation(props: ConversationProps) {
   const [editingIssue, setEditingIssue] = useState(false);
   return (
-    <main className={styles.conversation}>
+    <div className={styles.conversation}>
       {editingIssue ? (
         <IssueEditForm {...props} onCancel={() => setEditingIssue(false)} />
       ) : (
@@ -60,31 +65,45 @@ export function IssueConversation(props: ConversationProps) {
           totalCount={props.comments.totalCount}
         />
       )}
-      {props.session.status === "authenticated" && (
-        <NewCommentForm
+      {props.session.status === "authenticated" ? (
+        <CommentComposer
           busy={props.busyAction === "new-comment"}
           dictionary={props.dictionary}
-          onSubmit={props.onCreateComment}
+          issue={props.issue}
+          onSubmit={props.onSubmitComment}
+          viewer={props.session.user}
         />
+      ) : (
+        <AuthRequired dictionary={props.dictionary} returnTo={props.basePath} session={props.session} />
       )}
-    </main>
+    </div>
   );
 }
 
 function IssueBody(props: { dictionary: Dictionary; issue: Issue; locale: Locale; onEdit: () => void }) {
+  const copy = props.dictionary.issueDetail;
   return (
-    <article className={styles.card}>
-      <header>
-        <strong>{props.issue.author}</strong>
-        <time dateTime={props.issue.createdAt}>{formatDate(props.issue.createdAt, props.locale)}</time>
-        {props.issue.viewerCanUpdate && (
+    <TimelineItem
+      actions={
+        props.issue.viewerCanUpdate && (
           <button className={styles.textButton} onClick={props.onEdit} type="button">
-            {props.dictionary.issueDetail.editIssue}
+            {copy.editIssue}
           </button>
+        )
+      }
+      author={props.issue.author}
+      locale={props.locale}
+      template={copy.commented}
+      timestamp={props.issue.createdAt}
+    >
+      <div className={styles.body}>
+        {props.issue.body ? (
+          <MarkdownContent body={props.issue.body} />
+        ) : (
+          <p className={styles.empty}>{copy.noDescription}</p>
         )}
-      </header>
-      <div className={styles.body}>{props.issue.body || props.dictionary.issueDetail.noDescription}</div>
-    </article>
+      </div>
+    </TimelineItem>
   );
 }
 
@@ -97,7 +116,9 @@ function IssueEditForm(props: ConversationProps & { onCancel: () => void }) {
   }
   return (
     <form className={styles.editor} onSubmit={submit}>
-      <label htmlFor="issue-detail-title">{props.dictionary.forms.titleLabel}</label>
+      <label className={styles.fieldLabel} htmlFor="issue-detail-title">
+        {props.dictionary.forms.titleLabel}
+      </label>
       <input
         id="issue-detail-title"
         maxLength={512}
@@ -105,15 +126,15 @@ function IssueEditForm(props: ConversationProps & { onCancel: () => void }) {
         required
         value={title}
       />
-      <label htmlFor="issue-detail-body">{props.dictionary.forms.bodyLabel}</label>
-      <textarea
+      <MarkdownField
+        dictionary={props.dictionary}
         id="issue-detail-body"
-        maxLength={1_000_000}
-        onChange={(event) => setBody(event.target.value)}
+        label={props.dictionary.forms.bodyLabel}
+        onChange={setBody}
         value={body}
       />
       <div className={styles.actions}>
-        <button disabled={props.busyAction === "issue"} type="submit">
+        <button className={styles.primaryButton} disabled={props.busyAction === "issue"} type="submit">
           {props.dictionary.issueDetail.saveChanges}
         </button>
         <button className={styles.secondaryButton} onClick={props.onCancel} type="button">
@@ -132,39 +153,45 @@ function CommentCard(props: {
   onDelete: (commentID: string) => Promise<boolean>;
   onUpdate: (commentID: string, body: string) => Promise<boolean>;
 }) {
+  const copy = props.dictionary.issueDetail;
   const [editing, setEditing] = useState(false);
   const [body, setBody] = useState(props.comment.body);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (await props.onUpdate(props.comment.id, body)) setEditing(false);
   }
-  async function remove() {
-    if (!window.confirm(props.dictionary.issueDetail.deleteCommentConfirm)) return;
-    await props.onDelete(props.comment.id);
-  }
   return (
-    <article className={styles.card}>
-      <header>
-        <strong>{props.comment.author}</strong>
-        <time dateTime={props.comment.createdAt}>{formatDate(props.comment.createdAt, props.locale)}</time>
-        {props.comment.editedAt && <span>{props.dictionary.issueDetail.edited}</span>}
-        {props.comment.viewerCanUpdate && !editing && (
-          <span className={styles.cardActions}>
-            <button className={styles.textButton} onClick={() => setEditing(true)} type="button">
-              {props.dictionary.issueDetail.editComment}
-            </button>
-            <button className={styles.textButton} disabled={props.busy} onClick={remove} type="button">
-              {props.dictionary.issueDetail.deleteComment}
-            </button>
-          </span>
-        )}
-      </header>
+    <TimelineItem
+      actions={
+        props.comment.viewerCanUpdate &&
+        !editing && (
+          <CommentActions
+            busy={props.busy}
+            dictionary={props.dictionary}
+            onDelete={() => props.onDelete(props.comment.id)}
+            onEdit={() => setEditing(true)}
+          />
+        )
+      }
+      author={props.comment.author}
+      locale={props.locale}
+      meta={props.comment.editedAt && <span className={styles.edited}>{copy.edited}</span>}
+      template={copy.commented}
+      timestamp={props.comment.createdAt}
+    >
       {editing ? (
         <form className={styles.commentEditor} onSubmit={submit}>
-          <textarea required value={body} onChange={(event) => setBody(event.target.value)} />
+          <MarkdownField
+            dictionary={props.dictionary}
+            id={`issue-comment-${props.comment.id}`}
+            label={copy.editComment}
+            labelHidden
+            onChange={setBody}
+            value={body}
+          />
           <div className={styles.actions}>
-            <button disabled={props.busy} type="submit">
-              {props.dictionary.issueDetail.saveChanges}
+            <button className={styles.primaryButton} disabled={props.busy} type="submit">
+              {copy.saveChanges}
             </button>
             <button className={styles.secondaryButton} onClick={() => setEditing(false)} type="button">
               {props.dictionary.common.cancel}
@@ -172,46 +199,71 @@ function CommentCard(props: {
           </div>
         </form>
       ) : (
-        <div className={styles.body}>{props.comment.body}</div>
+        <div className={styles.body}>
+          <MarkdownContent body={props.comment.body} />
+        </div>
       )}
-    </article>
+    </TimelineItem>
   );
 }
 
-function NewCommentForm(props: {
+function CommentActions(props: {
   busy: boolean;
   dictionary: Dictionary;
-  onSubmit: (body: string) => Promise<boolean>;
+  onDelete: () => Promise<boolean>;
+  onEdit: () => void;
 }) {
-  const [body, setBody] = useState("");
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (await props.onSubmit(body)) setBody("");
+  const copy = props.dictionary.issueDetail;
+  const [confirming, setConfirming] = useState(false);
+  const confirmRef = useRef<HTMLButtonElement>(null);
+  const deleteRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (confirming) confirmRef.current?.focus();
+  }, [confirming]);
+  function cancel() {
+    setConfirming(false);
+    deleteRef.current?.focus();
+  }
+  if (confirming) {
+    return (
+      <span
+        className={styles.confirm}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") cancel();
+        }}
+        role="group"
+        aria-label={copy.deleteCommentConfirm}
+      >
+        <span>{copy.deleteCommentConfirm}</span>
+        <button
+          className={styles.dangerButton}
+          disabled={props.busy}
+          onClick={() => props.onDelete()}
+          ref={confirmRef}
+          type="button"
+        >
+          {copy.confirmDeleteComment}
+        </button>
+        <button className={styles.textButton} onClick={cancel} type="button">
+          {props.dictionary.common.cancel}
+        </button>
+      </span>
+    );
   }
   return (
-    <form className={styles.editor} onSubmit={submit}>
-      <label htmlFor="new-issue-comment">{props.dictionary.issueDetail.addComment}</label>
-      <textarea
-        id="new-issue-comment"
-        maxLength={1_000_000}
-        onChange={(event) => setBody(event.target.value)}
-        placeholder={props.dictionary.issueDetail.commentPlaceholder}
-        required
-        value={body}
-      />
-      <div className={styles.actions}>
-        <button disabled={props.busy} type="submit">
-          {props.dictionary.issueDetail.submitComment}
-        </button>
-      </div>
-    </form>
+    <>
+      <button className={styles.textButton} onClick={props.onEdit} type="button">
+        {copy.editComment}
+      </button>
+      <button
+        className={styles.textButton}
+        disabled={props.busy}
+        onClick={() => setConfirming(true)}
+        ref={deleteRef}
+        type="button"
+      >
+        {copy.deleteComment}
+      </button>
+    </>
   );
-}
-
-function formatDate(value: string, locale: Locale): string {
-  return new Intl.DateTimeFormat(locale, {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "UTC",
-  }).format(new Date(value));
 }
