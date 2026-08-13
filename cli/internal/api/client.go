@@ -127,6 +127,14 @@ func (c *Client) GetJSON(ctx context.Context, requestPath string, output any) er
 }
 
 func (c *Client) PostJSON(ctx context.Context, requestPath string, input any, output any) error {
+	return c.doJSON(ctx, http.MethodPost, requestPath, input, output)
+}
+
+func (c *Client) PatchJSON(ctx context.Context, requestPath string, input any, output any) error {
+	return c.doJSON(ctx, http.MethodPatch, requestPath, input, output)
+}
+
+func (c *Client) doJSON(ctx context.Context, method string, requestPath string, input any, output any) error {
 	var body io.Reader
 	if input != nil {
 		contents, err := json.Marshal(input)
@@ -135,7 +143,7 @@ func (c *Client) PostJSON(ctx context.Context, requestPath string, input any, ou
 		}
 		body = bytes.NewReader(contents)
 	}
-	response, err := c.Do(ctx, http.MethodPost, requestPath, body, http.Header{
+	response, err := c.Do(ctx, method, requestPath, body, http.Header{
 		"Content-Type": {"application/json"},
 	})
 	if err != nil {

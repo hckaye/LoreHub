@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lorehub/lorehub/cli/internal/config"
 )
@@ -19,7 +20,11 @@ func TestAuthLoginWithTokenValidatesAndStoresToken(t *testing.T) {
 		authorization = request.Header.Get("Authorization")
 		requestPath = request.URL.Path
 		writer.Header().Set("Content-Type", "application/json")
-		_, _ = writer.Write([]byte(`{"repositories":[]}`))
+		_, _ = writer.Write([]byte(
+			`{"user":{"id":"user-1","username":"alice","displayName":"Alice"},` +
+				`"token":{"id":"token-1","prefix":"lhp_abc","permissions":["read_api",` +
+				`"write_repository"],"expiresAt":"2026-08-14T12:00:00Z"}}`,
+		))
 	}))
 	defer server.Close()
 
@@ -38,7 +43,7 @@ func TestAuthLoginWithTokenValidatesAndStoresToken(t *testing.T) {
 	if authorization != "Bearer lhp_test-token" {
 		t.Fatalf("authorization = %q", authorization)
 	}
-	if requestPath != "/api/v1/dashboard" {
+	if requestPath != "/api/v1/account" {
 		t.Fatalf("validation path = %q", requestPath)
 	}
 	hosts, err := config.NewStore(configPath).Load()
@@ -61,7 +66,10 @@ func TestAuthStatusUsesEnvironmentToken(t *testing.T) {
 			t.Errorf("authorization = %q", request.Header.Get("Authorization"))
 		}
 		writer.Header().Set("Content-Type", "application/json")
-		_, _ = writer.Write([]byte(`{"repositories":[]}`))
+		_, _ = writer.Write([]byte(
+			`{"user":{"username":"alice"},"token":{"prefix":"lhp_abc",` +
+				`"permissions":["read_api"],"expiresAt":"2026-08-14T12:00:00Z"}}`,
+		))
 	}))
 	defer server.Close()
 
@@ -80,7 +88,30 @@ func TestAuthStatusUsesEnvironmentToken(t *testing.T) {
 	if err := json.Unmarshal(output.Bytes(), &status); err != nil {
 		t.Fatal(err)
 	}
-	if !status.Authenticated || status.TokenSource != "environment" {
+	if !status.Authenticated || status.TokenSource != "environment" || status.User == nil ||
+		status.User.Username != "alice" || status.TokenPrefix != "lhp_abc" ||
+		len(status.Permissions) != 1 || status.ExpiresAt == nil ||
+		!status.ExpiresAt.Equal(time.Date(2026, time.August, 14, 12, 0, 0, 0, time.UTC)) {
 		t.Fatalf("status = %#v", status)
+	}
+}
+
+func TestAuthLoginReturnsAPIProblem(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/problem+json")
+		writer.WriteHeader(http.StatusUnauthorized)
+		_, _ = writer.Write([]byte(`{"error":{"code":"invalid_token","detail":"The token is invalid"}}`))
+	}))
+	defer server.Close()
+
+	command := NewRootCommand(Options{
+		In:          strings.NewReader("bad-token\n"),
+		ConfigPath:  filepath.Join(t.TempDir(), "hosts.yml"),
+		DefaultHost: server.URL,
+	})
+	command.SetArgs([]string{"auth", "login", "--with-token"})
+	err := command.Execute()
+	if err == nil || !strings.Contains(err.Error(), "The token is invalid") {
+		t.Fatalf("error = %v", err)
 	}
 }
