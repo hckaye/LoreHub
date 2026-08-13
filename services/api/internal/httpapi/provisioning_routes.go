@@ -15,6 +15,7 @@ type repositoryRequest struct {
 	Description   string `json:"description"`
 	Visibility    string `json:"visibility"`
 	LoreURL       string `json:"loreUrl"`
+	LoreServerID  string `json:"loreServerId"`
 	DefaultBranch string `json:"defaultBranch"`
 }
 
@@ -27,11 +28,29 @@ func (api *API) importRepository(writer http.ResponseWriter, request *http.Reque
 	if !decodeJSON(writer, request, &input) {
 		return
 	}
-	if !validVisibility(input.Visibility) || input.LoreURL == "" || len(input.Description) > 10_000 {
+	if !validVisibility(input.Visibility) || input.LoreURL == "" || input.LoreServerID == "" ||
+		len(input.Description) > 10_000 {
 		writeProblem(writer, http.StatusBadRequest, "invalid_input", "Repository import fields are invalid")
 		return
 	}
-	loreRepository, err := api.repositoryInfoForRegistration(request.Context(), request, actor, input.LoreURL)
+	publicLoreURL, err := publicLoreRepositoryURL(input.LoreURL)
+	if err != nil {
+		writeProblem(writer, http.StatusBadRequest, "invalid_input",
+			"The Lore URL must be a fixed repository endpoint")
+		return
+	}
+	loreServers, supported := api.store.(LoreServerStore)
+	if !supported {
+		writeProblem(writer, http.StatusServiceUnavailable, "lore_servers_unavailable",
+			"Lore server settings are unavailable")
+		return
+	}
+	if err := loreServers.ValidateRepositoryImportServer(request.Context(), actor,
+		request.PathValue("organization"), input.LoreServerID, publicLoreURL); err != nil {
+		api.loreServerError(writer, request, "validate repository import Lore server", err)
+		return
+	}
+	loreRepository, err := api.repositoryInfoForRegistration(request.Context(), request, actor, publicLoreURL)
 	if err != nil {
 		writeProblem(writer, http.StatusBadGateway, "lore_unavailable", "Lore repository could not be verified")
 		return
@@ -42,17 +61,11 @@ func (api *API) importRepository(writer http.ResponseWriter, request *http.Reque
 	if input.Description == "" {
 		input.Description = loreRepository.Description
 	}
-	publicLoreURL, err := publicLoreRepositoryURL(input.LoreURL)
-	if err != nil {
-		writeProblem(writer, http.StatusBadRequest, "invalid_input",
-			"The Lore URL must be a fixed repository endpoint")
-		return
-	}
 	repository, err := api.store.RegisterRepository(request.Context(), actor,
 		request.PathValue("organization"), platform.RegisterRepositoryInput{
 			Slug: input.Slug, DisplayName: input.DisplayName, Description: input.Description,
 			Visibility: input.Visibility, LoreRepositoryID: loreRepository.ID, LoreURL: publicLoreURL,
-			DefaultBranch: loreRepository.DefaultBranch,
+			LoreServerID: input.LoreServerID, DefaultBranch: loreRepository.DefaultBranch,
 		})
 	if err != nil {
 		api.platformError(writer, request, "import repository", err)
@@ -69,7 +82,7 @@ func (api *API) retryRepositoryProvisioning(writer http.ResponseWriter, request 
 	provisioner, supported := api.store.(repositoryProvisioningStore)
 	if !supported || api.managedLoreClient == nil || api.loreAuth == nil {
 		writeProblem(writer, http.StatusServiceUnavailable, "provisioning_unavailable",
-			"Managed Lore repository provisioning is unavailable")
+			"Lore repository provisioning is unavailable")
 		return
 	}
 	repository, err := provisioner.RepositoryForProvisioning(request.Context(), actor,
@@ -79,7 +92,7 @@ func (api *API) retryRepositoryProvisioning(writer http.ResponseWriter, request 
 		return
 	}
 	if err := api.provisionManagedRepository(request, actor, repository, provisioner); err != nil {
-		api.logger.Error("retry managed Lore repository provisioning", "error", err,
+		api.logger.Error("retry Lore repository provisioning", "error", err,
 			"repository_id", repository.ID, "lore_repository_id", repository.LoreRepositoryID)
 		writeProblem(writer, http.StatusBadGateway, "lore_unavailable", "Lore repository provisioning failed")
 		return
