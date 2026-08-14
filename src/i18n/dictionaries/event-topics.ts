@@ -35,7 +35,7 @@ export const eventTopics = {
       reopened: "reopened",
       merged: "merged",
       published: "published",
-      "invitation.created": "invitation received",
+      invitation_created: "invitation received",
     },
   },
   ja: {
@@ -74,7 +74,7 @@ export const eventTopics = {
       reopened: "が再オープンされました",
       merged: "がマージされました",
       published: "が公開されました",
-      "invitation.created": "への招待が届きました",
+      invitation_created: "への招待が届きました",
     },
   },
 } as const;

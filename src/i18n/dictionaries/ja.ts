@@ -10,6 +10,7 @@ import { commitStatuses } from "./commit-statuses";
 import { createPages } from "./create-pages";
 import { discussions } from "./discussions";
 import { entitlements } from "./entitlements";
+import { eventTopics } from "./event-topics";
 import { fileLocks } from "./file-locks";
 import { globalWorkItems } from "./global-work-items";
 import { insights } from "./insights";
@@ -30,7 +31,6 @@ import { search } from "./search";
 import { settingsNavigation } from "./settings-navigation";
 import { webhooks } from "./webhooks";
 import { wiki } from "./wiki";
-import { eventTopics } from "./event-topics";
 import { workItemEvents } from "./work-item-events";
 import { workItemLists } from "./work-item-lists";
 
