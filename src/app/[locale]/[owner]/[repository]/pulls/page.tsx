@@ -1,10 +1,8 @@
 import { CircleAlert, ServerOff } from "lucide-react";
-import Link from "next/link";
 
 import { MergeRequestList } from "@/components/repositories/merge-request-list";
-import { RepositorySection } from "@/components/repositories/repository-section";
 import { WorkItemListPagination } from "@/components/repositories/work-item-list-pagination";
-import { WorkItemListToolbar } from "@/components/repositories/work-item-list-toolbar";
+import { WorkItemListFilterHeader, WorkItemListToolbar } from "@/components/repositories/work-item-list-toolbar";
 import { EmptyState } from "@/components/ui/empty-state";
 import { FlashNotice } from "@/components/ui/flash-notice";
 import { getDictionary } from "@/i18n";
@@ -39,25 +37,9 @@ export default async function PullRequestsPage({ params, searchParams }: PullReq
   ]);
   const archived = repositoryResult.ok && repositoryResult.data.archivedAt !== null;
   const basePath = repositoryPath(locale, owner, repository, "pulls");
+  const filterOptions = pullRequestFilterOptions(mergeRequests);
   return (
-    <RepositorySection
-      actions={
-        <div className={styles.panelActions}>
-          <Link className={styles.secondaryButton} href={repositoryPath(locale, owner, repository, "labels")}>
-            {dictionary.pullRequestsPage.labelsButton}
-          </Link>
-          <Link className={styles.secondaryButton} href={repositoryMilestonesPath(locale, owner, repository)}>
-            {dictionary.pullRequestsPage.milestonesButton}
-          </Link>
-          {!archived && (
-            <Link className={styles.primaryButton} href={`${basePath}/new`}>
-              {dictionary.pullRequestsPage.newPullRequest}
-            </Link>
-          )}
-        </div>
-      }
-      title={dictionary.pullRequestsPage.title}
-    >
+    <div className={styles.page}>
       {query.created === "1" && (
         <FlashNotice
           body={dictionary.pullRequestsPage.createdNotice}
@@ -66,8 +48,22 @@ export default async function PullRequestsPage({ params, searchParams }: PullReq
           tone="success"
         />
       )}
+      <WorkItemListToolbar
+        basePath={basePath}
+        createHref={pullRequestCreateHref(basePath, archived)}
+        createLabel={dictionary.pullRequestsPage.newPullRequest}
+        dictionary={dictionary}
+        kind="pulls"
+        labels={labelsResult.ok ? labelsResult.data : []}
+        labelsCount={labelsResult.ok ? labelsResult.data.length : undefined}
+        labelsHref={repositoryPath(locale, owner, repository, "labels")}
+        milestones={milestonesResult.ok ? milestonesResult.data.milestones : []}
+        milestonesCount={milestonesResult.ok ? milestonesResult.data.milestones.length : undefined}
+        milestonesHref={repositoryMilestonesPath(locale, owner, repository)}
+        query={filters}
+      />
       <div className={styles.workItemList}>
-        <WorkItemListToolbar
+        <WorkItemListFilterHeader
           basePath={basePath}
           closedCount={mergeRequests.ok ? mergeRequests.data.closedCount : undefined}
           dictionary={dictionary}
@@ -77,6 +73,8 @@ export default async function PullRequestsPage({ params, searchParams }: PullReq
           milestones={milestonesResult.ok ? milestonesResult.data.milestones : []}
           openCount={mergeRequests.ok ? mergeRequests.data.openCount : undefined}
           query={filters}
+          authors={filterOptions.authors}
+          assignees={filterOptions.assignees}
         />
         {mergeRequests.ok ? (
           <MergeRequestList
@@ -106,6 +104,18 @@ export default async function PullRequestsPage({ params, searchParams }: PullReq
           totalCount={mergeRequests.data.totalCount}
         />
       )}
-    </RepositorySection>
+    </div>
   );
+}
+
+function pullRequestFilterOptions(result: Awaited<ReturnType<typeof getMergeRequests>>) {
+  if (!result.ok) return { authors: [], assignees: [] };
+  return {
+    authors: result.data.mergeRequests.map((mergeRequest) => mergeRequest.author),
+    assignees: result.data.mergeRequests.flatMap((mergeRequest) => mergeRequest.assignees),
+  };
+}
+
+function pullRequestCreateHref(basePath: string, archived: boolean): string | undefined {
+  return archived ? undefined : `${basePath}/new`;
 }
