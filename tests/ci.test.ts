@@ -32,5 +32,5 @@ test("CI validates the CLI, clean Compose setup, and browser flow", async () => 
   assert.match(workflow, /npm run e2e/);
   assert.match(packageFile, /"e2e": "playwright test"/);
   assert.match(browserTest, /Create repository/);
-  assert.match(browserTest, /Create issue/);
+  assert.match(browserTest, /Submit new issue/);
 });

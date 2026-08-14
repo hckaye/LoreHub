@@ -47,7 +47,7 @@ test.describe.serial("LoreHub browser smoke test", () => {
     await page.goto(`/en/${organization}/${repository}/issues/new`);
     await page.locator("#issue-title").fill(issueTitle);
     await page.locator("#issue-body").fill("Created by the browser smoke test.");
-    await page.getByRole("button", { name: "Create issue" }).click();
+    await page.getByRole("button", { name: "Submit new issue" }).click();
 
     await expect(page).toHaveURL(new RegExp(`/en/${organization}/${repository}/issues\\?created=1$`, "u"));
     await expect(page.getByRole("link", { name: issueTitle })).toBeVisible();

@@ -5,7 +5,6 @@ import { getPublicRepository } from "@/lib/lorehub-api";
 import { repositoryPath } from "@/lib/routes";
 
 import { AuthRequired } from "@/components/auth/auth-required";
-import { CreatePage } from "@/components/create/create-page";
 import { IssueForm } from "@/components/repositories/issue-form";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Archive } from "lucide-react";
@@ -25,24 +24,24 @@ export default async function NewIssuePage({ params }: NewIssuePageProps) {
     getPublicRepository(owner, repository),
   ]);
   const archived = repositoryResult.ok && repositoryResult.data.archivedAt !== null;
-  return (
-    <CreatePage wide>
-      {archived ? (
-        <EmptyState
-          body={dictionary.repositoryLifecycle.banner}
-          icon={<Archive aria-hidden="true" />}
-          title={dictionary.repositoryLifecycle.badge}
-          tone="warning"
-        />
-      ) : session.status === "authenticated" ? (
-        <IssueForm dictionary={dictionary} locale={locale} owner={owner} repository={repository} session={session} />
-      ) : (
-        <AuthRequired
-          dictionary={dictionary}
-          returnTo={`${repositoryPath(locale, owner, repository, "issues")}/new`}
-          session={session}
-        />
-      )}
-    </CreatePage>
-  );
+  if (archived) {
+    return (
+      <EmptyState
+        body={dictionary.repositoryLifecycle.banner}
+        icon={<Archive aria-hidden="true" />}
+        title={dictionary.repositoryLifecycle.badge}
+        tone="warning"
+      />
+    );
+  }
+  if (session.status !== "authenticated") {
+    return (
+      <AuthRequired
+        dictionary={dictionary}
+        returnTo={`${repositoryPath(locale, owner, repository, "issues")}/new`}
+        session={session}
+      />
+    );
+  }
+  return <IssueForm dictionary={dictionary} locale={locale} owner={owner} repository={repository} session={session} />;
 }
