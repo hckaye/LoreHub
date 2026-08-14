@@ -14,6 +14,7 @@ type AccountSettingsNavProps = {
   dictionary: Dictionary;
   locale: Locale;
   showEntitlements: boolean;
+  showInstanceSettings: boolean;
 };
 
 type NavLink = {
@@ -22,7 +23,12 @@ type NavLink = {
   section: string;
 };
 
-export function AccountSettingsNav({ dictionary, locale, showEntitlements }: AccountSettingsNavProps) {
+export function AccountSettingsNav({
+  dictionary,
+  locale,
+  showEntitlements,
+  showInstanceSettings,
+}: AccountSettingsNavProps) {
   const pathname = usePathname() ?? "";
   const router = useRouter();
   const section = accountSettingsSection(pathname);
@@ -35,9 +41,11 @@ export function AccountSettingsNav({ dictionary, locale, showEntitlements }: Acc
   const developerSettings = item(locale, "tokens", copy.developerSettings);
   const tokensClassic = item(locale, "tokens", copy.tokensClassic);
   const entitlements = item(locale, "entitlements", copy.entitlements);
+  const instance = item(locale, "instance", copy.instanceSettings);
 
   const mainOptions = [profile, notifications, invitations, developerSettings];
   if (showEntitlements) mainOptions.push(entitlements);
+  if (showInstanceSettings) mainOptions.push(instance);
   const settingsHome = item(locale, "profile", copy.backToSettings);
   const options = developer ? [settingsHome, tokensClassic] : mainOptions;
 
@@ -82,11 +90,12 @@ export function AccountSettingsNav({ dictionary, locale, showEntitlements }: Acc
           <NavItem active={section === "repositories"} href={invitations.href} label={invitations.label} />
           <div className={styles.divider} />
           <NavItem active={false} href={developerSettings.href} label={developerSettings.label} />
+          {showEntitlements || showInstanceSettings ? <div className={styles.divider} /> : null}
           {showEntitlements ? (
-            <>
-              <div className={styles.divider} />
-              <NavItem active={section === "entitlements"} href={entitlements.href} label={entitlements.label} />
-            </>
+            <NavItem active={section === "entitlements"} href={entitlements.href} label={entitlements.label} />
+          ) : null}
+          {showInstanceSettings ? (
+            <NavItem active={section === "instance"} href={instance.href} label={instance.label} />
           ) : null}
         </nav>
       )}
@@ -108,7 +117,7 @@ function NavItem({ active, href, label, nested }: { active: boolean; href: strin
 
 function item(
   locale: Locale,
-  section: "profile" | "notifications" | "repositories" | "tokens" | "entitlements",
+  section: "profile" | "notifications" | "repositories" | "tokens" | "entitlements" | "instance",
   label: string,
 ): NavLink {
   return { href: accountSettingsPath(locale, section), label, section };

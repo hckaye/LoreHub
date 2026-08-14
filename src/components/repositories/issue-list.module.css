@@ -5,11 +5,14 @@
 
 .row {
   display: flex;
-  min-height: 68px;
   align-items: flex-start;
-  gap: 11px;
-  padding: 14px 16px;
+  gap: 8px;
+  padding: 8px 16px;
   border-bottom: 1px solid var(--border-muted);
+}
+
+.row:hover {
+  background: var(--canvas-subtle);
 }
 
 .row:last-child {
@@ -17,7 +20,8 @@
 }
 
 .stateIcon {
-  flex: 0 0 auto;
+  width: 18px;
+  flex: 0 0 24px;
   margin-top: 2px;
   color: var(--success-fg);
 }
@@ -28,6 +32,7 @@
 
 .content {
   min-width: 0;
+  flex: 1 1 auto;
 }
 
 .trailing {
@@ -57,16 +62,18 @@
   gap: 6px;
   margin: 0 0 4px;
   color: var(--fg-default);
-  font-size: 0.9rem;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.5;
 }
 
 .label {
   padding: 1px 8px;
   border: 0;
   border-radius: 2em;
-  font-size: 0.68rem;
+  font-size: 12px;
   font-weight: 600;
-  line-height: 1.5;
+  line-height: 18px;
 }
 
 .row h3 a {
@@ -82,7 +89,8 @@
 .row p {
   margin: 0;
   color: var(--fg-muted);
-  font-size: 0.76rem;
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .row p a {
@@ -99,5 +107,16 @@
   align-items: center;
   gap: 4px;
   color: var(--fg-muted);
-  font-size: 0.75rem;
+  font-size: 12px;
+}
+
+@media (max-width: 560px) {
+  .row {
+    flex-wrap: wrap;
+  }
+
+  .trailing {
+    width: calc(100% - 32px);
+    margin-left: 32px;
+  }
 }

@@ -48,7 +48,10 @@ func (store *Store) BeginRepositoryMigration(
 	if repository.LoreServerID == targetServerID {
 		return RepositoryMigration{}, Repository{}, LoreServer{}, ErrInvalidInput
 	}
-	target, err := activeVisibleLoreServer(ctx, transaction, repository.OrganizationID, targetServerID)
+	target, err := activeVisibleLoreServer(
+		ctx, transaction, repository.OrganizationID, targetServerID,
+		store.hostedLoreServerDefaultEnabled,
+	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return RepositoryMigration{}, Repository{}, LoreServer{},
 			&LoreServerSelectionError{Reason: LoreServerSelectionExplicitUnavailable}

@@ -1,10 +1,8 @@
 import { CircleAlert, ServerOff } from "lucide-react";
-import Link from "next/link";
 
 import { IssueList } from "@/components/repositories/issue-list";
-import { RepositorySection } from "@/components/repositories/repository-section";
 import { WorkItemListPagination } from "@/components/repositories/work-item-list-pagination";
-import { WorkItemListToolbar } from "@/components/repositories/work-item-list-toolbar";
+import { WorkItemListFilterHeader, WorkItemListToolbar } from "@/components/repositories/work-item-list-toolbar";
 import { EmptyState } from "@/components/ui/empty-state";
 import { FlashNotice } from "@/components/ui/flash-notice";
 import { getDictionary } from "@/i18n";
@@ -37,24 +35,7 @@ export default async function IssuesPage({ params, searchParams }: IssuesPagePro
   const archived = repositoryResult.ok && repositoryResult.data.archivedAt !== null;
   const basePath = repositoryPath(locale, owner, repository, "issues");
   return (
-    <RepositorySection
-      actions={
-        <div className={styles.panelActions}>
-          <Link className={styles.secondaryButton} href={repositoryPath(locale, owner, repository, "labels")}>
-            {dictionary.issuesPage.labelsButton}
-          </Link>
-          <Link className={styles.secondaryButton} href={repositoryMilestonesPath(locale, owner, repository)}>
-            {dictionary.issuesPage.milestonesButton}
-          </Link>
-          {!archived && (
-            <Link className={styles.primaryButton} href={`${repositoryPath(locale, owner, repository, "issues")}/new`}>
-              {dictionary.issuesPage.newIssue}
-            </Link>
-          )}
-        </div>
-      }
-      title={dictionary.issuesPage.title}
-    >
+    <div className={styles.page}>
       {query.created === "1" && (
         <FlashNotice
           body={dictionary.issuesPage.createdNotice}
@@ -63,8 +44,22 @@ export default async function IssuesPage({ params, searchParams }: IssuesPagePro
           tone="success"
         />
       )}
+      <WorkItemListToolbar
+        basePath={basePath}
+        createHref={issueCreateHref(basePath, !archived)}
+        createLabel={dictionary.issuesPage.newIssue}
+        dictionary={dictionary}
+        kind="issues"
+        labels={labelsResult.ok ? labelsResult.data : []}
+        labelsCount={labelsResult.ok ? labelsResult.data.length : undefined}
+        labelsHref={repositoryPath(locale, owner, repository, "labels")}
+        milestones={milestonesResult.ok ? milestonesResult.data.milestones : []}
+        milestonesCount={milestonesResult.ok ? milestonesResult.data.milestones.length : undefined}
+        milestonesHref={repositoryMilestonesPath(locale, owner, repository)}
+        query={filters}
+      />
       <div className={styles.workItemList}>
-        <WorkItemListToolbar
+        <WorkItemListFilterHeader
           basePath={basePath}
           closedCount={issues.ok ? issues.data.closedCount : undefined}
           dictionary={dictionary}
@@ -102,6 +97,10 @@ export default async function IssuesPage({ params, searchParams }: IssuesPagePro
           totalCount={issues.data.totalCount}
         />
       )}
-    </RepositorySection>
+    </div>
   );
+}
+
+function issueCreateHref(basePath: string, canCreate: boolean): string | undefined {
+  return canCreate ? `${basePath}/new` : undefined;
 }

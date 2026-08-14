@@ -1,7 +1,7 @@
 "use client";
 
 import type { LucideIcon } from "lucide-react";
-import { Bell, Check, CircleDot, GitCommit, GitPullRequest, MessageSquare, Tag } from "lucide-react";
+import { Bell, Check, CircleDot, GitCommit, GitPullRequest, Inbox, List, MessageSquare, Tag } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -10,10 +10,10 @@ import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
 import type { AuthSession, Notification } from "@/lib/api-types";
 import { patchJson, postJson } from "@/lib/auth-client";
+import { formatEventTopic } from "@/lib/event-topic-label";
 import { formatRelativeTime } from "@/lib/format";
 import { localizeHref } from "@/lib/routes";
 
-import { EmptyState } from "../ui/empty-state";
 import styles from "./notification-inbox.module.css";
 
 type NotificationInboxProps = {
@@ -31,6 +31,7 @@ export function NotificationInbox({ dictionary, initialItems, locale, session }:
   const [filter, setFilter] = useState<Filter>("all");
   const [status, setStatus] = useState<string | null>(null);
   const visibleItems = filter === "unread" ? items.filter((item) => !item.readAt) : items;
+  const unreadCount = items.filter((item) => !item.readAt).length;
 
   async function markRead(item: Notification) {
     const result = await patchJson<{ read: boolean }>(
@@ -62,77 +63,110 @@ export function NotificationInbox({ dictionary, initialItems, locale, session }:
   }
 
   return (
-    <div className={styles.wrapper}>
-      <div className={styles.toolbar}>
-        <div className={styles.tabs} role="tablist">
-          <button
-            aria-current={filter === "all"}
-            className={styles.tab}
-            onClick={() => setFilter("all")}
-            role="tab"
-            type="button"
-          >
-            {dictionary.notificationsPage.filterAll}
-          </button>
-          <button
-            aria-current={filter === "unread"}
-            className={styles.tab}
-            onClick={() => setFilter("unread")}
-            role="tab"
-            type="button"
-          >
-            {dictionary.notificationsPage.filterUnread}
-          </button>
-        </div>
-        <button
-          className={styles.markAllButton}
-          disabled={!items.some((item) => !item.readAt)}
-          onClick={markAllRead}
-          type="button"
-        >
-          <Check aria-hidden="true" size={15} />
-          {dictionary.notificationsPage.markAllRead}
-        </button>
-      </div>
-      {status && (
-        <p className={styles.error} role="alert">
-          {status}
-        </p>
-      )}
-      {visibleItems.length > 0 ? (
-        <ul className={styles.list}>
-          {visibleItems.map((item) => {
-            const { icon, repo } = describeNotification(item.href);
-            const Icon = icon;
-            return (
-              <li data-read={Boolean(item.readAt)} key={item.id}>
-                <Link href={localizeHref(item.href, locale)} onClick={() => !item.readAt && void markRead(item)}>
-                  <span className={styles.icon} aria-hidden="true">
-                    <Icon size={17} />
-                  </span>
-                  <span className={styles.content}>
-                    {repo && <span className={styles.repo}>{repo}</span>}
-                    <strong>{item.title}</strong>
-                    <span>{item.body || item.topic}</span>
-                    <time dateTime={item.createdAt}>{formatRelativeTime(item.createdAt, locale)}</time>
-                  </span>
-                </Link>
-                {!item.readAt && (
-                  <button className={styles.readButton} onClick={() => void markRead(item)} type="button">
-                    {dictionary.notificationsPage.markRead}
-                  </button>
-                )}
-              </li>
-            );
-          })}
+    <div className={styles.layout}>
+      <nav aria-label={dictionary.notificationsPage.title} className={styles.sidebar}>
+        <ul className={styles.nav}>
+          <li>
+            <button
+              aria-current={filter === "unread" ? "page" : undefined}
+              className={styles.navItem}
+              onClick={() => setFilter("unread")}
+              type="button"
+            >
+              <Inbox aria-hidden="true" className={styles.navIcon} size={16} />
+              <span className={styles.navLabel}>{dictionary.notificationsPage.inbox}</span>
+              {unreadCount > 0 && (
+                <span className={styles.counter}>
+                  {unreadCount}
+                  <span className={styles.visuallyHidden}> {dictionary.notificationsPage.unreadCountLabel}</span>
+                </span>
+              )}
+            </button>
+          </li>
+          <li>
+            <button
+              aria-current={filter === "all" ? "page" : undefined}
+              className={styles.navItem}
+              onClick={() => setFilter("all")}
+              type="button"
+            >
+              <List aria-hidden="true" className={styles.navIcon} size={16} />
+              <span className={styles.navLabel}>{dictionary.notificationsPage.filterAll}</span>
+            </button>
+          </li>
         </ul>
-      ) : (
-        <EmptyState
-          body={dictionary.notificationsPage.emptyBody}
-          icon={<Bell aria-hidden="true" />}
-          title={dictionary.notificationsPage.emptyTitle}
-        />
-      )}
+      </nav>
+      <div className={styles.main}>
+        <div className={styles.box}>
+          <div className={styles.boxHeader}>
+            <button className={styles.markAllButton} disabled={unreadCount === 0} onClick={markAllRead} type="button">
+              <Check aria-hidden="true" size={16} />
+              {dictionary.notificationsPage.markAllRead}
+            </button>
+          </div>
+          {status && (
+            <p className={styles.error} role="alert">
+              {status}
+            </p>
+          )}
+          {visibleItems.length > 0 ? (
+            <ul className={styles.list}>
+              {visibleItems.map((item) => {
+                const { icon, repo } = describeNotification(item.href);
+                const Icon = icon;
+                const unread = !item.readAt;
+                const source = repo ?? formatEventTopic(dictionary.eventTopics, item.topic);
+                return (
+                  <li className={styles.row} data-unread={unread} key={item.id}>
+                    <span aria-hidden="true" className={styles.dot} />
+                    <Icon aria-hidden="true" className={styles.rowIcon} size={16} />
+                    <Link
+                      className={styles.rowLink}
+                      href={localizeHref(item.href, locale)}
+                      onClick={() => unread && void markRead(item)}
+                    >
+                      {source && <span className={styles.source}>{source}</span>}
+                      <span className={styles.rowTitle}>{item.title}</span>
+                    </Link>
+                    <span className={styles.rowMeta}>
+                      <time className={styles.time} dateTime={item.createdAt}>
+                        {formatRelativeTime(item.createdAt, locale)}
+                      </time>
+                      <span className={styles.rowActions}>
+                        {unread && (
+                          <button
+                            aria-label={dictionary.notificationsPage.markRead}
+                            className={styles.rowAction}
+                            onClick={() => void markRead(item)}
+                            title={dictionary.notificationsPage.markRead}
+                            type="button"
+                          >
+                            <Check aria-hidden="true" size={16} />
+                          </button>
+                        )}
+                      </span>
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <div className={styles.blankslate}>
+              <Bell aria-hidden="true" className={styles.blankslateIcon} size={24} />
+              <h2 className={styles.blankslateTitle}>
+                {filter === "unread" && items.length > 0
+                  ? dictionary.notificationsPage.caughtUpTitle
+                  : dictionary.notificationsPage.emptyTitle}
+              </h2>
+              <p className={styles.blankslateBody}>
+                {filter === "unread" && items.length > 0
+                  ? dictionary.notificationsPage.caughtUpBody
+                  : dictionary.notificationsPage.emptyBody}
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

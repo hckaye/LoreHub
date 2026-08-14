@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 
 import EntitlementSettingsPage from "../_pages/entitlements";
+import InstanceSettingsPage from "../_pages/instance";
 import NotificationSettingsPage from "../_pages/notifications";
 import ProfileSettingsPage from "../_pages/profile";
 import RepositoryInvitationSettingsPage from "../_pages/repositories";
@@ -14,6 +15,7 @@ const pages = {
   tokens: PersonalAccessTokenListPage,
   "tokens/new": NewPersonalAccessTokenPage,
   entitlements: EntitlementSettingsPage,
+  instance: InstanceSettingsPage,
 } as const;
 
 type AccountSettingsSectionPageProps = {

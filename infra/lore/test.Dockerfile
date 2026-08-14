@@ -1,4 +1,4 @@
-FROM golang:1.26.5-trixie
+FROM golang:1.26.6-trixie
 
 ARG LORE_CLIENT_VERSION=0.8.6
 ARG LORE_SDK_VERSION=0.8.5

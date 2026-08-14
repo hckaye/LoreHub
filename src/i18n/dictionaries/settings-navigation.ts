@@ -15,6 +15,7 @@ export const settingsNavigation = {
     loreServers: "Lore servers",
     auditLog: "Audit log",
     entitlements: "Entitlements",
+    instanceSettings: "Instance settings",
   },
   ja: {
     label: "設定ナビゲーション",
@@ -32,5 +33,6 @@ export const settingsNavigation = {
     loreServers: "Loreサーバー",
     auditLog: "監査ログ",
     entitlements: "利用権",
+    instanceSettings: "サービス設定",
   },
 } as const;

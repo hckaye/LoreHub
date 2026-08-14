@@ -11,13 +11,25 @@ type AccountSettingsShellProps = {
   dictionary: Dictionary;
   locale: Locale;
   showEntitlements: boolean;
+  showInstanceSettings: boolean;
 };
 
-export function AccountSettingsShell({ children, dictionary, locale, showEntitlements }: AccountSettingsShellProps) {
+export function AccountSettingsShell({
+  children,
+  dictionary,
+  locale,
+  showEntitlements,
+  showInstanceSettings,
+}: AccountSettingsShellProps) {
   return (
     <div className={styles.page}>
       <div className={styles.layout}>
-        <AccountSettingsNav dictionary={dictionary} locale={locale} showEntitlements={showEntitlements} />
+        <AccountSettingsNav
+          dictionary={dictionary}
+          locale={locale}
+          showEntitlements={showEntitlements}
+          showInstanceSettings={showInstanceSettings}
+        />
         <div className={styles.main}>{children}</div>
       </div>
     </div>

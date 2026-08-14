@@ -10,13 +10,16 @@ import { commitStatuses } from "./commit-statuses";
 import { createPages } from "./create-pages";
 import { discussions } from "./discussions";
 import { entitlements } from "./entitlements";
+import { eventTopics } from "./event-topics";
 import { fileLocks } from "./file-locks";
 import { globalWorkItems } from "./global-work-items";
 import { insights } from "./insights";
+import { instanceSettings } from "./instance-settings";
 import { issueDetail } from "./issue-detail";
 import { loreServers } from "./lore-servers";
 import { metadata } from "./metadata";
 import { milestones } from "./milestones";
+import { organizationPage } from "./organization-page";
 import { pendingReviews } from "./pending-reviews";
 import { personalAccessTokens } from "./personal-access-tokens";
 import { pullRequestDrafts } from "./pull-request-drafts";
@@ -38,6 +41,7 @@ const concat = (...parts: string[]) => parts.join("");
 const ja = {
   commentPagination: commentPagination.ja,
   workItemEvents: workItemEvents.ja,
+  eventTopics: eventTopics.ja,
   workItemLists: workItemLists.ja,
   codeBrowser: codeBrowser.ja,
   commitHistory: commitHistory.ja,
@@ -66,6 +70,7 @@ const ja = {
   runnerSettings: runners.ja,
   loreServerSettings: loreServers.ja,
   entitlementSettings: entitlements.ja,
+  instanceSettings: instanceSettings.ja,
   common: {
     productName: "LoreHub",
     explore: "探す",
@@ -117,6 +122,7 @@ const ja = {
     repository: "リポジトリ",
     readOnly: "読み取り専用",
     updated: "更新",
+    updatedOn: "{time}に更新",
     noDescription: "説明は登録されていません。",
     viewAll: "すべて見る",
     newIssue: "Issueを作成",
@@ -517,48 +523,20 @@ const ja = {
   },
   notificationsPage: {
     title: "通知",
-    description: "確認が必要なアカウント、チーム、リポジトリのイベントを確認します。",
     filterAll: "すべて",
     filterUnread: "未読",
+    inbox: "インボックス",
+    unreadCountLabel: "件の未読通知",
     markAllRead: "すべて既読にする",
     markRead: "既読にする",
     unavailableTitle: "通知を一時的に利用できません",
     markReadFailed: "通知を既読にできませんでした。もう一度お試しください。",
     emptyTitle: "通知はありません",
     emptyBody: "アカウント、チーム、リポジトリの新しいイベントがここに表示されます。",
+    caughtUpTitle: "すべて確認済みです",
+    caughtUpBody: "アカウント、チーム、リポジトリに動きがあると、ここに通知が表示されます。",
   },
-  organizationPage: {
-    title: "組織",
-    members: "人のメンバー",
-    settings: "組織設定",
-    repositories: "リポジトリ",
-    repositoriesDescription: "この組織に登録されたLoreリポジトリです。",
-    noRepositories: "リポジトリはありません",
-    noRepositoriesBody: "この組織には表示できるLoreリポジトリがまだありません。",
-    teams: "チーム",
-    // prettier-ignore
-    teamsDescription: concat(
-      "チームは有効な組織メンバーをまとめ、",
-      "リポジトリへのアクセスに使います。",
-    ),
-    noTeams: "チームはありません",
-    // prettier-ignore
-    noTeamsBody: concat(
-      "同じアクセス経路が必要なメンバーがいるときに、",
-      "チームを作成してください。",
-    ),
-    noOrganizations: "組織はありません",
-    noOrganizationsBody: "アクセスできる組織がここに表示されます。",
-    website: "Webサイト",
-    contactEmail: "連絡先メールアドレス",
-    defaultVisibility: "既定のリポジトリ公開範囲",
-    visibility: "組織の公開範囲",
-    saveSettings: "組織設定を保存",
-    settingsSaved: "組織設定を保存しました。",
-    newTeam: "チームを作成",
-    teamSlug: "チームスラッグ",
-    createTeam: "チームを作成",
-  },
+  organizationPage: organizationPage.ja,
   teamPage: {
     title: "チーム",
     members: "メンバー",
@@ -613,6 +591,7 @@ const ja = {
     noRunsTitle: "ワークフローの実行結果はまだありません",
     noRunsBody: "Loreのブランチ監視がワークフローを登録すると、ここに表示されます。",
     workflowsTitle: "ワークフロー",
+    allWorkflows: "すべてのワークフロー",
     // prettier-ignore
     workflowsDescription: concat(
       "観測したLoreのリビジョンから見つかったワークフロー",
@@ -687,6 +666,11 @@ const ja = {
     createdBy: "作成者: {author}",
     open: "進行中のプロジェクト",
     closed: "終了したプロジェクト",
+    filterOpen: "進行中 {count}件",
+    filterClosed: "終了 {count}件",
+    searchLabel: "プロジェクトを検索",
+    searchPlaceholder: "すべてのプロジェクトを検索",
+    noMatches: "条件に一致するプロジェクトはありません。",
     forbiddenTitle: "プロジェクトを閲覧できません",
     forbiddenBody: "プロジェクトの閲覧にはリポジトリの読み取り権限が必要です。",
     unavailableTitle: "プロジェクトを利用できません",
@@ -891,9 +875,10 @@ const ja = {
     bio: "自己紹介",
     saveProfile: "プロフィールを保存",
     saved: "保存しました。",
+    overview: "概要",
     repositories: "リポジトリ",
     joined: "登録日",
-    filterRepositories: "リポジトリを絞り込み",
+    filterRepositories: "リポジトリを検索…",
     repositoriesEmptyTitle: "表示できるリポジトリはありません",
     repositoriesEmptyBody: "このユーザーが所有または参加しているリポジトリがここに表示されます。",
   },
@@ -977,6 +962,11 @@ const ja = {
       "この組織にはリポジトリを保存するLore Serverがありません。組織の設定からLore Serverを登録するか、" +
       "このインストールが運用しているLore Serverを使えるようにインスタンス管理者に依頼してください。",
     loreServerUnavailable: "この組織に設定されたLore Serverが有効ではありません。組織の設定を確認してください。",
+    // prettier-ignore
+    hostedLoreServerDisabled: concat(
+      "このインスタンスではホステッドLoreサーバーが無効になっています。セルフホステッドのLore Serverを登録するか、",
+      "インスタンス管理者にホステッドサービスの有効化を依頼してください。",
+    ),
   },
   footer: {
     sourceOfTruth: "LoreHubはLoreバージョン管理システムに対応しています。",

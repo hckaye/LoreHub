@@ -4,6 +4,7 @@ import type { MutationFailureKind } from "./auth-client";
 
 /** Reasons the API reports when it cannot pick a Lore Server for a repository. */
 const loreServerCodes: Record<string, keyof Dictionary["errors"]> = {
+  hosted_lore_server_disabled: "hostedLoreServerDisabled",
   hosted_lore_server_entitlement_required: "noLoreServer",
   no_lore_server_available: "noLoreServer",
   default_server_unavailable: "loreServerUnavailable",

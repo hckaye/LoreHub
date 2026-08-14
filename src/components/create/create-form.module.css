@@ -123,28 +123,9 @@
   border-top: 1px solid var(--border);
 }
 
-.primaryButton,
-.cancel {
-  display: inline-flex;
-  min-height: 32px;
-  align-items: center;
-  justify-content: center;
-  padding: 5px 16px;
-  border-radius: 6px;
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 20px;
-  text-decoration: none;
-}
-
 .primaryButton {
-  border: 1px solid rgb(31 35 40 / 15%);
-  background: var(--success-border);
-  color: var(--fg-on-emphasis);
-}
-
-.primaryButton:hover:not(:disabled) {
-  background: var(--success-fg);
+  composes: base primary sizeDefault from "../ui/button.module.css";
+  text-decoration: none;
 }
 
 .primaryButton:disabled {
@@ -153,9 +134,11 @@
 }
 
 .cancel {
-  border: 1px solid var(--border);
+  composes: base sizeDefault from "../ui/button.module.css";
+  border-color: var(--border);
   background: var(--canvas-default);
   color: var(--fg-default);
+  text-decoration: none;
 }
 
 .cancel:hover {
@@ -213,67 +196,6 @@
 }
 
 .repoList span {
-  color: var(--fg-muted);
-}
-
-.issueTitle {
-  width: 100%;
-  min-height: 32px;
-  padding: 5px 12px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--canvas-default);
-  color: var(--fg-default);
-  font-size: 16px;
-  line-height: 20px;
-}
-
-.composer {
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-}
-
-.composerTabs {
-  display: flex;
-  gap: 4px;
-  padding: 8px 8px 0;
-  border-bottom: 1px solid var(--border);
-  background: var(--canvas-subtle);
-}
-
-.composerTabs button {
-  min-height: 32px;
-  padding: 5px 16px;
-  border: 1px solid transparent;
-  border-bottom: 0;
-  border-radius: 6px 6px 0 0;
-  background: transparent;
-  color: var(--fg-muted);
-  font-size: 14px;
-}
-
-.composerTabs button[aria-selected="true"] {
-  border-color: var(--border);
-  background: var(--canvas-default);
-  color: var(--fg-default);
-  margin-bottom: -1px;
-}
-
-.composer textarea,
-.preview {
-  width: 100%;
-  min-height: 200px;
-  padding: 16px;
-  border: 0;
-  background: var(--canvas-default);
-  color: var(--fg-default);
-  font-size: 14px;
-  line-height: 1.5;
-  resize: vertical;
-}
-
-.preview {
   color: var(--fg-muted);
 }
 

@@ -190,9 +190,11 @@ type Revision struct {
 }
 
 type RevisionHistoryEntry struct {
-	Revision string   `json:"revision"`
-	Number   uint64   `json:"number"`
-	Parents  []string `json:"parents"`
+	Revision  string    `json:"revision"`
+	Number    uint64    `json:"number"`
+	Parents   []string  `json:"parents"`
+	Author    string    `json:"author,omitempty"`
+	CreatedAt time.Time `json:"createdAt,omitempty"`
 }
 
 type FileHistoryEntry struct {

@@ -23,7 +23,7 @@ export function SearchTypeTabs({ counts, dictionary, locale, query }: SearchType
           key={type}
         >
           <span>{dictionary.searchPage[type]}</span>
-          <span className={styles.count}>{searchTypeCount(counts, type)}</span>
+          <strong className={styles.count}>{searchTypeCount(counts, type)}</strong>
         </Link>
       ))}
     </nav>

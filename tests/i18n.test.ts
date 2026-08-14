@@ -33,6 +33,8 @@ test("Japanese dictionary does not silently reuse English copy", () => {
     "common.productName",
     "common.wiki",
     "entitlementSettings.subjectPlaceholder",
+    "eventTopics.entities.issue",
+    "eventTopics.entities.webhook",
     "fileLocks.pathPlaceholder",
     "actionsPage.title",
     "forms.loreUrl",

@@ -1,4 +1,5 @@
 import { Search as SearchIcon, ShieldAlert, TriangleAlert } from "lucide-react";
+import type { ReactNode } from "react";
 
 import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
@@ -6,12 +7,12 @@ import {
   lastSearchPage,
   parseCodeSearchQualifier,
   searchTypeCount,
+  type SearchCounts,
   type SearchQuery,
   type SearchResults,
   type SearchType,
 } from "@/lib/search";
 
-import { EmptyState } from "../ui/empty-state";
 import { SearchCodeResults } from "./search-code-results";
 import { SearchOrganizationResults } from "./search-organization-results";
 import styles from "./search-page.module.css";
@@ -32,28 +33,32 @@ type SearchPageProps = {
 };
 
 export function SearchPage({ dictionary, failure, locale, query, results }: SearchPageProps) {
+  const counts = results?.counts ?? emptySearchCounts();
   return (
     <div className={styles.page}>
-      <header className={styles.heading}>
-        <h1>{dictionary.searchPage.title}</h1>
-        <p>{dictionary.searchPage.description}</p>
-        <form action={`/${locale}/search`} className={styles.searchForm} role="search">
-          <input name="type" type="hidden" value={query.type} />
-          <label className="visually-hidden" htmlFor="cross-resource-search">
-            {dictionary.searchPage.inputLabel}
-          </label>
-          <input
-            defaultValue={query.q}
-            id="cross-resource-search"
-            maxLength={160}
-            name="q"
-            placeholder={dictionary.searchPage.inputPlaceholder}
-            type="search"
-          />
-          <button type="submit">{dictionary.searchPage.submit}</button>
-        </form>
-      </header>
-      <SearchContent dictionary={dictionary} failure={failure} locale={locale} query={query} results={results} />
+      <div className={styles.layout}>
+        <aside className={styles.sidebar}>
+          <SearchTypeTabs counts={counts} dictionary={dictionary} locale={locale} query={query} />
+        </aside>
+        <div className={styles.main}>
+          <form action={`/${locale}/search`} className={styles.searchForm} method="get" role="search">
+            <input name="type" type="hidden" value={query.type} />
+            <SearchIcon aria-hidden="true" size={16} />
+            <label className="visually-hidden" htmlFor="cross-resource-search">
+              {dictionary.searchPage.inputLabel}
+            </label>
+            <input
+              defaultValue={query.q}
+              id="cross-resource-search"
+              maxLength={160}
+              name="q"
+              placeholder={dictionary.searchPage.inputPlaceholder}
+              type="search"
+            />
+          </form>
+          <SearchContent dictionary={dictionary} failure={failure} locale={locale} query={query} results={results} />
+        </div>
+      </div>
     </div>
   );
 }
@@ -65,7 +70,7 @@ function SearchContent(props: SearchPageProps) {
 function CodeSearchContent({ dictionary, failure, locale, query, results }: SearchPageProps) {
   if (!query.q || !parseCodeSearchQualifier(query.q) || failure === "invalid") {
     return (
-      <EmptyState
+      <SearchBlankSlate
         body={dictionary.searchPage.codeQualifierBody}
         icon={<SearchIcon aria-hidden="true" />}
         title={dictionary.searchPage.codeQualifierTitle}
@@ -74,7 +79,7 @@ function CodeSearchContent({ dictionary, failure, locale, query, results }: Sear
   }
   if (failure === "forbidden") {
     return (
-      <EmptyState
+      <SearchBlankSlate
         body={dictionary.searchPage.forbiddenBody}
         icon={<ShieldAlert aria-hidden="true" />}
         title={dictionary.searchPage.forbiddenTitle}
@@ -84,7 +89,7 @@ function CodeSearchContent({ dictionary, failure, locale, query, results }: Sear
   }
   if (failure === "unavailable" || !results?.code) {
     return (
-      <EmptyState
+      <SearchBlankSlate
         body={dictionary.searchPage.unavailableBody}
         icon={<TriangleAlert aria-hidden="true" />}
         title={dictionary.searchPage.unavailableTitle}
@@ -93,12 +98,9 @@ function CodeSearchContent({ dictionary, failure, locale, query, results }: Sear
     );
   }
   return (
-    <>
-      <SearchTypeTabs counts={results.counts} dictionary={dictionary} locale={locale} query={query} />
-      <div className={styles.results}>
-        <SearchCodeResults code={results.code} dictionary={dictionary} locale={locale} query={query} />
-      </div>
-    </>
+    <div className={styles.results}>
+      <SearchCodeResults code={results.code} dictionary={dictionary} locale={locale} query={query} />
+    </div>
   );
 }
 
@@ -107,7 +109,7 @@ function ResourceSearchContent({ dictionary, failure, locale, query, results }: 
   const lastPage = results ? lastSearchPage(results, query.type) : 1;
   if (!query.q) {
     return (
-      <EmptyState
+      <SearchBlankSlate
         body={dictionary.searchPage.initialBody}
         icon={<SearchIcon aria-hidden="true" />}
         title={dictionary.searchPage.initialTitle}
@@ -116,7 +118,7 @@ function ResourceSearchContent({ dictionary, failure, locale, query, results }: 
   }
   if (failure === "forbidden") {
     return (
-      <EmptyState
+      <SearchBlankSlate
         body={dictionary.searchPage.forbiddenBody}
         icon={<ShieldAlert aria-hidden="true" />}
         title={dictionary.searchPage.forbiddenTitle}
@@ -126,7 +128,7 @@ function ResourceSearchContent({ dictionary, failure, locale, query, results }: 
   }
   if (failure !== null || !results) {
     return (
-      <EmptyState
+      <SearchBlankSlate
         body={dictionary.searchPage.unavailableBody}
         icon={<TriangleAlert aria-hidden="true" />}
         title={dictionary.searchPage.unavailableTitle}
@@ -136,19 +138,15 @@ function ResourceSearchContent({ dictionary, failure, locale, query, results }: 
   }
   if (selectedCount === 0) {
     return (
-      <>
-        <SearchTypeTabs counts={results.counts} dictionary={dictionary} locale={locale} query={query} />
-        <EmptyState
-          body={dictionary.searchPage.emptyBody}
-          icon={<SearchIcon aria-hidden="true" />}
-          title={dictionary.searchPage.emptyTitle}
-        />
-      </>
+      <SearchBlankSlate
+        body={dictionary.searchPage.emptyBody}
+        icon={<SearchIcon aria-hidden="true" />}
+        title={dictionary.searchPage.emptyTitle}
+      />
     );
   }
   return (
     <>
-      <SearchTypeTabs counts={results.counts} dictionary={dictionary} locale={locale} query={query} />
       <ResourceSearchResults dictionary={dictionary} locale={locale} query={query} results={results} />
       <SearchPagination dictionary={dictionary} lastPage={lastPage} locale={locale} query={query} />
     </>
@@ -202,6 +200,30 @@ function ResourceSearchResults({ dictionary, locale, query, results }: ResourceS
 type ResourceSearchResultsProps = Pick<SearchPageProps, "dictionary" | "locale" | "query"> & {
   results: SearchResults;
 };
+
+function SearchBlankSlate({
+  body,
+  icon,
+  title,
+  tone = "neutral",
+}: {
+  body: string;
+  icon: ReactNode;
+  title: string;
+  tone?: "neutral" | "warning";
+}) {
+  return (
+    <div className={styles.blankSlate} data-tone={tone}>
+      <div className={styles.blankSlateIcon}>{icon}</div>
+      <h2>{title}</h2>
+      <p>{body}</p>
+    </div>
+  );
+}
+
+function emptySearchCounts(): SearchCounts {
+  return { repositories: 0, organizations: 0, users: 0, issues: 0, pullRequests: 0, code: 0 };
+}
 
 function shows(active: SearchType, section: Exclude<SearchType, "all">): boolean {
   return active === "all" || active === section;

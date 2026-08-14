@@ -114,10 +114,10 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: scripts/setup-keycloak-secrets.sh
-      - run: docker compose -f infra/compose.yaml up --build --detach --wait
+      - run: docker compose --env-file .env -f infra/compose.yaml up --build --detach --wait
       - run: npm run e2e
       - run: scripts/backup.sh --output "$RUNNER_TEMP/lorehub-backup"
       - run: scripts/restore.sh --backup "$RUNNER_TEMP/lorehub-backup" --confirm-project lorehub --start
       - run: npm run e2e
       - if: always()
-        run: docker compose -f infra/compose.yaml down --volumes --remove-orphans
+        run: docker compose --env-file .env -f infra/compose.yaml down --volumes --remove-orphans

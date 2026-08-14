@@ -1,0 +1,57 @@
+.base {
+  align-items: center;
+  border: 1px solid;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  gap: 6px;
+  justify-content: center;
+}
+
+.primary {
+  background: var(--success-emphasis);
+  border-color: var(--control-border-emphasis);
+  color: var(--fg-on-emphasis);
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--success-emphasis-hover);
+}
+
+.secondary {
+  background: var(--control-bg);
+  border-color: var(--border);
+  color: var(--fg-default);
+}
+
+.secondary:hover:not(:disabled) {
+  background: var(--control-bg-hover);
+  border-color: var(--control-border-emphasis);
+}
+
+.danger {
+  background: var(--control-bg);
+  border-color: var(--border);
+  color: var(--danger-fg);
+}
+
+.danger:hover:not(:disabled) {
+  background: var(--danger-border);
+  border-color: var(--danger-border);
+  color: var(--fg-on-emphasis);
+}
+
+.sizeSmall {
+  font-size: 12px;
+  font-weight: 600;
+  min-height: 30px;
+  padding: 4px 10px;
+}
+
+.sizeDefault {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  min-height: 32px;
+  padding: 5px 16px;
+}

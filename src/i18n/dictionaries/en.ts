@@ -10,13 +10,16 @@ import { commitStatuses } from "./commit-statuses";
 import { createPages } from "./create-pages";
 import { discussions } from "./discussions";
 import { entitlements } from "./entitlements";
+import { eventTopics } from "./event-topics";
 import { fileLocks } from "./file-locks";
 import { globalWorkItems } from "./global-work-items";
 import { insights } from "./insights";
+import { instanceSettings } from "./instance-settings";
 import { issueDetail } from "./issue-detail";
 import { loreServers } from "./lore-servers";
 import { metadata } from "./metadata";
 import { milestones } from "./milestones";
+import { organizationPage } from "./organization-page";
 import { pendingReviews } from "./pending-reviews";
 import { personalAccessTokens } from "./personal-access-tokens";
 import { pullRequestDrafts } from "./pull-request-drafts";
@@ -36,6 +39,7 @@ import { workItemLists } from "./work-item-lists";
 const en = {
   commentPagination: commentPagination.en,
   workItemEvents: workItemEvents.en,
+  eventTopics: eventTopics.en,
   workItemLists: workItemLists.en,
   codeBrowser: codeBrowser.en,
   commitHistory: commitHistory.en,
@@ -64,6 +68,7 @@ const en = {
   runnerSettings: runners.en,
   loreServerSettings: loreServers.en,
   entitlementSettings: entitlements.en,
+  instanceSettings: instanceSettings.en,
   common: {
     productName: "LoreHub",
     explore: "Explore",
@@ -115,6 +120,7 @@ const en = {
     repository: "Repository",
     readOnly: "Read-only",
     updated: "Updated",
+    updatedOn: "Updated {time}",
     noDescription: "No description has been provided.",
     viewAll: "View all",
     newIssue: "New issue",
@@ -454,40 +460,20 @@ const en = {
   },
   notificationsPage: {
     title: "Notifications",
-    description: "Review account, team, and repository events that need your attention.",
     filterAll: "All",
     filterUnread: "Unread",
+    inbox: "Inbox",
+    unreadCountLabel: "unread notifications",
     markAllRead: "Mark all as read",
     markRead: "Mark as read",
     unavailableTitle: "Notifications are temporarily unavailable",
     markReadFailed: "Could not mark the notification as read. Try again.",
     emptyTitle: "No notifications",
     emptyBody: "New account, team, and repository events will appear here.",
+    caughtUpTitle: "All caught up",
+    caughtUpBody: "New account, team, and repository events show up here when there is activity.",
   },
-  organizationPage: {
-    title: "Organization",
-    members: "members",
-    settings: "Organization settings",
-    repositories: "Repositories",
-    repositoriesDescription: "Lore repositories registered under this organization.",
-    noRepositories: "No repositories",
-    noRepositoriesBody: "This organization has no visible Lore repositories yet.",
-    teams: "Teams",
-    teamsDescription: "Teams group active organization members for repository access.",
-    noTeams: "No teams",
-    noTeamsBody: "Create a team when several members need the same access path.",
-    noOrganizations: "No organizations",
-    noOrganizationsBody: "Organizations you can access will appear here.",
-    website: "Website",
-    contactEmail: "Contact email",
-    defaultVisibility: "Default repository visibility",
-    visibility: "Organization visibility",
-    saveSettings: "Save organization settings",
-    settingsSaved: "Organization settings saved.",
-    newTeam: "Create a team",
-    teamSlug: "Team slug",
-    createTeam: "Create team",
-  },
+  organizationPage: organizationPage.en,
   teamPage: {
     title: "Team",
     members: "Members",
@@ -531,6 +517,7 @@ const en = {
     noRunsTitle: "No workflow runs have been recorded",
     noRunsBody: "Runs appear here after the Lore branch observer queues a workflow.",
     workflowsTitle: "Workflows",
+    allWorkflows: "All workflows",
     workflowsDescription: "Workflow files discovered at the observed Lore revisions.",
     noWorkflows: "No workflow files have been discovered.",
     states: {
@@ -591,6 +578,11 @@ const en = {
     createdBy: "Created by {author}",
     open: "Open projects",
     closed: "Closed projects",
+    filterOpen: "{count} Open",
+    filterClosed: "{count} Closed",
+    searchLabel: "Search projects",
+    searchPlaceholder: "Search all projects",
+    noMatches: "No projects match the current filters.",
     forbiddenTitle: "Projects are restricted",
     forbiddenBody: "You need repository read access to view projects.",
     unavailableTitle: "Projects are unavailable",
@@ -754,9 +746,10 @@ const en = {
     bio: "Bio",
     saveProfile: "Save profile",
     saved: "Saved.",
+    overview: "Overview",
     repositories: "Repositories",
     joined: "Joined",
-    filterRepositories: "Filter repositories",
+    filterRepositories: "Find a repository…",
     repositoriesEmptyTitle: "No repositories to show",
     repositoriesEmptyBody: "Repositories this user owns or contributes to will appear here.",
   },
@@ -765,7 +758,7 @@ const en = {
     titlePlaceholder: "A concise title",
     bodyLabel: "Description",
     bodyPlaceholder: "Add context, expected outcome, or review notes.",
-    submitIssue: "Create issue",
+    submitIssue: "Submit new issue",
     submitPullRequest: "Create pull request",
     submitting: "Submitting",
     sourceBranch: "Source branch",
@@ -831,6 +824,9 @@ const en = {
     loreServerUnavailable:
       "The Lore Server chosen for this organization is not active. Check it in the organization settings and " +
       "try again.",
+    hostedLoreServerDisabled:
+      "The hosted Lore server is disabled on this instance. Register a self-hosted Lore server or ask an " +
+      "instance administrator to enable the hosted service.",
   },
   footer: {
     sourceOfTruth: "LoreHub works with the Lore version control system.",

@@ -46,8 +46,8 @@
 }
 
 .stateBadge[data-state="merged"] {
-  background: #8250df;
-  border-color: #8250df;
+  background: var(--done-emphasis);
+  border-color: var(--done-emphasis);
 }
 
 .stateBadge[data-state="closed"] {

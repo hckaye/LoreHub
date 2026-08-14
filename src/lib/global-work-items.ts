@@ -7,6 +7,7 @@ export type GlobalWorkItemQuery = {
   scope: GlobalWorkItemScope;
   q?: string;
   cursor?: string;
+  page: number;
 };
 
 export function globalWorkItemQuery(
@@ -17,19 +18,24 @@ export function globalWorkItemQuery(
   const scopeValue = singleValue(input.scope);
   const q = singleValue(input.q).trim().slice(0, 160);
   const cursorValue = singleValue(input.cursor);
+  const hasCursor = cursorValue.length > 0 && cursorValue.length <= 1024;
+  const parsedPage = /^[1-9]\d{0,5}$/.test(singleValue(input.page)) ? Number(singleValue(input.page)) : 1;
   const state = validQueryState(kind, stateValue) ? stateValue : "open";
   const scope = validQueryScope(kind, scopeValue) ? scopeValue : "involved";
   return {
     state,
     scope,
     ...(q ? { q } : {}),
-    ...(cursorValue && cursorValue.length <= 1024 ? { cursor: cursorValue } : {}),
+    ...(hasCursor ? { cursor: cursorValue } : {}),
+    page: hasCursor ? Math.max(parsedPage, 2) : 1,
   };
 }
 
 export type GlobalWorkItemPage = {
   items: GlobalWorkItem[];
   nextCursor: string | null;
+  openCount?: number;
+  closedCount?: number;
 };
 
 export type GlobalWorkItem = {
@@ -83,7 +89,16 @@ export function normalizeGlobalWorkItemPage(value: unknown): GlobalWorkItemPage 
   if (items.some((item) => item === null)) return null;
   const nextCursor = value.nextCursor ?? null;
   if (nextCursor !== null && typeof nextCursor !== "string") return null;
-  return { items: items as GlobalWorkItem[], nextCursor };
+  const openCount = value.openCount;
+  const closedCount = value.closedCount;
+  if (openCount !== undefined && !isCount(openCount)) return null;
+  if (closedCount !== undefined && !isCount(closedCount)) return null;
+  return {
+    items: items as GlobalWorkItem[],
+    nextCursor,
+    ...(typeof openCount === "number" ? { openCount } : {}),
+    ...(typeof closedCount === "number" ? { closedCount } : {}),
+  };
 }
 
 function normalizeGlobalWorkItem(value: unknown): GlobalWorkItem | null {

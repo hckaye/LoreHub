@@ -3,6 +3,7 @@ import { ServerOff } from "lucide-react";
 import { ActionsContextSettings } from "@/components/actions/actions-context-settings";
 import { AuthRequired } from "@/components/auth/auth-required";
 import { DeletedRepositorySettings } from "@/components/organizations/deleted-repository-settings";
+import { OrganizationSettingsForm } from "@/components/organizations/organization-settings-form";
 import { OrganizationTeamSettings } from "@/components/organizations/organization-team-settings";
 import { RepositoryPanel, RepositorySection } from "@/components/repositories/repository-section";
 import { OrganizationSettingsTabs } from "@/components/settings/settings-tabs";
@@ -60,6 +61,10 @@ export default async function OrganizationSettingsPage({ params }: OrganizationS
       title={dictionary.organizationSettingsPage.title}
     >
       <OrganizationSettingsTabs active="general" dictionary={dictionary} locale={locale} organization={organization} />
+      {organizationResult.ok &&
+        (organizationResult.data.role === "owner" || organizationResult.data.role === "maintainer") && (
+          <OrganizationSettingsForm dictionary={dictionary} organization={organizationResult.data} session={session} />
+        )}
       <RepositoryPanel
         description={dictionary.actionsSettings.organizationDescription}
         title={dictionary.actionsSettings.title}

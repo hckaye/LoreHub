@@ -34,6 +34,7 @@ export const issueDetail = {
     milestoneNoDueDate: "No due date",
     milestonesUnavailable: "Milestones could not be loaded.",
     commentsUnavailable: "Comments could not be loaded.",
+    markdownSupported: "Markdown is supported",
   },
   ja: {
     openedThisIssue: "が{time}にこのIssueを作成しました",
@@ -70,5 +71,6 @@ export const issueDetail = {
     milestoneNoDueDate: "期日なし",
     milestonesUnavailable: "マイルストーンを読み込めませんでした。",
     commentsUnavailable: "コメントを読み込めませんでした。",
+    markdownSupported: "Markdownに対応しています",
   },
 };

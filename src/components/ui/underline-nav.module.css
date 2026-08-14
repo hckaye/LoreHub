@@ -1,0 +1,56 @@
+.nav {
+  display: flex;
+  min-height: 48px;
+  margin: 0 0 16px;
+  padding: 0;
+  overflow-x: auto;
+  align-items: stretch;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.nav > a,
+.nav > span {
+  display: inline-flex;
+  min-height: 48px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--fg-default);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 30px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.nav svg {
+  flex: 0 0 auto;
+  color: var(--fg-muted);
+}
+
+.nav > a:hover {
+  border-radius: 6px 6px 0 0;
+  background: var(--border-muted);
+}
+
+.nav > .active {
+  border-bottom-color: var(--nav-active-border);
+  font-weight: 600;
+}
+
+.counter {
+  display: inline-block;
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 2em;
+  background: var(--neutral-muted);
+  color: var(--fg-default);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  text-align: center;
+}

@@ -31,10 +31,15 @@ func (api *API) registerRoutes(mux *http.ServeMux) {
 }
 
 func (api *API) registerAdminRoutes(mux *http.ServeMux) {
+	if !api.instanceAdminEnabled {
+		return
+	}
 	base := "/api/v1/admin/entitlements"
 	mux.Handle("GET "+base, api.requireInstanceAdmin(http.HandlerFunc(api.listEntitlements)))
 	mux.Handle("POST "+base, api.requireInstanceAdmin(http.HandlerFunc(api.grantEntitlement)))
 	mux.Handle("DELETE "+base, api.requireInstanceAdmin(http.HandlerFunc(api.revokeEntitlement)))
+	mux.Handle("GET /api/v1/admin/settings", api.requireInstanceAdmin(http.HandlerFunc(api.getInstanceSettings)))
+	mux.Handle("PUT /api/v1/admin/settings", api.requireInstanceAdmin(http.HandlerFunc(api.updateInstanceSettings)))
 	migrationBase := "/api/v1/admin/repositories/{owner}/{repository}"
 	mux.Handle("POST "+migrationBase+"/migrate",
 		api.requireInstanceAdmin(http.HandlerFunc(api.migrateRepository)))
@@ -226,7 +231,7 @@ func (api *API) registerFeatureRoutes(mux *http.ServeMux) {
 			wikiapi.Register(mux, api.wikiStore, api.collabStore, api, api.logger)
 		}
 		if codeClient, ok := api.lore.(loreclient.CodeClient); ok {
-			codeapi.Register(mux, api.collabStore, api.lore, codeClient, api, api.loreCredentials,
+			codeapi.Register(mux, api.collabStore, api.lore, codeClient, api, api.store, api.loreCredentials,
 				api.serviceSubjects.PublicReader, api.logger)
 			if comments, ok := api.collabStore.(collab.RevisionCommentStore); ok {
 				revisioncommentsapi.Register(

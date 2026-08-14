@@ -39,6 +39,49 @@ func TestLoadParsesInstanceAdministratorUsernames(t *testing.T) {
 	}
 }
 
+func TestLoadDefaultsInstanceAdministrationAndHostedLoreServerToEnabled(t *testing.T) {
+	setRequiredEnvironment(t)
+
+	settings, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !settings.HostedLoreServerEnabled || !settings.InstanceAdminEnabled {
+		t.Fatalf("unexpected instance defaults: hosted Lore server=%t, instance admin=%t",
+			settings.HostedLoreServerEnabled, settings.InstanceAdminEnabled)
+	}
+}
+
+func TestLoadParsesInstanceAdministrationAndHostedLoreServerSettings(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("LOREHUB_HOSTED_LORE_SERVER_ENABLED", "false")
+	t.Setenv("LOREHUB_INSTANCE_ADMIN_ENABLED", "false")
+
+	settings, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.HostedLoreServerEnabled || settings.InstanceAdminEnabled {
+		t.Fatalf("settings were not parsed: hosted Lore server=%t, instance admin=%t",
+			settings.HostedLoreServerEnabled, settings.InstanceAdminEnabled)
+	}
+}
+
+func TestLoadRejectsInvalidInstanceAdministrationAndHostedLoreServerSettings(t *testing.T) {
+	for _, key := range []string{
+		"LOREHUB_HOSTED_LORE_SERVER_ENABLED",
+		"LOREHUB_INSTANCE_ADMIN_ENABLED",
+	} {
+		t.Run(key, func(t *testing.T) {
+			setRequiredEnvironment(t)
+			t.Setenv(key, "sometimes")
+			if _, err := Load(); err == nil || !strings.Contains(err.Error(), key) {
+				t.Fatalf("invalid %s was accepted: %v", key, err)
+			}
+		})
+	}
+}
+
 func TestLoadParsesOperationalSettings(t *testing.T) {
 	setRequiredEnvironment(t)
 	t.Setenv("LOREHUB_METRICS_TOKEN", strings.Repeat("m", 32))
@@ -657,6 +700,8 @@ func setRequiredEnvironment(t *testing.T) {
 	t.Setenv("LOREHUB_SESSION_COOKIE_DOMAIN", "")
 	t.Setenv("LOREHUB_ALLOW_LEGACY_LORE_IDENTITY", "")
 	t.Setenv("LOREHUB_INSTANCE_ADMIN_USERNAMES", "")
+	t.Setenv("LOREHUB_HOSTED_LORE_SERVER_ENABLED", "")
+	t.Setenv("LOREHUB_INSTANCE_ADMIN_ENABLED", "")
 	t.Setenv("LOREHUB_METRICS_TOKEN", "")
 	t.Setenv("LOREHUB_RATE_LIMIT_REQUESTS", "")
 	t.Setenv("LOREHUB_RATE_LIMIT_WINDOW", "")

@@ -171,37 +171,25 @@
   width: fit-content;
 }
 
-.primaryButton,
+.primaryButton {
+  composes: base primary sizeDefault from "../ui/button.module.css";
+  width: fit-content;
+}
+
 .deleteButton {
   display: inline-flex;
-  min-height: 32px;
+  min-height: 28px;
   width: fit-content;
   align-items: center;
   justify-content: center;
-  padding: 5px 16px;
-  border-radius: 6px;
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 20px;
-}
-
-.primaryButton {
-  border: 1px solid rgb(31 35 40 / 15%);
-  background: var(--success-border);
-  color: var(--fg-on-emphasis);
-}
-
-.primaryButton:hover:not(:disabled) {
-  background: var(--success-fg);
-}
-
-.deleteButton {
-  min-height: 28px;
   padding: 3px 12px;
   border: 1px solid var(--border);
+  border-radius: 6px;
   background: var(--canvas-default);
   color: var(--danger-fg);
   font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
 }
 
 .deleteButton:hover:not(:disabled) {

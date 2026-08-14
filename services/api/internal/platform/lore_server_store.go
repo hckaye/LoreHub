@@ -5,14 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/netip"
-	"net/url"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -27,6 +22,7 @@ const (
 	LoreServerSelectionExplicitUnavailable = "explicit_server_unavailable"
 	LoreServerSelectionDefaultUnavailable  = "default_server_unavailable"
 	LoreServerSelectionEntitlementRequired = "hosted_lore_server_entitlement_required"
+	LoreServerSelectionHostedDisabled      = "hosted_lore_server_disabled"
 	LoreServerSelectionNoneAvailable       = "no_lore_server_available"
 
 	loreServerRegistrationMaxAge = time.Hour
@@ -94,6 +90,8 @@ func (err *LoreServerSelectionError) Error() string {
 		return "the organization's default Lore server is not active"
 	case LoreServerSelectionEntitlementRequired:
 		return "register a Lore server or obtain the hosted Lore server entitlement"
+	case LoreServerSelectionHostedDisabled:
+		return "the hosted Lore server is disabled on this instance"
 	default:
 		return "no active Lore server is available to this organization"
 	}
@@ -299,7 +297,10 @@ func (store *Store) ListServers(
 	if err != nil {
 		return nil, err
 	}
-	entitled, err := hasOrganizationEntitlement(ctx, transaction, organizationID, EntitlementHostedLoreServer)
+	entitled, err := hasOrganizationEntitlement(
+		ctx, transaction, organizationID, EntitlementHostedLoreServer,
+		store.hostedLoreServerDefaultEnabled,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -488,7 +489,9 @@ func (store *Store) GetOrganizationDefaultServer(
 		}
 		return nil, nil
 	}
-	server, err := resolveServerForNewRepository(ctx, transaction, organizationID, *serverID)
+	server, err := resolveServerForNewRepository(
+		ctx, transaction, organizationID, *serverID, store.hostedLoreServerDefaultEnabled,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -521,7 +524,9 @@ func (store *Store) SetOrganizationDefaultServer(
 	}
 	var server *LoreServer
 	if serverID != "" {
-		selected, resolveErr := resolveServerForNewRepository(ctx, transaction, organizationID, serverID)
+		selected, resolveErr := resolveServerForNewRepository(
+			ctx, transaction, organizationID, serverID, store.hostedLoreServerDefaultEnabled,
+		)
 		if resolveErr != nil {
 			return nil, resolveErr
 		}
@@ -560,7 +565,10 @@ func (store *Store) ResolveServerForNewRepository(
 	if _, err := uuid.Parse(organizationID); err != nil {
 		return LoreServer{}, ErrInvalidInput
 	}
-	return resolveServerForNewRepository(ctx, store.pool, organizationID, strings.TrimSpace(explicitServerID))
+	return resolveServerForNewRepository(
+		ctx, store.pool, organizationID, strings.TrimSpace(explicitServerID),
+		store.hostedLoreServerDefaultEnabled,
+	)
 }
 
 func (store *Store) ValidateRepositoryImportServer(
@@ -582,7 +590,9 @@ func (store *Store) ValidateRepositoryImportServer(
 	if err != nil {
 		return err
 	}
-	server, err := resolveServerForNewRepository(ctx, transaction, organizationID, serverID)
+	server, err := resolveServerForNewRepository(
+		ctx, transaction, organizationID, serverID, store.hostedLoreServerDefaultEnabled,
+	)
 	if err != nil {
 		return err
 	}
@@ -600,12 +610,15 @@ func resolveServerForNewRepository(
 	query loreServerQuery,
 	organizationID string,
 	explicitServerID string,
+	hostedLoreServerDefaultEnabled bool,
 ) (LoreServer, error) {
 	if explicitServerID != "" {
 		if _, err := uuid.Parse(explicitServerID); err != nil {
 			return LoreServer{}, &LoreServerSelectionError{Reason: LoreServerSelectionExplicitUnavailable}
 		}
-		server, err := activeVisibleLoreServer(ctx, query, organizationID, explicitServerID)
+		server, err := activeVisibleLoreServer(
+			ctx, query, organizationID, explicitServerID, hostedLoreServerDefaultEnabled,
+		)
 		if err == nil {
 			return server, nil
 		}
@@ -625,7 +638,9 @@ func resolveServerForNewRepository(
 		return LoreServer{}, fmt.Errorf("read organization Lore server default: %w", err)
 	}
 	if defaultServerID != nil {
-		server, err := activeVisibleLoreServer(ctx, query, organizationID, *defaultServerID)
+		server, err := activeVisibleLoreServer(
+			ctx, query, organizationID, *defaultServerID, hostedLoreServerDefaultEnabled,
+		)
 		if err == nil {
 			return server, nil
 		}
@@ -634,7 +649,18 @@ func resolveServerForNewRepository(
 		}
 	}
 
-	entitled, err := hasOrganizationEntitlement(ctx, query, organizationID, EntitlementHostedLoreServer)
+	hostedEnabled, err := hostedLoreServerEnabledForQuery(
+		ctx, query, hostedLoreServerDefaultEnabled,
+	)
+	if err != nil {
+		return LoreServer{}, err
+	}
+	if !hostedEnabled {
+		return LoreServer{}, &LoreServerSelectionError{Reason: LoreServerSelectionHostedDisabled}
+	}
+	entitled, err := hasOrganizationEntitlement(
+		ctx, query, organizationID, EntitlementHostedLoreServer, hostedLoreServerDefaultEnabled,
+	)
 	if err != nil {
 		return LoreServer{}, err
 	}
@@ -662,6 +688,7 @@ func activeVisibleLoreServer(
 	query loreServerQuery,
 	organizationID string,
 	serverID string,
+	hostedLoreServerDefaultEnabled bool,
 ) (LoreServer, error) {
 	server, err := scanLoreServer(query.QueryRow(ctx, loreServerSelect+`
 		WHERE server.id = $1 AND server.status = 'active' AND server.revoked_at IS NULL
@@ -672,7 +699,18 @@ func activeVisibleLoreServer(
 		return LoreServer{}, err
 	}
 	if server.InstanceScope {
-		entitled, err := hasOrganizationEntitlement(ctx, query, organizationID, EntitlementHostedLoreServer)
+		hostedEnabled, err := hostedLoreServerEnabledForQuery(
+			ctx, query, hostedLoreServerDefaultEnabled,
+		)
+		if err != nil {
+			return LoreServer{}, err
+		}
+		if !hostedEnabled {
+			return LoreServer{}, &LoreServerSelectionError{Reason: LoreServerSelectionHostedDisabled}
+		}
+		entitled, err := hasOrganizationEntitlement(
+			ctx, query, organizationID, EntitlementHostedLoreServer, hostedLoreServerDefaultEnabled,
+		)
 		if err != nil {
 			return LoreServer{}, err
 		}
@@ -748,7 +786,19 @@ func hasOrganizationEntitlement(
 	query loreServerQuery,
 	organizationID string,
 	feature string,
+	hostedLoreServerDefaultEnabled bool,
 ) (bool, error) {
+	if feature == EntitlementHostedLoreServer {
+		hostedEnabled, err := hostedLoreServerEnabledForQuery(
+			ctx, query, hostedLoreServerDefaultEnabled,
+		)
+		if err != nil {
+			return false, err
+		}
+		if !hostedEnabled {
+			return false, nil
+		}
+	}
 	var entitled bool
 	err := query.QueryRow(ctx, `
 		SELECT EXISTS (
@@ -762,152 +812,19 @@ func hasOrganizationEntitlement(
 	return entitled, nil
 }
 
-func validateRegisterLoreServerInput(input RegisterLoreServerInput) (string, []byte, error) {
-	name := strings.TrimSpace(input.Name)
-	if name == "" || utf8.RuneCountInString(name) > 160 || containsControl(name) ||
-		len(input.CredentialDigest) != 32 || !loreServerKeyIDPattern.MatchString(input.CredentialKeyID) ||
-		input.CredentialExpiresAt.IsZero() || !input.CredentialExpiresAt.After(time.Now().UTC()) ||
-		input.CredentialExpiresAt.After(time.Now().UTC().Add(loreServerCredentialMaxAge)) ||
-		!supportedLoreBuildVersion(input.LoreBuildVersion) ||
-		!supportedHookModuleVersion(input.HookModuleVersion) {
-		return "", nil, ErrInvalidInput
-	}
-	normalizedURL, err := validateLoreServerURL(input.PublicURL, input.AllowPrivateServers)
+func hostedLoreServerEnabledForQuery(
+	ctx context.Context,
+	query loreServerQuery,
+	defaultEnabled bool,
+) (bool, error) {
+	override, err := readHostedLoreServerOverride(ctx, query)
 	if err != nil {
-		return "", nil, ErrInvalidInput
+		return false, err
 	}
-	health, err := encodedHealthMetadata(input.HealthMetadata, input.HookModuleVersion)
-	if err != nil {
-		return "", nil, err
+	if override == nil {
+		return defaultEnabled, nil
 	}
-	return normalizedURL, health, nil
-}
-
-func validateLoreServerURL(value string, allowPrivate bool) (string, error) {
-	if value == "" || strings.TrimSpace(value) != value || strings.ContainsAny(value, "\x00\t\r\n \\") {
-		return "", errors.New("Lore server URL is invalid")
-	}
-	parsed, err := url.Parse(value)
-	if err != nil || parsed.Scheme != "lores" || parsed.Host == "" || parsed.Hostname() == "" ||
-		parsed.User != nil || parsed.Opaque != "" || parsed.Path != "" || parsed.RawPath != "" ||
-		parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" || parsed.RawFragment != "" ||
-		strings.ContainsAny(parsed.Host, "\x00\t\r\n /\\") {
-		return "", errors.New("Lore server URL must be a fixed lores:// endpoint")
-	}
-	if port := parsed.Port(); port != "" {
-		portNumber, conversionErr := strconv.Atoi(port)
-		if conversionErr != nil || portNumber < 1 || portNumber > 65535 {
-			return "", errors.New("Lore server URL port is invalid")
-		}
-	} else if strings.HasSuffix(parsed.Host, ":") {
-		return "", errors.New("Lore server URL port is invalid")
-	}
-	hostname := parsed.Hostname()
-	if strings.Contains(hostname, "%") {
-		return "", errors.New("Lore server URL address zones are invalid")
-	}
-	address, addressErr := netip.ParseAddr(hostname)
-	if addressErr == nil && !allowPrivate && restrictedLoreServerIP(address) {
-		return "", errors.New("Lore server URL must not use a private or reserved IP address")
-	}
-	host := strings.ToLower(parsed.Host)
-	return (&url.URL{Scheme: "lores", Host: host}).String(), nil
-}
-
-func loreServerAuthoritiesMatch(serverURL string, repositoryURL string) bool {
-	server, err := url.Parse(serverURL)
-	if err != nil || server.Scheme != "lores" || server.Host == "" || server.Path != "" {
-		return false
-	}
-	repository, err := url.Parse(repositoryURL)
-	if err != nil || repository.Scheme != "lores" || repository.Host == "" || repository.Path == "" {
-		return false
-	}
-	return strings.EqualFold(server.Host, repository.Host)
-}
-
-func restrictedLoreServerIP(address netip.Addr) bool {
-	address = address.Unmap()
-	if !address.IsGlobalUnicast() || address.IsPrivate() || address.IsLoopback() ||
-		address.IsLinkLocalUnicast() || address.IsLinkLocalMulticast() || address.IsUnspecified() ||
-		address.IsMulticast() {
-		return true
-	}
-	for _, prefix := range restrictedLoreServerPrefixes {
-		if prefix.Contains(address) {
-			return true
-		}
-	}
-	return false
-}
-
-var restrictedLoreServerPrefixes = []netip.Prefix{
-	netip.MustParsePrefix("100.64.0.0/10"),
-	netip.MustParsePrefix("192.0.0.0/24"),
-	netip.MustParsePrefix("192.0.2.0/24"),
-	netip.MustParsePrefix("192.88.99.0/24"),
-	netip.MustParsePrefix("198.18.0.0/15"),
-	netip.MustParsePrefix("198.51.100.0/24"),
-	netip.MustParsePrefix("203.0.113.0/24"),
-	netip.MustParsePrefix("2001:db8::/32"),
-}
-
-func supportedLoreBuildVersion(value string) bool {
-	major, minor, patch, ok := semanticVersion(value)
-	return ok && major == 0 && minor == 8 && patch >= 6
-}
-
-func supportedHookModuleVersion(value string) bool {
-	major, _, _, ok := semanticVersion(value)
-	return ok && major == 1
-}
-
-func semanticVersion(value string) (int, int, int, bool) {
-	value = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(value), "v"))
-	core, _, _ := strings.Cut(value, "+")
-	core, _, _ = strings.Cut(core, "-")
-	parts := strings.Split(core, ".")
-	if len(parts) != 3 {
-		return 0, 0, 0, false
-	}
-	parsed := [3]int{}
-	for index, part := range parts {
-		if part == "" || (len(part) > 1 && part[0] == '0') {
-			return 0, 0, 0, false
-		}
-		value, err := strconv.Atoi(part)
-		if err != nil || value < 0 {
-			return 0, 0, 0, false
-		}
-		parsed[index] = value
-	}
-	return parsed[0], parsed[1], parsed[2], true
-}
-
-func encodedHealthMetadata(metadata map[string]any, hookModuleVersion string) ([]byte, error) {
-	copy := make(map[string]any, len(metadata)+1)
-	for key, value := range metadata {
-		copy[key] = value
-	}
-	copy["hookModuleVersion"] = strings.TrimSpace(hookModuleVersion)
-	encoded, err := json.Marshal(copy)
-	if err != nil || len(encoded) > loreServerHealthMaxBytes {
-		return nil, ErrInvalidInput
-	}
-	var object map[string]any
-	if err := json.Unmarshal(encoded, &object); err != nil || object == nil {
-		return nil, ErrInvalidInput
-	}
-	return encoded, nil
-}
-
-func containsControl(value string) bool {
-	for _, character := range value {
-		if unicode.IsControl(character) {
-			return true
-		}
-	}
-	return false
+	return *override, nil
 }
 
 type loreServerQuery interface {

@@ -121,11 +121,14 @@ compose exec -T keycloak-postgres sh -c \
 for volume_name in $volume_names; do
   docker volume inspect "${project_name}_${volume_name}" >/dev/null 2>&1 ||
     fail "Docker volume not found: ${project_name}_${volume_name}"
+  # The archive is written by root inside the container; chown it to the
+  # invoking host user there so the host-side chmod below succeeds on Linux.
   docker run --rm \
     --volume "${project_name}_${volume_name}:/source:ro" \
     --volume "$output_path/volumes:/backup" \
     "$postgres_image" \
-    sh -c 'cd /source && exec tar -czf "/backup/$1.tar.gz" .' sh "$volume_name"
+    sh -c 'cd /source && tar -czf "/backup/$1.tar.gz" . && exec chown "$2" "/backup/$1.tar.gz"' \
+    sh "$volume_name" "$(id -u):$(id -g)"
 done
 
 cp "$env_file" "$output_path/environment.env"
