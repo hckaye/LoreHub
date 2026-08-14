@@ -18,6 +18,7 @@ import { issueDetail } from "./issue-detail";
 import { loreServers } from "./lore-servers";
 import { metadata } from "./metadata";
 import { milestones } from "./milestones";
+import { organizationPage } from "./organization-page";
 import { pendingReviews } from "./pending-reviews";
 import { personalAccessTokens } from "./personal-access-tokens";
 import { pullRequestDrafts } from "./pull-request-drafts";
@@ -470,33 +471,7 @@ const en = {
     caughtUpTitle: "All caught up",
     caughtUpBody: "New account, team, and repository events show up here when there is activity.",
   },
-  organizationPage: {
-    title: "Organization",
-    members: "members",
-    settings: "Organization settings",
-    repositories: "Repositories",
-    repositoriesDescription: "Lore repositories registered under this organization.",
-    noRepositories: "No repositories",
-    noRepositoriesBody: "This organization has no visible Lore repositories yet.",
-    teams: "Teams",
-    teamsDescription: "Teams group active organization members for repository access.",
-    noTeams: "No teams",
-    noTeamsBody: "Create a team when several members need the same access path.",
-    noOrganizations: "No organizations",
-    noOrganizationsBody: "Organizations you can access will appear here.",
-    newOrganization: "New organization",
-    emptyTitle: "You aren't a member of any organizations",
-    emptyBody: "Organizations you can access will appear here.",
-    website: "Website",
-    contactEmail: "Contact email",
-    defaultVisibility: "Default repository visibility",
-    visibility: "Organization visibility",
-    saveSettings: "Save organization settings",
-    settingsSaved: "Organization settings saved.",
-    newTeam: "Create a team",
-    teamSlug: "Team slug",
-    createTeam: "Create team",
-  },
+  organizationPage: organizationPage.en,
   teamPage: {
     title: "Team",
     members: "Members",

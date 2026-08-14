@@ -18,6 +18,7 @@ import { issueDetail } from "./issue-detail";
 import { loreServers } from "./lore-servers";
 import { metadata } from "./metadata";
 import { milestones } from "./milestones";
+import { organizationPage } from "./organization-page";
 import { pendingReviews } from "./pending-reviews";
 import { personalAccessTokens } from "./personal-access-tokens";
 import { pullRequestDrafts } from "./pull-request-drafts";
@@ -533,41 +534,7 @@ const ja = {
     caughtUpTitle: "すべて確認済みです",
     caughtUpBody: "アカウント、チーム、リポジトリに動きがあると、ここに通知が表示されます。",
   },
-  organizationPage: {
-    title: "組織",
-    members: "人のメンバー",
-    settings: "組織設定",
-    repositories: "リポジトリ",
-    repositoriesDescription: "この組織に登録されたLoreリポジトリです。",
-    noRepositories: "リポジトリはありません",
-    noRepositoriesBody: "この組織には表示できるLoreリポジトリがまだありません。",
-    teams: "チーム",
-    // prettier-ignore
-    teamsDescription: concat(
-      "チームは有効な組織メンバーをまとめ、",
-      "リポジトリへのアクセスに使います。",
-    ),
-    noTeams: "チームはありません",
-    // prettier-ignore
-    noTeamsBody: concat(
-      "同じアクセス経路が必要なメンバーがいるときに、",
-      "チームを作成してください。",
-    ),
-    noOrganizations: "組織はありません",
-    noOrganizationsBody: "アクセスできる組織がここに表示されます。",
-    newOrganization: "組織を新規作成",
-    emptyTitle: "どの組織にも所属していません",
-    emptyBody: "アクセスできる組織がここに表示されます。",
-    website: "Webサイト",
-    contactEmail: "連絡先メールアドレス",
-    defaultVisibility: "既定のリポジトリ公開範囲",
-    visibility: "組織の公開範囲",
-    saveSettings: "組織設定を保存",
-    settingsSaved: "組織設定を保存しました。",
-    newTeam: "チームを作成",
-    teamSlug: "チームスラッグ",
-    createTeam: "チームを作成",
-  },
+  organizationPage: organizationPage.ja,
   teamPage: {
     title: "チーム",
     members: "メンバー",
