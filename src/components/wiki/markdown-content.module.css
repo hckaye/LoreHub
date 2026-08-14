@@ -1,7 +1,7 @@
 .markdown {
-  color: #1f2328;
+  color: var(--fg-default);
   font-size: 16px;
-  line-height: 1.6;
+  line-height: 1.5;
   overflow-wrap: anywhere;
 }
 
@@ -15,7 +15,7 @@
 
 .markdown h1,
 .markdown h2 {
-  border-bottom: 1px solid #d8dee4;
+  border-bottom: 1px solid var(--border-muted);
   padding-bottom: 0.3em;
 }
 
@@ -34,9 +34,25 @@
 .markdown h1,
 .markdown h2,
 .markdown h3,
-.markdown h4 {
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+  font-weight: 600;
   line-height: 1.25;
   margin: 24px 0 16px;
+}
+
+.markdown h4 {
+  font-size: 1em;
+}
+
+.markdown h5 {
+  font-size: 0.875em;
+}
+
+.markdown h6 {
+  color: var(--fg-muted);
+  font-size: 0.85em;
 }
 
 .markdown p,
@@ -49,33 +65,42 @@
 }
 
 .markdown a {
-  color: #0969da;
+  color: var(--accent-fg);
+  text-decoration: none;
+}
+
+.markdown a:hover {
+  text-decoration: underline;
 }
 
 .markdown blockquote {
-  border-left: 4px solid #d0d7de;
-  color: #636c76;
+  border-left: 0.25em solid var(--border);
+  color: var(--fg-muted);
   margin-left: 0;
-  padding-left: 16px;
+  padding: 0 1em;
 }
 
 .markdown code {
-  background: rgba(175, 184, 193, 0.2);
+  background: var(--neutral-muted);
   border-radius: 6px;
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 85%;
   padding: 0.2em 0.4em;
 }
 
 .markdown pre {
-  background: #f6f8fa;
+  background: var(--canvas-subtle);
   border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 85%;
+  line-height: 1.45;
   overflow: auto;
   padding: 16px;
 }
 
 .markdown pre code {
   background: transparent;
+  font-size: inherit;
   padding: 0;
 }
 
@@ -89,15 +114,27 @@
 
 .markdown th,
 .markdown td {
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--border);
   padding: 6px 13px;
 }
 
+.markdown th {
+  font-weight: 600;
+}
+
 .markdown tr:nth-child(2n) {
-  background: #f6f8fa;
+  background: var(--canvas-subtle);
 }
 
 .markdown img {
   height: auto;
   max-width: 100%;
+}
+
+.markdown hr {
+  background-color: var(--border);
+  border: 0;
+  height: 0.25em;
+  margin: 24px 0;
+  padding: 0;
 }
