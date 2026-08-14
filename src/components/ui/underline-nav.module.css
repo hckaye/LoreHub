@@ -47,7 +47,7 @@
   min-width: 20px;
   padding: 0 6px;
   border-radius: 2em;
-  background: var(--bg-neutral-muted);
+  background: var(--neutral-muted);
   color: var(--fg-default);
   font-size: 12px;
   font-weight: 500;

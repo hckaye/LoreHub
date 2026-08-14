@@ -151,7 +151,7 @@ test("user profile uses GitHub vcard, underline tabs, and divided repository row
   assert.match(rowStyles, /padding: 24px 0/);
   assert.match(rowStyles, /border-radius: 2em/);
   assert.match(navStyles, /--nav-active-border/);
-  assert.match(navStyles, /--bg-neutral-muted/);
+  assert.match(navStyles, /--neutral-muted/);
 });
 
 test("organization profile uses header tabs and dedicated settings and teams routes", async () => {
