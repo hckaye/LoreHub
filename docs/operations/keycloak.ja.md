@@ -152,10 +152,11 @@ XのOAuth 2.0エンドポイントに対して汎用OAuth v2プロバイダー�
 - 使用するエンドポイント:
   - Authorization: `https://x.com/i/oauth2/authorize`
   - Token: `https://api.x.com/2/oauth2/token`
-  - UserInfo: `https://api.x.com/2/users/me?user.fields=confirmed_email`
-- UserInfo応答は `{"data":{"id","name","username","confirmed_email"}}` の形なので、claim名にドット記法
-  （`data.id`、`data.username`、`data.name`、`data.confirmed_email`）を使い、Keycloakのclaimリゾルバで
-  ネストを展開します。
+  - UserInfo: `https://api.x.com/2/users/me?user.fields=confirmed_email,profile_image_url`
+- UserInfo応答は `{"data":{"id","name","username","confirmed_email","profile_image_url"}}` の形なので、claim名に
+  ドット記法（`data.id`、`data.username`、`data.name`、`data.confirmed_email`、`data.profile_image_url`）を使い、
+  Keycloakのclaimリゾルバでネストを展開します。bootstrapは各プロバイダーのアバター欄をOIDCの `picture` claimへ
+  載せ、ログイン後にLoreHubが表示できるようにします。
 - PKCE（S256）を有効化しています。
 
 `bootstrap.sh` はこれらのエンドポイントとclaimマッピングを実際の値で設定します。プレースホルダーではありません。

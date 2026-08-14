@@ -61,6 +61,27 @@ export function localizedPath(locale: Locale, ...segments: string[]): string {
   return `/${locale}/${segments.map((segment) => encodeURIComponent(segment)).join("/")}`;
 }
 
+export const accountSettingsSections = [
+  "profile",
+  "notifications",
+  "repositories",
+  "tokens",
+  "tokens/new",
+  "entitlements",
+] as const;
+
+export type AccountSettingsSection = (typeof accountSettingsSections)[number];
+
+export function accountSettingsPath(locale: Locale, section: AccountSettingsSection = "profile"): string {
+  return `/${locale}/settings/${section}`;
+}
+
+export function accountSettingsSection(pathname: string): string {
+  const segments = pathname.split("/");
+  const index = segments.indexOf("settings");
+  return index >= 0 ? segments.slice(index + 1).join("/") : "";
+}
+
 export function safeReturnTo(value: string | null | undefined, fallback = "/"): string {
   if (!value || !value.startsWith("/") || value.startsWith("//") || value.includes("\\")) {
     return fallback;

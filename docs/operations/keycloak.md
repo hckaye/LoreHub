@@ -150,11 +150,12 @@ provider with the official X OAuth 2.0 endpoints.
 - Scope: `users.read users.email`
 - Authorization endpoint: `https://x.com/i/oauth2/authorize`
 - Token endpoint: `https://api.x.com/2/oauth2/token`
-- UserInfo endpoint: `https://api.x.com/2/users/me?user.fields=confirmed_email`
+- UserInfo endpoint: `https://api.x.com/2/users/me?user.fields=confirmed_email,profile_image_url`
 - PKCE: S256
 
 The UserInfo response nests values under `data`. The Keycloak claim mappings use `data.id`, `data.username`,
-`data.name`, and `data.confirmed_email`.
+`data.name`, `data.confirmed_email`, and `data.profile_image_url`. Bootstrap maps each provider avatar field to the
+OIDC `picture` claim so LoreHub can show it after sign-in.
 
 ## Account linking
 

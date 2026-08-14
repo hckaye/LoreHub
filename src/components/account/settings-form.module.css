@@ -1,82 +1,177 @@
-.form {
-  display: grid;
-  gap: 14px;
-}
-
-.grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-}
-
-.form label:not(.checkbox) {
-  display: grid;
-  gap: 6px;
-  color: var(--fg-muted);
-  font-size: 0.78rem;
-  font-weight: 650;
-}
-
-.form input:not([type="checkbox"]),
-.form textarea {
-  width: 100%;
-  border: 1px solid var(--border-strong);
+.flash {
+  margin-bottom: 16px;
+  padding: 16px;
+  border: 1px solid var(--success-border);
   border-radius: 6px;
-  background: var(--surface-raised);
-  color: var(--fg-default);
-}
-
-.form input:not([type="checkbox"]) {
-  min-height: 38px;
-  padding: 0 10px;
-}
-
-.form textarea {
-  padding: 9px 10px;
-  resize: vertical;
-}
-
-.checkbox {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  color: var(--fg-default);
-  font-size: 0.86rem;
-}
-
-.checkbox input {
-  width: 17px;
-  height: 17px;
-}
-
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-}
-
-.actions button {
-  min-height: 36px;
-  padding: 0 14px;
-  border: 1px solid var(--accent-emphasis);
-  border-radius: 6px;
-  background: var(--accent-emphasis);
-  color: var(--fg-on-emphasis);
-  font-weight: 650;
-}
-
-.actions span {
+  background: var(--success-bg);
   color: var(--success-fg);
-  font-size: 0.8rem;
+  font-size: 14px;
 }
 
-.actions span[role="alert"] {
+.flash[data-tone="error"] {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
   color: var(--danger-fg);
 }
 
-@media (max-width: 620px) {
-  .grid {
-    grid-template-columns: 1fr;
+.profileColumns {
+  display: flex;
+  align-items: flex-start;
+  gap: 40px;
+}
+
+.form {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 16px;
+}
+
+.field {
+  display: grid;
+  gap: 8px;
+}
+
+.field span,
+.pictureLabel {
+  color: var(--fg-default);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.help {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.field input,
+.field textarea,
+.field select {
+  width: 100%;
+  max-width: 440px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--canvas-default);
+  color: var(--fg-default);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.field input,
+.field select {
+  min-height: 32px;
+  padding: 5px 12px;
+}
+
+.field textarea {
+  max-width: 100%;
+  padding: 8px 12px;
+  resize: vertical;
+}
+
+.picture {
+  display: grid;
+  flex: 0 0 200px;
+  align-content: start;
+  gap: 8px;
+}
+
+.picture img,
+.picture span {
+  width: 200px;
+  height: 200px;
+  border-radius: 50%;
+}
+
+.primaryButton {
+  display: inline-flex;
+  min-height: 32px;
+  width: fit-content;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 16px;
+  border: 1px solid rgb(31 35 40 / 15%);
+  border-radius: 6px;
+  background: var(--success-border);
+  color: var(--fg-on-emphasis);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+.primaryButton:hover:not(:disabled) {
+  background: var(--success-fg);
+}
+
+.primaryButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.subhead {
+  margin: 0 0 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 1.25;
+}
+
+.box {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 16px;
+}
+
+.row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+  color: var(--fg-default);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.row:last-child {
+  border-bottom: 0;
+}
+
+.row input {
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+}
+
+.rowBody {
+  display: grid;
+  gap: 2px;
+}
+
+.rowBody strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.rowHint {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+@media (max-width: 767px) {
+  .profileColumns {
+    flex-direction: column-reverse;
+    gap: 24px;
+  }
+
+  .picture {
+    flex-basis: auto;
   }
 }

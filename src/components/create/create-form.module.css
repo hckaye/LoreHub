@@ -1,0 +1,294 @@
+.form {
+  display: grid;
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.field {
+  display: grid;
+  gap: 8px;
+}
+
+.field label,
+.field legend {
+  color: var(--fg-default);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.field input,
+.field textarea,
+.field select {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--canvas-default);
+  color: var(--fg-default);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.field input,
+.field select {
+  min-height: 32px;
+  padding: 5px 12px;
+}
+
+.field textarea {
+  min-height: 80px;
+  padding: 8px 12px;
+  resize: vertical;
+}
+
+.hint,
+.note {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.note {
+  margin-top: 16px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.ownerRow {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) auto minmax(0, 2fr);
+  gap: 8px;
+  align-items: end;
+}
+
+.ownerRow .field {
+  min-width: 0;
+}
+
+.slash {
+  padding-bottom: 6px;
+  color: var(--fg-muted);
+  font-size: 20px;
+  line-height: 32px;
+}
+
+.visibility {
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.visibility legend {
+  padding: 12px 16px 0;
+}
+
+.choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+}
+
+.choice input {
+  width: 16px;
+  height: 16px;
+  margin-top: 3px;
+}
+
+.choice span {
+  display: grid;
+  gap: 2px;
+}
+
+.choice strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.choice small {
+  color: var(--fg-muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.primaryButton,
+.cancel {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 16px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  text-decoration: none;
+}
+
+.primaryButton {
+  border: 1px solid rgb(31 35 40 / 15%);
+  background: var(--success-border);
+  color: var(--fg-on-emphasis);
+}
+
+.primaryButton:hover:not(:disabled) {
+  background: var(--success-fg);
+}
+
+.primaryButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.cancel {
+  border: 1px solid var(--border);
+  background: var(--canvas-default);
+  color: var(--fg-default);
+}
+
+.cancel:hover {
+  background: var(--canvas-subtle);
+}
+
+.empty {
+  display: grid;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.search {
+  width: 100%;
+  min-height: 32px;
+  margin: 16px 0 8px;
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--canvas-default);
+  color: var(--fg-default);
+  font-size: 14px;
+}
+
+.repoList {
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin: 0;
+  list-style: none;
+}
+
+.repoList a {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  color: var(--fg-default);
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.repoList a:last-child {
+  border-bottom: 0;
+}
+
+.repoList a:hover {
+  background: var(--canvas-subtle);
+}
+
+.repoList strong {
+  font-weight: 600;
+}
+
+.repoList span {
+  color: var(--fg-muted);
+}
+
+.issueTitle {
+  width: 100%;
+  min-height: 32px;
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--canvas-default);
+  color: var(--fg-default);
+  font-size: 16px;
+  line-height: 20px;
+}
+
+.composer {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.composerTabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 8px 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--canvas-subtle);
+}
+
+.composerTabs button {
+  min-height: 32px;
+  padding: 5px 16px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 14px;
+}
+
+.composerTabs button[aria-selected="true"] {
+  border-color: var(--border);
+  background: var(--canvas-default);
+  color: var(--fg-default);
+  margin-bottom: -1px;
+}
+
+.composer textarea,
+.preview {
+  width: 100%;
+  min-height: 200px;
+  padding: 16px;
+  border: 0;
+  background: var(--canvas-default);
+  color: var(--fg-default);
+  font-size: 14px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.preview {
+  color: var(--fg-muted);
+}
+
+.error {
+  margin: 0;
+  color: var(--danger-fg);
+  font-size: 14px;
+}
+
+@media (max-width: 640px) {
+  .ownerRow {
+    grid-template-columns: 1fr;
+  }
+
+  .slash {
+    display: none;
+  }
+}

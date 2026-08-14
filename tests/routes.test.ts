@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  accountSettingsPath,
+  accountSettingsSection,
   brandedAuthUrl,
   localePathFrom,
   loginUrl,
@@ -45,4 +47,11 @@ test("branded auth pages and provider hints keep the return path relative", () =
 
 test("locale switching preserves the route shape", () => {
   assert.equal(localePathFrom("/en/owner/repository/issues", "ja"), "/ja/owner/repository/issues");
+});
+
+test("account settings paths follow GitHub's settings URLs", () => {
+  assert.equal(accountSettingsPath("en"), "/en/settings/profile");
+  assert.equal(accountSettingsPath("ja", "tokens/new"), "/ja/settings/tokens/new");
+  assert.equal(accountSettingsSection("/en/settings/tokens/new"), "tokens/new");
+  assert.equal(accountSettingsSection("/ja/settings/profile"), "profile");
 });

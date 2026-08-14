@@ -85,7 +85,7 @@ test("repository invitation status errors remain distinct", () => {
 
 test("account and repository settings mount the invitation components", async () => {
   const [accountPage, repositoryPage, accessSettings] = await Promise.all([
-    readFile("src/app/[locale]/settings/page.tsx", "utf8"),
+    readFile("src/app/[locale]/settings/_pages/repositories.tsx", "utf8"),
     readFile("src/app/[locale]/[owner]/[repository]/settings/page.tsx", "utf8"),
     readFile("src/components/repositories/repository-access-settings.tsx", "utf8"),
   ]);

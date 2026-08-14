@@ -14,6 +14,7 @@ type OIDCProvider struct {
 	OIDCAuthenticator
 	idTokenVerifier *oidc.IDTokenVerifier
 	oauthConfig     oauth2.Config
+	oidcProvider    *oidc.Provider
 }
 
 func NewOIDCProvider(ctx context.Context, config OIDCConfig) (*OIDCProvider, error) {
@@ -36,6 +37,7 @@ func newOIDCProvider(ctx context.Context, config OIDCConfig) (*OIDCProvider, err
 			accessTokenVerifier: accessTokenVerifier,
 		},
 		idTokenVerifier: idTokenVerifier,
+		oidcProvider:    provider,
 		oauthConfig: oauth2.Config{
 			ClientID:     config.ClientID,
 			ClientSecret: config.ClientSecret,
@@ -105,5 +107,17 @@ func (provider *OIDCProvider) Exchange(
 	if tokenClaims.Nonce == "" || subtle.ConstantTimeCompare([]byte(tokenClaims.Nonce), []byte(nonce)) != 1 {
 		return Principal{}, errors.New("OIDC ID token nonce does not match")
 	}
-	return principalFromClaims(provider.issuer, tokenClaims, "")
+	principal, err := principalFromClaims(provider.issuer, tokenClaims, "")
+	if err != nil {
+		return Principal{}, err
+	}
+	if userInfo, userInfoErr := provider.oidcProvider.UserInfo(ctx, oauth2.StaticTokenSource(token)); userInfoErr == nil {
+		var extra claims
+		if userInfo.Claims(&extra) == nil {
+			if avatarURL := firstHTTPSURL(extra.Picture, extra.AvatarURL); avatarURL != "" {
+				principal.AvatarURL = avatarURL
+			}
+		}
+	}
+	return principal, nil
 }

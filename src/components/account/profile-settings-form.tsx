@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { UserAvatar } from "@/components/ui/user-avatar";
 import type { Dictionary } from "@/i18n";
 import type { AuthSession, UserProfile } from "@/lib/api-types";
 import { patchJson } from "@/lib/auth-client";
@@ -15,6 +16,7 @@ type ProfileSettingsFormProps = {
 };
 
 export function ProfileSettingsForm({ dictionary, profile, session }: ProfileSettingsFormProps) {
+  const copy = dictionary.accountSettings;
   const [displayName, setDisplayName] = useState(profile.displayName);
   const [bio, setBio] = useState(profile.bio);
   const [websiteUrl, setWebsiteUrl] = useState(profile.websiteUrl);
@@ -38,40 +40,53 @@ export function ProfileSettingsForm({ dictionary, profile, session }: ProfileSet
   }
 
   return (
-    <form className={styles.form} onSubmit={save}>
-      <div className={styles.grid}>
-        <label>
-          <span>{dictionary.profile.displayName}</span>
-          <input onChange={(event) => setDisplayName(event.target.value)} required value={displayName} />
-        </label>
-        <label>
-          <span>{dictionary.profile.pronouns}</span>
-          <input onChange={(event) => setPronouns(event.target.value)} value={pronouns} />
-        </label>
-        <label>
-          <span>{dictionary.profile.company}</span>
-          <input onChange={(event) => setCompany(event.target.value)} value={company} />
-        </label>
-        <label>
-          <span>{dictionary.profile.location}</span>
-          <input onChange={(event) => setLocation(event.target.value)} value={location} />
-        </label>
+    <>
+      {status === "saved" && (
+        <div className={styles.flash} role="status">
+          {copy.profileUpdated}
+        </div>
+      )}
+      {status === "error" && (
+        <div className={styles.flash} data-tone="error" role="alert">
+          {dictionary.forms.submitFailed}
+        </div>
+      )}
+      <div className={styles.profileColumns}>
+        <form className={styles.form} onSubmit={save}>
+          <label className={styles.field}>
+            <span>{copy.name}</span>
+            <input onChange={(event) => setDisplayName(event.target.value)} value={displayName} />
+            <p className={styles.help}>{copy.nameHelp}</p>
+          </label>
+          <label className={styles.field}>
+            <span>{dictionary.profile.bio}</span>
+            <textarea onChange={(event) => setBio(event.target.value)} rows={4} value={bio} />
+          </label>
+          <label className={styles.field}>
+            <span>{dictionary.profile.pronouns}</span>
+            <input onChange={(event) => setPronouns(event.target.value)} value={pronouns} />
+          </label>
+          <label className={styles.field}>
+            <span>{copy.url}</span>
+            <input onChange={(event) => setWebsiteUrl(event.target.value)} value={websiteUrl} />
+          </label>
+          <label className={styles.field}>
+            <span>{dictionary.profile.company}</span>
+            <input onChange={(event) => setCompany(event.target.value)} value={company} />
+          </label>
+          <label className={styles.field}>
+            <span>{dictionary.profile.location}</span>
+            <input onChange={(event) => setLocation(event.target.value)} value={location} />
+          </label>
+          <button className={styles.primaryButton} disabled={pending} type="submit">
+            {pending ? dictionary.common.loading : copy.updateProfile}
+          </button>
+        </form>
+        <aside className={styles.picture}>
+          <h2 className={styles.pictureLabel}>{copy.profilePicture}</h2>
+          <UserAvatar avatarUrl={profile.avatarUrl} name={displayName || profile.username} size={200} />
+        </aside>
       </div>
-      <label>
-        <span>{dictionary.profile.website}</span>
-        <input onChange={(event) => setWebsiteUrl(event.target.value)} value={websiteUrl} />
-      </label>
-      <label>
-        <span>{dictionary.profile.bio}</span>
-        <textarea onChange={(event) => setBio(event.target.value)} rows={4} value={bio} />
-      </label>
-      <div className={styles.actions}>
-        <button disabled={pending} type="submit">
-          {pending ? dictionary.common.loading : dictionary.profile.saveProfile}
-        </button>
-        {status === "saved" && <span role="status">{dictionary.profile.saved}</span>}
-        {status === "error" && <span role="alert">{dictionary.forms.submitFailed}</span>}
-      </div>
-    </form>
+    </>
   );
 }

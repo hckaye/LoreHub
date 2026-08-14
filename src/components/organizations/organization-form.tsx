@@ -1,17 +1,17 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 
+import styles from "@/components/create/create-form.module.css";
+import { FlashNotice } from "@/components/ui/flash-notice";
 import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
 import type { AuthSession, Organization } from "@/lib/api-types";
 import { postJson } from "@/lib/auth-client";
 import { mutationFailureMessage } from "@/lib/mutation-messages";
 import { loginUrl } from "@/lib/routes";
-
-import styles from "../repositories/repository-form.module.css";
-import { FlashNotice } from "../ui/flash-notice";
 
 type OrganizationFormProps = {
   locale: Locale;
@@ -20,11 +20,12 @@ type OrganizationFormProps = {
 };
 
 export function OrganizationForm({ dictionary, locale, session }: OrganizationFormProps) {
+  const router = useRouter();
+  const copy = dictionary.createPages;
   const [slug, setSlug] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [description, setDescription] = useState("");
   const [visibility, setVisibility] = useState<Organization["visibility"]>("public");
-  const [created, setCreated] = useState<Organization | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [requiresLogin, setRequiresLogin] = useState(false);
   const [pending, setPending] = useState(false);
@@ -41,12 +42,12 @@ export function OrganizationForm({ dictionary, locale, session }: OrganizationFo
     setPending(true);
     const result = await postJson<Organization>(
       "/api/v1/organizations",
-      { slug: slug.trim(), displayName: displayName.trim(), description, visibility },
+      { slug: slug.trim(), displayName: displayName.trim() || slug.trim(), description, visibility },
       session.csrfToken,
     );
     if (result.ok) {
-      setCreated(result.data);
-      setPending(false);
+      router.push(`/${locale}/organizations/${encodeURIComponent(result.data.slug)}`);
+      router.refresh();
       return;
     }
     setPending(false);
@@ -55,60 +56,82 @@ export function OrganizationForm({ dictionary, locale, session }: OrganizationFo
   }
 
   return (
-    <div>
-      {created && (
-        <FlashNotice
-          body={`${dictionary.forms.organizationCreated} ${created.displayName}`}
-          title={dictionary.forms.organizationCreated}
-          tone="success"
-        />
-      )}
+    <form className={styles.form} onSubmit={handleSubmit}>
+      {failure && <FlashNotice body={failure} title={dictionary.forms.submitFailed} tone="error" />}
       {requiresLogin && (
         <Link className={styles.cancel} href={loginUrl(`/${locale}/organizations/new`)}>
           {dictionary.auth.loginToContinue}
         </Link>
       )}
-      <form className={styles.form} onSubmit={handleSubmit}>
-        {failure && <FlashNotice body={failure} title={dictionary.forms.submitFailed} tone="error" />}
-        <div className={styles.field}>
-          <label htmlFor="organization-slug">{dictionary.forms.organizationSlug}</label>
-          <input id="organization-slug" onChange={(event) => setSlug(event.target.value)} required value={slug} />
-        </div>
-        <div className={styles.field}>
-          <label htmlFor="organization-name">{dictionary.forms.displayName}</label>
+      <div className={styles.field}>
+        <label htmlFor="organization-slug">{copy.organizationName}</label>
+        <input id="organization-slug" onChange={(event) => setSlug(event.target.value)} required value={slug} />
+        <p className={styles.hint}>{copy.organizationNameHelp}</p>
+      </div>
+      <div className={styles.field}>
+        <label htmlFor="organization-name">{dictionary.forms.displayName}</label>
+        <input
+          id="organization-name"
+          onChange={(event) => setDisplayName(event.target.value)}
+          required
+          value={displayName}
+        />
+      </div>
+      <div className={styles.field}>
+        <label htmlFor="organization-description">{copy.descriptionOptional}</label>
+        <input
+          id="organization-description"
+          onChange={(event) => setDescription(event.target.value)}
+          value={description}
+        />
+      </div>
+      <fieldset className={styles.visibility}>
+        <legend>{copy.visibilityLegend}</legend>
+        <label className={styles.choice}>
           <input
-            id="organization-name"
-            onChange={(event) => setDisplayName(event.target.value)}
-            required
-            value={displayName}
+            checked={visibility === "public"}
+            name="organization-visibility"
+            onChange={() => setVisibility("public")}
+            type="radio"
+            value="public"
           />
-        </div>
-        <div className={styles.field}>
-          <label htmlFor="organization-description">{dictionary.forms.description}</label>
-          <textarea
-            id="organization-description"
-            onChange={(event) => setDescription(event.target.value)}
-            value={description}
+          <span>
+            <strong>{dictionary.common.public}</strong>
+            <small>{copy.organizationPublicHelp}</small>
+          </span>
+        </label>
+        <label className={styles.choice}>
+          <input
+            checked={visibility === "internal"}
+            name="organization-visibility"
+            onChange={() => setVisibility("internal")}
+            type="radio"
+            value="internal"
           />
-        </div>
-        <div className={styles.field}>
-          <label htmlFor="organization-visibility">{dictionary.forms.visibility}</label>
-          <select
-            id="organization-visibility"
-            onChange={(event) => setVisibility(event.target.value as Organization["visibility"])}
-            value={visibility}
-          >
-            <option value="public">{dictionary.common.public}</option>
-            <option value="internal">{dictionary.common.internal}</option>
-            <option value="private">{dictionary.common.private}</option>
-          </select>
-        </div>
-        <div className={styles.actions}>
-          <button className={styles.submit} disabled={pending} type="submit">
-            {pending ? dictionary.forms.submittingLabel : dictionary.forms.createOrganization}
-          </button>
-        </div>
-      </form>
-    </div>
+          <span>
+            <strong>{dictionary.common.internal}</strong>
+            <small>{copy.organizationInternalHelp}</small>
+          </span>
+        </label>
+        <label className={styles.choice}>
+          <input
+            checked={visibility === "private"}
+            name="organization-visibility"
+            onChange={() => setVisibility("private")}
+            type="radio"
+            value="private"
+          />
+          <span>
+            <strong>{dictionary.common.private}</strong>
+            <small>{copy.organizationPrivateHelp}</small>
+          </span>
+        </label>
+      </fieldset>
+      <div className={styles.actions}>
+        <button className={styles.primaryButton} disabled={pending} type="submit">
+          {pending ? dictionary.forms.submittingLabel : dictionary.forms.createOrganization}
+        </button>
+      </div>
+    </form>
   );
 }

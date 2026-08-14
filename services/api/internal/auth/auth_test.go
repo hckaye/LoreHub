@@ -23,3 +23,18 @@ func TestBearerTokenRejectsMissingValue(t *testing.T) {
 		t.Fatalf("expected ErrMissingToken, got %v", err)
 	}
 }
+
+func TestFirstHTTPSURLAcceptsProviderAvatars(t *testing.T) {
+	t.Parallel()
+	got := firstHTTPSURL(
+		"javascript:alert(1)",
+		"http://avatars.example/alice.png",
+		"https://avatars.githubusercontent.com/u/1?v=4",
+	)
+	if got != "https://avatars.githubusercontent.com/u/1?v=4" {
+		t.Fatalf("unexpected avatar URL %q", got)
+	}
+	if firstHTTPSURL("", "data:image/png;base64,abc") != "" {
+		t.Fatal("expected non-https avatar URLs to be rejected")
+	}
+}

@@ -1,3 +1,4 @@
+import { accountSettings } from "./account-settings";
 import { actionsEnvironments } from "./actions-environments";
 import { actionsSettings } from "./actions-settings";
 import { assignees } from "./assignees";
@@ -6,6 +7,7 @@ import { codeBrowser } from "./code-browser";
 import { commentPagination } from "./comment-pagination";
 import { commitHistory } from "./commit-history";
 import { commitStatuses } from "./commit-statuses";
+import { createPages } from "./create-pages";
 import { discussions } from "./discussions";
 import { entitlements } from "./entitlements";
 import { fileLocks } from "./file-locks";
@@ -57,6 +59,8 @@ const en = {
   searchPage: search.en,
   metadata: metadata.en,
   settingsNav: settingsNavigation.en,
+  accountSettings: accountSettings.en,
+  createPages: createPages.en,
   runnerSettings: runners.en,
   loreServerSettings: loreServers.en,
   entitlementSettings: entitlements.en,
@@ -71,7 +75,7 @@ const en = {
     profile: "Profile",
     yourRepositories: "Your repositories",
     yourOrganizations: "Your organizations",
-    accountSettings: "Account settings",
+    accountSettings: "Settings",
     dashboard: "Dashboard",
     notifications: "Notifications",
     organizations: "Organizations",
@@ -756,22 +760,6 @@ const en = {
     repositoriesEmptyTitle: "No repositories to show",
     repositoriesEmptyBody: "Repositories this user owns or contributes to will appear here.",
   },
-  accountSettings: {
-    title: "Account settings",
-    description: "Review the account data available to this LoreHub installation.",
-    profileTitle: "Profile details",
-    profileBody: "Review the profile information used by this LoreHub installation.",
-    notificationTitle: "Notification preferences",
-    notificationBody: "Choose how LoreHub sends account, team, and repository notifications.",
-    inApp: "In-app notifications",
-    email: "Email notifications",
-    emailUnavailable: "Email delivery is not configured for this installation.",
-    mentions: "Mentions",
-    teamEvents: "Team events",
-    repositoryEvents: "Repository events",
-    savePreferences: "Save preferences",
-    preferencesSaved: "Notification preferences saved.",
-  },
   forms: {
     titleLabel: "Title",
     titlePlaceholder: "A concise title",
@@ -794,7 +782,7 @@ const en = {
     loreUserTokenDescription:
       "Use a token from Lore auth login. It is sent only in this request and is not saved by LoreHub.",
     createOrganization: "Create organization",
-    createRepository: "Create Lore repository",
+    createRepository: "Create repository",
     organizationCreated: "Organization created.",
     repositoryCreated: "Lore repository created.",
     managedRepositoryDescription:

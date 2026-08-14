@@ -39,6 +39,7 @@ test("Japanese dictionary does not silently reuse English copy", () => {
     "forms.loreUrlPlaceholder",
     "projectsPage.board.issue",
     "repository.actionsTitle",
+    "accountSettings.url",
     "settingsPage.loreUrl",
     "webhookSettings.eventLabels.actions",
     "webhookSettings.payloadUrlPlaceholder",

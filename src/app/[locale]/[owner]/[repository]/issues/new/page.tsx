@@ -5,8 +5,8 @@ import { getPublicRepository } from "@/lib/lorehub-api";
 import { repositoryPath } from "@/lib/routes";
 
 import { AuthRequired } from "@/components/auth/auth-required";
+import { CreatePage } from "@/components/create/create-page";
 import { IssueForm } from "@/components/repositories/issue-form";
-import { RepositorySection } from "@/components/repositories/repository-section";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Archive } from "lucide-react";
 
@@ -26,7 +26,7 @@ export default async function NewIssuePage({ params }: NewIssuePageProps) {
   ]);
   const archived = repositoryResult.ok && repositoryResult.data.archivedAt !== null;
   return (
-    <RepositorySection description={dictionary.issuesPage.description} title={dictionary.issuesPage.newIssue}>
+    <CreatePage wide>
       {archived ? (
         <EmptyState
           body={dictionary.repositoryLifecycle.banner}
@@ -43,6 +43,6 @@ export default async function NewIssuePage({ params }: NewIssuePageProps) {
           session={session}
         />
       )}
-    </RepositorySection>
+    </CreatePage>
   );
 }

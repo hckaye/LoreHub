@@ -78,7 +78,7 @@ export function AccountMenu({ locale, dictionary, session }: AccountMenuProps) {
             {dictionary.common.yourOrganizations}
           </Link>
           <Link href={`/${locale}/settings`} onClick={close} role="menuitem">
-            {dictionary.common.accountSettings}
+            {dictionary.common.settings}
           </Link>
           {error && <p className={styles.error}>{dictionary.auth.logoutFailed}</p>}
           <button disabled={pending} onClick={() => void handleLogout(close)} role="menuitem" type="button">

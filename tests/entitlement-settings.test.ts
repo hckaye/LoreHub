@@ -91,12 +91,13 @@ test("revoking an entitlement sends the subject in the DELETE body", async () =>
 });
 
 test("a forbidden admin API leaves the entitlement page with an empty state", async () => {
-  const page = await readFile("src/app/[locale]/settings/entitlements/page.tsx", "utf8");
+  const page = await readFile("src/app/[locale]/settings/_pages/entitlements.tsx", "utf8");
   assert.match(page, /getEntitlements/);
   assert.match(page, /reason === "forbidden"/);
   assert.match(page, /forbiddenTitle/);
-  const accountSettings = await readFile("src/app/[locale]/settings/page.tsx", "utf8");
-  assert.match(accountSettings, /entitlements\.ok \? \(/);
+  const layout = await readFile("src/app/[locale]/settings/layout.tsx", "utf8");
+  assert.match(layout, /getEntitlements/);
+  assert.match(layout, /showEntitlements=\{entitlements\.ok\}/);
 });
 
 test("the entitlement admin surface offers grant and revoke controls", async () => {

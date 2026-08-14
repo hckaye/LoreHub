@@ -43,3 +43,64 @@ test("global navigation and sign-in follow GitHub's compact shells", async () =>
   assert.match(dashboard, /className=\{styles\.main\}/);
   assert.match(dashboard, /className=\{styles\.explore\}/);
 });
+
+test("account settings use GitHub's sidebar, split pages, and developer token flow", async () => {
+  const [layout, index, nav, styles, profile, notifications, repositories, tokens, newToken, menu] = await Promise.all([
+    readFile("src/app/[locale]/settings/layout.tsx", "utf8"),
+    readFile("src/app/[locale]/settings/page.tsx", "utf8"),
+    readFile("src/components/account/account-settings-nav.tsx", "utf8"),
+    readFile("src/components/account/account-settings.module.css", "utf8"),
+    readFile("src/app/[locale]/settings/_pages/profile.tsx", "utf8"),
+    readFile("src/app/[locale]/settings/_pages/notifications.tsx", "utf8"),
+    readFile("src/app/[locale]/settings/_pages/repositories.tsx", "utf8"),
+    readFile("src/app/[locale]/settings/_pages/tokens.tsx", "utf8"),
+    readFile("src/app/[locale]/settings/_pages/tokens-new.tsx", "utf8"),
+    readFile("src/components/layout/account-menu.tsx", "utf8"),
+  ]);
+  assert.match(layout, /AccountSettingsShell/);
+  assert.match(layout, /showEntitlements=\{entitlements\.ok\}/);
+  assert.match(index, /redirect\(accountSettingsPath\(locale, "profile"\)\)/);
+  assert.match(nav, /copy\.publicProfile/);
+  assert.match(nav, /copy\.developerSettings/);
+  assert.match(nav, /copy\.tokensClassic/);
+  assert.match(nav, /isDeveloperSection/);
+  assert.match(styles, /grid-template-columns: 256px minmax\(0, 1fr\)/);
+  assert.match(styles, /--nav-active-border/);
+  assert.match(profile, /ProfileSettingsForm/);
+  assert.match(notifications, /NotificationSettingsForm/);
+  assert.match(repositories, /RepositoryInvitationSettings/);
+  assert.match(tokens, /tokens\/new/);
+  assert.match(newToken, /PersonalAccessTokenCreateForm/);
+  const catchAll = await readFile("src/app/[locale]/settings/[...section]/page.tsx", "utf8");
+  assert.match(catchAll, /"tokens\/new"/);
+  assert.match(menu, /dictionary\.common\.settings/);
+});
+
+test("create pages follow GitHub's new repository, organization, and issue forms", async () => {
+  const [repoPage, orgPage, issueChooser, issuePage, repoForm, orgForm, issueForm, chooser, nav, tokenForm] =
+    await Promise.all([
+      readFile("src/app/[locale]/repositories/new/page.tsx", "utf8"),
+      readFile("src/app/[locale]/organizations/new/page.tsx", "utf8"),
+      readFile("src/app/[locale]/issues/new/page.tsx", "utf8"),
+      readFile("src/app/[locale]/[owner]/[repository]/issues/new/page.tsx", "utf8"),
+      readFile("src/components/repositories/register-repository-form.tsx", "utf8"),
+      readFile("src/components/organizations/organization-form.tsx", "utf8"),
+      readFile("src/components/repositories/issue-form.tsx", "utf8"),
+      readFile("src/components/repositories/repository-chooser.tsx", "utf8"),
+      readFile("src/components/account/account-settings-nav.tsx", "utf8"),
+      readFile("src/components/account/personal-access-token-create-form.tsx", "utf8"),
+    ]);
+  assert.match(repoPage, /<CreatePage/);
+  assert.match(orgPage, /<CreatePage/);
+  assert.match(issueChooser, /<CreatePage/);
+  assert.match(issuePage, /<CreatePage wide/);
+  assert.match(repoForm, /className=\{styles\.ownerRow\}/);
+  assert.match(repoForm, /type="radio"/);
+  assert.match(orgForm, /type="radio"/);
+  assert.match(issueForm, /copy\.write/);
+  assert.match(issueForm, /copy\.preview/);
+  assert.match(chooser, /copy\.findARepository/);
+  assert.match(nav, /copy\.backToSettings/);
+  assert.match(tokenForm, /accountSettingsPath\(props\.locale, "tokens"\)/);
+  assert.match(tokenForm, /dictionary\.common\.cancel/);
+});

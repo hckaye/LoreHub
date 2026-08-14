@@ -1,3 +1,4 @@
+import { accountSettings } from "./account-settings";
 import { actionsEnvironments } from "./actions-environments";
 import { actionsSettings } from "./actions-settings";
 import { assignees } from "./assignees";
@@ -6,6 +7,7 @@ import { codeBrowser } from "./code-browser";
 import { commentPagination } from "./comment-pagination";
 import { commitHistory } from "./commit-history";
 import { commitStatuses } from "./commit-statuses";
+import { createPages } from "./create-pages";
 import { discussions } from "./discussions";
 import { entitlements } from "./entitlements";
 import { fileLocks } from "./file-locks";
@@ -59,6 +61,8 @@ const ja = {
   searchPage: search.ja,
   metadata: metadata.ja,
   settingsNav: settingsNavigation.ja,
+  accountSettings: accountSettings.ja,
+  createPages: createPages.ja,
   runnerSettings: runners.ja,
   loreServerSettings: loreServers.ja,
   entitlementSettings: entitlements.ja,
@@ -73,7 +77,7 @@ const ja = {
     profile: "プロフィール",
     yourRepositories: "自分のリポジトリ",
     yourOrganizations: "自分の組織",
-    accountSettings: "アカウント設定",
+    accountSettings: "設定",
     dashboard: "ダッシュボード",
     notifications: "通知",
     organizations: "組織",
@@ -893,22 +897,6 @@ const ja = {
     repositoriesEmptyTitle: "表示できるリポジトリはありません",
     repositoriesEmptyBody: "このユーザーが所有または参加しているリポジトリがここに表示されます。",
   },
-  accountSettings: {
-    title: "アカウント設定",
-    description: "このLoreHubが利用できるアカウント情報を確認します。",
-    profileTitle: "プロフィール情報",
-    profileBody: "このLoreHubで使うプロフィール情報を確認します。",
-    notificationTitle: "通知設定",
-    notificationBody: "アカウント、チーム、リポジトリの通知方法を選択します。",
-    inApp: "アプリ内通知",
-    email: "メール通知",
-    emailUnavailable: "このLoreHubではメール送信が設定されていません。",
-    mentions: "メンション",
-    teamEvents: "チームのイベント",
-    repositoryEvents: "リポジトリのイベント",
-    savePreferences: "通知設定を保存",
-    preferencesSaved: "通知設定を保存しました。",
-  },
   forms: {
     titleLabel: "タイトル",
     titlePlaceholder: "簡潔なタイトル",
@@ -933,7 +921,7 @@ const ja = {
       "このリクエストだけで送信し、LoreHubには保存しません。",
     ),
     createOrganization: "組織を作成",
-    createRepository: "Loreリポジトリを作成",
+    createRepository: "リポジトリを作成",
     organizationCreated: "組織を作成しました。",
     repositoryCreated: "Loreリポジトリを作成しました。",
     managedRepositoryDescription: concat(

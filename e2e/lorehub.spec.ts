@@ -35,14 +35,14 @@ test.describe.serial("LoreHub browser smoke test", () => {
     await page.locator("#organization-slug").fill(organization);
     await page.locator("#organization-name").fill("Browser smoke organization");
     await page.getByRole("button", { name: "Create organization" }).click();
-    await expect(page.getByText("Organization created.", { exact: true })).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/en/organizations/${organization}$`, "u"));
 
     await page.goto("/en/repositories/new");
-    await page.locator("#repository-organization").fill(organization);
+    await page.locator("#repository-organization").selectOption(organization);
     await page.locator("#repository-slug").fill(repository);
     await page.locator("#repository-name").fill("Browser smoke repository");
-    await page.getByRole("button", { name: "Create Lore repository" }).click();
-    await expect(page.getByText("Lore repository created.", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Create repository" }).click();
+    await expect(page).toHaveURL(new RegExp(`/en/${organization}/${repository}$`, "u"));
 
     await page.goto(`/en/${organization}/${repository}/issues/new`);
     await page.locator("#issue-title").fill(issueTitle);

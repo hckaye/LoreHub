@@ -18,7 +18,7 @@ Add `bin` to `PATH`, or call the binary by its path.
 
 ## Log in
 
-Create a personal access token in **Account settings** under **Personal access tokens**. Use `read_api` for
+Create a personal access token in **Settings**, then **Developer settings**. Use `read_api` for
 read-only API commands and `api` for commands that change LoreHub data. `lh repo clone` also needs `read_repository` or
 `write_repository`. See [Personal access tokens](personal-access-tokens.md) for the available permissions.
 

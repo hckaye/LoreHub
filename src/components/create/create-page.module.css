@@ -1,0 +1,33 @@
+.page {
+  width: min(768px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 40px 0 80px;
+}
+
+.wide {
+  width: min(1012px, calc(100% - 32px));
+}
+
+.page h1 {
+  margin: 0;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 24px;
+  font-weight: 400;
+  line-height: 1.25;
+}
+
+.lede {
+  margin: 16px 0 0;
+  color: var(--fg-muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+@media (max-width: 640px) {
+  .page,
+  .wide {
+    width: min(100% - 24px, 1012px);
+    padding-top: 24px;
+  }
+}

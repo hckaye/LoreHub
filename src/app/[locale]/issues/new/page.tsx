@@ -1,6 +1,6 @@
 import { AuthRequired } from "@/components/auth/auth-required";
+import { CreatePage } from "@/components/create/create-page";
 import { RepositoryChooser } from "@/components/repositories/repository-chooser";
-import { RepositorySection } from "@/components/repositories/repository-section";
 import { getDictionary } from "@/i18n";
 import { isLocale } from "@/i18n/config";
 import { getAuthSession } from "@/lib/auth-api";
@@ -17,8 +17,9 @@ export default async function NewIssueChooserPage({ params }: NewIssueChooserPag
   const locale = isLocale(value) ? value : "en";
   const [dictionary, session] = await Promise.all([getDictionary(locale), getAuthSession()]);
   const dashboard = session.status === "authenticated" ? await getDashboard() : null;
+  const copy = dictionary.createPages;
   return (
-    <RepositorySection description={dictionary.forms.chooseRepositoryBody} title={dictionary.forms.chooseRepository}>
+    <CreatePage description={copy.issueChooserIntro} title={copy.issueChooserTitle}>
       {session.status === "authenticated" ? (
         <RepositoryChooser
           dictionary={dictionary}
@@ -30,6 +31,6 @@ export default async function NewIssueChooserPage({ params }: NewIssueChooserPag
       ) : (
         <AuthRequired dictionary={dictionary} returnTo={`/${locale}/issues/new`} session={session} />
       )}
-    </RepositorySection>
+    </CreatePage>
   );
 }

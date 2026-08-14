@@ -1,6 +1,6 @@
 import { AuthRequired } from "@/components/auth/auth-required";
+import { CreatePage } from "@/components/create/create-page";
 import { RepositoryChooser } from "@/components/repositories/repository-chooser";
-import { RepositorySection } from "@/components/repositories/repository-section";
 import { getDictionary } from "@/i18n";
 import { isLocale } from "@/i18n/config";
 import { getAuthSession } from "@/lib/auth-api";
@@ -18,7 +18,7 @@ export default async function NewPullRequestChooserPage({ params }: NewPullReque
   const [dictionary, session] = await Promise.all([getDictionary(locale), getAuthSession()]);
   const dashboard = session.status === "authenticated" ? await getDashboard() : null;
   return (
-    <RepositorySection description={dictionary.forms.chooseRepositoryBody} title={dictionary.forms.chooseRepository}>
+    <CreatePage description={dictionary.forms.chooseRepositoryBody} title={dictionary.forms.chooseRepository}>
       {session.status === "authenticated" ? (
         <RepositoryChooser
           dictionary={dictionary}
@@ -30,6 +30,6 @@ export default async function NewPullRequestChooserPage({ params }: NewPullReque
       ) : (
         <AuthRequired dictionary={dictionary} returnTo={`/${locale}/pulls/new`} session={session} />
       )}
-    </RepositorySection>
+    </CreatePage>
   );
 }

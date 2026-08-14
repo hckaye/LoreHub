@@ -2,8 +2,8 @@
 
 [English](personal-access-tokens.md) | [日本語](personal-access-tokens.ja.md)
 
-Personal access tokenは、Lore CLIとLoreHub APIを呼び出すscriptの認証に使います。作成と失効は
-**アカウント設定**の**Personal access token**から行います。
+Personal access tokenは、Lore CLIとLoreHub APIを呼び出すscriptの認証に使います。作成と削除は
+**設定**、**開発者設定**、**個人アクセス トークン**から行います。
 
 ## tokenを作成する
 
@@ -61,9 +61,9 @@ curl --fail-with-body \
 
 `GET`だけを送るclientには`read_api`を使います。データを変更するリクエストには`api`が必要です。
 
-## tokenを失効する
+## tokenを削除する
 
-**アカウント設定**で、対象tokenの**失効**を選びます。失効済みまたは期限切れのtokenは、新しいAPIリクエストの認証と
+**設定**の**開発者設定**で、対象tokenの**削除**を選びます。削除済みまたは期限切れのtokenは、新しいAPIリクエストの認証と
 Lore tokenの取得には使えません。Lore CLIへ発行済みのLore tokenは、最長10分の有効期限が切れるまで利用できます。
 アカウントを停止した場合も新しい認証を拒否します。
 

@@ -237,12 +237,60 @@ disable_provider() {
   fi
 }
 
+idp_mapper_id() {
+  local alias=$1
+  local name=$2
+  "$KCADM" get "identity-provider/instances/${alias}/mappers" -r "$REALM" \
+    --fields name,id --format csv --noquotes 2>/dev/null \
+    | awk -F, -v name="$name" '$1 == name { print $2; exit }'
+}
+
+upsert_idp_mapper() {
+  local alias=$1
+  local name=$2
+  shift 2
+  if ! provider_exists "$alias"; then
+    return 0
+  fi
+  local mapper_id
+  mapper_id=$(idp_mapper_id "$alias" "$name")
+  if [ -n "$mapper_id" ]; then
+    echo "[bootstrap] updating ${alias} mapper ${name}"
+    "$KCADM" update "identity-provider/instances/${alias}/mappers/${mapper_id}" -r "$REALM" \
+      -s "name=${name}" -s "identityProviderAlias=${alias}" "$@" >/dev/null
+  else
+    echo "[bootstrap] creating ${alias} mapper ${name}"
+    "$KCADM" create "identity-provider/instances/${alias}/mappers" -r "$REALM" \
+      -s "name=${name}" -s "identityProviderAlias=${alias}" "$@" >/dev/null
+  fi
+}
+
+upsert_picture_mapper() {
+  local alias=$1
+  local mapper_type=$2
+  local source_field=$3
+  if [ "$mapper_type" = "oidc-user-attribute-idp-mapper" ]; then
+    upsert_idp_mapper "$alias" picture \
+      -s "identityProviderMapper=${mapper_type}" \
+      -s "config.syncMode=INHERIT" \
+      -s "config.claim=${source_field}" \
+      -s "config.\"user.attribute\"=picture"
+    return
+  fi
+  upsert_idp_mapper "$alias" picture \
+    -s "identityProviderMapper=${mapper_type}" \
+    -s "config.syncMode=INHERIT" \
+    -s "config.jsonField=${source_field}" \
+    -s "config.userAttribute=picture"
+}
+
 if [ -n "${LOREHUB_IDP_GOOGLE_CLIENT_ID:-}" ] && [ -n "${LOREHUB_IDP_GOOGLE_CLIENT_SECRET:-}" ]; then
   upsert_provider google google \
     -s "config.clientId=${LOREHUB_IDP_GOOGLE_CLIENT_ID}" \
     -s "config.clientSecret=${LOREHUB_IDP_GOOGLE_CLIENT_SECRET}" \
     -s "config.defaultScope=openid email profile" \
     -s "config.hostedDomain=${LOREHUB_IDP_GOOGLE_HOSTED_DOMAIN:-}"
+  upsert_picture_mapper google oidc-user-attribute-idp-mapper picture
 else
   disable_provider google
 fi
@@ -252,6 +300,7 @@ if [ -n "${LOREHUB_IDP_GITHUB_CLIENT_ID:-}" ] && [ -n "${LOREHUB_IDP_GITHUB_CLIE
     -s "config.clientId=${LOREHUB_IDP_GITHUB_CLIENT_ID}" \
     -s "config.clientSecret=${LOREHUB_IDP_GITHUB_CLIENT_SECRET}" \
     -s "config.defaultScope=user:email"
+  upsert_picture_mapper github github-user-attribute-mapper avatar_url
 else
   disable_provider github
 fi
@@ -261,6 +310,7 @@ if [ -n "${LOREHUB_IDP_FACEBOOK_CLIENT_ID:-}" ] && [ -n "${LOREHUB_IDP_FACEBOOK_
     -s "config.clientId=${LOREHUB_IDP_FACEBOOK_CLIENT_ID}" \
     -s "config.clientSecret=${LOREHUB_IDP_FACEBOOK_CLIENT_SECRET}" \
     -s "config.defaultScope=email"
+  upsert_picture_mapper facebook facebook-user-attribute-mapper picture.data.url
 else
   disable_provider facebook
 fi
@@ -269,7 +319,7 @@ if [ -n "${LOREHUB_IDP_X_CLIENT_ID:-}" ] && [ -n "${LOREHUB_IDP_X_CLIENT_SECRET:
   upsert_provider x oauth2 \
     -s "config.authorizationUrl=https://x.com/i/oauth2/authorize" \
     -s "config.tokenUrl=https://api.x.com/2/oauth2/token" \
-    -s "config.userInfoUrl=https://api.x.com/2/users/me?user.fields=confirmed_email" \
+    -s "config.userInfoUrl=https://api.x.com/2/users/me?user.fields=confirmed_email,profile_image_url" \
     -s "config.clientId=${LOREHUB_IDP_X_CLIENT_ID}" \
     -s "config.clientSecret=${LOREHUB_IDP_X_CLIENT_SECRET}" \
     -s "config.clientAuthMethod=client_secret_basic" \
@@ -280,6 +330,7 @@ if [ -n "${LOREHUB_IDP_X_CLIENT_ID:-}" ] && [ -n "${LOREHUB_IDP_X_CLIENT_SECRET:
     -s "config.userNameClaim=data.username" \
     -s "config.fullNameClaim=data.name" \
     -s "config.emailClaim=data.confirmed_email"
+  upsert_picture_mapper x oidc-user-attribute-idp-mapper data.profile_image_url
 else
   disable_provider x
 fi

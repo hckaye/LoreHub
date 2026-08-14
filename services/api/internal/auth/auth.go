@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -26,6 +27,7 @@ type Principal struct {
 	Username             string
 	Name                 string
 	Email                string
+	AvatarURL            string
 	PreferredLocale      string
 	LoreAccessToken      string
 	CredentialKind       string
@@ -66,6 +68,8 @@ type claims struct {
 	Name              string `json:"name"`
 	Email             string `json:"email"`
 	PreferredUsername string `json:"preferred_username"`
+	Picture           string `json:"picture"`
+	AvatarURL         string `json:"avatar_url"`
 	Locale            string `json:"locale"`
 	Nonce             string `json:"nonce"`
 }
@@ -121,9 +125,25 @@ func principalFromClaims(issuer string, tokenClaims claims, accessToken string) 
 		Username:        username,
 		Name:            tokenClaims.Name,
 		Email:           tokenClaims.Email,
+		AvatarURL:       firstHTTPSURL(tokenClaims.Picture, tokenClaims.AvatarURL),
 		PreferredLocale: tokenClaims.Locale,
 		LoreAccessToken: accessToken,
 	}, nil
+}
+
+func firstHTTPSURL(values ...string) string {
+	for _, value := range values {
+		normalized := strings.TrimSpace(value)
+		if normalized == "" || len(normalized) > 2048 {
+			continue
+		}
+		parsed, err := url.Parse(normalized)
+		if err != nil || parsed.User != nil || parsed.Host == "" || parsed.Scheme != "https" {
+			continue
+		}
+		return normalized
+	}
+	return ""
 }
 
 func bearerToken(authorization string) (string, error) {

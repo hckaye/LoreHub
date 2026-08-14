@@ -113,12 +113,16 @@ func (store *Store) EnsureUser(ctx context.Context, principal auth.Principal) (U
 		if strings.TrimSpace(principal.PreferredLocale) != "" {
 			locale = normalizedLocale(principal.PreferredLocale)
 		}
+		avatarURL := user.AvatarURL
+		if normalized := strings.TrimSpace(principal.AvatarURL); normalized != "" {
+			avatarURL = limitText(normalized, 2048)
+		}
 		if err := store.pool.QueryRow(ctx, `
 			UPDATE users
-			SET display_name = $2, email = NULLIF($3, ''), locale = $4, updated_at = now()
+			SET display_name = $2, email = NULLIF($3, ''), locale = $4, avatar_url = $5, updated_at = now()
 			WHERE id = $1 AND status = 'active'
 			RETURNING id, username, display_name, avatar_url, COALESCE(email, ''), locale
-		`, user.ID, displayName, email, locale).Scan(
+		`, user.ID, displayName, email, locale, avatarURL).Scan(
 			&user.ID,
 			&user.Username,
 			&user.DisplayName,
@@ -162,10 +166,11 @@ func (store *Store) createUser(ctx context.Context, principal auth.Principal) (U
 	if strings.TrimSpace(principal.Email) != "" {
 		email = limitText(strings.ToLower(strings.TrimSpace(principal.Email)), 320)
 	}
+	avatarURL := limitText(strings.TrimSpace(principal.AvatarURL), 2048)
 	_, err = transaction.Exec(ctx, `
-		INSERT INTO users (id, username, display_name, email, locale)
-		VALUES ($1, $2, $3, $4, $5)
-	`, userID, username, displayName, email, locale)
+		INSERT INTO users (id, username, display_name, email, locale, avatar_url)
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`, userID, username, displayName, email, locale, avatarURL)
 	if err != nil {
 		return User{}, fmt.Errorf("create user: %w", err)
 	}
@@ -183,6 +188,7 @@ func (store *Store) createUser(ctx context.Context, principal auth.Principal) (U
 		ID:          userID.String(),
 		Username:    username,
 		DisplayName: displayName,
+		AvatarURL:   avatarURL,
 		Email:       principal.Email,
 		Locale:      locale,
 	}, nil

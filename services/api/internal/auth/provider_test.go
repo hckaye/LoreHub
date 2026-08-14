@@ -77,6 +77,7 @@ func TestOIDCProviderExchangesAndVerifiesIDToken(t *testing.T) {
 		"preferred_username": "alice",
 		"name":               "Alice",
 		"email":              "alice@example.com",
+		"picture":            "https://avatars.example/alice.png",
 		"exp":                time.Now().Add(5 * time.Minute).Unix(),
 		"iat":                time.Now().Add(-time.Minute).Unix(),
 	})
@@ -154,7 +155,7 @@ func TestOIDCProviderExchangesAndVerifiesIDToken(t *testing.T) {
 		t.Fatal(err)
 	}
 	if principal.Issuer != server.URL || principal.Subject != "subject-1" || principal.Username != "alice" ||
-		principal.LoreAccessToken != "" {
+		principal.AvatarURL != "https://avatars.example/alice.png" || principal.LoreAccessToken != "" {
 		t.Fatalf("unexpected principal: %#v", principal)
 	}
 	if _, err := provider.Exchange(t.Context(), "authorization-code", "code-verifier", "wrong-nonce"); err == nil {

@@ -75,11 +75,15 @@ test("personal access token revocation encodes the ID and sends CSRF", async () 
 });
 
 test("account settings show one-time token handling and scope controls", async () => {
-  const source = await readFile("src/components/account/personal-access-token-settings.tsx", "utf8");
-  assert.match(source, /createdValue/);
-  assert.match(source, /navigator\.clipboard\.writeText/);
-  assert.match(source, /read_repository/);
-  assert.match(source, /write_repository/);
-  assert.match(source, /revokePersonalAccessToken/);
-  assert.match(source, /session\.csrfToken/);
+  const [create, list] = await Promise.all([
+    readFile("src/components/account/personal-access-token-create-form.tsx", "utf8"),
+    readFile("src/components/account/personal-access-token-list.tsx", "utf8"),
+  ]);
+  assert.match(create, /createdValue/);
+  assert.match(create, /navigator\.clipboard\.writeText/);
+  assert.match(create, /read_repository/);
+  assert.match(create, /write_repository/);
+  assert.match(list, /revokePersonalAccessToken/);
+  assert.match(create, /session\.csrfToken/);
+  assert.match(list, /session\.csrfToken/);
 });

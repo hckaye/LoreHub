@@ -15,6 +15,7 @@ type NotificationSettingsFormProps = {
 };
 
 export function NotificationSettingsForm({ dictionary, preferences, session }: NotificationSettingsFormProps) {
+  const copy = dictionary.accountSettings;
   const [values, setValues] = useState(preferences);
   const [status, setStatus] = useState<"idle" | "saved" | "error">("idle");
   const [pending, setPending] = useState(false);
@@ -44,55 +45,82 @@ export function NotificationSettingsForm({ dictionary, preferences, session }: N
 
   return (
     <form className={styles.form} onSubmit={save}>
-      <label className={styles.checkbox}>
-        <input
+      {status === "saved" && (
+        <div className={styles.flash} role="status">
+          {copy.preferencesSaved}
+        </div>
+      )}
+      {status === "error" && (
+        <div className={styles.flash} data-tone="error" role="alert">
+          {dictionary.forms.submitFailed}
+        </div>
+      )}
+      <h2 className={styles.subhead}>{copy.subscriptions}</h2>
+      <div className={styles.box}>
+        <CheckboxRow
           checked={values.inAppEnabled}
-          onChange={(event) => setValue("inAppEnabled", event.target.checked)}
-          type="checkbox"
+          help={copy.inAppHelp}
+          label={copy.inApp}
+          onChange={(checked) => setValue("inAppEnabled", checked)}
         />
-        <span>{dictionary.accountSettings.inApp}</span>
-      </label>
-      <label className={styles.checkbox}>
-        <input
+        <CheckboxRow
           checked={values.emailEnabled}
           disabled={!values.emailAvailable}
-          onChange={(event) => setValue("emailEnabled", event.target.checked)}
-          type="checkbox"
+          help={values.emailAvailable ? copy.emailHelp : dictionary.accountSettings.emailUnavailable}
+          label={copy.email}
+          onChange={(checked) => setValue("emailEnabled", checked)}
         />
-        <span>{dictionary.accountSettings.email}</span>
-      </label>
-      {!values.emailAvailable && <p>{dictionary.accountSettings.emailUnavailable}</p>}
-      <label className={styles.checkbox}>
-        <input
+        <CheckboxRow
           checked={values.mentionEnabled}
-          onChange={(event) => setValue("mentionEnabled", event.target.checked)}
-          type="checkbox"
+          help={copy.mentionsHelp}
+          label={copy.mentions}
+          onChange={(checked) => setValue("mentionEnabled", checked)}
         />
-        <span>{dictionary.accountSettings.mentions}</span>
-      </label>
-      <label className={styles.checkbox}>
-        <input
+        <CheckboxRow
           checked={values.teamEnabled}
-          onChange={(event) => setValue("teamEnabled", event.target.checked)}
-          type="checkbox"
+          help={copy.teamEventsHelp}
+          label={copy.teamEvents}
+          onChange={(checked) => setValue("teamEnabled", checked)}
         />
-        <span>{dictionary.accountSettings.teamEvents}</span>
-      </label>
-      <label className={styles.checkbox}>
-        <input
+        <CheckboxRow
           checked={values.repositoryEnabled}
-          onChange={(event) => setValue("repositoryEnabled", event.target.checked)}
-          type="checkbox"
+          help={copy.repositoryEventsHelp}
+          label={copy.repositoryEvents}
+          onChange={(checked) => setValue("repositoryEnabled", checked)}
         />
-        <span>{dictionary.accountSettings.repositoryEvents}</span>
-      </label>
-      <div className={styles.actions}>
-        <button disabled={pending} type="submit">
-          {pending ? dictionary.common.loading : dictionary.accountSettings.savePreferences}
-        </button>
-        {status === "saved" && <span role="status">{dictionary.accountSettings.preferencesSaved}</span>}
-        {status === "error" && <span role="alert">{dictionary.forms.submitFailed}</span>}
       </div>
+      <button className={styles.primaryButton} disabled={pending} type="submit">
+        {pending ? dictionary.common.loading : copy.savePreferences}
+      </button>
     </form>
+  );
+}
+
+function CheckboxRow({
+  checked,
+  disabled,
+  help,
+  label,
+  onChange,
+}: {
+  checked: boolean;
+  disabled?: boolean;
+  help: string;
+  label: string;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className={styles.row}>
+      <input
+        checked={checked}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.checked)}
+        type="checkbox"
+      />
+      <span className={styles.rowBody}>
+        <strong>{label}</strong>
+        <p className={styles.rowHint}>{help}</p>
+      </span>
+    </label>
   );
 }

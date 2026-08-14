@@ -2,8 +2,8 @@
 
 [English](personal-access-tokens.md) | [日本語](personal-access-tokens.ja.md)
 
-Personal access tokens authenticate the Lore CLI and scripts that call the LoreHub API. Create and revoke them from
-**Account settings** under **Personal access tokens**.
+Personal access tokens authenticate the Lore CLI and scripts that call the LoreHub API. Create and delete them from
+**Settings**, then **Developer settings**, then **Personal access tokens**.
 
 ## Create a token
 
@@ -61,10 +61,10 @@ curl --fail-with-body \
 
 Use `read_api` for clients that only send `GET` requests. Requests that change data require `api`.
 
-## Revoke a token
+## Delete a token
 
-Select **Revoke** next to the token in **Account settings**. Revoked and expired tokens cannot authenticate new API
-requests or obtain new Lore tokens. Lore tokens already issued to the CLI remain valid until their expiration, which
-is no more than 10 minutes. Suspending the account also prevents new authentication.
+Select **Delete** next to the token in **Settings**, then **Developer settings**. Deleted and expired tokens cannot
+authenticate new API requests or obtain new Lore tokens. Lore tokens already issued to the CLI remain valid until their
+expiration, which is no more than 10 minutes. Suspending the account also prevents new authentication.
 
 The **Last used** value may update up to five minutes after a request. A rejected request does not update it.

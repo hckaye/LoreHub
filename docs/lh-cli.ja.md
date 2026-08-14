@@ -18,7 +18,7 @@ mkdir -p bin
 
 ## ログイン
 
-**アカウント設定**の**Personal access tokens**でPersonal access tokenを作成します。読み取り専用のAPIコマンドには
+**設定**の**開発者設定**でPersonal access tokenを作成します。読み取り専用のAPIコマンドには
 `read_api`を使い、LoreHubのデータを変更するコマンドには`api`を使います。`lh repo clone`には`read_repository`または
 `write_repository`も必要です。利用できる権限は[Personal access token](personal-access-tokens.ja.md)で確認できます。
 
