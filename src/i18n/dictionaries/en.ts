@@ -14,6 +14,7 @@ import { eventTopics } from "./event-topics";
 import { fileLocks } from "./file-locks";
 import { globalWorkItems } from "./global-work-items";
 import { insights } from "./insights";
+import { instanceSettings } from "./instance-settings";
 import { issueDetail } from "./issue-detail";
 import { loreServers } from "./lore-servers";
 import { metadata } from "./metadata";
@@ -67,6 +68,7 @@ const en = {
   runnerSettings: runners.en,
   loreServerSettings: loreServers.en,
   entitlementSettings: entitlements.en,
+  instanceSettings: instanceSettings.en,
   common: {
     productName: "LoreHub",
     explore: "Explore",

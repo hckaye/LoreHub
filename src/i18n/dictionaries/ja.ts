@@ -14,6 +14,7 @@ import { eventTopics } from "./event-topics";
 import { fileLocks } from "./file-locks";
 import { globalWorkItems } from "./global-work-items";
 import { insights } from "./insights";
+import { instanceSettings } from "./instance-settings";
 import { issueDetail } from "./issue-detail";
 import { loreServers } from "./lore-servers";
 import { metadata } from "./metadata";
@@ -69,6 +70,7 @@ const ja = {
   runnerSettings: runners.ja,
   loreServerSettings: loreServers.ja,
   entitlementSettings: entitlements.ja,
+  instanceSettings: instanceSettings.ja,
   common: {
     productName: "LoreHub",
     explore: "探す",

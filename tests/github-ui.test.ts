@@ -59,6 +59,7 @@ test("account settings use GitHub's sidebar, split pages, and developer token fl
   ]);
   assert.match(layout, /AccountSettingsShell/);
   assert.match(layout, /showEntitlements=\{entitlements\.ok\}/);
+  assert.match(layout, /showInstanceSettings=\{adminSettings\.ok\}/);
   assert.match(index, /redirect\(accountSettingsPath\(locale, "profile"\)\)/);
   assert.match(nav, /copy\.publicProfile/);
   assert.match(nav, /copy\.developerSettings/);
@@ -73,7 +74,38 @@ test("account settings use GitHub's sidebar, split pages, and developer token fl
   assert.match(newToken, /PersonalAccessTokenCreateForm/);
   const catchAll = await readFile("src/app/[locale]/settings/[...section]/page.tsx", "utf8");
   assert.match(catchAll, /"tokens\/new"/);
+  assert.match(catchAll, /instance: InstanceSettingsPage/);
   assert.match(menu, /dictionary\.common\.settings/);
+});
+
+test("instance settings use GitHub radio options and an admin save control", async () => {
+  const [page, form, formStyles, nav, catchAll, headerStyles] = await Promise.all([
+    readFile("src/app/[locale]/settings/_pages/instance.tsx", "utf8"),
+    readFile("src/components/admin/instance-settings.tsx", "utf8"),
+    readFile("src/components/account/settings-form.module.css", "utf8"),
+    readFile("src/components/account/account-settings-nav.tsx", "utf8"),
+    readFile("src/app/[locale]/settings/[...section]/page.tsx", "utf8"),
+    readFile("src/components/account/account-settings.module.css", "utf8"),
+  ]);
+  assert.match(page, /AccountSettingsHeader title=\{copy\.title\}/);
+  assert.match(page, /getAdminSettings/);
+  assert.match(page, /reason === "forbidden"/);
+  assert.match(page, /reason === "not-found"/);
+  assert.match(form, /type="radio"/);
+  assert.match(form, /role="radiogroup"/);
+  assert.match(form, /copy\.followDefault/);
+  assert.match(form, /copy\.enabled/);
+  assert.match(form, /copy\.disabled/);
+  assert.match(form, /styles\.primaryButton/);
+  assert.match(formStyles, /composes: base primary sizeDefault from "\.\.\/ui\/button\.module\.css"/);
+  assert.match(formStyles, /width: 16px/);
+  assert.match(formStyles, /font-size: 14px/);
+  assert.match(formStyles, /font-weight: 600/);
+  assert.match(headerStyles, /font-size: 24px/);
+  assert.match(headerStyles, /font-weight: 400/);
+  assert.match(nav, /copy\.instanceSettings/);
+  assert.match(nav, /showInstanceSettings/);
+  assert.match(catchAll, /instance: InstanceSettingsPage/);
 });
 
 test("create pages follow GitHub's new repository, organization, and issue forms", async () => {
