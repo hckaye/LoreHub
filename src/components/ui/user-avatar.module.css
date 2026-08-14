@@ -15,3 +15,8 @@
   font-weight: 600;
   justify-content: center;
 }
+
+.avatar[data-shape="square"],
+.fallback[data-shape="square"] {
+  border-radius: 6px;
+}
