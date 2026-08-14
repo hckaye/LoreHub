@@ -1,0 +1,41 @@
+.blankslate {
+  padding: 32px 24px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--canvas-default);
+  text-align: center;
+}
+
+.icon {
+  display: grid;
+  height: 24px;
+  place-items: center;
+  color: var(--fg-muted);
+}
+
+.icon svg {
+  width: 24px;
+  height: 24px;
+}
+
+.title {
+  margin: 16px 0 0;
+  color: var(--fg-default);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.body {
+  max-width: 544px;
+  margin: 8px auto 0;
+  color: var(--fg-muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.action {
+  display: flex;
+  justify-content: center;
+  margin-top: 16px;
+}

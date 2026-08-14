@@ -10,7 +10,7 @@ import type { Locale } from "@/i18n/config";
 import type { AuthSession, Branch, Release, ReleasePage } from "@/lib/api-types";
 import { repositoryPath } from "@/lib/routes";
 
-import { EmptyState } from "../ui/empty-state";
+import { Blankslate } from "../ui/blankslate";
 import { ReleaseCard } from "./release-card";
 import { ReleaseCreateForm } from "./release-create-form";
 import styles from "./release-list.module.css";
@@ -50,29 +50,37 @@ export function ReleaseList(props: ReleaseListProps) {
 
   const latestId = props.data.page === 1 ? releases[0]?.id : undefined;
 
+  const createButton = (
+    <button className={styles.primaryButton} onClick={() => setShowForm((visible) => !visible)} type="button">
+      <Plus aria-hidden="true" size={16} />
+      {labels.newRelease}
+    </button>
+  );
+
   return (
     <div className={styles.page}>
-      {canWrite && (
-        <div className={styles.createArea}>
-          <button className={styles.primaryButton} onClick={() => setShowForm((visible) => !visible)} type="button">
-            <Plus aria-hidden="true" size={16} />
-            {labels.newRelease}
-          </button>
-          {showForm && (
-            <ReleaseCreateForm
-              branches={props.branches}
-              dictionary={props.dictionary}
-              onCancel={() => setShowForm(false)}
-              onCreated={prependRelease}
-              owner={props.owner}
-              repository={props.repository}
-              session={props.session}
-            />
-          )}
-        </div>
+      <div className={styles.header}>
+        <h1 className={styles.title}>{labels.title}</h1>
+        {canWrite && releases.length > 0 && <div className={styles.headerActions}>{createButton}</div>}
+      </div>
+      {canWrite && showForm && (
+        <ReleaseCreateForm
+          branches={props.branches}
+          dictionary={props.dictionary}
+          onCancel={() => setShowForm(false)}
+          onCreated={prependRelease}
+          owner={props.owner}
+          repository={props.repository}
+          session={props.session}
+        />
       )}
       {releases.length === 0 ? (
-        <EmptyState body={labels.emptyBody} icon={<Tags aria-hidden="true" />} title={labels.emptyTitle} />
+        <Blankslate
+          action={canWrite ? createButton : undefined}
+          body={labels.emptyBody}
+          icon={<Tags aria-hidden="true" />}
+          title={labels.emptyTitle}
+        />
       ) : (
         <div className={styles.list}>
           {releases.map((release) => (

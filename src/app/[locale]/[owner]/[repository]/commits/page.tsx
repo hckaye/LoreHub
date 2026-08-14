@@ -1,7 +1,6 @@
 import { ServerOff } from "lucide-react";
 import { notFound } from "next/navigation";
 
-import { RepositorySection } from "@/components/repositories/repository-section";
 import { RevisionHistory } from "@/components/repositories/revision-history";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getDictionary } from "@/i18n";
@@ -35,18 +34,16 @@ export default async function HistoryPage({ params, searchParams }: HistoryPageP
     );
   }
   return (
-    <RepositorySection title={dictionary.commitHistory.commits}>
-      <RevisionHistory
-        basePath={`/${locale}/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/commits`}
-        dictionary={dictionary}
-        hasNext={history.data.hasNext}
-        locale={locale}
-        owner={owner}
-        page={history.data.page}
-        query={historyQuery}
-        repository={slug}
-        rows={history.data.rows}
-      />
-    </RepositorySection>
+    <RevisionHistory
+      basePath={`/${locale}/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}/commits`}
+      dictionary={dictionary}
+      hasNext={history.data.hasNext}
+      locale={locale}
+      owner={owner}
+      page={history.data.page}
+      query={historyQuery}
+      repository={slug}
+      rows={history.data.rows}
+    />
   );
 }

@@ -1,45 +1,71 @@
-.page,
-.list {
+.page {
   display: grid;
+  min-width: 0;
   gap: 16px;
 }
 
-.createArea {
-  display: grid;
-  gap: 12px;
-  justify-items: end;
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 32px;
+}
+
+.title {
+  margin: 0;
+  color: var(--fg-default);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.headerActions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
 }
 
 .primaryButton,
 .secondaryButton,
 .cardActions button,
 .textButton {
+  display: inline-flex;
+  min-height: 32px;
   align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 5px 12px;
   border: 1px solid;
   border-radius: 6px;
   cursor: pointer;
-  display: inline-flex;
   font: inherit;
   font-size: 14px;
   font-weight: 600;
-  gap: 6px;
-  justify-content: center;
-  min-height: 32px;
-  padding: 5px 12px;
 }
 
 .primaryButton {
-  background: #1f883d;
-  border-color: rgba(31, 35, 40, 0.15);
-  color: #fff;
+  border-color: var(--control-border-emphasis);
+  background: var(--success-emphasis);
+  color: var(--fg-on-emphasis);
+}
+
+.primaryButton:hover {
+  background: var(--success-emphasis-hover);
 }
 
 .secondaryButton,
 .cardActions button,
 .textButton {
-  background: #f6f8fa;
-  border-color: #d0d7de;
-  color: #24292f;
+  border-color: var(--border);
+  background: var(--canvas-subtle);
+  color: var(--fg-default);
+}
+
+.secondaryButton:hover,
+.cardActions button:hover {
+  background: var(--border-muted);
 }
 
 .primaryButton:disabled,
@@ -50,33 +76,31 @@
 }
 
 .createForm {
-  background: #fff;
-  border: 1px solid #d0d7de;
-  border-radius: 6px;
-  box-shadow: 0 8px 24px rgba(140, 149, 159, 0.2);
   display: grid;
+  width: min(100%, 720px);
   gap: 12px;
   padding: 18px;
-  width: min(100%, 720px);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  box-shadow: var(--shadow-popover);
 }
 
 .createForm h2,
-.assets h3,
-.releaseCard h2 {
+.assets h3 {
   margin: 0;
 }
 
-.createForm h2,
-.releaseCard h2 {
+.createForm h2 {
   font-size: 20px;
 }
 
 .createForm > label,
 .formGrid label {
   display: grid;
+  gap: 6px;
   font-size: 14px;
   font-weight: 600;
-  gap: 6px;
 }
 
 .createForm input,
@@ -85,13 +109,24 @@
 .editForm input,
 .editForm textarea,
 .assetForm input {
-  background: #fff;
-  border: 1px solid #d0d7de;
-  border-radius: 6px;
-  color: #1f2328;
-  font: inherit;
   min-width: 0;
   padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--canvas-default);
+  color: var(--fg-default);
+  font: inherit;
+}
+
+.createForm input:focus,
+.createForm select:focus,
+.createForm textarea:focus,
+.editForm input:focus,
+.editForm textarea:focus,
+.assetForm input:focus {
+  border-color: var(--accent-emphasis);
+  box-shadow: 0 0 0 3px var(--accent-focus-ring);
+  outline: none;
 }
 
 .createForm textarea,
@@ -107,18 +142,18 @@
 }
 
 .formHint {
-  color: #636c76;
-  font-size: 12px;
   margin: 0;
   overflow-wrap: anywhere;
+  color: var(--fg-muted);
+  font-size: 12px;
 }
 
 .formActions,
 .cardActions,
 .assetsHeading,
 .pagination {
-  align-items: center;
   display: flex;
+  align-items: center;
   gap: 8px;
 }
 
@@ -126,83 +161,169 @@
   justify-content: flex-end;
 }
 
-.releaseCard {
-  background: #fff;
-  border: 1px solid #d0d7de;
-  border-radius: 6px;
+.list {
   display: grid;
-  gap: 16px;
+  min-width: 0;
+  gap: 24px;
+}
+
+.releaseRow {
+  display: grid;
+  min-width: 0;
+  align-items: start;
+  gap: 24px;
+  grid-template-columns: minmax(0, 30%) minmax(0, 1fr);
+}
+
+.releaseRow + .releaseRow {
+  padding-top: 24px;
+  border-top: 1px solid var(--border-muted);
+}
+
+.rail {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.railTime {
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.railAuthor,
+.railTag,
+.railBranch,
+.railRevision {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.railBranch {
   overflow: hidden;
-  padding: 20px;
+  color: var(--fg-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.railAuthor strong {
+  overflow: hidden;
+  color: var(--fg-default);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.railTag svg,
+.railBranch svg,
+.railRevision svg {
+  flex: 0 0 auto;
+  color: var(--fg-muted);
+}
+
+.railTag a {
+  overflow: hidden;
+  color: var(--accent-fg);
+  font-weight: 600;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.railTag a:hover {
+  text-decoration: underline;
+}
+
+.railRevision {
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.railRevision:hover {
+  color: var(--accent-fg);
+}
+
+.releaseCard {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--canvas-default);
 }
 
 .releaseHeader {
+  display: flex;
   align-items: flex-start;
-  display: flex;
-  gap: 16px;
   justify-content: space-between;
+  gap: 16px;
 }
 
-.releaseHeader > div:first-child {
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-}
-
-.tagLine {
-  align-items: center;
+.titleLine {
   display: flex;
+  min-width: 0;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
 }
 
-.tag {
-  color: #0969da;
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: 14px;
+.releaseTitle {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--fg-default);
+  font-size: 24px;
   font-weight: 600;
+  line-height: 1.25;
+}
+
+.releaseTitle a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.releaseTitle a:hover {
+  text-decoration: underline;
 }
 
 .published,
 .draft,
 .latest {
+  padding: 1px 8px;
   border: 1px solid;
   border-radius: 2em;
   font-size: 12px;
   font-weight: 600;
-  padding: 1px 8px;
+  line-height: 18px;
 }
 
 .published {
-  border-color: #1a7f37;
-  color: #1a7f37;
+  border-color: var(--success-fg);
+  color: var(--success-fg);
 }
 
 .draft {
-  border-color: #636c76;
-  color: #636c76;
+  border-color: var(--fg-muted);
+  color: var(--fg-muted);
 }
 
 .latest {
-  border-color: #0969da;
-  background: #0969da;
-  color: #fff;
-}
-
-.releaseCard h2 a {
-  color: inherit;
-  text-decoration: none;
-}
-
-.releaseCard h2 a:hover {
-  text-decoration: underline;
+  border-color: var(--control-border-emphasis);
+  background: var(--success-emphasis);
+  color: var(--fg-on-emphasis);
 }
 
 .meta,
 .emptyAssets {
-  color: #636c76;
-  font-size: 12px;
   margin: 0;
+  color: var(--fg-muted);
+  font-size: 12px;
 }
 
 .cardActions {
@@ -211,13 +332,12 @@
 }
 
 .cardActions .dangerButton {
-  color: #cf222e;
+  color: var(--danger-fg);
 }
 
 .notes {
-  line-height: 1.55;
-  margin: 0;
   overflow-wrap: anywhere;
+  line-height: 1.55;
 }
 
 .editForm {
@@ -225,28 +345,12 @@
   gap: 10px;
 }
 
-.revision {
-  background: #f6f8fa;
-  border: 1px solid #d8dee4;
-  border-radius: 6px;
-  display: flex;
-  flex-wrap: wrap;
-  font-size: 13px;
-  gap: 8px 20px;
-  padding: 10px 12px;
-}
-
-.revision a {
-  color: #0969da;
-  overflow-wrap: anywhere;
-  text-decoration: none;
-}
-
 .assets {
-  border-top: 1px solid #d8dee4;
   display: grid;
   gap: 10px;
-  padding-top: 14px;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
 }
 
 .assetsHeading {
@@ -258,48 +362,56 @@
 }
 
 .textButton {
-  background: transparent;
   border-color: transparent;
-  color: #0969da;
+  background: transparent;
+  color: var(--accent-fg);
   padding: 3px 6px;
 }
 
+.textButton:hover {
+  background: var(--canvas-subtle);
+}
+
 .assetList {
-  border: 1px solid #d8dee4;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-muted);
   border-radius: 6px;
   list-style: none;
-  margin: 0;
-  overflow: hidden;
-  padding: 0;
 }
 
 .assetList li {
-  align-items: center;
   display: flex;
-  gap: 8px;
+  align-items: center;
   justify-content: space-between;
+  gap: 8px;
   padding: 9px 12px;
 }
 
 .assetList li + li {
-  border-top: 1px solid #d8dee4;
+  border-top: 1px solid var(--border-muted);
 }
 
 .assetList a {
-  align-items: center;
-  color: #0969da;
   display: inline-flex;
+  align-items: center;
   gap: 8px;
   overflow-wrap: anywhere;
+  color: var(--accent-fg);
   text-decoration: none;
 }
 
+.assetList a:hover {
+  text-decoration: underline;
+}
+
 .assetList button {
-  background: transparent;
-  border: 0;
-  color: #cf222e;
-  cursor: pointer;
   padding: 3px;
+  border: 0;
+  background: transparent;
+  color: var(--danger-fg);
+  cursor: pointer;
 }
 
 .assetForm {
@@ -313,21 +425,44 @@
 }
 
 .pagination a {
-  border: 1px solid #d0d7de;
-  border-radius: 6px;
-  color: #0969da;
   padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--accent-fg);
   text-decoration: none;
 }
 
+.pagination a:hover {
+  background: var(--canvas-subtle);
+}
+
 .pagination span {
-  color: #636c76;
+  color: var(--fg-muted);
   font-size: 13px;
 }
 
-@media (max-width: 720px) {
-  .createArea {
-    justify-items: stretch;
+@media (max-width: 767px) {
+  .releaseRow {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .rail {
+    grid-auto-flow: column;
+    justify-content: start;
+    gap: 12px;
+    padding-top: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .rail {
+    grid-auto-flow: row;
   }
 
   .formGrid,
