@@ -1,8 +1,9 @@
 "use client";
 
-import { Check, ChevronDown, CircleDot, Search } from "lucide-react";
+import { Check, ChevronDown, CircleDot, GitMerge, Milestone as MilestoneIcon, Search, Tag } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 
 import { PopupMenu } from "@/components/ui/popup-menu";
 import type { Dictionary } from "@/i18n";
@@ -18,13 +19,23 @@ import { repositoryWorkItemSearchParams } from "@/lib/repository-work-item-query
 
 import styles from "./work-item-list-toolbar.module.css";
 
+type Query = RepositoryIssueQuery | RepositoryMergeRequestQuery;
+type QueryChanges = Partial<RepositoryMergeRequestQuery>;
+type NavigateFn = (changes: QueryChanges) => void;
+
 type WorkItemListToolbarProps = {
   basePath: string;
+  createHref?: string;
+  createLabel?: string;
   dictionary: Dictionary;
   kind: "issues" | "pulls";
   labels: Label[];
+  labelsCount?: number;
+  labelsHref: string;
   milestones: Milestone[];
-  query: RepositoryIssueQuery | RepositoryMergeRequestQuery;
+  milestonesCount?: number;
+  milestonesHref: string;
+  query: Query;
   openCount?: number;
   closedCount?: number;
   mergedCount?: number;
@@ -32,33 +43,102 @@ type WorkItemListToolbarProps = {
 
 export function WorkItemListToolbar(props: WorkItemListToolbarProps) {
   const copy = props.dictionary.workItemLists;
+  const [value, setValue] = useState(props.query.q ?? "");
+  const router = useRouter();
+  const labelsLabel =
+    props.labelsCount === undefined
+      ? copy.labelsButton
+      : copy.labelsButtonWithCount.replace("{count}", String(props.labelsCount));
+  const milestonesLabel =
+    props.milestonesCount === undefined
+      ? copy.milestonesButton
+      : copy.milestonesButtonWithCount.replace("{count}", String(props.milestonesCount));
+
+  function submitSearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmed = value.trim();
+    if (trimmed === (props.query.q ?? "").trim()) return;
+    const params = new URLSearchParams(window.location.search);
+    params.delete("q");
+    params.delete("page");
+    if (trimmed) params.set("q", trimmed);
+    router.push(params.size > 0 ? `${props.basePath}?${params}` : props.basePath);
+  }
+
+  return (
+    <section aria-label={copy.filters} className={styles.toolbar}>
+      <form className={styles.searchForm} onSubmit={submitSearch} role="search">
+        <Search aria-hidden="true" className={styles.searchIcon} size={16} />
+        <input
+          aria-label={copy.search}
+          className={styles.searchInput}
+          maxLength={256}
+          onChange={(event) => setValue(event.target.value)}
+          placeholder={copy.searchPlaceholder}
+          type="search"
+          value={value}
+        />
+      </form>
+
+      <div className={styles.actionGroup}>
+        <Link className={styles.actionButton} href={props.labelsHref}>
+          <Tag aria-hidden="true" size={16} />
+          {labelsLabel}
+        </Link>
+        <Link className={styles.actionButton} href={props.milestonesHref}>
+          <MilestoneIcon aria-hidden="true" size={16} />
+          {milestonesLabel}
+        </Link>
+      </div>
+
+      {props.createHref && props.createLabel && (
+        <Link className={styles.primaryButton} href={props.createHref}>
+          {props.createLabel}
+        </Link>
+      )}
+    </section>
+  );
+}
+
+type WorkItemListFilterHeaderProps = {
+  basePath: string;
+  dictionary: Dictionary;
+  kind: "issues" | "pulls";
+  labels: Label[];
+  milestones: Milestone[];
+  query: Query;
+  openCount?: number;
+  closedCount?: number;
+  mergedCount?: number;
+};
+
+export function WorkItemListFilterHeader(props: WorkItemListFilterHeaderProps) {
+  const copy = props.dictionary.workItemLists;
   const router = useRouter();
   const state = props.query.state ?? "open";
-  const isPulls = props.kind === "pulls";
   const openCount = props.openCount ?? 0;
   const closedCount = props.closedCount ?? 0;
   const mergedCount = props.mergedCount ?? 0;
 
-  function navigate(changes: Partial<RepositoryMergeRequestQuery>) {
+  function navigate(changes: QueryChanges) {
     const params = repositoryWorkItemSearchParams(props.query, { ...changes, page: 1 });
     router.push(params.size > 0 ? `${props.basePath}?${params}` : props.basePath);
   }
 
   return (
-    <section aria-label={copy.filters} className={styles.bar}>
+    <div className={styles.listHeader}>
       <StateToggle
+        basePath={props.basePath}
         closedCount={closedCount}
         copy={copy}
-        isPulls={isPulls}
+        isPulls={props.kind === "pulls"}
         mergedCount={mergedCount}
-        navigate={navigate}
         openCount={openCount}
+        query={props.query}
         state={state}
       />
 
-      <SearchForm basePath={props.basePath} copy={copy} defaultValue={props.query.q} navigate={navigate} />
-
-      <div className={styles.dropdowns}>
+      <div className={styles.filters}>
         <TextFilterDropdown
           copy={copy}
           currentValue={props.query.author}
@@ -98,92 +178,69 @@ export function WorkItemListToolbar(props: WorkItemListToolbarProps) {
           navigate={navigate}
         />
       </div>
-    </section>
+    </div>
   );
 }
 
-type NavigateFn = (changes: Partial<RepositoryMergeRequestQuery>) => void;
-
 function StateToggle(props: {
+  basePath: string;
   closedCount: number;
   copy: Dictionary["workItemLists"];
   isPulls: boolean;
   mergedCount: number;
-  navigate: NavigateFn;
   openCount: number;
+  query: Query;
   state: string;
 }) {
   return (
     <div className={styles.stateToggle}>
-      <button
-        aria-current={props.state === "open" ? "true" : undefined}
-        className={props.state === "open" ? styles.stateActive : styles.stateLink}
-        onClick={() => props.navigate({ state: "open" })}
-        type="button"
-      >
-        <CircleDot aria-hidden="true" size={16} />
-        {props.copy.openWithCount.replace("{count}", String(props.openCount))}
-      </button>
-      <button
-        aria-current={props.state === "closed" ? "true" : undefined}
-        className={props.state === "closed" ? styles.stateActive : styles.stateLink}
-        onClick={() => props.navigate({ state: "closed" })}
-        type="button"
-      >
-        <Check aria-hidden="true" size={16} />
-        {props.copy.closedWithCount.replace("{count}", String(props.closedCount))}
-      </button>
+      <StateLink
+        active={props.state === "open"}
+        basePath={props.basePath}
+        icon={<CircleDot aria-hidden="true" size={16} />}
+        label={props.copy.openWithCount.replace("{count}", String(props.openCount))}
+        query={props.query}
+        state="open"
+      />
+      <StateLink
+        active={props.state === "closed"}
+        basePath={props.basePath}
+        icon={<Check aria-hidden="true" size={16} />}
+        label={props.copy.closedWithCount.replace("{count}", String(props.closedCount))}
+        query={props.query}
+        state="closed"
+      />
       {props.isPulls && (
-        <button
-          aria-current={props.state === "merged" ? "true" : undefined}
-          className={props.state === "merged" ? styles.stateActive : styles.stateLink}
-          onClick={() => props.navigate({ state: "merged" })}
-          type="button"
-        >
-          <Check aria-hidden="true" size={16} />
-          {props.copy.mergedWithCount.replace("{count}", String(props.mergedCount))}
-        </button>
+        <StateLink
+          active={props.state === "merged"}
+          basePath={props.basePath}
+          icon={<GitMerge aria-hidden="true" size={16} />}
+          label={props.copy.mergedWithCount.replace("{count}", String(props.mergedCount))}
+          query={props.query}
+          state="merged"
+        />
       )}
     </div>
   );
 }
 
-function SearchForm(props: {
+function StateLink(props: {
+  active: boolean;
   basePath: string;
-  copy: Dictionary["workItemLists"];
-  defaultValue?: string;
-  navigate: NavigateFn;
+  icon: ReactNode;
+  label: string;
+  query: Query;
+  state: "open" | "closed" | "merged";
 }) {
-  const router = useRouter();
-  const [value, setValue] = useState(props.defaultValue ?? "");
   return (
-    <form
-      className={styles.searchForm}
-      onSubmit={(event) => {
-        event.preventDefault();
-        const trimmed = value.trim();
-        if (trimmed === (props.defaultValue ?? "").trim()) return;
-        const params = new URLSearchParams();
-        // Preserve existing params except q and page
-        const current = new URLSearchParams(window.location.search);
-        for (const [key, val] of current.entries()) {
-          if (key !== "q" && key !== "page") params.set(key, val);
-        }
-        if (trimmed) params.set("q", trimmed);
-        router.push(params.size > 0 ? `${props.basePath}?${params}` : props.basePath);
-      }}
-      role="search"
+    <Link
+      aria-current={props.active ? "page" : undefined}
+      className={props.active ? styles.stateActive : styles.stateLink}
+      href={queryHref(props.basePath, props.query, { state: props.state })}
     >
-      <Search aria-hidden="true" className={styles.searchIcon} size={14} />
-      <input
-        className={styles.searchInput}
-        maxLength={256}
-        onChange={(event) => setValue(event.target.value)}
-        placeholder={props.copy.searchPlaceholder}
-        type="search"
-        value={value}
-      />
-    </form>
+      {props.icon}
+      {props.label}
+    </Link>
   );
 }
 
@@ -215,9 +272,7 @@ function TextFilterDropdown(props: {
             onSubmit={(event) => {
               event.preventDefault();
               const trimmed = value.trim();
-              props.navigate({
-                [props.paramName]: trimmed || undefined,
-              } as Partial<RepositoryMergeRequestQuery>);
+              props.navigate({ [props.paramName]: trimmed || undefined } as QueryChanges);
               close();
             }}
           >
@@ -245,7 +300,7 @@ function DropdownTriggerContent({ label }: { label: string }) {
   return (
     <>
       <span className={styles.dropdownTriggerLabel}>{label}</span>
-      <ChevronDown aria-hidden="true" size={14} />
+      <ChevronDown aria-hidden="true" className={styles.dropdownCaret} size={14} />
     </>
   );
 }
@@ -310,7 +365,7 @@ function LabelFilterDropdown(props: {
           >
             <span className={styles.dropdownOptionLabel}>{props.copy.anyLabel}</span>
             <span aria-hidden="true" className={styles.dropdownCheck}>
-              {props.currentLabels.length === 0 && <Check size={14} />}
+              {props.currentLabels.length === 0 && <Check size={16} />}
             </span>
           </button>
           <div className={styles.dropdownDivider} />
@@ -334,7 +389,7 @@ function LabelFilterDropdown(props: {
                     />
                     <span className={styles.dropdownOptionLabel}>{label.name}</span>
                     <span aria-hidden="true" className={styles.dropdownCheck}>
-                      {selected && <Check size={14} />}
+                      {selected && <Check size={16} />}
                     </span>
                   </button>
                 );
@@ -401,7 +456,7 @@ function MilestoneFilterDropdown(props: {
           >
             <span className={styles.dropdownOptionLabel}>{props.copy.anyMilestone}</span>
             <span aria-hidden="true" className={styles.dropdownCheck}>
-              {props.currentMilestone === undefined && <Check size={14} />}
+              {props.currentMilestone === undefined && <Check size={16} />}
             </span>
           </button>
           <div className={styles.dropdownDivider} />
@@ -416,7 +471,7 @@ function MilestoneFilterDropdown(props: {
               >
                 <span className={styles.dropdownOptionLabel}>{props.copy.noMilestone}</span>
                 <span aria-hidden="true" className={styles.dropdownCheck}>
-                  {props.currentMilestone === "none" && <Check size={14} />}
+                  {props.currentMilestone === "none" && <Check size={16} />}
                 </span>
               </button>
             )}
@@ -433,7 +488,7 @@ function MilestoneFilterDropdown(props: {
                 >
                   <span className={styles.dropdownOptionLabel}>{milestone.title}</span>
                   <span aria-hidden="true" className={styles.dropdownCheck}>
-                    {selected && <Check size={14} />}
+                    {selected && <Check size={16} />}
                   </span>
                 </button>
               );
@@ -459,7 +514,7 @@ function SortDropdown(props: {
         ? props.copy.sortComments
         : props.copy.sortUpdated;
 
-  function select(changes: Partial<RepositoryMergeRequestQuery>, close: () => void) {
+  function select(changes: QueryChanges, close: () => void) {
     props.navigate(changes);
     close();
   }
@@ -514,7 +569,7 @@ function SortDropdown(props: {
 function SortOption(props: {
   copy: string;
   current: string;
-  onSelect: (changes: Partial<RepositoryMergeRequestQuery>) => void;
+  onSelect: (changes: QueryChanges) => void;
   sort: RepositoryWorkItemSort | `direction-${RepositoryWorkItemDirection}`;
 }) {
   const isActive =
@@ -536,8 +591,13 @@ function SortOption(props: {
     >
       <span className={styles.dropdownOptionLabel}>{props.copy}</span>
       <span aria-hidden="true" className={styles.dropdownCheck}>
-        {isActive && <Check size={14} />}
+        {isActive && <Check size={16} />}
       </span>
     </button>
   );
+}
+
+function queryHref(basePath: string, query: Query, changes: QueryChanges): string {
+  const params = repositoryWorkItemSearchParams(query, { ...changes, page: 1 });
+  return params.size > 0 ? `${basePath}?${params}` : basePath;
 }
