@@ -4,7 +4,7 @@ import { AccountSettingsShell } from "@/components/account/account-settings-shel
 import { getDictionary } from "@/i18n";
 import { isLocale } from "@/i18n/config";
 import { getAuthSession } from "@/lib/auth-api";
-import { getEntitlements } from "@/lib/lorehub-api";
+import { getAdminSettings, getEntitlements } from "@/lib/lorehub-api";
 
 import styles from "@/components/account/account-settings.module.css";
 
@@ -20,9 +20,14 @@ export default async function SettingsLayout({ children, params }: SettingsLayou
   if (session.status !== "authenticated") {
     return <div className={styles.page}>{children}</div>;
   }
-  const entitlements = await getEntitlements();
+  const [entitlements, adminSettings] = await Promise.all([getEntitlements(), getAdminSettings()]);
   return (
-    <AccountSettingsShell dictionary={dictionary} locale={locale} showEntitlements={entitlements.ok}>
+    <AccountSettingsShell
+      dictionary={dictionary}
+      locale={locale}
+      showEntitlements={entitlements.ok}
+      showInstanceSettings={adminSettings.ok}
+    >
       {children}
     </AccountSettingsShell>
   );

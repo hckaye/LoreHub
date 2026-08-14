@@ -2,6 +2,7 @@ import "server-only";
 
 import { cookies } from "next/headers";
 
+import { adminSettingsPath, normalizeAdminSettings, type AdminSettings } from "./admin-settings";
 import type {
   APIResult,
   ActionsEnvironment,
@@ -219,6 +220,13 @@ export async function getEntitlements(): Promise<APIResult<Entitlement[]>> {
   if (!result.ok) return result;
   const entitlements = normalizeEntitlementList(result.data);
   return entitlements ? { ok: true, data: entitlements } : { ok: false, reason: "unavailable" };
+}
+
+export async function getAdminSettings(): Promise<APIResult<AdminSettings>> {
+  const result = await request<unknown>(adminSettingsPath);
+  if (!result.ok) return result;
+  const settings = normalizeAdminSettings(result.data);
+  return settings ? { ok: true, data: settings } : { ok: false, reason: "unavailable" };
 }
 
 export function getOrganizationAuditLog(slug: string, query: string, before: string): Promise<APIResult<AuditLogPage>> {

@@ -68,6 +68,7 @@ export const accountSettingsSections = [
   "tokens",
   "tokens/new",
   "entitlements",
+  "instance",
 ] as const;
 
 export type AccountSettingsSection = (typeof accountSettingsSections)[number];
