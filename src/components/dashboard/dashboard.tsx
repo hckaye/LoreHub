@@ -4,6 +4,7 @@ import Link from "next/link";
 import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
 import type { DashboardData } from "@/lib/api-types";
+import { formatEventTopic } from "@/lib/event-topic-label";
 import { localizeHref, repositoryPath } from "@/lib/routes";
 
 import { RepositoryCard } from "../repositories/repository-card";
@@ -128,7 +129,7 @@ function DashboardActivity({ dashboard, dictionary, locale, unavailable }: Dashb
             <li data-unread={!notification.readAt} key={notification.id}>
               <Link href={localizeHref(notification.href, locale)}>
                 <strong>{notification.title}</strong>
-                <span>{notification.body || notification.topic}</span>
+                <span>{notification.body || formatEventTopic(dictionary.eventTopics, notification.topic)}</span>
               </Link>
             </li>
           ))}

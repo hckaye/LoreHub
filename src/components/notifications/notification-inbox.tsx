@@ -10,6 +10,7 @@ import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
 import type { AuthSession, Notification } from "@/lib/api-types";
 import { patchJson, postJson } from "@/lib/auth-client";
+import { formatEventTopic } from "@/lib/event-topic-label";
 import { formatRelativeTime } from "@/lib/format";
 import { localizeHref } from "@/lib/routes";
 
@@ -114,7 +115,7 @@ export function NotificationInbox({ dictionary, initialItems, locale, session }:
                 const { icon, repo } = describeNotification(item.href);
                 const Icon = icon;
                 const unread = !item.readAt;
-                const source = repo ?? item.topic;
+                const source = repo ?? formatEventTopic(dictionary.eventTopics, item.topic);
                 return (
                   <li className={styles.row} data-unread={unread} key={item.id}>
                     <span aria-hidden="true" className={styles.dot} />

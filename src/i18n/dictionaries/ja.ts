@@ -30,6 +30,7 @@ import { search } from "./search";
 import { settingsNavigation } from "./settings-navigation";
 import { webhooks } from "./webhooks";
 import { wiki } from "./wiki";
+import { eventTopics } from "./event-topics";
 import { workItemEvents } from "./work-item-events";
 import { workItemLists } from "./work-item-lists";
 
@@ -38,6 +39,7 @@ const concat = (...parts: string[]) => parts.join("");
 const ja = {
   commentPagination: commentPagination.ja,
   workItemEvents: workItemEvents.ja,
+  eventTopics: eventTopics.ja,
   workItemLists: workItemLists.ja,
   codeBrowser: codeBrowser.ja,
   commitHistory: commitHistory.ja,
