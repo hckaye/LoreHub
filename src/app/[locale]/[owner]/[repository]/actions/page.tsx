@@ -1,7 +1,6 @@
 import { ServerOff } from "lucide-react";
 
 import { ActionsDashboard } from "@/components/repositories/actions-dashboard";
-import { RepositorySection } from "@/components/repositories/repository-section";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getDictionary } from "@/i18n";
 import { isLocale } from "@/i18n/config";
@@ -25,29 +24,25 @@ export default async function ActionsPage({ params }: ActionsPageProps) {
     getDeployments(owner, repository),
   ]);
   const available = workflows.ok && runs.ok;
-  return (
-    <RepositorySection description={dictionary.actionsPage.description} title={dictionary.actionsPage.title}>
-      {available ? (
-        <ActionsDashboard
-          canWrite={workflows.data.canWrite}
-          dictionary={dictionary}
-          deployments={deployments.ok ? deployments.data : []}
-          deploymentsAvailable={deployments.ok}
-          locale={locale}
-          owner={owner}
-          repository={repository}
-          runs={runs.data.runs}
-          session={session}
-          workflows={workflows.data.workflows}
-        />
-      ) : (
-        <EmptyState
-          body={dictionary.home.apiUnavailableBody}
-          icon={<ServerOff aria-hidden="true" />}
-          title={dictionary.repository.unavailable}
-          tone="warning"
-        />
-      )}
-    </RepositorySection>
+  return available ? (
+    <ActionsDashboard
+      canWrite={workflows.data.canWrite}
+      dictionary={dictionary}
+      deployments={deployments.ok ? deployments.data : []}
+      deploymentsAvailable={deployments.ok}
+      locale={locale}
+      owner={owner}
+      repository={repository}
+      runs={runs.data.runs}
+      session={session}
+      workflows={workflows.data.workflows}
+    />
+  ) : (
+    <EmptyState
+      body={dictionary.home.apiUnavailableBody}
+      icon={<ServerOff aria-hidden="true" />}
+      title={dictionary.repository.unavailable}
+      tone="warning"
+    />
   );
 }

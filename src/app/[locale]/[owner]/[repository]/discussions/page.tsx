@@ -1,15 +1,10 @@
 import { ServerOff } from "lucide-react";
-import Link from "next/link";
 
 import { DiscussionList } from "@/components/discussions/discussion-list";
-import { RepositoryPanel, RepositorySection } from "@/components/repositories/repository-section";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getDictionary } from "@/i18n";
 import { isLocale } from "@/i18n/config";
 import { getDiscussionCategories, getDiscussions, type DiscussionQuery } from "@/lib/lorehub-api";
-import { repositoryPath } from "@/lib/routes";
-
-import styles from "@/components/repositories/repository-section.module.css";
 
 type DiscussionsPageProps = {
   params: Promise<{ locale: string; owner: string; repository: string }>;
@@ -28,42 +23,23 @@ export default async function DiscussionsPage({ params, searchParams }: Discussi
     getDiscussionCategories(owner, repository),
     getDiscussions(owner, repository, query),
   ]);
-  return (
-    <RepositorySection
-      actions={
-        discussions.ok && discussions.data.viewerCanCreate ? (
-          <Link
-            className={styles.primaryButton}
-            href={repositoryPath(locale, owner, repository, "discussions") + "/new"}
-          >
-            {dictionary.discussionsPage.newDiscussion}
-          </Link>
-        ) : undefined
-      }
-      description={dictionary.discussionsPage.description}
-      title={dictionary.discussionsPage.title}
-    >
-      {discussions.ok ? (
-        <RepositoryPanel description={dictionary.discussionsPage.description} title={dictionary.discussionsPage.title}>
-          <DiscussionList
-            categories={categoriesResult.ok ? categoriesResult.data.categories : []}
-            dictionary={dictionary}
-            locale={locale}
-            owner={owner}
-            page={discussions.data}
-            query={query}
-            repository={repository}
-          />
-        </RepositoryPanel>
-      ) : (
-        <EmptyState
-          body={dictionary.home.apiUnavailableBody}
-          icon={<ServerOff aria-hidden="true" />}
-          title={dictionary.repository.unavailable}
-          tone="warning"
-        />
-      )}
-    </RepositorySection>
+  return discussions.ok ? (
+    <DiscussionList
+      categories={categoriesResult.ok ? categoriesResult.data.categories : []}
+      dictionary={dictionary}
+      locale={locale}
+      owner={owner}
+      page={discussions.data}
+      query={query}
+      repository={repository}
+    />
+  ) : (
+    <EmptyState
+      body={dictionary.home.apiUnavailableBody}
+      icon={<ServerOff aria-hidden="true" />}
+      title={dictionary.repository.unavailable}
+      tone="warning"
+    />
   );
 }
 
