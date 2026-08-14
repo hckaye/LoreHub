@@ -5,20 +5,43 @@
 }
 
 .group {
+  position: relative;
   min-width: 0;
+  padding-left: 32px;
+}
+
+.group::before {
+  position: absolute;
+  top: 4px;
+  bottom: -16px;
+  left: 7px;
+  width: 2px;
+  background: var(--border-muted);
+  content: "";
+}
+
+.group:last-of-type::before {
+  bottom: 0;
 }
 
 .groupHeading {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  position: relative;
   margin: 0 0 8px;
-  color: var(--fg-default);
-  font-size: 0.82rem;
-  font-weight: 600;
+  color: var(--fg-muted);
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 24px;
 }
 
-.groupHeading svg {
+.groupBadge {
+  position: absolute;
+  top: 0;
+  left: -32px;
+  display: grid;
+  width: 16px;
+  height: 24px;
+  place-items: center;
+  background: var(--canvas-default);
   color: var(--fg-muted);
 }
 
@@ -58,7 +81,7 @@
   display: block;
   overflow: hidden;
   color: var(--fg-default);
-  font-size: 0.88rem;
+  font-size: 14px;
   font-weight: 600;
   text-decoration: none;
   text-overflow: ellipsis;
@@ -75,9 +98,9 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 5px;
-  margin: 3px 0 0;
+  margin: 4px 0 0;
   color: var(--fg-muted);
-  font-size: 0.78rem;
+  font-size: 12px;
 }
 
 .byline strong {
@@ -89,15 +112,20 @@
   display: flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
 }
 
 .revisionLink {
-  padding: 3px 6px;
+  display: inline-flex;
+  min-height: 26px;
+  align-items: center;
+  padding: 0 8px;
+  border: 1px solid var(--border);
   border-radius: 6px;
+  background: var(--canvas-default);
   color: var(--fg-muted);
   font-family: var(--font-mono);
-  font-size: 0.75rem;
+  font-size: 12px;
   text-decoration: none;
 }
 
@@ -121,7 +149,7 @@
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--accent-fg);
-  font-size: 0.78rem;
+  font-size: 14px;
   text-align: center;
   text-decoration: none;
 }
@@ -135,17 +163,16 @@
   opacity: 0.65;
 }
 
-.empty {
-  margin: 0;
-  padding: 32px 16px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--fg-muted);
-  font-size: 0.82rem;
-  text-align: center;
-}
-
 @media (max-width: 640px) {
+  .group {
+    padding-left: 0;
+  }
+
+  .group::before,
+  .groupBadge {
+    display: none;
+  }
+
   .row {
     align-items: flex-start;
     flex-direction: column;

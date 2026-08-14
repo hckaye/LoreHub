@@ -1,18 +1,19 @@
 "use client";
 
-import { Pencil, Rocket, Trash2 } from "lucide-react";
+import { GitBranch, GitCommitHorizontal, Pencil, Rocket, Tag, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { FormEvent, useState } from "react";
 
 import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
 import type { AuthSession, Release } from "@/lib/api-types";
-import { formatDate, shortRevision } from "@/lib/format";
+import { formatRelativeTime, formatTimestamp, shortRevision } from "@/lib/format";
 import { mutationFailureMessage } from "@/lib/mutation-messages";
 import { deleteRelease, publishRelease, updateRelease } from "@/lib/release-client";
 import { repositoryPath } from "@/lib/routes";
 
 import { FlashNotice } from "../ui/flash-notice";
+import { UserAvatar } from "../ui/user-avatar";
 import { MarkdownContent } from "../wiki/markdown-content";
 import { ReleaseAssets } from "./release-assets";
 import styles from "./release-list.module.css";
@@ -96,88 +97,97 @@ export function ReleaseCard(props: ReleaseCardProps) {
   const repositoryHref = repositoryPath(props.locale, props.owner, props.repository);
   const revisionQuery = encodeURIComponent(props.release.revision);
   const revisionHref = `${repositoryHref}/commit?revision=${revisionQuery}`;
+  const releasedAt = props.release.publishedAt ?? props.release.createdAt;
   return (
-    <article className={styles.releaseCard} id={anchorId}>
-      <header className={styles.releaseHeader}>
-        <div>
-          <div className={styles.tagLine}>
-            <span className={styles.tag}>{props.release.tagName}</span>
+    <article className={styles.releaseRow} id={anchorId}>
+      <div className={styles.rail}>
+        <span className={styles.railTime} title={formatTimestamp(releasedAt, props.locale)}>
+          {formatRelativeTime(releasedAt, props.locale)}
+        </span>
+        <span className={styles.railAuthor}>
+          <UserAvatar name={props.release.createdBy} size={20} />
+          <strong>{props.release.createdBy}</strong>
+        </span>
+        <span className={styles.railTag}>
+          <Tag aria-hidden="true" size={16} />
+          <a href={`#${anchorId}`}>{props.release.tagName}</a>
+        </span>
+        <span className={styles.railBranch}>
+          <GitBranch aria-hidden="true" size={16} />
+          {props.release.sourceBranch}
+        </span>
+        <Link className={styles.railRevision} href={revisionHref} title={props.release.revision}>
+          <GitCommitHorizontal aria-hidden="true" size={16} />
+          {shortRevision(props.release.revision)}
+        </Link>
+      </div>
+      <div className={styles.releaseCard}>
+        <header className={styles.releaseHeader}>
+          <div className={styles.titleLine}>
+            <h2 className={styles.releaseTitle}>
+              <a href={`#${anchorId}`}>{props.release.title}</a>
+            </h2>
+            {props.isLatest && <span className={styles.latest}>{labels.latest}</span>}
             <span className={props.release.state === "published" ? styles.published : styles.draft}>
               {props.release.state === "published" ? labels.published : labels.draft}
             </span>
-            {props.isLatest && <span className={styles.latest}>{labels.latest}</span>}
           </div>
-          <h2>
-            <a href={`#${anchorId}`}>{props.release.title}</a>
-          </h2>
-          <p className={styles.meta}>
-            {labels.createdBy.replace("{author}", props.release.createdBy)} ·{" "}
-            {formatDate(props.release.createdAt, props.locale)}
-          </p>
-        </div>
-        {props.release.viewerCanWrite && authenticated && (
-          <div className={styles.cardActions}>
-            {props.release.state === "draft" && (
-              <button disabled={busy} onClick={publish} type="button">
-                <Rocket aria-hidden="true" size={15} />
-                {labels.publish}
+          {props.release.viewerCanWrite && authenticated && (
+            <div className={styles.cardActions}>
+              {props.release.state === "draft" && (
+                <button disabled={busy} onClick={publish} type="button">
+                  <Rocket aria-hidden="true" size={15} />
+                  {labels.publish}
+                </button>
+              )}
+              <button disabled={busy} onClick={() => setEditing((value) => !value)} type="button">
+                <Pencil aria-hidden="true" size={15} />
+                {labels.edit}
               </button>
-            )}
-            <button disabled={busy} onClick={() => setEditing((value) => !value)} type="button">
-              <Pencil aria-hidden="true" size={15} />
-              {labels.edit}
-            </button>
-            <button className={styles.dangerButton} disabled={busy} onClick={remove} type="button">
-              <Trash2 aria-hidden="true" size={15} />
-              {labels.deleteRelease}
-            </button>
-          </div>
+              <button className={styles.dangerButton} disabled={busy} onClick={remove} type="button">
+                <Trash2 aria-hidden="true" size={15} />
+                {labels.deleteRelease}
+              </button>
+            </div>
+          )}
+        </header>
+        {failure && <FlashNotice body={failure} title={props.dictionary.forms.submitFailed} tone="error" />}
+        {editing ? (
+          <form className={styles.editForm} onSubmit={save}>
+            <label>
+              <span>{labels.titleLabel}</span>
+              <input maxLength={512} onChange={(event) => setTitle(event.target.value)} required value={title} />
+            </label>
+            <label>
+              <span>{labels.notesLabel}</span>
+              <textarea maxLength={1_048_576} onChange={(event) => setNotes(event.target.value)} value={notes} />
+            </label>
+            <div className={styles.formActions}>
+              <button className={styles.primaryButton} disabled={busy} type="submit">
+                {busy ? labels.saving : labels.save}
+              </button>
+              <button className={styles.secondaryButton} onClick={() => setEditing(false)} type="button">
+                {props.dictionary.common.cancel}
+              </button>
+            </div>
+          </form>
+        ) : (
+          props.release.notes && (
+            <div className={styles.notes}>
+              <MarkdownContent body={props.release.notes} />
+            </div>
+          )
         )}
-      </header>
-      {failure && <FlashNotice body={failure} title={props.dictionary.forms.submitFailed} tone="error" />}
-      {editing ? (
-        <form className={styles.editForm} onSubmit={save}>
-          <label>
-            <span>{labels.titleLabel}</span>
-            <input maxLength={512} onChange={(event) => setTitle(event.target.value)} required value={title} />
-          </label>
-          <label>
-            <span>{labels.notesLabel}</span>
-            <textarea maxLength={1_048_576} onChange={(event) => setNotes(event.target.value)} value={notes} />
-          </label>
-          <div className={styles.formActions}>
-            <button className={styles.primaryButton} disabled={busy} type="submit">
-              {busy ? labels.saving : labels.save}
-            </button>
-            <button className={styles.secondaryButton} onClick={() => setEditing(false)} type="button">
-              {props.dictionary.common.cancel}
-            </button>
-          </div>
-        </form>
-      ) : (
-        props.release.notes && (
-          <div className={styles.notes}>
-            <MarkdownContent body={props.release.notes} />
-          </div>
-        )
-      )}
-      <div className={styles.revision}>
-        <span>
-          {labels.sourceBranch}: {props.release.sourceBranch}
-        </span>
-        <Link href={revisionHref} title={props.release.revision}>
-          {labels.pinnedRevision}: <code>{shortRevision(props.release.revision)}</code>
-        </Link>
+        <ReleaseAssets
+          dictionary={props.dictionary}
+          onChange={props.onChange}
+          onFailure={setFailure}
+          owner={props.owner}
+          release={props.release}
+          repository={props.repository}
+          session={props.session}
+        />
       </div>
-      <ReleaseAssets
-        dictionary={props.dictionary}
-        onChange={props.onChange}
-        onFailure={setFailure}
-        owner={props.owner}
-        release={props.release}
-        repository={props.repository}
-        session={props.session}
-      />
     </article>
   );
 }

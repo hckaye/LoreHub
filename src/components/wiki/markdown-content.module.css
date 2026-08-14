@@ -1,5 +1,5 @@
 .markdown {
-  color: #1f2328;
+  color: var(--fg-default);
   font-size: 16px;
   line-height: 1.6;
   overflow-wrap: anywhere;
@@ -15,7 +15,7 @@
 
 .markdown h1,
 .markdown h2 {
-  border-bottom: 1px solid #d8dee4;
+  border-bottom: 1px solid var(--border-muted);
   padding-bottom: 0.3em;
 }
 
@@ -49,26 +49,26 @@
 }
 
 .markdown a {
-  color: #0969da;
+  color: var(--accent-fg);
 }
 
 .markdown blockquote {
-  border-left: 4px solid #d0d7de;
-  color: #636c76;
+  border-left: 4px solid var(--border);
+  color: var(--fg-muted);
   margin-left: 0;
   padding-left: 16px;
 }
 
 .markdown code {
-  background: rgba(175, 184, 193, 0.2);
+  background: var(--neutral-muted);
   border-radius: 6px;
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 85%;
   padding: 0.2em 0.4em;
 }
 
 .markdown pre {
-  background: #f6f8fa;
+  background: var(--canvas-subtle);
   border-radius: 6px;
   overflow: auto;
   padding: 16px;
@@ -89,12 +89,12 @@
 
 .markdown th,
 .markdown td {
-  border: 1px solid #d0d7de;
+  border: 1px solid var(--border);
   padding: 6px 13px;
 }
 
 .markdown tr:nth-child(2n) {
-  background: #f6f8fa;
+  background: var(--canvas-subtle);
 }
 
 .markdown img {

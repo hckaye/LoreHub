@@ -1,12 +1,13 @@
 import { LockKeyhole, ServerOff } from "lucide-react";
 
 import { ReleaseList } from "@/components/repositories/release-list";
-import { RepositorySection } from "@/components/repositories/repository-section";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getDictionary } from "@/i18n";
 import { isLocale } from "@/i18n/config";
 import { getAuthSession } from "@/lib/auth-api";
 import { getBranches, getReleases } from "@/lib/lorehub-api";
+
+import styles from "./page.module.css";
 
 type ReleasesPageProps = {
   params: Promise<{ locale: string; owner: string; repository: string }>;
@@ -27,19 +28,23 @@ export default async function ReleasesPage({ params, searchParams }: ReleasesPag
     getAuthSession(),
   ]);
   const labels = dictionary.releasesPage;
+  if (releases.ok) {
+    return (
+      <ReleaseList
+        branches={branches.ok ? branches.data : []}
+        data={releases.data}
+        dictionary={dictionary}
+        locale={locale}
+        owner={owner}
+        repository={repository}
+        session={session}
+      />
+    );
+  }
   return (
-    <RepositorySection description={labels.description} title={labels.title}>
-      {releases.ok ? (
-        <ReleaseList
-          branches={branches.ok ? branches.data : []}
-          data={releases.data}
-          dictionary={dictionary}
-          locale={locale}
-          owner={owner}
-          repository={repository}
-          session={session}
-        />
-      ) : releases.reason === "forbidden" || releases.reason === "not-found" ? (
+    <div className={styles.page}>
+      <h1 className={styles.title}>{labels.title}</h1>
+      {releases.reason === "forbidden" || releases.reason === "not-found" ? (
         <EmptyState
           body={labels.forbiddenBody}
           icon={<LockKeyhole aria-hidden="true" />}
@@ -54,7 +59,7 @@ export default async function ReleasesPage({ params, searchParams }: ReleasesPag
           tone="warning"
         />
       )}
-    </RepositorySection>
+    </div>
   );
 }
 

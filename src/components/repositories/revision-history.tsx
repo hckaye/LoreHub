@@ -1,7 +1,9 @@
 import { GitCommitHorizontal } from "lucide-react";
 import Link from "next/link";
 
+import { Blankslate } from "@/components/ui/blankslate";
 import { CopyButton } from "@/components/ui/copy-button";
+import { UserAvatar } from "@/components/ui/user-avatar";
 import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
 import { formatRelativeTime, formatTimestamp, shortRevision } from "@/lib/format";
@@ -30,16 +32,20 @@ type RevisionHistoryProps = {
 export function RevisionHistory(props: RevisionHistoryProps) {
   const copy = props.dictionary.commitHistory;
   if (props.rows.length === 0) {
-    return <p className={styles.empty}>{props.dictionary.codeBrowser.emptyHistory}</p>;
+    return (
+      <Blankslate icon={<GitCommitHorizontal aria-hidden="true" />} title={props.dictionary.codeBrowser.emptyHistory} />
+    );
   }
   return (
     <div className={styles.history}>
       {groupRevisionRows(props.rows, props.locale).map((group) => (
         <section className={styles.group} key={group.key || "undated"}>
-          <h3 className={styles.groupHeading}>
-            <GitCommitHorizontal aria-hidden="true" size={16} />
+          <h2 className={styles.groupHeading}>
+            <span className={styles.groupBadge}>
+              <GitCommitHorizontal aria-hidden="true" size={16} />
+            </span>
             {group.date ? copy.commitsOn.replace("{date}", group.date) : copy.undatedCommits}
-          </h3>
+          </h2>
           <ol className={styles.rows}>
             {group.rows.map((row) => (
               <RevisionRowItem key={row.revision} row={row} {...props} />
@@ -62,6 +68,7 @@ function RevisionRowItem({ row, ...props }: RevisionHistoryProps & { row: Revisi
           {subject}
         </Link>
         <p className={styles.byline}>
+          <UserAvatar name={row.author || copy.unknownAuthor} size={20} />
           <strong>{row.author || copy.unknownAuthor}</strong>
           <span title={row.createdAt ? formatTimestamp(row.createdAt, props.locale) : undefined}>
             {committedLabel(row, props.locale, copy.committed)}
