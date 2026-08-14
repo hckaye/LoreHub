@@ -36,6 +36,8 @@ type Config struct {
 	SessionTTL                        time.Duration
 	LoginTransactionTTL               time.Duration
 	IdentityProviders                 []string
+	HostedLoreServerEnabled           bool
+	InstanceAdminEnabled              bool
 	InstanceAdminUsernames            []string
 	DefaultOrganizationEntitlements   []string
 	LoreCacheDir                      string

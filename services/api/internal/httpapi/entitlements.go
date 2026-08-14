@@ -19,6 +19,10 @@ type entitlementRequest struct {
 
 func (api *API) requireInstanceAdmin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if !api.instanceAdminEnabled {
+			http.NotFound(writer, request)
+			return
+		}
 		actor, ok := api.actor(writer, request)
 		if !ok {
 			return

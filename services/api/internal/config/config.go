@@ -45,6 +45,14 @@ func LoadFor(command string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	hostedLoreServerEnabled, err := boolSetting("LOREHUB_HOSTED_LORE_SERVER_ENABLED", true)
+	if err != nil {
+		return Config{}, err
+	}
+	instanceAdminEnabled, err := boolSetting("LOREHUB_INSTANCE_ADMIN_ENABLED", true)
+	if err != nil {
+		return Config{}, err
+	}
 	loreAuthIssuer := os.Getenv("LOREHUB_LORE_AUTH_ISSUER")
 	loreAuthLoginURL := os.Getenv("LOREHUB_LORE_AUTH_LOGIN_URL")
 	loreAuthURL := os.Getenv("LOREHUB_LORE_AUTH_URL")
@@ -290,6 +298,8 @@ func LoadFor(command string) (Config, error) {
 		SessionTTL:                        sessionTTL,
 		LoginTransactionTTL:               transactionTTL,
 		IdentityProviders:                 configuredIdentityProviders(),
+		HostedLoreServerEnabled:           hostedLoreServerEnabled,
+		InstanceAdminEnabled:              instanceAdminEnabled,
 		InstanceAdminUsernames:            commaSeparatedUsernames(os.Getenv("LOREHUB_INSTANCE_ADMIN_USERNAMES")),
 		DefaultOrganizationEntitlements:   defaultEntitlements,
 		LoreCacheDir:                      envOrDefault("LOREHUB_LORE_CACHE_DIR", ".cache/lorehub/repositories"),
