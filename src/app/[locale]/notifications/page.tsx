@@ -19,7 +19,7 @@ export default async function NotificationsPage({ params }: NotificationsPagePro
   const [dictionary, session] = await Promise.all([getDictionary(locale), getAuthSession()]);
   if (session.status !== "authenticated") {
     return (
-      <div className={styles.page}>
+      <div className={styles.authPage}>
         <AuthRequired dictionary={dictionary} returnTo={`/${locale}/notifications`} session={session} />
       </div>
     );
@@ -27,10 +27,6 @@ export default async function NotificationsPage({ params }: NotificationsPagePro
   const notifications = await getNotifications();
   return (
     <div className={styles.page}>
-      <header className={styles.heading}>
-        <h1>{dictionary.notificationsPage.title}</h1>
-        <p>{dictionary.notificationsPage.description}</p>
-      </header>
       <NotificationInbox
         dictionary={dictionary}
         initialItems={notifications.ok ? notifications.data : []}
