@@ -21,6 +21,10 @@
   --success-fg: #1a7f37;
   --success-bg: #dafbe1;
   --success-border: #1f883d;
+  --btn-primary-bg: #1f883d;
+  --btn-primary-hover: #1a7f37;
+  --btn-primary-fg: #ffffff;
+  --btn-primary-border: rgb(31 35 40 / 15%);
   --danger-fg: #cf222e;
   --danger-bg: #ffebe9;
   --danger-border: #cf222e;
@@ -69,6 +73,10 @@
     --success-fg: #3fb950;
     --success-bg: #12261e;
     --success-border: #238636;
+    --btn-primary-bg: #238636;
+    --btn-primary-hover: #2ea043;
+    --btn-primary-fg: #ffffff;
+    --btn-primary-border: rgb(240 246 252 / 10%);
     --danger-fg: #ff7b72;
     --danger-bg: #2d1617;
     --danger-border: #da3633;
