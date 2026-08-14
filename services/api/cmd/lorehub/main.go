@@ -77,8 +77,9 @@ func run(logger *slog.Logger) error {
 		return nil
 	}
 	store := platform.NewStoreWithSettings(pool, platform.StoreSettings{
-		NotificationEmailAvailable: settings.NotificationEmailEnabled,
-		DefaultEntitlements:        settings.DefaultOrganizationEntitlements,
+		NotificationEmailAvailable:     settings.NotificationEmailEnabled,
+		HostedLoreServerDefaultEnabled: settings.HostedLoreServerEnabled,
+		DefaultEntitlements:            settings.DefaultOrganizationEntitlements,
 	})
 	if _, err := store.EnsureInstanceLoreServer(rootContext, settings.LorePublicURL); err != nil {
 		return err
@@ -337,6 +338,8 @@ func run(logger *slog.Logger) error {
 			RESTScope: runner.JobTokenRESTScope, GraphQLScope: runner.JobTokenGraphQLScope,
 		}),
 		httpapi.WithInstanceAdminUsernames(settings.InstanceAdminUsernames),
+		httpapi.WithInstanceAdminEnabled(settings.InstanceAdminEnabled),
+		httpapi.WithInstanceSettings(store, settings.HostedLoreServerEnabled),
 		httpapi.WithConfiguredLoginProviders(settings.IdentityProviders),
 		httpapi.WithCollaboration(collaborationStore),
 		httpapi.WithReviewThreads(reviewthreads.NewStore(pool)),

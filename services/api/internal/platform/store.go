@@ -26,8 +26,9 @@ var (
 )
 
 type Store struct {
-	pool                       *pgxpool.Pool
-	notificationEmailAvailable bool
+	pool                           *pgxpool.Pool
+	notificationEmailAvailable     bool
+	hostedLoreServerDefaultEnabled bool
 	// Features every new organization is granted, for installations that
 	// operate their own Lore Server and runners.
 	defaultEntitlements []string
@@ -35,16 +36,19 @@ type Store struct {
 
 // StoreSettings carries the installation choices the store applies to writes.
 type StoreSettings struct {
-	NotificationEmailAvailable bool
-	DefaultEntitlements        []string
+	NotificationEmailAvailable     bool
+	HostedLoreServerDefaultEnabled bool
+	DefaultEntitlements            []string
 }
 
 func NewStore(pool *pgxpool.Pool) *Store {
-	return &Store{pool: pool}
+	return &Store{pool: pool, hostedLoreServerDefaultEnabled: true}
 }
 
 func NewStoreWithNotificationEmail(pool *pgxpool.Pool, available bool) *Store {
-	return &Store{pool: pool, notificationEmailAvailable: available}
+	return &Store{
+		pool: pool, notificationEmailAvailable: available, hostedLoreServerDefaultEnabled: true,
+	}
 }
 
 func NewStoreWithSettings(pool *pgxpool.Pool, settings StoreSettings) *Store {
@@ -55,9 +59,10 @@ func NewStoreWithSettings(pool *pgxpool.Pool, settings StoreSettings) *Store {
 		}
 	}
 	return &Store{
-		pool:                       pool,
-		notificationEmailAvailable: settings.NotificationEmailAvailable,
-		defaultEntitlements:        features,
+		pool:                           pool,
+		notificationEmailAvailable:     settings.NotificationEmailAvailable,
+		hostedLoreServerDefaultEnabled: settings.HostedLoreServerDefaultEnabled,
+		defaultEntitlements:            features,
 	}
 }
 
@@ -283,7 +288,10 @@ func (store *Store) RegisterRepository(
 	if err != nil {
 		return Repository{}, err
 	}
-	server, err := resolveServerForNewRepository(ctx, transaction, organizationID, input.LoreServerID)
+	server, err := resolveServerForNewRepository(
+		ctx, transaction, organizationID, input.LoreServerID,
+		store.hostedLoreServerDefaultEnabled,
+	)
 	if err != nil {
 		return Repository{}, err
 	}

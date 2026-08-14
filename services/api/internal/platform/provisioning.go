@@ -79,7 +79,10 @@ func (store *Store) BeginRepositoryProvisioning(
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return Repository{}, fmt.Errorf("find existing repository provisioning state: %w", err)
 	}
-	server, err := resolveServerForNewRepository(ctx, transaction, organizationID, strings.TrimSpace(explicitServerID))
+	server, err := resolveServerForNewRepository(
+		ctx, transaction, organizationID, strings.TrimSpace(explicitServerID),
+		store.hostedLoreServerDefaultEnabled,
+	)
 	if err != nil {
 		return Repository{}, err
 	}

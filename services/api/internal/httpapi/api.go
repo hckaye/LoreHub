@@ -154,6 +154,11 @@ type EntitlementStore interface {
 	List(context.Context) ([]platform.Entitlement, error)
 }
 
+type InstanceSettingsStore interface {
+	GetHostedLoreServerOverride(context.Context) (*bool, error)
+	SetHostedLoreServerOverride(context.Context, platform.User, *bool) error
+}
+
 type API struct {
 	store                   Store
 	actions                 ActionsStore
@@ -212,6 +217,9 @@ type API struct {
 	runnerJobTokenIssuer    runner.JobTokenIssuer
 	runnerControlConfig     RunnerControlConfig
 	instanceAdminUsernames  map[string]struct{}
+	instanceAdminEnabled    bool
+	instanceSettings        InstanceSettingsStore
+	hostedLoreServerDefault bool
 	globalWorkItems         GlobalWorkItemStore
 	deletionRetention       time.Duration
 	operations              *operationalState
@@ -233,12 +241,14 @@ func New(
 	options ...Option,
 ) http.Handler {
 	api := &API{
-		store:         store,
-		lore:          lore,
-		authenticator: authenticator,
-		health:        health,
-		loreIdentity:  loreIdentity,
-		logger:        logger,
+		store:                   store,
+		lore:                    lore,
+		authenticator:           authenticator,
+		health:                  health,
+		loreIdentity:            loreIdentity,
+		logger:                  logger,
+		instanceAdminEnabled:    true,
+		hostedLoreServerDefault: true,
 	}
 	for _, option := range options {
 		if option != nil {
@@ -318,6 +328,17 @@ func WithPersonalAccessTokens(store PersonalAccessTokenStore, secrets *auth.Secr
 
 func WithEntitlements(store EntitlementStore) Option {
 	return func(api *API) { api.entitlements = store }
+}
+
+func WithInstanceSettings(store InstanceSettingsStore, defaultEnabled bool) Option {
+	return func(api *API) {
+		api.instanceSettings = store
+		api.hostedLoreServerDefault = defaultEnabled
+	}
+}
+
+func WithInstanceAdminEnabled(enabled bool) Option {
+	return func(api *API) { api.instanceAdminEnabled = enabled }
 }
 
 func WithInstanceAdminUsernames(usernames []string) Option {
