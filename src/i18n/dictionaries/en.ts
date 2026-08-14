@@ -824,6 +824,9 @@ const en = {
     loreServerUnavailable:
       "The Lore Server chosen for this organization is not active. Check it in the organization settings and " +
       "try again.",
+    hostedLoreServerDisabled:
+      "The hosted Lore server is disabled on this instance. Register a self-hosted Lore server or ask an " +
+      "instance administrator to enable the hosted service.",
   },
   footer: {
     sourceOfTruth: "LoreHub works with the Lore version control system.",

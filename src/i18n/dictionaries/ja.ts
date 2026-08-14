@@ -962,6 +962,11 @@ const ja = {
       "この組織にはリポジトリを保存するLore Serverがありません。組織の設定からLore Serverを登録するか、" +
       "このインストールが運用しているLore Serverを使えるようにインスタンス管理者に依頼してください。",
     loreServerUnavailable: "この組織に設定されたLore Serverが有効ではありません。組織の設定を確認してください。",
+    // prettier-ignore
+    hostedLoreServerDisabled: concat(
+      "このインスタンスではホステッドLoreサーバーが無効になっています。セルフホステッドのLore Serverを登録するか、",
+      "インスタンス管理者にホステッドサービスの有効化を依頼してください。",
+    ),
   },
   footer: {
     sourceOfTruth: "LoreHubはLoreバージョン管理システムに対応しています。",
