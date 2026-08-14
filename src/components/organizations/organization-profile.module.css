@@ -1,0 +1,136 @@
+.page {
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 24px 16px 48px;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.avatar {
+  display: grid;
+  width: 80px;
+  height: 80px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 6px;
+  background: var(--canvas-subtle);
+  box-shadow: 0 0 0 1px var(--border);
+  color: var(--fg-muted);
+  font-size: 32px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.identity {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.identity h1 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 8px;
+  margin: 4px 0 0;
+  color: var(--fg-muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.meta span:not(:last-child)::after {
+  content: "·";
+  margin-left: 8px;
+}
+
+.description {
+  margin: 8px 0 0;
+  color: var(--fg-muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.settingsButton {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  padding: 5px 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--canvas-subtle);
+  color: var(--fg-default);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  text-decoration: none;
+}
+
+.settingsButton:hover {
+  background: var(--border-muted);
+}
+
+.teamList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.teamRow {
+  padding: 24px 0;
+  border-bottom: 1px solid var(--border-muted);
+}
+
+.teamRow h3 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.teamRow a {
+  color: var(--accent-fg);
+  text-decoration: none;
+}
+
+.teamRow a:hover {
+  text-decoration: underline;
+}
+
+.teamMeta,
+.teamDescription {
+  margin: 4px 0 0;
+  color: var(--fg-muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.teamMeta {
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+@media (max-width: 640px) {
+  .header {
+    flex-wrap: wrap;
+  }
+
+  .settingsButton {
+    width: 100%;
+    margin-left: 0;
+    justify-content: center;
+  }
+}

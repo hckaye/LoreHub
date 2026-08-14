@@ -1,14 +1,11 @@
-"use client";
+import { BookMarked, Building2, Calendar, Link2, MapPin, UserRound } from "lucide-react";
 
-import { Building2, Globe2, MapPin, Search, UserRound } from "lucide-react";
-import Link from "next/link";
-import { useMemo, useState } from "react";
-
+import { RepositoryRows } from "@/components/repositories/repository-rows";
+import { UnderlineNav } from "@/components/ui/underline-nav";
 import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
 import type { Repository, UserProfile } from "@/lib/api-types";
 import { formatDate } from "@/lib/format";
-import { repositoryPath } from "@/lib/routes";
 
 import { EmptyState } from "../ui/empty-state";
 import { UserAvatar } from "../ui/user-avatar";
@@ -35,47 +32,62 @@ export function UserProfilePage({ dictionary, locale, profile, repositories, una
       </div>
     );
   }
+  const website = profile.websiteUrl ? displayWebsite(profile.websiteUrl) : "";
   return (
     <div className={styles.page}>
       <aside className={styles.rail}>
-        <UserAvatar avatarUrl={profile.avatarUrl} name={profile.displayName} size={200} />
-        <h1 className={styles.displayName}>{profile.displayName}</h1>
-        <p className={styles.username}>{profile.username}</p>
-        {profile.pronouns && <p className={styles.pronouns}>{profile.pronouns}</p>}
-        {profile.bio && <p className={styles.bio}>{profile.bio}</p>}
+        <div className={styles.avatarWrap}>
+          <UserAvatar avatarUrl={profile.avatarUrl} name={profile.displayName} size={296} />
+        </div>
+        <div className={styles.names}>
+          <h1 className={styles.displayName}>{profile.displayName}</h1>
+          <p className={styles.username}>{profile.username}</p>
+          {profile.pronouns ? <p className={styles.pronouns}>{profile.pronouns}</p> : null}
+        </div>
+        {profile.bio ? <p className={styles.bio}>{profile.bio}</p> : null}
         <ul className={styles.meta}>
-          {profile.company && (
+          {profile.company ? (
             <li>
-              <Building2 aria-hidden="true" size={15} />
+              <Building2 aria-hidden="true" size={16} />
               {profile.company}
             </li>
-          )}
-          {profile.location && (
+          ) : null}
+          {profile.location ? (
             <li>
-              <MapPin aria-hidden="true" size={15} />
+              <MapPin aria-hidden="true" size={16} />
               {profile.location}
             </li>
-          )}
-          {profile.websiteUrl && (
+          ) : null}
+          {website ? (
             <li>
               <a href={profile.websiteUrl} rel="noreferrer" target="_blank">
-                <Globe2 aria-hidden="true" size={15} />
-                {dictionary.profile.website}
+                <Link2 aria-hidden="true" size={16} />
+                {website}
               </a>
             </li>
-          )}
+          ) : null}
           <li>
-            <UserRound aria-hidden="true" size={15} />
+            <Calendar aria-hidden="true" size={16} />
             {dictionary.profile.joined} {formatDate(profile.createdAt, locale)}
           </li>
         </ul>
       </aside>
       <div className={styles.content}>
-        <ProfileRepositories
+        <UnderlineNav
+          items={[
+            {
+              active: true,
+              count: profile.repositoryCount,
+              icon: <BookMarked aria-hidden="true" size={16} />,
+              label: dictionary.profile.repositories,
+            },
+          ]}
+          label={dictionary.profile.title}
+        />
+        <RepositoryRows
           dictionary={dictionary}
           locale={locale}
           repositories={repositories}
-          totalCount={profile.repositoryCount}
           unavailable={Boolean(unavailable)}
         />
       </div>
@@ -83,82 +95,6 @@ export function UserProfilePage({ dictionary, locale, profile, repositories, una
   );
 }
 
-type ProfileRepositoriesProps = {
-  dictionary: Dictionary;
-  locale: Locale;
-  repositories: Repository[] | null;
-  totalCount: number;
-  unavailable: boolean;
-};
-
-function ProfileRepositories({ dictionary, locale, repositories, totalCount, unavailable }: ProfileRepositoriesProps) {
-  const [query, setQuery] = useState("");
-  const filtered = useMemo(() => {
-    const list = repositories ?? [];
-    const normalized = query.trim().toLocaleLowerCase();
-    if (!normalized) {
-      return list;
-    }
-    return list.filter((repository) =>
-      [repository.owner, repository.slug, repository.displayName, repository.description, ...repository.topics]
-        .join(" ")
-        .toLocaleLowerCase()
-        .includes(normalized),
-    );
-  }, [repositories, query]);
-
-  return (
-    <section className={styles.panel}>
-      <div className={styles.panelHeading}>
-        <h2>{dictionary.profile.repositories}</h2>
-        <span>{totalCount}</span>
-      </div>
-      <div className={styles.filter}>
-        <Search aria-hidden="true" size={15} />
-        <input
-          aria-label={dictionary.profile.filterRepositories}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder={dictionary.profile.filterRepositories}
-          type="search"
-          value={query}
-        />
-      </div>
-      {filtered.length > 0 ? (
-        <ul className={styles.repositoryList}>
-          {filtered.map((repository) => (
-            <li key={repository.id}>
-              <Link href={repositoryPath(locale, repository.owner, repository.slug)}>
-                <div className={styles.repositoryName}>
-                  <strong>{repository.displayName}</strong>
-                  <span className={styles.visibility}>{dictionary.common[repository.visibility]}</span>
-                </div>
-                <span className={styles.repositoryPath}>
-                  {repository.owner}/{repository.slug}
-                </span>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <EmptyState
-          body={
-            unavailable
-              ? dictionary.home.apiUnavailableBody
-              : query.trim()
-                ? dictionary.home.searchEmptyBody
-                : dictionary.profile.repositoriesEmptyBody
-          }
-          icon={<UserRound aria-hidden="true" />}
-          title={
-            unavailable
-              ? dictionary.home.apiUnavailableTitle
-              : query.trim()
-                ? dictionary.home.searchEmptyTitle
-                : dictionary.profile.repositoriesEmptyTitle
-          }
-          tone={unavailable ? "warning" : "neutral"}
-        />
-      )}
-    </section>
-  );
+function displayWebsite(url: string): string {
+  return url.replace(/^https?:\/\//, "").replace(/\/$/, "");
 }

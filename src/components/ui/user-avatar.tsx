@@ -9,8 +9,8 @@ type UserAvatarProps = {
 export function UserAvatar({ name, avatarUrl, size = 20 }: UserAvatarProps) {
   const dimension = { width: size, height: size };
   if (avatarUrl) {
-    // eslint-disable-next-line @next/next/no-img-element
     return (
+      // eslint-disable-next-line @next/next/no-img-element
       <img
         alt=""
         aria-hidden="true"

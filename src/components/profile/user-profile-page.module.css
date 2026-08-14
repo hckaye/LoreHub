@@ -1,64 +1,100 @@
 .page {
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
-  gap: 32px;
-  width: min(1080px, calc(100% - 32px));
+  grid-template-columns: 296px minmax(0, 1fr);
+  gap: 24px;
+  width: 100%;
+  max-width: 1280px;
   margin: 0 auto;
-  padding: 32px 0 72px;
+  padding: 24px 16px;
 }
 
 .rail {
   min-width: 0;
 }
 
+.avatarWrap {
+  width: 100%;
+  max-width: 296px;
+  line-height: 0;
+}
+
+.avatarWrap :global(img) {
+  width: 100%;
+  max-width: 296px;
+  height: auto;
+  aspect-ratio: 1;
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+.avatarWrap :global(span) {
+  width: 100% !important;
+  max-width: 296px;
+  height: auto !important;
+  aspect-ratio: 1;
+  font-size: 7.4rem !important;
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+.names {
+  margin-top: 16px;
+}
+
 .displayName {
-  margin: 16px 0 0;
-  font-size: 1.5rem;
-  letter-spacing: -0.02em;
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.25;
 }
 
 .username {
-  margin: 2px 0 0;
+  margin: 0;
   color: var(--fg-muted);
-  font-size: 1rem;
+  font-size: 20px;
+  font-weight: 300;
+  line-height: 24px;
 }
 
 .pronouns {
-  margin: 8px 0 0;
+  margin: 4px 0 0;
   color: var(--fg-muted);
-  font-size: 0.84rem;
+  font-size: 14px;
 }
 
 .bio {
-  max-width: 620px;
-  margin: 12px 0 0;
-  line-height: 1.55;
-  font-size: 0.9rem;
+  margin: 16px 0 0;
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 .meta {
   display: grid;
-  gap: 6px;
+  gap: 4px;
   margin: 16px 0 0;
   padding: 0;
   list-style: none;
-  color: var(--fg-muted);
-  font-size: 0.82rem;
+  color: var(--fg-default);
+  font-size: 14px;
 }
 
 .meta li,
 .meta a {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+}
+
+.meta svg {
+  flex: 0 0 auto;
+  color: var(--fg-muted);
 }
 
 .meta a {
-  color: var(--accent-fg);
+  color: var(--fg-default);
   text-decoration: none;
 }
 
 .meta a:hover {
+  color: var(--accent-fg);
   text-decoration: underline;
 }
 
@@ -66,112 +102,39 @@
   min-width: 0;
 }
 
-.panel {
-  min-width: 0;
-}
-
-.panelHeading {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--border);
-}
-
-.panelHeading h2 {
-  margin: 0;
-  font-size: 1rem;
-}
-
-.panelHeading span {
-  color: var(--fg-muted);
-  font-size: 0.8rem;
-}
-
-.filter {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 16px 0;
-  padding: 7px 12px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface);
-  color: var(--fg-muted);
-}
-
-.filter input {
-  min-width: 0;
-  flex: 1;
-  border: 0;
-  background: transparent;
-  color: var(--fg-default);
-  font-size: 0.84rem;
-  outline: none;
-}
-
-.repositoryList {
-  display: grid;
-  gap: 2px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
-}
-
-.repositoryList li {
-  border-bottom: 1px solid var(--border-muted);
-}
-
-.repositoryList li:last-child {
-  border-bottom: 0;
-}
-
-.repositoryList a {
-  display: grid;
-  gap: 4px;
-  padding: 13px 15px;
-  color: var(--fg-default);
-  text-decoration: none;
-}
-
-.repositoryList a:hover {
-  background: var(--canvas-subtle);
-}
-
-.repositoryName {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.repositoryName strong {
-  color: var(--accent-fg);
-}
-
-.visibility {
-  display: inline-flex;
-  align-items: center;
-  padding: 1px 7px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  color: var(--fg-muted);
-  font-size: 0.64rem;
-}
-
-.repositoryPath {
-  color: var(--fg-muted);
-  font-size: 0.78rem;
-}
-
-@media (max-width: 760px) {
+@media (max-width: 768px) {
   .page {
     grid-template-columns: 1fr;
-    gap: 24px;
-    width: min(100% - 20px, 1080px);
-    padding-top: 24px;
+    gap: 16px;
+  }
+
+  .rail {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .avatarWrap {
+    width: 80px;
+    flex: 0 0 80px;
+  }
+
+  .avatarWrap :global(img),
+  .avatarWrap :global(span) {
+    width: 80px !important;
+    height: 80px !important;
+    font-size: 32px !important;
+  }
+
+  .names {
+    flex: 1 1 0;
+    min-width: 0;
+    margin-top: 0;
+  }
+
+  .bio,
+  .meta {
+    flex: 1 1 100%;
   }
 }
