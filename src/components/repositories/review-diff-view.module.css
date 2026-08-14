@@ -570,8 +570,12 @@
   font-size: 13px;
 }
 
-.pendingFinish {
+.pendingFinishWrapper {
+  position: relative;
   margin-left: auto;
+}
+
+.pendingFinish {
   padding: 5px 12px;
   border: 1px solid var(--accent-emphasis);
   border-radius: 999px;

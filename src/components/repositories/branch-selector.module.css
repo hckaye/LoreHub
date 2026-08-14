@@ -15,13 +15,9 @@
   box-shadow: 0 1px 0 rgb(31 35 40 / 4%);
   color: var(--fg-default);
   cursor: pointer;
+  font: inherit;
   font-size: 0.8rem;
   font-weight: 600;
-  list-style: none;
-}
-
-.summary::-webkit-details-marker {
-  display: none;
 }
 
 .summary span {
@@ -37,7 +33,7 @@
 }
 
 .summary:hover,
-.popover[open] .summary {
+.summary[aria-expanded="true"] {
   border-color: var(--border-strong);
   background: var(--canvas-default);
 }

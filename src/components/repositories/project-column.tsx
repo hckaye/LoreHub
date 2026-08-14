@@ -3,6 +3,7 @@
 import { MoreHorizontal, Plus } from "lucide-react";
 import { FormEvent, useState } from "react";
 
+import { PopupMenu } from "@/components/ui/popup-menu";
 import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
 import type { ProjectColumn as ProjectColumnData } from "@/lib/api-types";
@@ -28,7 +29,6 @@ type ProjectColumnProps = {
 };
 
 export function ProjectColumn(props: ProjectColumnProps) {
-  const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState(props.column.name);
@@ -38,7 +38,6 @@ export function ProjectColumn(props: ProjectColumnProps) {
     event.preventDefault();
     if (await props.onRename(props.column.id, name.trim())) {
       setRenaming(false);
-      setMenuOpen(false);
     }
   }
 
@@ -48,27 +47,39 @@ export function ProjectColumn(props: ProjectColumnProps) {
         <h2>{props.column.name}</h2>
         <span>{props.column.items.length}</span>
         {props.canWrite && (
-          <div className={styles.columnMenu}>
-            <button
-              aria-expanded={menuOpen}
-              aria-label={labels.renameColumn}
-              className={styles.iconButton}
-              onClick={() => setMenuOpen((value) => !value)}
-              type="button"
-            >
-              <MoreHorizontal aria-hidden="true" size={18} />
-            </button>
-            {menuOpen && (
-              <div className={styles.menu}>
-                <button onClick={() => setRenaming(true)} type="button">
+          <PopupMenu
+            className={styles.columnMenu}
+            panelClassName={styles.menu}
+            trigger={<MoreHorizontal aria-hidden="true" size={18} />}
+            triggerClassName={styles.iconButton}
+            triggerProps={{ "aria-label": labels.renameColumn }}
+          >
+            {(close) => (
+              <>
+                <button
+                  onClick={() => {
+                    close();
+                    setRenaming(true);
+                  }}
+                  role="menuitem"
+                  type="button"
+                >
                   {labels.renameColumn}
                 </button>
-                <button className={styles.dangerAction} onClick={() => props.onDelete(props.column.id)} type="button">
+                <button
+                  className={styles.dangerAction}
+                  onClick={() => {
+                    close();
+                    props.onDelete(props.column.id);
+                  }}
+                  role="menuitem"
+                  type="button"
+                >
                   {labels.deleteColumn}
                 </button>
-              </div>
+              </>
             )}
-          </div>
+          </PopupMenu>
         )}
       </header>
       {renaming && (

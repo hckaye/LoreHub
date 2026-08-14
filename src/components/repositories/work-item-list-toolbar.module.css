@@ -86,7 +86,7 @@
   position: relative;
 }
 
-.dropdown > summary {
+.dropdownTrigger {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -109,12 +109,8 @@
   text-overflow: ellipsis;
 }
 
-.dropdown > summary::-webkit-details-marker {
-  display: none;
-}
-
-.dropdown > summary:hover,
-.dropdown[open] > summary {
+.dropdownTrigger:hover,
+.dropdownTrigger[aria-expanded="true"] {
   border-color: var(--border-strong);
   background: var(--canvas-subtle);
 }

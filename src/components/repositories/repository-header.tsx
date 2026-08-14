@@ -22,8 +22,9 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 
+import { PopupMenu } from "@/components/ui/popup-menu";
 import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
 import type { AuthSession, Repository, RepositoryEngagement } from "@/lib/api-types";
@@ -282,51 +283,33 @@ function RepositoryMoreMenu({
   repository: Repository;
 }) {
   const active = moreTabs.some(([section]) => sectionSegment(pathname, basePath) === section);
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDetailsElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function onClick(event: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
-        setOpen(false);
-      }
-    }
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") setOpen(false);
-    }
-    document.addEventListener("click", onClick);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("click", onClick);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
 
   return (
-    <details
+    <PopupMenu
       className={styles.moreMenu}
-      onToggle={(event) => setOpen(event.currentTarget.open)}
-      open={open}
-      ref={containerRef}
+      panelClassName={styles.moreDropdown}
+      trigger={
+        <>
+          <Ellipsis aria-hidden="true" size={16} />
+          {dictionary.common.more}
+        </>
+      }
+      triggerClassName={active ? `${styles.moreTrigger} ${styles.active}` : styles.moreTrigger}
     >
-      <summary className={active ? styles.active : ""}>
-        <Ellipsis aria-hidden="true" size={16} />
-        {dictionary.common.more}
-      </summary>
-      <div className={styles.moreDropdown}>
-        {moreTabs.map(([section, Icon]) => (
+      {(close) =>
+        moreTabs.map(([section, Icon]) => (
           <Link
             href={repositoryPath(locale, repository.owner, repository.slug, section)}
             key={section}
-            onClick={() => setOpen(false)}
+            onClick={close}
+            role="menuitem"
           >
             <Icon aria-hidden="true" size={16} />
             {dictionary.common[section]}
           </Link>
-        ))}
-      </div>
-    </details>
+        ))
+      }
+    </PopupMenu>
   );
 }
 

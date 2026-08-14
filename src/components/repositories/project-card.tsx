@@ -4,6 +4,7 @@ import { FileText, GitPullRequest, MoreHorizontal } from "lucide-react";
 import Link from "next/link";
 import { FormEvent, useState } from "react";
 
+import { PopupMenu } from "@/components/ui/popup-menu";
 import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
 import type { ProjectColumn, ProjectItem } from "@/lib/api-types";
@@ -25,7 +26,6 @@ type ProjectCardProps = {
 };
 
 export function ProjectCard(props: ProjectCardProps) {
-  const [menuOpen, setMenuOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(props.item.title);
   const [body, setBody] = useState(props.item.body);
@@ -36,7 +36,6 @@ export function ProjectCard(props: ProjectCardProps) {
     event.preventDefault();
     if (await props.onUpdate(props.item.id, { title: title.trim(), body: body.trim() })) {
       setEditing(false);
-      setMenuOpen(false);
     }
   }
 
@@ -56,29 +55,41 @@ export function ProjectCard(props: ProjectCardProps) {
               : labels.draft}
         </span>
         {props.canWrite && (
-          <div className={styles.columnMenu}>
-            <button
-              aria-expanded={menuOpen}
-              aria-label={labels.deleteCard}
-              className={styles.iconButton}
-              onClick={() => setMenuOpen((value) => !value)}
-              type="button"
-            >
-              <MoreHorizontal aria-hidden="true" size={16} />
-            </button>
-            {menuOpen && (
-              <div className={styles.menu}>
+          <PopupMenu
+            className={styles.columnMenu}
+            panelClassName={styles.menu}
+            trigger={<MoreHorizontal aria-hidden="true" size={16} />}
+            triggerClassName={styles.iconButton}
+            triggerProps={{ "aria-label": labels.deleteCard }}
+          >
+            {(close) => (
+              <>
                 {props.item.kind === "draft" && (
-                  <button onClick={() => setEditing(true)} type="button">
+                  <button
+                    onClick={() => {
+                      close();
+                      setEditing(true);
+                    }}
+                    role="menuitem"
+                    type="button"
+                  >
                     {labels.editDraft}
                   </button>
                 )}
-                <button className={styles.dangerAction} onClick={() => props.onDelete(props.item.id)} type="button">
+                <button
+                  className={styles.dangerAction}
+                  onClick={() => {
+                    close();
+                    props.onDelete(props.item.id);
+                  }}
+                  role="menuitem"
+                  type="button"
+                >
                   {labels.deleteCard}
                 </button>
-              </div>
+              </>
             )}
-          </div>
+          </PopupMenu>
         )}
       </div>
       {content.href ? (

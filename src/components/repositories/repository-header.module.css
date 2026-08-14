@@ -139,7 +139,7 @@
 }
 
 .navigation > a,
-.moreMenu > summary {
+.moreMenu > .moreTrigger {
   display: inline-flex;
   min-height: 48px;
   align-items: center;
@@ -156,13 +156,13 @@
 }
 
 .navigation > a:hover,
-.moreMenu > summary:hover {
+.moreMenu > .moreTrigger:hover {
   border-radius: 6px 6px 0 0;
   background: var(--border-muted);
 }
 
 .navigation > .active,
-.moreMenu > summary.active {
+.moreMenu > .moreTrigger.active {
   border-bottom-color: var(--nav-active-border);
   font-weight: 600;
 }
@@ -182,13 +182,11 @@
   display: inline-flex;
 }
 
-.moreMenu > summary {
+.moreMenu > .moreTrigger {
   cursor: pointer;
-  list-style: none;
-}
-
-.moreMenu > summary::-webkit-details-marker {
-  display: none;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 500;
 }
 
 .moreDropdown {
@@ -256,7 +254,7 @@
   }
 
   .navigation > a,
-  .moreMenu > summary {
+  .moreMenu > .moreTrigger {
     padding-inline: 10px;
   }
 }

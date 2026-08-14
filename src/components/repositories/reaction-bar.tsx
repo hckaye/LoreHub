@@ -3,6 +3,7 @@
 import { Smile } from "lucide-react";
 import { useState } from "react";
 
+import { PopupMenu } from "@/components/ui/popup-menu";
 import type { Dictionary } from "@/i18n";
 import type { AuthSession, Reaction, ReactionName } from "@/lib/api-types";
 import { deleteJsonWithBody, putJson } from "@/lib/auth-client";
@@ -45,7 +46,6 @@ export function ReactionBar(props: ReactionBarProps) {
   const serverReactions = props.reactions ?? [];
   const source = JSON.stringify(serverReactions);
   const [localState, setLocalState] = useState<LocalReactionState | null>(null);
-  const [open, setOpen] = useState(false);
   const [pendingReaction, setPendingReaction] = useState<ReactionName | null>(null);
   const [failed, setFailed] = useState(false);
   const copy = props.dictionary.reactions;
@@ -54,7 +54,7 @@ export function ReactionBar(props: ReactionBarProps) {
   const csrfToken = authenticatedSession?.csrfToken ?? "";
   const reactions = localState?.source === source ? localState.values : serverReactions;
 
-  async function toggleReaction(reaction: ReactionName) {
+  async function toggleReaction(reaction: ReactionName, close?: () => void) {
     if (!authenticated || pendingReaction) return;
     const previous = reactions;
     const current = reactions.find((entry) => entry.reaction === reaction);
@@ -63,7 +63,7 @@ export function ReactionBar(props: ReactionBarProps) {
     setLocalState({ source, values: optimistic });
     setPendingReaction(reaction);
     setFailed(false);
-    setOpen(false);
+    close?.();
     const input = {
       subjectKind: props.subjectKind,
       subjectId: props.subjectId,
@@ -97,7 +97,7 @@ export function ReactionBar(props: ReactionBarProps) {
               data-reacted={entry.viewerReacted}
               disabled={!authenticated || pendingReaction !== null}
               key={entry.reaction}
-              onClick={() => toggleReaction(entry.reaction)}
+              onClick={() => void toggleReaction(entry.reaction)}
               title={description}
               type="button"
             >
@@ -107,40 +107,33 @@ export function ReactionBar(props: ReactionBarProps) {
           );
         })}
       {authenticated && (
-        <span className={styles.addWrapper}>
-          <button
-            aria-expanded={open}
-            aria-haspopup="menu"
-            aria-label={copy.add}
-            className={styles.add}
-            disabled={pendingReaction !== null}
-            onClick={() => setOpen((value) => !value)}
-            title={copy.add}
-            type="button"
-          >
-            <Smile aria-hidden="true" size={16} />
-          </button>
-          {open && (
-            <div className={styles.popover} role="menu">
-              {reactionNames.map((reaction) => {
-                const label = reactionLabel(copy, reaction);
-                return (
-                  <button
-                    aria-label={copy.react.replace("{reaction}", label)}
-                    className={styles.option}
-                    key={reaction}
-                    onClick={() => toggleReaction(reaction)}
-                    role="menuitem"
-                    title={label}
-                    type="button"
-                  >
-                    <span aria-hidden="true">{reactionEmoji[reaction]}</span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </span>
+        <PopupMenu
+          align="start"
+          className={styles.addWrapper}
+          panelClassName={styles.popover}
+          trigger={<Smile aria-hidden="true" size={16} />}
+          triggerClassName={styles.add}
+          triggerProps={{ "aria-label": copy.add, disabled: pendingReaction !== null, title: copy.add }}
+        >
+          {(close) =>
+            reactionNames.map((reaction) => {
+              const label = reactionLabel(copy, reaction);
+              return (
+                <button
+                  aria-label={copy.react.replace("{reaction}", label)}
+                  className={styles.option}
+                  key={reaction}
+                  onClick={() => void toggleReaction(reaction, close)}
+                  role="menuitem"
+                  title={label}
+                  type="button"
+                >
+                  <span aria-hidden="true">{reactionEmoji[reaction]}</span>
+                </button>
+              );
+            })
+          }
+        </PopupMenu>
       )}
       {failed && (
         <span className={styles.error} role="alert">

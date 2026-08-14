@@ -1,8 +1,9 @@
 "use client";
 
 import { ChevronDown, GitBranch, Tag } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 
+import { PopupMenu } from "@/components/ui/popup-menu";
 import type { Dictionary } from "@/i18n";
 import type { Branch, RepositoryTag } from "@/lib/api-types";
 
@@ -27,9 +28,7 @@ export function BranchSelector({
   dictionary,
   onSelect,
 }: BranchSelectorProps) {
-  const detailsRef = useRef<HTMLDetailsElement>(null);
   const [filter, setFilter] = useState("");
-  const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<"branches" | "tags">(selectedKind === "tag" ? "tags" : "branches");
   const normalizedFilter = filter.trim().toLocaleLowerCase();
   const filteredBranches = useMemo(
@@ -44,102 +43,109 @@ export function BranchSelector({
     selectedKind === "tag" ? <Tag aria-hidden="true" size={16} /> : <GitBranch aria-hidden="true" size={16} />;
   const selectedLabel = selectedName || dictionary.repository.chooseBranch;
 
-  function select(selection: BranchSelection) {
+  function select(selection: BranchSelection, close: () => void) {
     onSelect(selection);
     setFilter("");
-    setOpen(false);
-    detailsRef.current?.removeAttribute("open");
+    close();
   }
 
   return (
-    <details
+    <PopupMenu
+      align="start"
       className={styles.popover}
-      onToggle={(event) => setOpen(event.currentTarget.open)}
-      open={open}
-      ref={detailsRef}
+      panelClassName={styles.menu}
+      panelRole="none"
+      trigger={
+        <>
+          {selectedIcon}
+          <span>{selectedLabel}</span>
+          <ChevronDown aria-hidden="true" size={15} />
+        </>
+      }
+      triggerClassName={styles.summary}
+      triggerProps={{ "aria-label": dictionary.codeBrowser.selectReference }}
     >
-      <summary aria-label={dictionary.codeBrowser.selectReference} className={styles.summary}>
-        {selectedIcon}
-        <span>{selectedLabel}</span>
-        <ChevronDown aria-hidden="true" size={15} />
-      </summary>
-      <div className={styles.menu}>
-        <label className="visually-hidden" htmlFor="branch-selector-filter">
-          {dictionary.codeBrowser.branchFilter}
-        </label>
-        <input
-          autoComplete="off"
-          id="branch-selector-filter"
-          onChange={(event) => setFilter(event.target.value)}
-          placeholder={dictionary.codeBrowser.branchFilter}
-          type="search"
-          value={filter}
-        />
-        <div aria-label={dictionary.codeBrowser.selectReference} className={styles.tabs} role="tablist">
-          <button
-            aria-selected={tab === "branches"}
-            className={tab === "branches" ? styles.activeTab : ""}
-            onClick={() => setTab("branches")}
-            role="tab"
-            type="button"
-          >
-            <GitBranch aria-hidden="true" size={14} />
-            {dictionary.codeBrowser.branches}
-          </button>
-          <button
-            aria-selected={tab === "tags"}
-            className={tab === "tags" ? styles.activeTab : ""}
-            onClick={() => setTab("tags")}
-            role="tab"
-            type="button"
-          >
-            <Tag aria-hidden="true" size={14} />
-            {dictionary.codeBrowser.tags}
-          </button>
-        </div>
-        <div aria-label={dictionary.codeBrowser.selectReference} className={styles.options} role="listbox">
-          {tab === "branches"
-            ? filteredBranches.map((branch) => (
-                <button
-                  aria-selected={selectedKind === "branch" && selectedName === branch.name}
-                  className={styles.option}
-                  key={branch.id}
-                  onClick={() => select({ kind: "branch", name: branch.name })}
-                  role="option"
-                  type="button"
-                >
-                  <GitBranch aria-hidden="true" size={15} />
-                  <span className={styles.optionName}>{branch.name}</span>
-                  {branch.current && <span className={styles.badge}>{dictionary.repository.branchCurrent}</span>}
-                  {branch.archived && <span className={styles.badge}>{dictionary.repository.branchArchived}</span>}
-                </button>
-              ))
-            : filteredTags.map((tag) => (
-                <button
-                  aria-selected={selectedKind === "tag" && selectedName === tag.name}
-                  className={styles.option}
-                  key={`${tag.name}-${tag.revision}`}
-                  onClick={() => select({ kind: "tag", name: tag.name, revision: tag.revision })}
-                  role="option"
-                  type="button"
-                >
-                  <Tag aria-hidden="true" size={15} />
-                  <span className={styles.optionName}>{tag.name}</span>
-                </button>
-              ))}
-          {tab === "branches" && filteredBranches.length === 0 && (
-            <p className={styles.empty}>
-              {normalizedFilter ? dictionary.codeBrowser.noMatchingReferences : dictionary.codeBrowser.noBranchesFound}
-            </p>
-          )}
-          {tab === "tags" && filteredTags.length === 0 && (
-            <p className={styles.empty}>
-              {normalizedFilter ? dictionary.codeBrowser.noMatchingReferences : dictionary.codeBrowser.noTagsFound}
-            </p>
-          )}
-        </div>
-      </div>
-    </details>
+      {(close) => (
+        <>
+          <label className="visually-hidden" htmlFor="branch-selector-filter">
+            {dictionary.codeBrowser.branchFilter}
+          </label>
+          <input
+            autoComplete="off"
+            id="branch-selector-filter"
+            onChange={(event) => setFilter(event.target.value)}
+            placeholder={dictionary.codeBrowser.branchFilter}
+            type="search"
+            value={filter}
+          />
+          <div aria-label={dictionary.codeBrowser.selectReference} className={styles.tabs} role="tablist">
+            <button
+              aria-selected={tab === "branches"}
+              className={tab === "branches" ? styles.activeTab : ""}
+              onClick={() => setTab("branches")}
+              role="tab"
+              type="button"
+            >
+              <GitBranch aria-hidden="true" size={14} />
+              {dictionary.codeBrowser.branches}
+            </button>
+            <button
+              aria-selected={tab === "tags"}
+              className={tab === "tags" ? styles.activeTab : ""}
+              onClick={() => setTab("tags")}
+              role="tab"
+              type="button"
+            >
+              <Tag aria-hidden="true" size={14} />
+              {dictionary.codeBrowser.tags}
+            </button>
+          </div>
+          <div aria-label={dictionary.codeBrowser.selectReference} className={styles.options} role="listbox">
+            {tab === "branches"
+              ? filteredBranches.map((branch) => (
+                  <button
+                    aria-selected={selectedKind === "branch" && selectedName === branch.name}
+                    className={styles.option}
+                    key={branch.id}
+                    onClick={() => select({ kind: "branch", name: branch.name }, close)}
+                    role="option"
+                    type="button"
+                  >
+                    <GitBranch aria-hidden="true" size={15} />
+                    <span className={styles.optionName}>{branch.name}</span>
+                    {branch.current && <span className={styles.badge}>{dictionary.repository.branchCurrent}</span>}
+                    {branch.archived && <span className={styles.badge}>{dictionary.repository.branchArchived}</span>}
+                  </button>
+                ))
+              : filteredTags.map((tag) => (
+                  <button
+                    aria-selected={selectedKind === "tag" && selectedName === tag.name}
+                    className={styles.option}
+                    key={`${tag.name}-${tag.revision}`}
+                    onClick={() => select({ kind: "tag", name: tag.name, revision: tag.revision }, close)}
+                    role="option"
+                    type="button"
+                  >
+                    <Tag aria-hidden="true" size={15} />
+                    <span className={styles.optionName}>{tag.name}</span>
+                  </button>
+                ))}
+            {tab === "branches" && filteredBranches.length === 0 && (
+              <p className={styles.empty}>
+                {normalizedFilter
+                  ? dictionary.codeBrowser.noMatchingReferences
+                  : dictionary.codeBrowser.noBranchesFound}
+              </p>
+            )}
+            {tab === "tags" && filteredTags.length === 0 && (
+              <p className={styles.empty}>
+                {normalizedFilter ? dictionary.codeBrowser.noMatchingReferences : dictionary.codeBrowser.noTagsFound}
+              </p>
+            )}
+          </div>
+        </>
+      )}
+    </PopupMenu>
   );
 }
 

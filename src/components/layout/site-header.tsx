@@ -3,8 +3,9 @@
 import { Bell, BookOpen, CircleDot, GitPullRequest, Home, Menu, Search, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
+import { useDismissOnOutsideInteraction } from "@/components/ui/popup-menu";
 import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
 import type { AuthSession } from "@/lib/api-types";
@@ -25,6 +26,15 @@ type SiteHeaderProps = {
 
 export function SiteHeader({ locale, dictionary, session, unreadNotifications }: SiteHeaderProps) {
   const [navigationOpen, setNavigationOpen] = useState(false);
+  const navigationRef = useRef<HTMLElement>(null);
+  const navigationToggleRef = useRef<HTMLButtonElement>(null);
+  const closeNavigation = useCallback(() => setNavigationOpen(false), []);
+  useDismissOnOutsideInteraction({
+    close: closeNavigation,
+    containers: [navigationRef, navigationToggleRef],
+    focusOnDismiss: navigationToggleRef,
+    open: navigationOpen,
+  });
   const pathname = usePathname() ?? `/${locale}`;
   const searchParams = useSearchParams();
   const searchQuery = searchParams.get("q") ?? "";
@@ -45,6 +55,7 @@ export function SiteHeader({ locale, dictionary, session, unreadNotifications }:
           aria-label={navigationOpen ? dictionary.common.closeMenu : dictionary.common.openMenu}
           className={styles.menuButton}
           onClick={() => setNavigationOpen((open) => !open)}
+          ref={navigationToggleRef}
           type="button"
         >
           {navigationOpen ? <X aria-hidden="true" size={18} /> : <Menu aria-hidden="true" size={18} />}
@@ -64,6 +75,7 @@ export function SiteHeader({ locale, dictionary, session, unreadNotifications }:
           aria-label={dictionary.common.primaryNavigation}
           className={`${styles.navigation} ${navigationOpen ? styles.navigationOpen : ""}`}
           id="primary-navigation"
+          ref={navigationRef}
         >
           <Link href={`/${locale}`} onClick={() => setNavigationOpen(false)}>
             <Home aria-hidden="true" size={16} />

@@ -48,7 +48,11 @@ function LabelSection(props: IssueSidebarProps) {
       <div className={styles.sidebarHeading}>
         <h2>{copy.labels}</h2>
         {props.issue.viewerCanManageLabels && props.labelsAvailable && (
-          <SidebarMenu menuClassName={styles.labelMenu} summary={copy.manageLabels}>
+          <SidebarMenu
+            menuClassName={styles.labelMenu}
+            summary={copy.manageLabels}
+            triggerClassName={styles.sidebarMenuTrigger}
+          >
             {(close) =>
               props.labels.map((label) => (
                 <label key={label.id}>
@@ -90,7 +94,11 @@ function MilestoneSection(props: IssueSidebarProps) {
       <div className={styles.sidebarHeading}>
         <h2>{copy.milestone}</h2>
         {props.issue.viewerCanManageMilestone && props.milestonesAvailable && (
-          <SidebarMenu menuClassName={styles.milestoneMenu} summary={copy.manageMilestone}>
+          <SidebarMenu
+            menuClassName={styles.milestoneMenu}
+            summary={copy.manageMilestone}
+            triggerClassName={styles.sidebarMenuTrigger}
+          >
             {(close) => (
               <>
                 <button
@@ -168,7 +176,11 @@ function AssigneeSection(props: IssueSidebarProps) {
       <div className={styles.sidebarHeading}>
         <h2>{props.dictionary.issueAssignees.title}</h2>
         {props.issue.viewerCanManageAssignees && props.assigneesAvailable && (
-          <SidebarMenu menuClassName={styles.assigneeMenu} summary={props.dictionary.issueAssignees.manage}>
+          <SidebarMenu
+            menuClassName={styles.assigneeMenu}
+            summary={props.dictionary.issueAssignees.manage}
+            triggerClassName={styles.sidebarMenuTrigger}
+          >
             {(close) => (
               <>
                 <input

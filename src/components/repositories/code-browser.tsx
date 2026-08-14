@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
+import { PopupMenu } from "@/components/ui/popup-menu";
 import type { Dictionary } from "@/i18n";
 import type { Branch, LoreRevision, LoreTree, RepositoryTag } from "@/lib/api-types";
 import { formatRelativeTime, shortRevision } from "@/lib/format";
@@ -191,25 +192,34 @@ function CloneMenu({ cloneUrl, dictionary }: { cloneUrl: string; dictionary: Dic
   }
 
   return (
-    <details className={styles.codeMenu}>
-      <summary className={styles.codeButton}>
-        <Code2 aria-hidden="true" size={16} />
-        {dictionary.codeBrowser.code}
-        <ChevronDown aria-hidden="true" size={14} />
-      </summary>
-      <div className={styles.codePopover}>
-        <strong>{dictionary.codeBrowser.cloneRepository}</strong>
-        <label htmlFor="repository-clone-url">{dictionary.codeBrowser.cloneURL}</label>
-        <div className={styles.cloneURLRow}>
-          <input id="repository-clone-url" readOnly value={cloneUrl} />
-          <button disabled={!cloneUrl} onClick={copyCloneURL} type="button">
-            <Clipboard aria-hidden="true" size={15} />
-            {copyStatus === "copied" ? dictionary.codeBrowser.copied : dictionary.codeBrowser.copy}
-          </button>
-        </div>
-        {copyStatus === "failed" && <p role="status">{dictionary.codeBrowser.copyFailed}</p>}
-      </div>
-    </details>
+    <PopupMenu
+      className={styles.codeMenu}
+      panelClassName={styles.codePopover}
+      panelRole="none"
+      trigger={
+        <>
+          <Code2 aria-hidden="true" size={16} />
+          {dictionary.codeBrowser.code}
+          <ChevronDown aria-hidden="true" size={14} />
+        </>
+      }
+      triggerClassName={styles.codeButton}
+    >
+      {() => (
+        <>
+          <strong>{dictionary.codeBrowser.cloneRepository}</strong>
+          <label htmlFor="repository-clone-url">{dictionary.codeBrowser.cloneURL}</label>
+          <div className={styles.cloneURLRow}>
+            <input id="repository-clone-url" readOnly value={cloneUrl} />
+            <button disabled={!cloneUrl} onClick={() => void copyCloneURL()} type="button">
+              <Clipboard aria-hidden="true" size={15} />
+              {copyStatus === "copied" ? dictionary.codeBrowser.copied : dictionary.codeBrowser.copy}
+            </button>
+          </div>
+          {copyStatus === "failed" && <p role="status">{dictionary.codeBrowser.copyFailed}</p>}
+        </>
+      )}
+    </PopupMenu>
   );
 }
 

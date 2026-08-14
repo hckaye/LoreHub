@@ -2,8 +2,9 @@
 
 import { Check, ChevronDown, CircleDot, Search } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useState } from "react";
 
+import { PopupMenu } from "@/components/ui/popup-menu";
 import type { Dictionary } from "@/i18n";
 import type { Label, Milestone } from "@/lib/api-types";
 import { normalizeLabelColor } from "@/lib/format";
@@ -195,46 +196,57 @@ function TextFilterDropdown(props: {
   paramName: "author" | "assignee";
   placeholder: string;
 }) {
-  const ref = useRef<HTMLDetailsElement>(null);
   const [value, setValue] = useState(props.currentValue ?? "");
-  useCloseOnOutsideClickAndEscape(ref);
   const displayValue = props.currentValue ? props.currentValue : props.label;
 
   return (
-    <details className={styles.dropdown} ref={ref}>
-      <summary className={styles.dropdownTrigger}>
-        <span className={styles.dropdownTriggerLabel}>{displayValue}</span>
-        <ChevronDown aria-hidden="true" size={14} />
-      </summary>
-      <div className={styles.dropdownMenu}>
-        <div className={styles.dropdownHeader}>{props.filterLabel}</div>
-        <form
-          className={styles.dropdownForm}
-          onSubmit={(event) => {
-            event.preventDefault();
-            const trimmed = value.trim();
-            props.navigate({
-              [props.paramName]: trimmed || undefined,
-            } as Partial<RepositoryMergeRequestQuery>);
-            closeDetails(ref);
-          }}
-        >
-          <input
-            aria-label={props.filterLabel}
-            autoFocus
-            className={styles.dropdownInput}
-            maxLength={100}
-            onChange={(event) => setValue(event.target.value)}
-            placeholder={props.placeholder}
-            type="text"
-            value={value}
-          />
-          <button className={styles.dropdownSubmit} type="submit">
-            {props.copy.apply}
-          </button>
-        </form>
-      </div>
-    </details>
+    <PopupMenu
+      className={styles.dropdown}
+      panelClassName={styles.dropdownMenu}
+      panelRole="none"
+      trigger={<DropdownTriggerContent label={displayValue} />}
+      triggerClassName={styles.dropdownTrigger}
+    >
+      {(close) => (
+        <>
+          <div className={styles.dropdownHeader}>{props.filterLabel}</div>
+          <form
+            className={styles.dropdownForm}
+            onSubmit={(event) => {
+              event.preventDefault();
+              const trimmed = value.trim();
+              props.navigate({
+                [props.paramName]: trimmed || undefined,
+              } as Partial<RepositoryMergeRequestQuery>);
+              close();
+            }}
+          >
+            <input
+              aria-label={props.filterLabel}
+              autoFocus
+              className={styles.dropdownInput}
+              maxLength={100}
+              onChange={(event) => setValue(event.target.value)}
+              placeholder={props.placeholder}
+              type="text"
+              value={value}
+            />
+            <button className={styles.dropdownSubmit} type="submit">
+              {props.copy.apply}
+            </button>
+          </form>
+        </>
+      )}
+    </PopupMenu>
+  );
+}
+
+function DropdownTriggerContent({ label }: { label: string }) {
+  return (
+    <>
+      <span className={styles.dropdownTriggerLabel}>{label}</span>
+      <ChevronDown aria-hidden="true" size={14} />
+    </>
   );
 }
 
@@ -244,9 +256,7 @@ function LabelFilterDropdown(props: {
   labels: Label[];
   navigate: NavigateFn;
 }) {
-  const ref = useRef<HTMLDetailsElement>(null);
   const [filter, setFilter] = useState("");
-  useCloseOnOutsideClickAndEscape(ref);
   const normalizedFilter = filter.trim().toLocaleLowerCase("en");
   const visibleLabels = props.labels.filter((label) => label.name.toLocaleLowerCase("en").includes(normalizedFilter));
   const displayValue = props.currentLabels.length > 0 ? props.currentLabels.join(", ") : props.copy.label;
@@ -256,82 +266,86 @@ function LabelFilterDropdown(props: {
     return props.currentLabels.some((selected) => selected.toLocaleLowerCase("en") === normalizedName);
   }
 
-  function clear() {
+  function clear(close: () => void) {
     props.navigate({ labels: undefined });
     setFilter("");
-    closeDetails(ref);
+    close();
   }
 
-  function toggle(name: string) {
+  function toggle(name: string, close: () => void) {
     const nextLabels = isSelected(name)
       ? props.currentLabels.filter((selected) => selected.toLocaleLowerCase("en") !== name.toLocaleLowerCase("en"))
       : [...props.currentLabels, name];
     props.navigate({ labels: nextLabels.length > 0 ? nextLabels : undefined });
     setFilter("");
-    closeDetails(ref);
+    close();
   }
 
   return (
-    <details className={styles.dropdown} ref={ref}>
-      <summary className={styles.dropdownTrigger}>
-        <span className={styles.dropdownTriggerLabel}>{displayValue}</span>
-        <ChevronDown aria-hidden="true" size={14} />
-      </summary>
-      <div className={styles.dropdownMenu}>
-        <div className={styles.dropdownHeader}>{props.copy.filterByLabel}</div>
-        <input
-          aria-label={props.copy.filterByLabel}
-          autoFocus
-          className={styles.dropdownInput}
-          onChange={(event) => setFilter(event.target.value)}
-          placeholder={props.copy.labelPlaceholder}
-          type="search"
-          value={filter}
-        />
-        <button
-          aria-pressed={props.currentLabels.length === 0}
-          className={styles.dropdownItem}
-          data-active={props.currentLabels.length === 0 ? "true" : undefined}
-          onClick={clear}
-          type="button"
-        >
-          <span className={styles.dropdownOptionLabel}>{props.copy.anyLabel}</span>
-          <span aria-hidden="true" className={styles.dropdownCheck}>
-            {props.currentLabels.length === 0 && <Check size={14} />}
-          </span>
-        </button>
-        <div className={styles.dropdownDivider} />
-        <div aria-label={props.copy.filterByLabel} className={styles.dropdownOptions} role="listbox">
-          {visibleLabels.length > 0 ? (
-            visibleLabels.map((label) => {
-              const selected = isSelected(label.name);
-              return (
-                <button
-                  aria-pressed={selected}
-                  className={styles.dropdownItem}
-                  data-active={selected ? "true" : undefined}
-                  key={label.id}
-                  onClick={() => toggle(label.name)}
-                  type="button"
-                >
-                  <span
-                    aria-hidden="true"
-                    className={styles.labelDot}
-                    style={{ backgroundColor: normalizeLabelColor(label.color) }}
-                  />
-                  <span className={styles.dropdownOptionLabel}>{label.name}</span>
-                  <span aria-hidden="true" className={styles.dropdownCheck}>
-                    {selected && <Check size={14} />}
-                  </span>
-                </button>
-              );
-            })
-          ) : (
-            <p className={styles.dropdownEmpty}>{props.copy.noLabels}</p>
-          )}
-        </div>
-      </div>
-    </details>
+    <PopupMenu
+      className={styles.dropdown}
+      panelClassName={styles.dropdownMenu}
+      panelRole="none"
+      trigger={<DropdownTriggerContent label={displayValue} />}
+      triggerClassName={styles.dropdownTrigger}
+    >
+      {(close) => (
+        <>
+          <div className={styles.dropdownHeader}>{props.copy.filterByLabel}</div>
+          <input
+            aria-label={props.copy.filterByLabel}
+            autoFocus
+            className={styles.dropdownInput}
+            onChange={(event) => setFilter(event.target.value)}
+            placeholder={props.copy.labelPlaceholder}
+            type="search"
+            value={filter}
+          />
+          <button
+            aria-pressed={props.currentLabels.length === 0}
+            className={styles.dropdownItem}
+            data-active={props.currentLabels.length === 0 ? "true" : undefined}
+            onClick={() => clear(close)}
+            type="button"
+          >
+            <span className={styles.dropdownOptionLabel}>{props.copy.anyLabel}</span>
+            <span aria-hidden="true" className={styles.dropdownCheck}>
+              {props.currentLabels.length === 0 && <Check size={14} />}
+            </span>
+          </button>
+          <div className={styles.dropdownDivider} />
+          <div aria-label={props.copy.filterByLabel} className={styles.dropdownOptions} role="listbox">
+            {visibleLabels.length > 0 ? (
+              visibleLabels.map((label) => {
+                const selected = isSelected(label.name);
+                return (
+                  <button
+                    aria-pressed={selected}
+                    className={styles.dropdownItem}
+                    data-active={selected ? "true" : undefined}
+                    key={label.id}
+                    onClick={() => toggle(label.name, close)}
+                    type="button"
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={styles.labelDot}
+                      style={{ backgroundColor: normalizeLabelColor(label.color) }}
+                    />
+                    <span className={styles.dropdownOptionLabel}>{label.name}</span>
+                    <span aria-hidden="true" className={styles.dropdownCheck}>
+                      {selected && <Check size={14} />}
+                    </span>
+                  </button>
+                );
+              })
+            ) : (
+              <p className={styles.dropdownEmpty}>{props.copy.noLabels}</p>
+            )}
+          </div>
+        </>
+      )}
+    </PopupMenu>
   );
 }
 
@@ -341,9 +355,7 @@ function MilestoneFilterDropdown(props: {
   milestones: Milestone[];
   navigate: NavigateFn;
 }) {
-  const ref = useRef<HTMLDetailsElement>(null);
   const [filter, setFilter] = useState("");
-  useCloseOnOutsideClickAndEscape(ref);
   const normalizedFilter = filter.trim().toLocaleLowerCase("en");
   const visibleMilestones = props.milestones.filter((milestone) =>
     milestone.title.toLocaleLowerCase("en").includes(normalizedFilter),
@@ -354,79 +366,83 @@ function MilestoneFilterDropdown(props: {
       ? props.copy.noMilestone
       : (selectedMilestone?.title ?? props.currentMilestone ?? props.copy.milestone);
 
-  function select(value: string | undefined) {
+  function select(value: string | undefined, close: () => void) {
     props.navigate({ milestone: value });
     setFilter("");
-    closeDetails(ref);
+    close();
   }
 
   return (
-    <details className={styles.dropdown} ref={ref}>
-      <summary className={styles.dropdownTrigger}>
-        <span className={styles.dropdownTriggerLabel}>{displayValue}</span>
-        <ChevronDown aria-hidden="true" size={14} />
-      </summary>
-      <div className={styles.dropdownMenu}>
-        <div className={styles.dropdownHeader}>{props.copy.filterByMilestone}</div>
-        <input
-          aria-label={props.copy.filterByMilestone}
-          autoFocus
-          className={styles.dropdownInput}
-          onChange={(event) => setFilter(event.target.value)}
-          placeholder={props.copy.milestonePlaceholder}
-          type="search"
-          value={filter}
-        />
-        <button
-          aria-pressed={props.currentMilestone === undefined}
-          className={styles.dropdownItem}
-          data-active={props.currentMilestone === undefined ? "true" : undefined}
-          onClick={() => select(undefined)}
-          type="button"
-        >
-          <span className={styles.dropdownOptionLabel}>{props.copy.anyMilestone}</span>
-          <span aria-hidden="true" className={styles.dropdownCheck}>
-            {props.currentMilestone === undefined && <Check size={14} />}
-          </span>
-        </button>
-        <div className={styles.dropdownDivider} />
-        <div aria-label={props.copy.filterByMilestone} className={styles.dropdownOptions} role="listbox">
-          {props.copy.noMilestone.toLocaleLowerCase("en").includes(normalizedFilter) && (
-            <button
-              aria-pressed={props.currentMilestone === "none"}
-              className={styles.dropdownItem}
-              data-active={props.currentMilestone === "none" ? "true" : undefined}
-              onClick={() => select("none")}
-              type="button"
-            >
-              <span className={styles.dropdownOptionLabel}>{props.copy.noMilestone}</span>
-              <span aria-hidden="true" className={styles.dropdownCheck}>
-                {props.currentMilestone === "none" && <Check size={14} />}
-              </span>
-            </button>
-          )}
-          {visibleMilestones.map((milestone) => {
-            const selected = String(milestone.number) === props.currentMilestone;
-            return (
+    <PopupMenu
+      className={styles.dropdown}
+      panelClassName={styles.dropdownMenu}
+      panelRole="none"
+      trigger={<DropdownTriggerContent label={displayValue} />}
+      triggerClassName={styles.dropdownTrigger}
+    >
+      {(close) => (
+        <>
+          <div className={styles.dropdownHeader}>{props.copy.filterByMilestone}</div>
+          <input
+            aria-label={props.copy.filterByMilestone}
+            autoFocus
+            className={styles.dropdownInput}
+            onChange={(event) => setFilter(event.target.value)}
+            placeholder={props.copy.milestonePlaceholder}
+            type="search"
+            value={filter}
+          />
+          <button
+            aria-pressed={props.currentMilestone === undefined}
+            className={styles.dropdownItem}
+            data-active={props.currentMilestone === undefined ? "true" : undefined}
+            onClick={() => select(undefined, close)}
+            type="button"
+          >
+            <span className={styles.dropdownOptionLabel}>{props.copy.anyMilestone}</span>
+            <span aria-hidden="true" className={styles.dropdownCheck}>
+              {props.currentMilestone === undefined && <Check size={14} />}
+            </span>
+          </button>
+          <div className={styles.dropdownDivider} />
+          <div aria-label={props.copy.filterByMilestone} className={styles.dropdownOptions} role="listbox">
+            {props.copy.noMilestone.toLocaleLowerCase("en").includes(normalizedFilter) && (
               <button
-                aria-pressed={selected}
+                aria-pressed={props.currentMilestone === "none"}
                 className={styles.dropdownItem}
-                data-active={selected ? "true" : undefined}
-                key={milestone.id}
-                onClick={() => select(String(milestone.number))}
+                data-active={props.currentMilestone === "none" ? "true" : undefined}
+                onClick={() => select("none", close)}
                 type="button"
               >
-                <span className={styles.dropdownOptionLabel}>{milestone.title}</span>
+                <span className={styles.dropdownOptionLabel}>{props.copy.noMilestone}</span>
                 <span aria-hidden="true" className={styles.dropdownCheck}>
-                  {selected && <Check size={14} />}
+                  {props.currentMilestone === "none" && <Check size={14} />}
                 </span>
               </button>
-            );
-          })}
-          {visibleMilestones.length === 0 && <p className={styles.dropdownEmpty}>{props.copy.noOpenMilestones}</p>}
-        </div>
-      </div>
-    </details>
+            )}
+            {visibleMilestones.map((milestone) => {
+              const selected = String(milestone.number) === props.currentMilestone;
+              return (
+                <button
+                  aria-pressed={selected}
+                  className={styles.dropdownItem}
+                  data-active={selected ? "true" : undefined}
+                  key={milestone.id}
+                  onClick={() => select(String(milestone.number), close)}
+                  type="button"
+                >
+                  <span className={styles.dropdownOptionLabel}>{milestone.title}</span>
+                  <span aria-hidden="true" className={styles.dropdownCheck}>
+                    {selected && <Check size={14} />}
+                  </span>
+                </button>
+              );
+            })}
+            {visibleMilestones.length === 0 && <p className={styles.dropdownEmpty}>{props.copy.noOpenMilestones}</p>}
+          </div>
+        </>
+      )}
+    </PopupMenu>
   );
 }
 
@@ -436,8 +452,6 @@ function SortDropdown(props: {
   currentSort: RepositoryWorkItemSort;
   navigate: NavigateFn;
 }) {
-  const ref = useRef<HTMLDetailsElement>(null);
-  useCloseOnOutsideClickAndEscape(ref);
   const sortLabel =
     props.currentSort === "created"
       ? props.copy.sortCreated
@@ -445,36 +459,55 @@ function SortDropdown(props: {
         ? props.copy.sortComments
         : props.copy.sortUpdated;
 
-  function select(changes: Partial<RepositoryMergeRequestQuery>) {
+  function select(changes: Partial<RepositoryMergeRequestQuery>, close: () => void) {
     props.navigate(changes);
-    closeDetails(ref);
+    close();
   }
 
   return (
-    <details className={styles.dropdown} ref={ref}>
-      <summary className={styles.dropdownTrigger}>
-        <span className={styles.dropdownTriggerLabel}>{sortLabel}</span>
-        <ChevronDown aria-hidden="true" size={14} />
-      </summary>
-      <div className={styles.dropdownMenu}>
-        <SortOption copy={props.copy.sortUpdated} current={props.currentSort} onSelect={select} sort="updated" />
-        <SortOption copy={props.copy.sortCreated} current={props.currentSort} onSelect={select} sort="created" />
-        <SortOption copy={props.copy.sortComments} current={props.currentSort} onSelect={select} sort="comments" />
-        <div className={styles.dropdownDivider} />
-        <SortOption
-          copy={props.copy.descending}
-          current={props.currentDirection}
-          onSelect={select}
-          sort="direction-desc"
-        />
-        <SortOption
-          copy={props.copy.ascending}
-          current={props.currentDirection}
-          onSelect={select}
-          sort="direction-asc"
-        />
-      </div>
-    </details>
+    <PopupMenu
+      className={styles.dropdown}
+      panelClassName={styles.dropdownMenu}
+      panelRole="none"
+      trigger={<DropdownTriggerContent label={sortLabel} />}
+      triggerClassName={styles.dropdownTrigger}
+    >
+      {(close) => (
+        <>
+          <SortOption
+            copy={props.copy.sortUpdated}
+            current={props.currentSort}
+            onSelect={(changes) => select(changes, close)}
+            sort="updated"
+          />
+          <SortOption
+            copy={props.copy.sortCreated}
+            current={props.currentSort}
+            onSelect={(changes) => select(changes, close)}
+            sort="created"
+          />
+          <SortOption
+            copy={props.copy.sortComments}
+            current={props.currentSort}
+            onSelect={(changes) => select(changes, close)}
+            sort="comments"
+          />
+          <div className={styles.dropdownDivider} />
+          <SortOption
+            copy={props.copy.descending}
+            current={props.currentDirection}
+            onSelect={(changes) => select(changes, close)}
+            sort="direction-desc"
+          />
+          <SortOption
+            copy={props.copy.ascending}
+            current={props.currentDirection}
+            onSelect={(changes) => select(changes, close)}
+            sort="direction-asc"
+          />
+        </>
+      )}
+    </PopupMenu>
   );
 }
 
@@ -507,27 +540,4 @@ function SortOption(props: {
       </span>
     </button>
   );
-}
-
-function closeDetails(ref: RefObject<HTMLDetailsElement | null>) {
-  if (ref.current) ref.current.open = false;
-}
-
-function useCloseOnOutsideClickAndEscape(ref: RefObject<HTMLDetailsElement | null>) {
-  useEffect(() => {
-    function handleClick(event: MouseEvent) {
-      const el = ref.current;
-      if (!el || !el.open) return;
-      if (!el.contains(event.target as Node)) closeDetails(ref);
-    }
-    function handleKey(event: KeyboardEvent) {
-      if (event.key === "Escape" && ref.current?.open) closeDetails(ref);
-    }
-    document.addEventListener("click", handleClick);
-    document.addEventListener("keydown", handleKey);
-    return () => {
-      document.removeEventListener("click", handleClick);
-      document.removeEventListener("keydown", handleKey);
-    };
-  }, [ref]);
 }

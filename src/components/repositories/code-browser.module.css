@@ -89,17 +89,13 @@
   background: var(--success-border);
   color: var(--fg-on-emphasis);
   cursor: pointer;
+  font: inherit;
   font-size: 0.8rem;
   font-weight: 600;
-  list-style: none;
-}
-
-.codeButton::-webkit-details-marker {
-  display: none;
 }
 
 .codeButton:hover,
-.codeMenu[open] .codeButton {
+.codeButton[aria-expanded="true"] {
   background: var(--success-fg);
 }
 

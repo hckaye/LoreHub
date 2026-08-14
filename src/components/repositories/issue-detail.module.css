@@ -386,15 +386,13 @@
   position: relative;
 }
 
-.sidebarHeading summary {
+.sidebarMenuTrigger {
+  border: 0;
+  background: transparent;
   color: var(--fg-muted);
   cursor: pointer;
+  font: inherit;
   font-size: 0.75rem;
-  list-style: none;
-}
-
-.sidebarHeading summary::-webkit-details-marker {
-  display: none;
 }
 
 .labelMenu {

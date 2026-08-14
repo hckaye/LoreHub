@@ -7,6 +7,7 @@ import type { Dictionary } from "@/i18n";
 import type { Assignee, Label, MergeRequestMetadata, Milestone } from "@/lib/api-types";
 import { deleteJson, putJson } from "@/lib/auth-client";
 
+import { PopupMenu } from "../ui/popup-menu";
 import { UserAvatar } from "../ui/user-avatar";
 import styles from "./pull-request-metadata.module.css";
 
@@ -73,10 +74,14 @@ function Assignees(props: SectionProps) {
     <section>
       <SectionHeading label={copy.assignees}>
         {props.metadata?.viewerCanManageAssignees && props.assigneesAvailable && (
-          <details>
-            <summary>{copy.manageAssignees}</summary>
-            <div className={styles.menu}>
-              {candidates.length > 0 ? (
+          <PopupMenu
+            panelClassName={styles.menu}
+            panelRole="none"
+            trigger={copy.manageAssignees}
+            triggerClassName={styles.menuTrigger}
+          >
+            {() =>
+              candidates.length > 0 ? (
                 candidates.map((user) => {
                   const action = `assignee:${user.id}`;
                   const userPath = `${props.path}/assignees/${encodeURIComponent(user.username)}`;
@@ -100,9 +105,9 @@ function Assignees(props: SectionProps) {
                 })
               ) : (
                 <p>{copy.noCandidates}</p>
-              )}
-            </div>
-          </details>
+              )
+            }
+          </PopupMenu>
         )}
       </SectionHeading>
       {props.metadata === null ? (
@@ -128,10 +133,14 @@ function Labels(props: SectionProps) {
     <section>
       <SectionHeading label={copy.labels}>
         {props.metadata?.viewerCanManageLabels && props.labelsAvailable && (
-          <details>
-            <summary>{copy.manageLabels}</summary>
-            <div className={styles.menu}>
-              {props.labels.map((label) => {
+          <PopupMenu
+            panelClassName={styles.menu}
+            panelRole="none"
+            trigger={copy.manageLabels}
+            triggerClassName={styles.menuTrigger}
+          >
+            {() =>
+              props.labels.map((label) => {
                 const labelPath = `${props.path}/labels/${encodeURIComponent(label.id)}`;
                 return (
                   <label key={label.id}>
@@ -150,9 +159,9 @@ function Labels(props: SectionProps) {
                     <LabelChip label={label} />
                   </label>
                 );
-              })}
-            </div>
-          </details>
+              })
+            }
+          </PopupMenu>
         )}
       </SectionHeading>
       {props.metadata === null ? (
@@ -177,37 +186,45 @@ function Milestone(props: SectionProps) {
     <section>
       <SectionHeading label={copy.milestone}>
         {props.metadata?.viewerCanManageMilestone && props.milestonesAvailable && (
-          <details>
-            <summary>{copy.manageMilestone}</summary>
-            <div className={styles.milestoneMenu}>
-              <button
-                aria-pressed={props.metadata.milestone === null}
-                disabled={props.busy === "milestone"}
-                onClick={() => props.mutate("milestone", () => deleteJson(`${props.path}/milestone`, props.csrfToken))}
-                type="button"
-              >
-                {copy.removeMilestone}
-              </button>
-              {props.milestones.map((milestone) => (
+          <PopupMenu
+            panelClassName={styles.milestoneMenu}
+            panelRole="none"
+            trigger={copy.manageMilestone}
+            triggerClassName={styles.menuTrigger}
+          >
+            {() => (
+              <>
                 <button
-                  aria-pressed={props.metadata?.milestone?.id === milestone.id}
+                  aria-pressed={props.metadata?.milestone === null}
                   disabled={props.busy === "milestone"}
-                  key={milestone.id}
                   onClick={() =>
-                    props.mutate("milestone", () =>
-                      putJson(`${props.path}/milestone/${milestone.number}`, undefined, props.csrfToken),
-                    )
+                    props.mutate("milestone", () => deleteJson(`${props.path}/milestone`, props.csrfToken))
                   }
                   type="button"
                 >
-                  <span>{milestone.title}</span>
-                  <small>
-                    {milestone.state === "open" ? props.dictionary.common.open : props.dictionary.common.closed}
-                  </small>
+                  {copy.removeMilestone}
                 </button>
-              ))}
-            </div>
-          </details>
+                {props.milestones.map((milestone) => (
+                  <button
+                    aria-pressed={props.metadata?.milestone?.id === milestone.id}
+                    disabled={props.busy === "milestone"}
+                    key={milestone.id}
+                    onClick={() =>
+                      props.mutate("milestone", () =>
+                        putJson(`${props.path}/milestone/${milestone.number}`, undefined, props.csrfToken),
+                      )
+                    }
+                    type="button"
+                  >
+                    <span>{milestone.title}</span>
+                    <small>
+                      {milestone.state === "open" ? props.dictionary.common.open : props.dictionary.common.closed}
+                    </small>
+                  </button>
+                ))}
+              </>
+            )}
+          </PopupMenu>
         )}
       </SectionHeading>
       {props.metadata === null ? (
