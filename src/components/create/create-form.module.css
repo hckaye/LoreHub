@@ -123,28 +123,9 @@
   border-top: 1px solid var(--border);
 }
 
-.primaryButton,
-.cancel {
-  display: inline-flex;
-  min-height: 32px;
-  align-items: center;
-  justify-content: center;
-  padding: 5px 16px;
-  border-radius: 6px;
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 20px;
-  text-decoration: none;
-}
-
 .primaryButton {
-  border: 1px solid rgb(31 35 40 / 15%);
-  background: var(--success-border);
-  color: var(--fg-on-emphasis);
-}
-
-.primaryButton:hover:not(:disabled) {
-  background: var(--success-fg);
+  composes: base primary sizeDefault from "../ui/button.module.css";
+  text-decoration: none;
 }
 
 .primaryButton:disabled {
@@ -153,9 +134,11 @@
 }
 
 .cancel {
-  border: 1px solid var(--border);
+  composes: base sizeDefault from "../ui/button.module.css";
+  border-color: var(--border);
   background: var(--canvas-default);
   color: var(--fg-default);
+  text-decoration: none;
 }
 
 .cancel:hover {
