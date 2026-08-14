@@ -538,6 +538,7 @@ const en = {
     noRunsTitle: "No workflow runs have been recorded",
     noRunsBody: "Runs appear here after the Lore branch observer queues a workflow.",
     workflowsTitle: "Workflows",
+    allWorkflows: "All workflows",
     workflowsDescription: "Workflow files discovered at the observed Lore revisions.",
     noWorkflows: "No workflow files have been discovered.",
     states: {

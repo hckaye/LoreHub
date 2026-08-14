@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpenText, Plus, Search } from "lucide-react";
+import { BookOpenText, FileText, Plus, Search } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
@@ -13,7 +13,6 @@ import { formatDate } from "@/lib/format";
 import { mutationFailureMessage } from "@/lib/mutation-messages";
 import { repositoryPath } from "@/lib/routes";
 
-import { EmptyState } from "../ui/empty-state";
 import { FlashNotice } from "../ui/flash-notice";
 import styles from "./wiki-index.module.css";
 
@@ -35,6 +34,7 @@ export function WikiIndex(props: WikiIndexProps) {
   const [title, setTitle] = useState("");
   const [slug, setSlug] = useState("");
   const [body, setBody] = useState("");
+  const [searchValue, setSearchValue] = useState(props.query);
   const labels = props.dictionary.wikiPage;
   const basePath = repositoryPath(props.locale, props.owner, props.repository, "wiki");
   const apiPath = wikiAPIPath(props.owner, props.repository);
@@ -61,31 +61,23 @@ export function WikiIndex(props: WikiIndexProps) {
     router.refresh();
   }
 
+  function updateSearch(value: string) {
+    setSearchValue(value);
+    const nextQuery = value.trim() ? `?q=${encodeURIComponent(value)}` : "";
+    router.replace(`${basePath}${nextQuery}`);
+  }
+
   return (
     <div className={styles.page}>
-      <div className={styles.toolbar}>
-        <form action={basePath} className={styles.search} method="get" role="search">
-          <label className={styles.srOnly} htmlFor="wiki-search">
-            {labels.searchLabel}
-          </label>
-          <Search aria-hidden="true" size={16} />
-          <input
-            defaultValue={props.query}
-            id="wiki-search"
-            maxLength={200}
-            name="q"
-            placeholder={labels.searchPlaceholder}
-            type="search"
-          />
-          <button type="submit">{labels.search}</button>
-        </form>
+      <header className={styles.header}>
+        <h1>{labels.title}</h1>
         {canWrite && (
           <button className={styles.primaryButton} onClick={() => setShowForm((current) => !current)} type="button">
             <Plus aria-hidden="true" size={16} />
             {labels.newPage}
           </button>
         )}
-      </div>
+      </header>
       {showForm && (
         <form className={styles.editor} onSubmit={createPage}>
           <h2>{labels.createTitle}</h2>
@@ -121,25 +113,71 @@ export function WikiIndex(props: WikiIndexProps) {
           </div>
         </form>
       )}
-      {props.data.pages.length === 0 ? (
-        <EmptyState
-          body={props.query ? labels.noMatchesBody : labels.emptyBody}
-          icon={<BookOpenText aria-hidden="true" />}
-          title={props.query ? labels.noMatchesTitle : labels.emptyTitle}
-        />
-      ) : (
-        <div className={styles.list}>
-          {props.data.pages.map((page) => (
-            <Link className={styles.item} href={`${basePath}/${encodeURIComponent(page.slug)}`} key={page.id}>
-              <BookOpenText aria-hidden="true" size={20} />
-              <span>
-                <strong>{page.title}</strong>
-                <small>{formatMeta(labels.pageMeta, props.locale, page.version, page.updatedBy, page.updatedAt)}</small>
-              </span>
-            </Link>
-          ))}
+      <div className={styles.layout}>
+        <div className={styles.content}>
+          {props.data.pages.length === 0 ? (
+            <div className={styles.blankSlate}>
+              <BookOpenText aria-hidden="true" size={32} />
+              <h2>
+                {props.query ? labels.noMatchesTitle : labels.welcomeTitle.replace("{repository}", props.repository)}
+              </h2>
+              <p>{props.query ? labels.noMatchesBody : labels.welcomeBody}</p>
+              {!props.query && canWrite && (
+                <button className={styles.primaryButton} onClick={() => setShowForm(true)} type="button">
+                  <Plus aria-hidden="true" size={16} />
+                  {labels.createFirstPage}
+                </button>
+              )}
+            </div>
+          ) : (
+            <section className={styles.contentList}>
+              <h2>{props.data.pages[0]?.title ?? labels.title}</h2>
+              <div className={styles.list}>
+                {props.data.pages.map((page) => (
+                  <Link className={styles.item} href={`${basePath}/${encodeURIComponent(page.slug)}`} key={page.id}>
+                    <FileText aria-hidden="true" size={20} />
+                    <span>
+                      <strong>{page.title}</strong>
+                      <small>
+                        {formatMeta(labels.pageMeta, props.locale, page.version, page.updatedBy, page.updatedAt)}
+                      </small>
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            </section>
+          )}
         </div>
-      )}
+        <aside className={styles.sidebar}>
+          <section className={styles.pagesBox}>
+            <h2>{labels.pagesTitle}</h2>
+            <form action={basePath} className={styles.search} method="get" role="search">
+              <label className={styles.srOnly} htmlFor="wiki-search">
+                {labels.searchLabel}
+              </label>
+              <Search aria-hidden="true" size={16} />
+              <input
+                id="wiki-search"
+                maxLength={200}
+                name="q"
+                onChange={(event) => updateSearch(event.target.value)}
+                placeholder={labels.searchPlaceholder}
+                type="search"
+                value={searchValue}
+              />
+            </form>
+            <nav aria-label={labels.pagesTitle} className={styles.pageLinks}>
+              {props.data.pages.map((page) => (
+                <Link href={`${basePath}/${encodeURIComponent(page.slug)}`} key={page.id}>
+                  <FileText aria-hidden="true" size={15} />
+                  <span>{page.title}</span>
+                </Link>
+              ))}
+              {props.data.pages.length === 0 && <p>{props.query ? labels.noMatchesBody : labels.emptyBody}</p>}
+            </nav>
+          </section>
+        </aside>
+      </div>
     </div>
   );
 }

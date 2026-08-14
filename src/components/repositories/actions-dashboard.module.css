@@ -3,6 +3,31 @@
   gap: 22px;
 }
 
+.layout {
+  display: grid;
+  grid-template-columns: 256px minmax(0, 1fr);
+  align-items: start;
+  gap: 24px;
+}
+
+.sidebar,
+.main {
+  min-width: 0;
+}
+
+.workflowSidebar {
+  display: grid;
+  gap: 10px;
+}
+
+.workflowSidebar h2 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  font-size: 14px;
+}
+
 .section {
   display: grid;
   gap: 12px;
@@ -46,6 +71,26 @@
   border-bottom: 1px solid var(--border-muted);
 }
 
+.workflow {
+  color: var(--fg-default);
+  font-size: 13px;
+}
+
+.workflow > svg {
+  flex: 0 0 auto;
+  color: var(--fg-muted);
+}
+
+.workflowSelected {
+  border-left: 2px solid var(--accent-emphasis);
+  background: var(--canvas-subtle);
+  font-weight: 600;
+}
+
+.workflowSelected > svg {
+  color: var(--accent-fg);
+}
+
 .workflow:last-child,
 .run:last-child {
   border-bottom: 0;
@@ -64,6 +109,14 @@
   font-family: var(--font-mono);
   font-size: 0.72rem;
   overflow-wrap: anywhere;
+}
+
+.sidebarEmpty {
+  margin: 0;
+  padding: 12px 14px;
+  color: var(--fg-muted);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .runIcon {
@@ -143,7 +196,7 @@
   padding: 0 9px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: var(--canvas);
+  background: var(--canvas-default);
   color: var(--fg-default);
   font: inherit;
 }
@@ -161,6 +214,35 @@
   font-size: 0.82rem;
 }
 
+.blankSlate {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  min-height: 220px;
+  padding: 52px 20px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--fg-muted);
+  text-align: center;
+}
+
+.blankSlate h3,
+.blankSlate p {
+  margin: 0;
+}
+
+.blankSlate h3 {
+  color: var(--fg-default);
+  font-size: 16px;
+}
+
+.blankSlate p {
+  max-width: 520px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .notice {
   padding: 10px 12px;
   border: 1px solid var(--attention-border);
@@ -169,6 +251,10 @@
 }
 
 @media (max-width: 720px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+
   .dispatchForm {
     grid-template-columns: 1fr;
   }

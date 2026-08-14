@@ -1,6 +1,5 @@
 import { LockKeyhole, ServerOff } from "lucide-react";
 
-import { RepositoryPanel, RepositorySection } from "@/components/repositories/repository-section";
 import { EmptyState } from "@/components/ui/empty-state";
 import { WikiIndex } from "@/components/wiki/wiki-index";
 import { getDictionary } from "@/i18n";
@@ -25,35 +24,32 @@ export default async function WikiPage({ params, searchParams }: WikiPageProps) 
     getAuthSession(),
   ]);
   const labels = dictionary.wikiPage;
-  return (
-    <RepositorySection description={labels.description} title={labels.title}>
-      <RepositoryPanel title={labels.title}>
-        {pages.ok ? (
-          <WikiIndex
-            data={pages.data}
-            dictionary={dictionary}
-            locale={locale}
-            owner={owner}
-            query={q}
-            repository={repository}
-            session={session}
-          />
-        ) : pages.reason === "forbidden" || pages.reason === "not-found" ? (
-          <EmptyState
-            body={labels.forbiddenBody}
-            icon={<LockKeyhole aria-hidden="true" />}
-            title={labels.forbiddenTitle}
-            tone="warning"
-          />
-        ) : (
-          <EmptyState
-            body={labels.unavailableBody}
-            icon={<ServerOff aria-hidden="true" />}
-            title={labels.unavailableTitle}
-            tone="warning"
-          />
-        )}
-      </RepositoryPanel>
-    </RepositorySection>
+  if (pages.ok) {
+    return (
+      <WikiIndex
+        data={pages.data}
+        dictionary={dictionary}
+        locale={locale}
+        owner={owner}
+        query={q}
+        repository={repository}
+        session={session}
+      />
+    );
+  }
+  return pages.reason === "forbidden" || pages.reason === "not-found" ? (
+    <EmptyState
+      body={labels.forbiddenBody}
+      icon={<LockKeyhole aria-hidden="true" />}
+      title={labels.forbiddenTitle}
+      tone="warning"
+    />
+  ) : (
+    <EmptyState
+      body={labels.unavailableBody}
+      icon={<ServerOff aria-hidden="true" />}
+      title={labels.unavailableTitle}
+      tone="warning"
+    />
   );
 }

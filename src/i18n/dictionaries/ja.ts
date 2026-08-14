@@ -620,6 +620,7 @@ const ja = {
     noRunsTitle: "ワークフローの実行結果はまだありません",
     noRunsBody: "Loreのブランチ監視がワークフローを登録すると、ここに表示されます。",
     workflowsTitle: "ワークフロー",
+    allWorkflows: "すべてのワークフロー",
     // prettier-ignore
     workflowsDescription: concat(
       "観測したLoreのリビジョンから見つかったワークフロー",

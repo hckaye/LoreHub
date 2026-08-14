@@ -1,5 +1,6 @@
 "use client";
 
+import { ListChecks, Workflow } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useMemo, useState } from "react";
@@ -107,64 +108,70 @@ export function ActionsDashboard({
 
   return (
     <div className={styles.dashboard}>
-      <ActionsNotices failure={failure} requiresLogin={requiresLogin} dictionary={dictionary} />
-      <WorkflowSection workflows={workflows} dictionary={dictionary} />
-      <DeploymentSection
-        deployments={deployments}
-        available={deploymentsAvailable}
-        dictionary={dictionary}
-        locale={locale}
-        onReview={async (deployment, state) => {
-          if (session.status !== "authenticated") {
-            setRequiresLogin(true);
-            return;
-          }
-          setPending(true);
-          setFailure(null);
-          const result = await postJson<Deployment>(
-            actionsAPIPath(owner, repository, "deployments", deployment.id, "reviews"),
-            { state },
-            session.csrfToken,
-          );
-          setPending(false);
-          if (!result.ok) {
-            setFailure(mutationFailureMessage(result.kind, dictionary));
-            return;
-          }
-          router.refresh();
-        }}
-        owner={owner}
-        pending={pending}
-        repository={repository}
-      />
-      {canWrite && authenticated && dispatchableWorkflows.length > 0 ? (
-        <DispatchSection
-          workflows={dispatchableWorkflows}
-          selectedWorkflow={selectedWorkflow}
-          selectedInputs={selectedInputValues}
-          refValue={ref}
-          inputs={dispatchInputs}
-          pending={pending}
-          dictionary={dictionary}
-          onWorkflowChange={setSelectedWorkflow}
-          onRefChange={setRef}
-          onInputChange={(name, value) =>
-            setInputValues((current) => ({
-              ...current,
-              [selectedWorkflow]: { ...current[selectedWorkflow], [name]: value },
-            }))
-          }
-          onSubmit={dispatch}
-        />
-      ) : null}
-      <RunSection
-        runs={runs}
-        actionsBase={actionsBase}
-        canWrite={canWrite && authenticated}
-        pending={pending}
-        dictionary={dictionary}
-        onMutate={mutateRun}
-      />
+      <div className={styles.layout}>
+        <aside className={styles.sidebar}>
+          <WorkflowSection workflows={workflows} dictionary={dictionary} />
+        </aside>
+        <div className={styles.main}>
+          <ActionsNotices failure={failure} requiresLogin={requiresLogin} dictionary={dictionary} />
+          <RunSection
+            runs={runs}
+            actionsBase={actionsBase}
+            canWrite={canWrite && authenticated}
+            pending={pending}
+            dictionary={dictionary}
+            onMutate={mutateRun}
+          />
+          <DeploymentSection
+            deployments={deployments}
+            available={deploymentsAvailable}
+            dictionary={dictionary}
+            locale={locale}
+            onReview={async (deployment, state) => {
+              if (session.status !== "authenticated") {
+                setRequiresLogin(true);
+                return;
+              }
+              setPending(true);
+              setFailure(null);
+              const result = await postJson<Deployment>(
+                actionsAPIPath(owner, repository, "deployments", deployment.id, "reviews"),
+                { state },
+                session.csrfToken,
+              );
+              setPending(false);
+              if (!result.ok) {
+                setFailure(mutationFailureMessage(result.kind, dictionary));
+                return;
+              }
+              router.refresh();
+            }}
+            owner={owner}
+            pending={pending}
+            repository={repository}
+          />
+          {canWrite && authenticated && dispatchableWorkflows.length > 0 ? (
+            <DispatchSection
+              workflows={dispatchableWorkflows}
+              selectedWorkflow={selectedWorkflow}
+              selectedInputs={selectedInputValues}
+              refValue={ref}
+              inputs={dispatchInputs}
+              pending={pending}
+              dictionary={dictionary}
+              onWorkflowChange={setSelectedWorkflow}
+              onRefChange={setRef}
+              onInputChange={(name, value) =>
+                setInputValues((current) => ({
+                  ...current,
+                  [selectedWorkflow]: { ...current[selectedWorkflow], [name]: value },
+                }))
+              }
+              onSubmit={dispatch}
+            />
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 }
@@ -261,30 +268,30 @@ function ActionsNotices({
 
 function WorkflowSection({ workflows, dictionary }: { workflows: CIWorkflow[]; dictionary: Dictionary }) {
   return (
-    <section className={styles.section}>
-      <div className={styles.heading}>
-        <div>
-          <h2>{dictionary.actionsPage.workflowsTitle}</h2>
-          <p>{dictionary.actionsPage.workflowsDescription}</p>
+    <section className={styles.workflowSidebar}>
+      <h2>
+        <Workflow aria-hidden="true" size={16} />
+        {dictionary.actionsPage.workflowsTitle}
+      </h2>
+      <div className={styles.workflowList}>
+        <div aria-current="page" className={`${styles.workflow} ${styles.workflowSelected}`}>
+          <ListChecks aria-hidden="true" size={16} />
+          <strong>{dictionary.actionsPage.allWorkflows}</strong>
         </div>
-      </div>
-      {workflows.length === 0 ? (
-        <p className={styles.empty}>{dictionary.actionsPage.noWorkflows}</p>
-      ) : (
-        <div className={styles.workflowList}>
-          {workflows.map((workflow) => (
-            <div className={styles.workflow} key={workflow.id}>
-              <div>
-                <strong>{workflow.name}</strong>
-                <code>{workflow.path}</code>
-              </div>
-              <StatusBadge tone={workflow.state === "active" ? "success" : "warning"}>
-                {dictionary.actionsPage.states[workflow.state]}
-              </StatusBadge>
+        {workflows.map((workflow) => (
+          <div className={styles.workflow} key={workflow.id}>
+            <Workflow aria-hidden="true" size={16} />
+            <div>
+              <strong>{workflow.name}</strong>
+              <code>{workflow.path}</code>
             </div>
-          ))}
-        </div>
-      )}
+            <StatusBadge tone={workflow.state === "active" ? "success" : "warning"}>
+              {dictionary.actionsPage.states[workflow.state]}
+            </StatusBadge>
+          </div>
+        ))}
+        {workflows.length === 0 && <p className={styles.sidebarEmpty}>{dictionary.actionsPage.noWorkflows}</p>}
+      </div>
     </section>
   );
 }
@@ -380,7 +387,10 @@ function RunSection({ runs, actionsBase, canWrite, pending, dictionary, onMutate
         </div>
       </div>
       {runs.length === 0 ? (
-        <p className={styles.empty}>{dictionary.actionsPage.noRunsBody}</p>
+        <div className={styles.blankSlate}>
+          <h3>{dictionary.actionsPage.noRunsTitle}</h3>
+          <p>{dictionary.actionsPage.noRunsBody}</p>
+        </div>
       ) : (
         <div className={styles.runList}>
           {runs.map((run) => (
