@@ -6,7 +6,7 @@ import { CopyButton } from "@/components/ui/copy-button";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import type { Dictionary } from "@/i18n";
 import type { Locale } from "@/i18n/config";
-import { formatRelativeTime, formatTimestamp, shortRevision } from "@/lib/format";
+import { formatRelativeTime, formatTimestamp, isUsableTimestamp, shortRevision } from "@/lib/format";
 import {
   groupRevisionRows,
   revisionHistoryPageHref,
@@ -61,6 +61,8 @@ export function RevisionHistory(props: RevisionHistoryProps) {
 function RevisionRowItem({ row, ...props }: RevisionHistoryProps & { row: RevisionRow }) {
   const copy = props.dictionary.commitHistory;
   const subject = revisionSubject(row.message) || shortRevision(row.revision);
+  const createdAt = row.createdAt;
+  const hasCreatedAt = isUsableTimestamp(createdAt);
   return (
     <li className={styles.row}>
       <div className={styles.details}>
@@ -70,9 +72,11 @@ function RevisionRowItem({ row, ...props }: RevisionHistoryProps & { row: Revisi
         <p className={styles.byline}>
           <UserAvatar name={row.author || copy.unknownAuthor} size={20} />
           <strong>{row.author || copy.unknownAuthor}</strong>
-          <span title={row.createdAt ? formatTimestamp(row.createdAt, props.locale) : undefined}>
-            {committedLabel(row, props.locale, copy.committed)}
-          </span>
+          {hasCreatedAt ? (
+            <span title={formatTimestamp(createdAt, props.locale)}>
+              {committedLabel(row, props.locale, copy.committed)}
+            </span>
+          ) : null}
         </p>
       </div>
       <div className={styles.revision}>
@@ -107,7 +111,7 @@ function HistoryPagination(props: RevisionHistoryProps) {
 }
 
 function committedLabel(row: RevisionRow, locale: Locale, template: string): string {
-  const relative = row.createdAt ? formatRelativeTime(row.createdAt, locale) : "";
+  const relative = isUsableTimestamp(row.createdAt) ? formatRelativeTime(row.createdAt, locale) : "";
   return relative ? template.replace("{time}", relative) : template.replace("{time}", "").trim();
 }
 

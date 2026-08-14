@@ -2,11 +2,13 @@
 package code
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/lorehub/lorehub/services/api/internal/collab"
 	loreclient "github.com/lorehub/lorehub/services/api/internal/lore"
@@ -18,9 +20,14 @@ type API struct {
 	lore                loreclient.Client
 	code                loreclient.CodeClient
 	actors              collab.ActorResolver
+	users               UserLookup
 	credentials         loreclient.CredentialProvider
 	publicReaderSubject string
 	logger              *slog.Logger
+}
+
+type UserLookup interface {
+	ActiveUser(context.Context, string) (platform.User, error)
 }
 
 // Register mounts read-only repository browsing endpoints. Authentication is
@@ -32,11 +39,15 @@ func Register(
 	lore loreclient.Client,
 	codeClient loreclient.CodeClient,
 	actors collab.ActorResolver,
+	users UserLookup,
 	credentials loreclient.CredentialProvider,
 	publicReaderSubject string,
 	logger *slog.Logger,
 ) {
-	api := &API{store: store, lore: lore, code: codeClient, actors: actors, credentials: credentials, logger: logger}
+	api := &API{
+		store: store, lore: lore, code: codeClient, actors: actors, users: users,
+		credentials: credentials, logger: logger,
+	}
 	api.publicReaderSubject = publicReaderSubject
 	base := "/api/v1/repositories/{owner}/{repository}"
 	mux.HandleFunc("GET "+base+"/tree", api.tree)
@@ -269,6 +280,7 @@ func (api *API) history(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 	entries, hasMore := historyWindow(entries, boundedInt(request.URL.Query().Get("limit"), 50, maxHistoryLimit))
+	api.resolveRevisionAuthors(request.Context(), entries)
 	writeJSON(writer, http.StatusOK, map[string]any{"revision": revision, "entries": entries,
 		"hasMore": hasMore})
 }
@@ -314,7 +326,34 @@ func (api *API) revision(writer http.ResponseWriter, request *http.Request) {
 		api.loreError(writer, request, "read Lore revision", err)
 		return
 	}
+	result.Author = api.resolveRevisionAuthor(request.Context(), result.Author, make(map[string]string, 1))
 	writeJSON(writer, http.StatusOK, result)
+}
+
+func (api *API) resolveRevisionAuthors(ctx context.Context, entries []loreclient.RevisionHistoryEntry) {
+	cache := make(map[string]string, len(entries))
+	for index := range entries {
+		entries[index].Author = api.resolveRevisionAuthor(ctx, entries[index].Author, cache)
+	}
+}
+
+func (api *API) resolveRevisionAuthor(ctx context.Context, raw string, cache map[string]string) string {
+	authorID := strings.TrimSpace(raw)
+	if authorID == "" {
+		return ""
+	}
+	if author, ok := cache[authorID]; ok {
+		return author
+	}
+	author := authorID
+	if api.users != nil {
+		user, err := api.users.ActiveUser(ctx, authorID)
+		if err == nil && strings.TrimSpace(user.Username) != "" {
+			author = strings.TrimSpace(user.Username)
+		}
+	}
+	cache[authorID] = author
+	return author
 }
 
 func (api *API) diff(writer http.ResponseWriter, request *http.Request) {

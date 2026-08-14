@@ -231,7 +231,7 @@ func (api *API) registerFeatureRoutes(mux *http.ServeMux) {
 			wikiapi.Register(mux, api.wikiStore, api.collabStore, api, api.logger)
 		}
 		if codeClient, ok := api.lore.(loreclient.CodeClient); ok {
-			codeapi.Register(mux, api.collabStore, api.lore, codeClient, api, api.loreCredentials,
+			codeapi.Register(mux, api.collabStore, api.lore, codeClient, api, api.store, api.loreCredentials,
 				api.serviceSubjects.PublicReader, api.logger)
 			if comments, ok := api.collabStore.(collab.RevisionCommentStore); ok {
 				revisioncommentsapi.Register(

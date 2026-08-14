@@ -2,7 +2,16 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
+import { isUsableTimestamp } from "../src/lib/format";
+
 const root = new URL("../", import.meta.url);
+
+test("revision timestamps reject missing and zero dates", () => {
+  assert.equal(isUsableTimestamp(undefined), false);
+  assert.equal(isUsableTimestamp("0001-01-01T00:00:00Z"), false);
+  assert.equal(isUsableTimestamp("1999-12-31T23:59:59Z"), false);
+  assert.equal(isUsableTimestamp("2026-08-14T00:00:00Z"), true);
+});
 
 test("global shell exposes labelled navigation and search controls", async () => {
   const source = await readText("src/components/layout/site-header.tsx");
