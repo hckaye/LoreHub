@@ -27,6 +27,12 @@ export function formatRelativeTime(value: string | Date, locale: Locale, now = n
   return formatter.format(Math.trunc(elapsedSeconds / 31536000), "year");
 }
 
+export function isUsableTimestamp(value?: string): value is string {
+  if (!value) return false;
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) && date.getUTCFullYear() >= 2000;
+}
+
 export function formatExpiryNote(template: string, expiresAt: string, locale: Locale): string {
   return template
     .replace("{relative}", formatRelativeTime(expiresAt, locale))

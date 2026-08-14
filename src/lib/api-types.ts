@@ -659,6 +659,8 @@ export type RevisionHistoryEntry = {
   revision: string;
   number: number;
   parents: string[];
+  author?: string;
+  createdAt?: string;
   message?: string;
 };
 

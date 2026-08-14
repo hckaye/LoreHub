@@ -186,6 +186,19 @@ func (client *SDKClient) RevisionHistory(
 	if err := waitLore(ctx, op.Wait); err != nil {
 		return nil, fmt.Errorf("read Lore revision history: %w", err)
 	}
+	// History entries do not carry metadata, so enrich the bounded result with
+	// the metadata returned by RevisionInfo for each revision.
+	for index := range entries {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		info, err := client.RevisionInfo(ctx, repository, entries[index].Revision, credential)
+		if err != nil {
+			return nil, fmt.Errorf("read Lore metadata for revision %q: %w", entries[index].Revision, err)
+		}
+		entries[index].Author = info.Author
+		entries[index].CreatedAt = info.CreatedAt
+	}
 	return entries, nil
 }
 
@@ -288,8 +301,8 @@ func (client *SDKClient) RevisionInfo(
 			result.Parents = hashStrings(data.Parent[:])
 		case types.LoreEventTag_METADATA:
 			data, ok := event.GetData().(*types.LoreMetadataEventDataFFI)
-			if ok && data.Key.String() == "message" && data.Value.Tag == types.LoreMetadataTag_STRING {
-				result.Message = data.Value.AsLoreString().String()
+			if ok {
+				applyRevisionMetadata(&result, data.Key.String(), data.Value.Clone())
 			}
 		}
 	})
@@ -300,6 +313,23 @@ func (client *SDKClient) RevisionInfo(
 		return Revision{}, errors.New("Lore revision response contained no revision info")
 	}
 	return result, nil
+}
+
+func applyRevisionMetadata(result *Revision, key string, value types.LoreMetadata) {
+	switch key {
+	case "message":
+		if value.Tag == types.LoreMetadataTag_STRING && value.String != nil {
+			result.Message = *value.String
+		}
+	case "timestamp":
+		if value.Tag == types.LoreMetadataTag_NUMERIC && value.Numeric != nil {
+			result.CreatedAt = time.UnixMilli(int64(*value.Numeric)).UTC()
+		}
+	case "created-by":
+		if value.Tag == types.LoreMetadataTag_STRING && value.String != nil {
+			result.Author = *value.String
+		}
+	}
 }
 
 func (client *SDKClient) RevisionDiff(

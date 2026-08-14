@@ -8,7 +8,7 @@ import { useMemo, useState } from "react";
 import { PopupMenu } from "@/components/ui/popup-menu";
 import type { Dictionary } from "@/i18n";
 import type { Branch, LoreRevision, LoreTree, RepositoryTag } from "@/lib/api-types";
-import { formatRelativeTime, shortRevision } from "@/lib/format";
+import { formatRelativeTime, isUsableTimestamp, shortRevision } from "@/lib/format";
 import { repositoryBranchesPath, repositoryPath, repositoryTagsPath } from "@/lib/routes";
 
 import { UserAvatar } from "../ui/user-avatar";
@@ -281,6 +281,8 @@ function LatestCommitBar({
 }) {
   const author = latestCommit?.author?.trim() || dictionary.codeBrowser.unknownAuthor;
   const message = latestCommit?.message?.split("\n")[0].trim() || dictionary.codeBrowser.noCommitMessage;
+  const createdAt = latestCommit?.createdAt;
+  const hasCreatedAt = isUsableTimestamp(createdAt);
   return (
     <div aria-label={dictionary.codeBrowser.latestCommit} className={styles.revisionBar} role="group">
       <UserAvatar name={author} size={20} />
@@ -294,11 +296,7 @@ function LatestCommitBar({
         <Link aria-label={`${dictionary.codeBrowser.latestCommit}: ${shortRevision(revision)}`} href={commitPath}>
           <code title={revision}>{shortRevision(revision)}</code>
         </Link>
-        <time dateTime={latestCommit?.createdAt}>
-          {latestCommit?.createdAt
-            ? formatRelativeTime(latestCommit.createdAt, locale)
-            : dictionary.codeBrowser.unknownDate}
-        </time>
+        {hasCreatedAt ? <time dateTime={createdAt}>{formatRelativeTime(createdAt, locale)}</time> : null}
         <Link className={styles.historyLink} href={commitsPath}>
           <History aria-hidden="true" size={16} />
           {dictionary.codeBrowser.history}
