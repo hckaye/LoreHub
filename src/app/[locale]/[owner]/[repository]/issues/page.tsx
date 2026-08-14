@@ -34,7 +34,6 @@ export default async function IssuesPage({ params, searchParams }: IssuesPagePro
   ]);
   const archived = repositoryResult.ok && repositoryResult.data.archivedAt !== null;
   const basePath = repositoryPath(locale, owner, repository, "issues");
-  const filterOptions = issueFilterOptions(issues);
   return (
     <div className={styles.page}>
       {query.created === "1" && (
@@ -47,7 +46,7 @@ export default async function IssuesPage({ params, searchParams }: IssuesPagePro
       )}
       <WorkItemListToolbar
         basePath={basePath}
-        createHref={archived ? undefined : `${basePath}/new`}
+        createHref={issueCreateHref(basePath, !archived)}
         createLabel={dictionary.issuesPage.newIssue}
         dictionary={dictionary}
         kind="issues"
@@ -69,8 +68,6 @@ export default async function IssuesPage({ params, searchParams }: IssuesPagePro
           milestones={milestonesResult.ok ? milestonesResult.data.milestones : []}
           openCount={issues.ok ? issues.data.openCount : undefined}
           query={filters}
-          authors={filterOptions.authors}
-          assignees={filterOptions.assignees}
         />
         {issues.ok ? (
           <IssueList
@@ -104,10 +101,6 @@ export default async function IssuesPage({ params, searchParams }: IssuesPagePro
   );
 }
 
-function issueFilterOptions(result: Awaited<ReturnType<typeof getIssues>>) {
-  if (!result.ok) return { authors: [], assignees: [] };
-  return {
-    authors: result.data.issues.map((issue) => issue.author),
-    assignees: result.data.issues.flatMap((issue) => issue.assignees),
-  };
+function issueCreateHref(basePath: string, canCreate: boolean): string | undefined {
+  return canCreate ? `${basePath}/new` : undefined;
 }

@@ -5,8 +5,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent, type ReactNode } from "react";
 
+import { PopupMenu } from "@/components/ui/popup-menu";
 import type { Dictionary } from "@/i18n";
-import type { Assignee, Label, Milestone } from "@/lib/api-types";
+import type { Label, Milestone } from "@/lib/api-types";
+import { normalizeLabelColor } from "@/lib/format";
 import type {
   RepositoryIssueQuery,
   RepositoryMergeRequestQuery,
@@ -19,6 +21,7 @@ import styles from "./work-item-list-toolbar.module.css";
 
 type Query = RepositoryIssueQuery | RepositoryMergeRequestQuery;
 type QueryChanges = Partial<RepositoryMergeRequestQuery>;
+type NavigateFn = (changes: QueryChanges) => void;
 
 type WorkItemListToolbarProps = {
   basePath: string;
@@ -104,8 +107,6 @@ type WorkItemListFilterHeaderProps = {
   labels: Label[];
   milestones: Milestone[];
   query: Query;
-  authors?: string[];
-  assignees?: Assignee[];
   openCount?: number;
   closedCount?: number;
   mergedCount?: number;
@@ -124,12 +125,6 @@ export function WorkItemListFilterHeader(props: WorkItemListFilterHeaderProps) {
     router.push(params.size > 0 ? `${props.basePath}?${params}` : props.basePath);
   }
 
-  const currentLabel = props.query.labels?.[0] ?? "";
-  const authorOptions = uniqueValues([props.query.author, ...(props.authors ?? [])]);
-  const assigneeOptions = uniqueAssignees(props.assignees ?? [], props.query.assignee);
-  const labelOptions = uniqueValues([currentLabel, ...props.labels.map((label) => label.name)]);
-  const milestoneOptions = getMilestoneOptions(props.milestones, props.query.milestone);
-
   return (
     <div className={styles.listHeader}>
       <StateToggle
@@ -144,49 +139,43 @@ export function WorkItemListFilterHeader(props: WorkItemListFilterHeaderProps) {
       />
 
       <div className={styles.filters}>
-        <FilterSelect
-          ariaLabel={copy.filterByAuthor}
-          onChange={(value) => navigate({ author: value || undefined })}
-          options={[
-            { label: copy.author, value: "" },
-            ...authorOptions.map((author) => ({ label: author, value: author })),
-          ]}
-          value={props.query.author ?? ""}
+        <TextFilterDropdown
+          copy={copy}
+          currentValue={props.query.author}
+          filterLabel={copy.filterByAuthor}
+          key={`author-${props.query.author ?? ""}`}
+          label={copy.author}
+          navigate={navigate}
+          paramName="author"
+          placeholder={copy.authorPlaceholder}
         />
-        <FilterSelect
-          ariaLabel={copy.filterByAssignee}
-          onChange={(value) => navigate({ assignee: value || undefined })}
-          options={[
-            { label: copy.assignee, value: "" },
-            { label: copy.unassigned, value: "none" },
-            ...assigneeOptions.map((assignee) => ({ label: assignee, value: assignee })),
-          ]}
-          value={props.query.assignee ?? ""}
+        <TextFilterDropdown
+          copy={copy}
+          currentValue={props.query.assignee}
+          filterLabel={copy.filterByAssignee}
+          key={`assignee-${props.query.assignee ?? ""}`}
+          label={copy.assignee}
+          navigate={navigate}
+          paramName="assignee"
+          placeholder={copy.assigneePlaceholder}
         />
-        <FilterSelect
-          ariaLabel={copy.filterByLabel}
-          onChange={(value) => navigate({ labels: value ? [value] : undefined })}
-          options={[{ label: copy.label, value: "" }, ...labelOptions.map((label) => ({ label, value: label }))]}
-          value={currentLabel}
+        <LabelFilterDropdown
+          copy={copy}
+          currentLabels={props.query.labels ?? []}
+          labels={props.labels}
+          navigate={navigate}
         />
-        <FilterSelect
-          ariaLabel={copy.filterByMilestone}
-          onChange={(value) => navigate({ milestone: value || undefined })}
-          options={[
-            { label: copy.milestone, value: "" },
-            { label: copy.noMilestone, value: "none" },
-            ...milestoneOptions.map((milestone) => ({ label: milestone.title, value: String(milestone.number) })),
-          ]}
-          value={props.query.milestone ?? ""}
+        <MilestoneFilterDropdown
+          copy={copy}
+          currentMilestone={props.query.milestone}
+          milestones={props.milestones}
+          navigate={navigate}
         />
-        <FilterSelect
-          ariaLabel={copy.sort}
-          onChange={(value) => {
-            const [sort, direction] = value.split(":") as [RepositoryWorkItemSort, RepositoryWorkItemDirection];
-            navigate({ direction, sort });
-          }}
-          options={sortOptions(copy)}
-          value={`${props.query.sort ?? "updated"}:${props.query.direction ?? "desc"}`}
+        <SortDropdown
+          copy={copy}
+          currentDirection={props.query.direction ?? "desc"}
+          currentSort={props.query.sort ?? "updated"}
+          navigate={navigate}
         />
       </div>
     </div>
@@ -255,59 +244,360 @@ function StateLink(props: {
   );
 }
 
-function FilterSelect(props: {
-  ariaLabel: string;
-  onChange: (value: string) => void;
-  options: Array<{ label: string; value: string }>;
-  value: string;
+function TextFilterDropdown(props: {
+  copy: Dictionary["workItemLists"];
+  currentValue?: string;
+  filterLabel: string;
+  label: string;
+  navigate: NavigateFn;
+  paramName: "author" | "assignee";
+  placeholder: string;
 }) {
+  const [value, setValue] = useState(props.currentValue ?? "");
+  const displayValue = props.currentValue ? props.currentValue : props.label;
+
   return (
-    <label className={styles.filterSelect}>
-      <span className="visually-hidden">{props.ariaLabel}</span>
-      <select aria-label={props.ariaLabel} onChange={(event) => props.onChange(event.target.value)} value={props.value}>
-        {props.options.map((option) => (
-          <option key={`${option.value}-${option.label}`} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-      <ChevronDown aria-hidden="true" className={styles.filterCaret} size={14} />
-    </label>
+    <PopupMenu
+      className={styles.dropdown}
+      panelClassName={styles.dropdownMenu}
+      panelRole="none"
+      trigger={<DropdownTriggerContent label={displayValue} />}
+      triggerClassName={styles.dropdownTrigger}
+    >
+      {(close) => (
+        <>
+          <div className={styles.dropdownHeader}>{props.filterLabel}</div>
+          <form
+            className={styles.dropdownForm}
+            onSubmit={(event) => {
+              event.preventDefault();
+              const trimmed = value.trim();
+              props.navigate({ [props.paramName]: trimmed || undefined } as QueryChanges);
+              close();
+            }}
+          >
+            <input
+              aria-label={props.filterLabel}
+              autoFocus
+              className={styles.dropdownInput}
+              maxLength={100}
+              onChange={(event) => setValue(event.target.value)}
+              placeholder={props.placeholder}
+              type="text"
+              value={value}
+            />
+            <button className={styles.dropdownSubmit} type="submit">
+              {props.copy.apply}
+            </button>
+          </form>
+        </>
+      )}
+    </PopupMenu>
+  );
+}
+
+function DropdownTriggerContent({ label }: { label: string }) {
+  return (
+    <>
+      <span className={styles.dropdownTriggerLabel}>{label}</span>
+      <ChevronDown aria-hidden="true" className={styles.dropdownCaret} size={14} />
+    </>
+  );
+}
+
+function LabelFilterDropdown(props: {
+  copy: Dictionary["workItemLists"];
+  currentLabels: string[];
+  labels: Label[];
+  navigate: NavigateFn;
+}) {
+  const [filter, setFilter] = useState("");
+  const normalizedFilter = filter.trim().toLocaleLowerCase("en");
+  const visibleLabels = props.labels.filter((label) => label.name.toLocaleLowerCase("en").includes(normalizedFilter));
+  const displayValue = props.currentLabels.length > 0 ? props.currentLabels.join(", ") : props.copy.label;
+
+  function isSelected(name: string): boolean {
+    const normalizedName = name.toLocaleLowerCase("en");
+    return props.currentLabels.some((selected) => selected.toLocaleLowerCase("en") === normalizedName);
+  }
+
+  function clear(close: () => void) {
+    props.navigate({ labels: undefined });
+    setFilter("");
+    close();
+  }
+
+  function toggle(name: string, close: () => void) {
+    const nextLabels = isSelected(name)
+      ? props.currentLabels.filter((selected) => selected.toLocaleLowerCase("en") !== name.toLocaleLowerCase("en"))
+      : [...props.currentLabels, name];
+    props.navigate({ labels: nextLabels.length > 0 ? nextLabels : undefined });
+    setFilter("");
+    close();
+  }
+
+  return (
+    <PopupMenu
+      className={styles.dropdown}
+      panelClassName={styles.dropdownMenu}
+      panelRole="none"
+      trigger={<DropdownTriggerContent label={displayValue} />}
+      triggerClassName={styles.dropdownTrigger}
+    >
+      {(close) => (
+        <>
+          <div className={styles.dropdownHeader}>{props.copy.filterByLabel}</div>
+          <input
+            aria-label={props.copy.filterByLabel}
+            autoFocus
+            className={styles.dropdownInput}
+            onChange={(event) => setFilter(event.target.value)}
+            placeholder={props.copy.labelPlaceholder}
+            type="search"
+            value={filter}
+          />
+          <button
+            aria-pressed={props.currentLabels.length === 0}
+            className={styles.dropdownItem}
+            data-active={props.currentLabels.length === 0 ? "true" : undefined}
+            onClick={() => clear(close)}
+            type="button"
+          >
+            <span className={styles.dropdownOptionLabel}>{props.copy.anyLabel}</span>
+            <span aria-hidden="true" className={styles.dropdownCheck}>
+              {props.currentLabels.length === 0 && <Check size={16} />}
+            </span>
+          </button>
+          <div className={styles.dropdownDivider} />
+          <div aria-label={props.copy.filterByLabel} className={styles.dropdownOptions} role="listbox">
+            {visibleLabels.length > 0 ? (
+              visibleLabels.map((label) => {
+                const selected = isSelected(label.name);
+                return (
+                  <button
+                    aria-pressed={selected}
+                    className={styles.dropdownItem}
+                    data-active={selected ? "true" : undefined}
+                    key={label.id}
+                    onClick={() => toggle(label.name, close)}
+                    type="button"
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={styles.labelDot}
+                      style={{ backgroundColor: normalizeLabelColor(label.color) }}
+                    />
+                    <span className={styles.dropdownOptionLabel}>{label.name}</span>
+                    <span aria-hidden="true" className={styles.dropdownCheck}>
+                      {selected && <Check size={16} />}
+                    </span>
+                  </button>
+                );
+              })
+            ) : (
+              <p className={styles.dropdownEmpty}>{props.copy.noLabels}</p>
+            )}
+          </div>
+        </>
+      )}
+    </PopupMenu>
+  );
+}
+
+function MilestoneFilterDropdown(props: {
+  copy: Dictionary["workItemLists"];
+  currentMilestone?: string;
+  milestones: Milestone[];
+  navigate: NavigateFn;
+}) {
+  const [filter, setFilter] = useState("");
+  const normalizedFilter = filter.trim().toLocaleLowerCase("en");
+  const visibleMilestones = props.milestones.filter((milestone) =>
+    milestone.title.toLocaleLowerCase("en").includes(normalizedFilter),
+  );
+  const selectedMilestone = props.milestones.find((milestone) => String(milestone.number) === props.currentMilestone);
+  const displayValue =
+    props.currentMilestone === "none"
+      ? props.copy.noMilestone
+      : (selectedMilestone?.title ?? props.currentMilestone ?? props.copy.milestone);
+
+  function select(value: string | undefined, close: () => void) {
+    props.navigate({ milestone: value });
+    setFilter("");
+    close();
+  }
+
+  return (
+    <PopupMenu
+      className={styles.dropdown}
+      panelClassName={styles.dropdownMenu}
+      panelRole="none"
+      trigger={<DropdownTriggerContent label={displayValue} />}
+      triggerClassName={styles.dropdownTrigger}
+    >
+      {(close) => (
+        <>
+          <div className={styles.dropdownHeader}>{props.copy.filterByMilestone}</div>
+          <input
+            aria-label={props.copy.filterByMilestone}
+            autoFocus
+            className={styles.dropdownInput}
+            onChange={(event) => setFilter(event.target.value)}
+            placeholder={props.copy.milestonePlaceholder}
+            type="search"
+            value={filter}
+          />
+          <button
+            aria-pressed={props.currentMilestone === undefined}
+            className={styles.dropdownItem}
+            data-active={props.currentMilestone === undefined ? "true" : undefined}
+            onClick={() => select(undefined, close)}
+            type="button"
+          >
+            <span className={styles.dropdownOptionLabel}>{props.copy.anyMilestone}</span>
+            <span aria-hidden="true" className={styles.dropdownCheck}>
+              {props.currentMilestone === undefined && <Check size={16} />}
+            </span>
+          </button>
+          <div className={styles.dropdownDivider} />
+          <div aria-label={props.copy.filterByMilestone} className={styles.dropdownOptions} role="listbox">
+            {props.copy.noMilestone.toLocaleLowerCase("en").includes(normalizedFilter) && (
+              <button
+                aria-pressed={props.currentMilestone === "none"}
+                className={styles.dropdownItem}
+                data-active={props.currentMilestone === "none" ? "true" : undefined}
+                onClick={() => select("none", close)}
+                type="button"
+              >
+                <span className={styles.dropdownOptionLabel}>{props.copy.noMilestone}</span>
+                <span aria-hidden="true" className={styles.dropdownCheck}>
+                  {props.currentMilestone === "none" && <Check size={16} />}
+                </span>
+              </button>
+            )}
+            {visibleMilestones.map((milestone) => {
+              const selected = String(milestone.number) === props.currentMilestone;
+              return (
+                <button
+                  aria-pressed={selected}
+                  className={styles.dropdownItem}
+                  data-active={selected ? "true" : undefined}
+                  key={milestone.id}
+                  onClick={() => select(String(milestone.number), close)}
+                  type="button"
+                >
+                  <span className={styles.dropdownOptionLabel}>{milestone.title}</span>
+                  <span aria-hidden="true" className={styles.dropdownCheck}>
+                    {selected && <Check size={16} />}
+                  </span>
+                </button>
+              );
+            })}
+            {visibleMilestones.length === 0 && <p className={styles.dropdownEmpty}>{props.copy.noOpenMilestones}</p>}
+          </div>
+        </>
+      )}
+    </PopupMenu>
+  );
+}
+
+function SortDropdown(props: {
+  copy: Dictionary["workItemLists"];
+  currentDirection: RepositoryWorkItemDirection;
+  currentSort: RepositoryWorkItemSort;
+  navigate: NavigateFn;
+}) {
+  const sortLabel =
+    props.currentSort === "created"
+      ? props.copy.sortCreated
+      : props.currentSort === "comments"
+        ? props.copy.sortComments
+        : props.copy.sortUpdated;
+
+  function select(changes: QueryChanges, close: () => void) {
+    props.navigate(changes);
+    close();
+  }
+
+  return (
+    <PopupMenu
+      className={styles.dropdown}
+      panelClassName={styles.dropdownMenu}
+      panelRole="none"
+      trigger={<DropdownTriggerContent label={sortLabel} />}
+      triggerClassName={styles.dropdownTrigger}
+    >
+      {(close) => (
+        <>
+          <SortOption
+            copy={props.copy.sortUpdated}
+            current={props.currentSort}
+            onSelect={(changes) => select(changes, close)}
+            sort="updated"
+          />
+          <SortOption
+            copy={props.copy.sortCreated}
+            current={props.currentSort}
+            onSelect={(changes) => select(changes, close)}
+            sort="created"
+          />
+          <SortOption
+            copy={props.copy.sortComments}
+            current={props.currentSort}
+            onSelect={(changes) => select(changes, close)}
+            sort="comments"
+          />
+          <div className={styles.dropdownDivider} />
+          <SortOption
+            copy={props.copy.descending}
+            current={props.currentDirection}
+            onSelect={(changes) => select(changes, close)}
+            sort="direction-desc"
+          />
+          <SortOption
+            copy={props.copy.ascending}
+            current={props.currentDirection}
+            onSelect={(changes) => select(changes, close)}
+            sort="direction-asc"
+          />
+        </>
+      )}
+    </PopupMenu>
+  );
+}
+
+function SortOption(props: {
+  copy: string;
+  current: string;
+  onSelect: (changes: QueryChanges) => void;
+  sort: RepositoryWorkItemSort | `direction-${RepositoryWorkItemDirection}`;
+}) {
+  const isActive =
+    props.sort === props.current ||
+    (props.sort === `direction-${props.current}` && props.sort.startsWith("direction-"));
+  return (
+    <button
+      className={styles.dropdownItem}
+      data-active={isActive ? "true" : undefined}
+      onClick={() => {
+        if (props.sort.startsWith("direction-")) {
+          const direction = props.sort.replace("direction-", "") as RepositoryWorkItemDirection;
+          props.onSelect({ direction });
+        } else {
+          props.onSelect({ sort: props.sort as RepositoryWorkItemSort });
+        }
+      }}
+      type="button"
+    >
+      <span className={styles.dropdownOptionLabel}>{props.copy}</span>
+      <span aria-hidden="true" className={styles.dropdownCheck}>
+        {isActive && <Check size={16} />}
+      </span>
+    </button>
   );
 }
 
 function queryHref(basePath: string, query: Query, changes: QueryChanges): string {
   const params = repositoryWorkItemSearchParams(query, { ...changes, page: 1 });
   return params.size > 0 ? `${basePath}?${params}` : basePath;
-}
-
-function uniqueValues(values: Array<string | undefined>): string[] {
-  return [...new Set(values.filter((value): value is string => Boolean(value)))].sort((a, b) => a.localeCompare(b));
-}
-
-function uniqueAssignees(assignees: Assignee[], current?: string): string[] {
-  return uniqueValues([current, ...assignees.map((assignee) => assignee.username)]).filter(
-    (assignee) => assignee !== "none",
-  );
-}
-
-function getMilestoneOptions(
-  milestones: Milestone[],
-  current: string | undefined,
-): Array<{ number: number; title: string }> {
-  if (!current || current === "none" || milestones.some((milestone) => String(milestone.number) === current)) {
-    return milestones;
-  }
-  return [{ number: Number(current), title: current }, ...milestones];
-}
-
-function sortOptions(copy: Dictionary["workItemLists"]): Array<{ label: string; value: string }> {
-  return [
-    { label: copy.sort, value: "updated:desc" },
-    { label: `${copy.sortUpdated} · ${copy.ascending}`, value: "updated:asc" },
-    { label: copy.sortCreated, value: "created:desc" },
-    { label: `${copy.sortCreated} · ${copy.ascending}`, value: "created:asc" },
-    { label: copy.sortComments, value: "comments:desc" },
-    { label: `${copy.sortComments} · ${copy.ascending}`, value: "comments:asc" },
-  ];
 }

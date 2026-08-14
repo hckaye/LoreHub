@@ -37,7 +37,6 @@ export default async function PullRequestsPage({ params, searchParams }: PullReq
   ]);
   const archived = repositoryResult.ok && repositoryResult.data.archivedAt !== null;
   const basePath = repositoryPath(locale, owner, repository, "pulls");
-  const filterOptions = pullRequestFilterOptions(mergeRequests);
   return (
     <div className={styles.page}>
       {query.created === "1" && (
@@ -50,7 +49,7 @@ export default async function PullRequestsPage({ params, searchParams }: PullReq
       )}
       <WorkItemListToolbar
         basePath={basePath}
-        createHref={pullRequestCreateHref(basePath, archived)}
+        createHref={pullRequestCreateHref(basePath, !archived)}
         createLabel={dictionary.pullRequestsPage.newPullRequest}
         dictionary={dictionary}
         kind="pulls"
@@ -73,8 +72,6 @@ export default async function PullRequestsPage({ params, searchParams }: PullReq
           milestones={milestonesResult.ok ? milestonesResult.data.milestones : []}
           openCount={mergeRequests.ok ? mergeRequests.data.openCount : undefined}
           query={filters}
-          authors={filterOptions.authors}
-          assignees={filterOptions.assignees}
         />
         {mergeRequests.ok ? (
           <MergeRequestList
@@ -108,14 +105,6 @@ export default async function PullRequestsPage({ params, searchParams }: PullReq
   );
 }
 
-function pullRequestFilterOptions(result: Awaited<ReturnType<typeof getMergeRequests>>) {
-  if (!result.ok) return { authors: [], assignees: [] };
-  return {
-    authors: result.data.mergeRequests.map((mergeRequest) => mergeRequest.author),
-    assignees: result.data.mergeRequests.flatMap((mergeRequest) => mergeRequest.assignees),
-  };
-}
-
-function pullRequestCreateHref(basePath: string, archived: boolean): string | undefined {
-  return archived ? undefined : `${basePath}/new`;
+function pullRequestCreateHref(basePath: string, canCreate: boolean): string | undefined {
+  return canCreate ? `${basePath}/new` : undefined;
 }
