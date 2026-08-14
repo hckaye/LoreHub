@@ -765,7 +765,7 @@ const en = {
     titlePlaceholder: "A concise title",
     bodyLabel: "Description",
     bodyPlaceholder: "Add context, expected outcome, or review notes.",
-    submitIssue: "Create issue",
+    submitIssue: "Submit new issue",
     submitPullRequest: "Create pull request",
     submitting: "Submitting",
     sourceBranch: "Source branch",

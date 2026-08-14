@@ -25,6 +25,7 @@ export const createPages = {
     write: "Write",
     preview: "Preview",
     nothingToPreview: "Nothing to preview",
+    noneYet: "None yet",
   },
   ja: {
     repositoryTitle: "新しいリポジトリを作成",
@@ -49,8 +50,9 @@ export const createPages = {
     issueChooserTitle: "新しいIssueを作成",
     issueChooserIntro: "Issueを作成するリポジトリを選んでください。",
     findARepository: "リポジトリを探す",
-    write: "執筆",
+    write: "書き込む",
     preview: "プレビュー",
     nothingToPreview: "プレビューする内容がありません",
+    noneYet: "なし",
   },
 } as const;

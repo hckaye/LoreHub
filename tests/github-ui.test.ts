@@ -93,14 +93,39 @@ test("create pages follow GitHub's new repository, organization, and issue forms
   assert.match(repoPage, /<CreatePage/);
   assert.match(orgPage, /<CreatePage/);
   assert.match(issueChooser, /<CreatePage/);
-  assert.match(issuePage, /<CreatePage wide/);
+  assert.match(issuePage, /<IssueForm/);
+  assert.doesNotMatch(issuePage, /CreatePage/);
   assert.match(repoForm, /className=\{styles\.ownerRow\}/);
   assert.match(repoForm, /type="radio"/);
   assert.match(orgForm, /type="radio"/);
-  assert.match(issueForm, /copy\.write/);
-  assert.match(issueForm, /copy\.preview/);
+  assert.match(issueForm, /UserAvatar/);
+  assert.match(issueForm, /variant="commentBox"/);
+  assert.match(issueForm, /copy\.noneYet/);
+  assert.match(issueForm, /styles\.sidebar/);
   assert.match(chooser, /copy\.findARepository/);
   assert.match(nav, /copy\.backToSettings/);
   assert.match(tokenForm, /accountSettingsPath\(props\.locale, "tokens"\)/);
   assert.match(tokenForm, /dictionary\.common\.cancel/);
+});
+
+test("new issue page matches GitHub's avatar, comment box, and sidebar layout", async () => {
+  const [formStyles, field, fieldStyles] = await Promise.all([
+    readFile("src/components/repositories/issue-form.module.css", "utf8"),
+    readFile("src/components/repositories/issue-markdown-field.tsx", "utf8"),
+    readFile("src/components/repositories/issue-markdown-field.module.css", "utf8"),
+  ]);
+  assert.match(formStyles, /max-width: 1280px/);
+  assert.match(formStyles, /padding: 24px 16px/);
+  assert.match(formStyles, /minmax\(0, 3fr\) 256px/);
+  assert.match(formStyles, /height: 32px/);
+  assert.match(formStyles, /justify-content: flex-end/);
+  assert.match(formStyles, /--success-border/);
+  assert.match(formStyles, /font-size: 12px/);
+  assert.match(formStyles, /font-weight: 600/);
+  assert.match(fieldStyles, /min-height: 200px/);
+  assert.match(fieldStyles, /background: var\(--canvas-subtle\)/);
+  assert.match(fieldStyles, /border-bottom-color: transparent/);
+  assert.match(fieldStyles, /border-right-color: var\(--border\)/);
+  assert.match(field, /markdownSupported/);
+  assert.match(field, /variant === "commentBox"/);
 });
