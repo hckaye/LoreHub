@@ -837,6 +837,12 @@ const en = {
     forbidden: "You do not have permission to perform this action.",
     invalid: "Check the fields and try again.",
     conflict: "That resource already exists.",
+    noLoreServer:
+      "This organization has no Lore Server to store the repository. Register one in the organization settings, " +
+      "or ask an instance administrator for access to the Lore Server this installation operates.",
+    loreServerUnavailable:
+      "The Lore Server chosen for this organization is not active. Check it in the organization settings and " +
+      "try again.",
   },
   footer: {
     sourceOfTruth: "LoreHub works with the Lore version control system.",

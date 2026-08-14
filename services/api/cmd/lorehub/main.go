@@ -76,7 +76,10 @@ func run(logger *slog.Logger) error {
 		logger.Info("PostgreSQL migrations are current")
 		return nil
 	}
-	store := platform.NewStoreWithNotificationEmail(pool, settings.NotificationEmailEnabled)
+	store := platform.NewStoreWithSettings(pool, platform.StoreSettings{
+		NotificationEmailAvailable: settings.NotificationEmailEnabled,
+		DefaultEntitlements:        settings.DefaultOrganizationEntitlements,
+	})
 	if _, err := store.EnsureInstanceLoreServer(rootContext, settings.LorePublicURL); err != nil {
 		return err
 	}

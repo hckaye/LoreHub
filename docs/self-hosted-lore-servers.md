@@ -127,6 +127,12 @@ Without that entitlement, repository creation fails with guidance to register an
 entitlement. Existing organizations receive a migration grant so their existing behavior continues after the schema
 upgrade.
 
+Organizations created after that upgrade start with the features listed in `LOREHUB_DEFAULT_ORGANIZATION_ENTITLEMENTS`,
+a comma-separated list of `hosted_lore_server` and `hosted_runners`. The bundled Compose installation operates its own
+Lore Server and runners and grants both, so a new organization can create repositories right away. An installation that
+sells hosted capacity leaves the value empty and grants the features per organization from the administration page,
+which `LOREHUB_INSTANCE_ADMIN_USERNAMES` opens to the named users.
+
 Importing a repository also requires a registered server ID. The imported `lores://` URL must have the same authority
 as the registered server.
 

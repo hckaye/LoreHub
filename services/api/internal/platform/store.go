@@ -28,6 +28,15 @@ var (
 type Store struct {
 	pool                       *pgxpool.Pool
 	notificationEmailAvailable bool
+	// Features every new organization is granted, for installations that
+	// operate their own Lore Server and runners.
+	defaultEntitlements []string
+}
+
+// StoreSettings carries the installation choices the store applies to writes.
+type StoreSettings struct {
+	NotificationEmailAvailable bool
+	DefaultEntitlements        []string
 }
 
 func NewStore(pool *pgxpool.Pool) *Store {
@@ -36,6 +45,20 @@ func NewStore(pool *pgxpool.Pool) *Store {
 
 func NewStoreWithNotificationEmail(pool *pgxpool.Pool, available bool) *Store {
 	return &Store{pool: pool, notificationEmailAvailable: available}
+}
+
+func NewStoreWithSettings(pool *pgxpool.Pool, settings StoreSettings) *Store {
+	features := make([]string, 0, len(settings.DefaultEntitlements))
+	for _, feature := range settings.DefaultEntitlements {
+		if ValidEntitlementFeature(feature) {
+			features = append(features, feature)
+		}
+	}
+	return &Store{
+		pool:                       pool,
+		notificationEmailAvailable: settings.NotificationEmailAvailable,
+		defaultEntitlements:        features,
+	}
 }
 
 func (store *Store) ActiveUser(ctx context.Context, userID string) (User, error) {
@@ -205,6 +228,14 @@ func (store *Store) CreateOrganization(
 	`, organization.ID, actor.ID)
 	if err != nil {
 		return Organization{}, fmt.Errorf("create organization owner: %w", err)
+	}
+	for _, feature := range store.defaultEntitlements {
+		if _, err := transaction.Exec(ctx, `
+			INSERT INTO entitlements (organization_id, feature, grant_source)
+			VALUES ($1, $2, 'default')
+		`, organization.ID, feature); err != nil {
+			return Organization{}, fmt.Errorf("grant default organization entitlement: %w", err)
+		}
 	}
 	if err := insertAudit(ctx, transaction, actor.ID, organization.ID, "", "organization.create", "organization",
 		organization.ID); err != nil {

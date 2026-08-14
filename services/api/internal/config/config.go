@@ -41,6 +41,10 @@ func LoadFor(command string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	defaultEntitlements, err := defaultOrganizationEntitlements(os.Getenv("LOREHUB_DEFAULT_ORGANIZATION_ENTITLEMENTS"))
+	if err != nil {
+		return Config{}, err
+	}
 	loreAuthIssuer := os.Getenv("LOREHUB_LORE_AUTH_ISSUER")
 	loreAuthLoginURL := os.Getenv("LOREHUB_LORE_AUTH_LOGIN_URL")
 	loreAuthURL := os.Getenv("LOREHUB_LORE_AUTH_URL")
@@ -287,6 +291,7 @@ func LoadFor(command string) (Config, error) {
 		LoginTransactionTTL:               transactionTTL,
 		IdentityProviders:                 configuredIdentityProviders(),
 		InstanceAdminUsernames:            commaSeparatedUsernames(os.Getenv("LOREHUB_INSTANCE_ADMIN_USERNAMES")),
+		DefaultOrganizationEntitlements:   defaultEntitlements,
 		LoreCacheDir:                      envOrDefault("LOREHUB_LORE_CACHE_DIR", ".cache/lorehub/repositories"),
 		LoreIdentity:                      os.Getenv("LOREHUB_LORE_IDENTITY"),
 		AllowLegacyLoreIdentity:           allowLegacyLoreIdentity,
@@ -909,76 +914,6 @@ func parseDevActionsContext(raw string) (DevActionsContext, error) {
 		return DevActionsContext{}, fmt.Errorf("LOREHUB_DEV_ACTIONS_CONTEXT_JSON must be valid JSON: %w", err)
 	}
 	return value, nil
-}
-
-func envOrDefault(key string, fallback string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return fallback
-}
-
-func defaultIfEmpty(value string, fallback string) string {
-	if value == "" {
-		return fallback
-	}
-	return value
-}
-
-func durationOrDefault(key string, fallback time.Duration) time.Duration {
-	value := os.Getenv(key)
-	if value == "" {
-		return fallback
-	}
-	duration, err := time.ParseDuration(value)
-	if err == nil {
-		return duration
-	}
-	seconds, err := strconv.Atoi(value)
-	if err == nil {
-		return time.Duration(seconds) * time.Second
-	}
-	return fallback
-}
-
-func durationSetting(key string, fallback time.Duration) (time.Duration, error) {
-	value := os.Getenv(key)
-	if value == "" {
-		return fallback, nil
-	}
-	duration, err := time.ParseDuration(value)
-	if err == nil {
-		return duration, nil
-	}
-	seconds, secondsErr := strconv.Atoi(value)
-	if secondsErr == nil {
-		return time.Duration(seconds) * time.Second, nil
-	}
-	return 0, fmt.Errorf("%s must be a duration such as 10m or a number of seconds", key)
-}
-
-func byteSetting(key string, fallback int64) (int64, error) {
-	value := os.Getenv(key)
-	if value == "" {
-		return fallback, nil
-	}
-	parsed, err := strconv.ParseInt(value, 10, 64)
-	if err != nil || parsed <= 0 {
-		return 0, fmt.Errorf("%s must be a positive byte count", key)
-	}
-	return parsed, nil
-}
-
-func intSetting(key string, fallback int) (int, error) {
-	value := os.Getenv(key)
-	if value == "" {
-		return fallback, nil
-	}
-	parsed, err := strconv.Atoi(value)
-	if err != nil || parsed <= 0 {
-		return 0, fmt.Errorf("%s must be a positive integer", key)
-	}
-	return parsed, nil
 }
 
 func cookieSecureSetting(environment string) (bool, error) {

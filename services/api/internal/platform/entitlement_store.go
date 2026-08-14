@@ -39,7 +39,7 @@ func (store *Store) Grant(
 	feature string,
 ) (Entitlement, error) {
 	normalizedSubject, ok := normalizeEntitlementSubject(subject)
-	if !ok || !validEntitlementFeature(feature) {
+	if !ok || !ValidEntitlementFeature(feature) {
 		return Entitlement{}, ErrInvalidInput
 	}
 	transaction, err := store.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
@@ -90,7 +90,7 @@ func (store *Store) Revoke(
 	feature string,
 ) error {
 	normalizedSubject, ok := normalizeEntitlementSubject(subject)
-	if !ok || !validEntitlementFeature(feature) {
+	if !ok || !ValidEntitlementFeature(feature) {
 		return ErrInvalidInput
 	}
 	transaction, err := store.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
@@ -132,7 +132,7 @@ func (store *Store) HasEntitlement(
 	feature string,
 ) (bool, error) {
 	normalizedSubject, ok := normalizeEntitlementSubject(subject)
-	if !ok || !validEntitlementFeature(feature) {
+	if !ok || !ValidEntitlementFeature(feature) {
 		return false, ErrInvalidInput
 	}
 	var entitled bool
@@ -207,7 +207,8 @@ func normalizeEntitlementSubject(subject EntitlementSubject) (EntitlementSubject
 	return EntitlementSubject{OrganizationID: organizationID, UserID: userID}, true
 }
 
-func validEntitlementFeature(feature string) bool {
+// ValidEntitlementFeature reports whether the feature name can be granted.
+func ValidEntitlementFeature(feature string) bool {
 	return feature == EntitlementHostedLoreServer || feature == EntitlementHostedRunners
 }
 

@@ -985,6 +985,10 @@ const ja = {
     forbidden: "この操作を行う権限がありません。",
     invalid: "入力内容を確認して、もう一度試してください。",
     conflict: "そのリソースはすでに存在します。",
+    noLoreServer:
+      "この組織にはリポジトリを保存するLore Serverがありません。組織の設定からLore Serverを登録するか、" +
+      "このインストールが運用しているLore Serverを使えるようにインスタンス管理者に依頼してください。",
+    loreServerUnavailable: "この組織に設定されたLore Serverが有効ではありません。組織の設定を確認してください。",
   },
   footer: {
     sourceOfTruth: "LoreHubはLoreバージョン管理システムに対応しています。",

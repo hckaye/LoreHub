@@ -37,6 +37,7 @@ type Config struct {
 	LoginTransactionTTL               time.Duration
 	IdentityProviders                 []string
 	InstanceAdminUsernames            []string
+	DefaultOrganizationEntitlements   []string
 	LoreCacheDir                      string
 	LoreIdentity                      string
 	AllowLegacyLoreIdentity           bool

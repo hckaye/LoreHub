@@ -61,7 +61,7 @@ export function RegisterRepositoryForm({ dictionary, locale, session }: Register
       return;
     }
     setPending(false);
-    setFailure(mutationFailureMessage(result.kind, dictionary));
+    setFailure(mutationFailureMessage(result.kind, dictionary, result.code));
     setRequiresLogin(result.kind === "unauthorized");
   }
 

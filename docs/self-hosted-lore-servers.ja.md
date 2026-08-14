@@ -123,6 +123,11 @@ Organizationに登録したserverは、`hosted_lore_server` entitlementがなく
 このentitlementがない場合、リポジトリ作成はOrganization Lore Serverの登録またはentitlementの取得を案内して失敗します。
 既存Organizationにはmigration grantが付与されるため、schema upgrade後も既存の動作は変わりません。
 
+upgrade後に作成したOrganizationには、`LOREHUB_DEFAULT_ORGANIZATION_ENTITLEMENTS`に列挙したfeatureが付与されます。値は
+`hosted_lore_server`と`hosted_runners`のcomma区切りです。同梱のCompose構成は自前のLore Serverとrunnerを動かすため両方を
+付与し、新しいOrganizationでもすぐにリポジトリを作成できます。hosted capacityを販売するインストールでは値を空にして、
+管理ページからOrganizationごとに付与します。管理ページを使えるユーザーは`LOREHUB_INSTANCE_ADMIN_USERNAMES`で指定します。
+
 リポジトリのimportにも登録済みserver IDが必要です。importする`lores://` URLのauthorityは、登録済みserverのauthorityと
 一致しなければなりません。
 
