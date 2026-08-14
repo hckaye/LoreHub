@@ -129,3 +129,46 @@ test("new issue page matches GitHub's avatar, comment box, and sidebar layout", 
   assert.match(field, /markdownSupported/);
   assert.match(field, /variant === "commentBox"/);
 });
+
+test("user profile uses GitHub vcard, underline tabs, and divided repository rows", async () => {
+  const [page, styles, rows, rowStyles, navStyles] = await Promise.all([
+    readFile("src/components/profile/user-profile-page.tsx", "utf8"),
+    readFile("src/components/profile/user-profile-page.module.css", "utf8"),
+    readFile("src/components/repositories/repository-rows.tsx", "utf8"),
+    readFile("src/components/repositories/repository-rows.module.css", "utf8"),
+    readFile("src/components/ui/underline-nav.module.css", "utf8"),
+  ]);
+  assert.match(page, /<UnderlineNav/);
+  assert.match(page, /<RepositoryRows/);
+  assert.match(page, /size=\{296\}/);
+  assert.match(styles, /grid-template-columns: 296px minmax\(0, 1fr\)/);
+  assert.match(styles, /max-width: 1280px/);
+  assert.match(styles, /padding: 24px 16px/);
+  assert.match(styles, /font-size: 24px/);
+  assert.match(styles, /font-weight: 300/);
+  assert.match(rows, /type="search"/);
+  assert.match(rowStyles, /height: 32px/);
+  assert.match(rowStyles, /padding: 24px 0/);
+  assert.match(rowStyles, /border-radius: 2em/);
+  assert.match(navStyles, /--nav-active-border/);
+  assert.match(navStyles, /--bg-neutral-muted/);
+});
+
+test("organization profile uses header tabs and dedicated settings and teams routes", async () => {
+  const [page, profile, teamsPage, teamsRoute, settings] = await Promise.all([
+    readFile("src/components/organizations/organization-page.tsx", "utf8"),
+    readFile("src/components/organizations/organization-profile.tsx", "utf8"),
+    readFile("src/components/organizations/organization-teams-page.tsx", "utf8"),
+    readFile("src/app/[locale]/organizations/[organization]/teams/page.tsx", "utf8"),
+    readFile("src/app/[locale]/organizations/[organization]/settings/page.tsx", "utf8"),
+  ]);
+  assert.match(page, /<RepositoryRows/);
+  assert.doesNotMatch(page, /TeamCreateForm/);
+  assert.doesNotMatch(page, /OrganizationSettingsForm/);
+  assert.match(profile, /tab === "repositories"/);
+  assert.match(profile, /tab === "teams"/);
+  assert.match(profile, /settingsButton/);
+  assert.match(teamsPage, /<TeamCreateForm/);
+  assert.match(teamsRoute, /OrganizationTeamsPage/);
+  assert.match(settings, /OrganizationSettingsForm/);
+});

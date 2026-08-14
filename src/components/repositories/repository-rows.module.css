@@ -1,0 +1,79 @@
+.filter {
+  display: block;
+  width: 100%;
+  height: 32px;
+  margin: 0 0 8px;
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--canvas-default);
+  color: var(--fg-default);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.filter:focus {
+  border-color: var(--accent-emphasis);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-border);
+}
+
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  padding: 24px 0;
+  border-bottom: 1px solid var(--border-muted);
+}
+
+.heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.heading h3 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.heading a {
+  color: var(--accent-fg);
+  text-decoration: none;
+}
+
+.heading a:hover {
+  text-decoration: underline;
+}
+
+.visibility {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: 2em;
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+.description {
+  margin: 4px 0 0;
+  color: var(--fg-muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.meta {
+  margin: 8px 0 0;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
