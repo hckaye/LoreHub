@@ -121,9 +121,9 @@
 }
 
 .createForm > button {
-  background: var(--success-border);
+  background: var(--success-emphasis);
   border-color: transparent;
-  color: #fff;
+  color: var(--fg-on-emphasis);
 }
 
 .list {
@@ -153,7 +153,7 @@
 
 .chip {
   background: var(--label-color);
-  border: 1px solid color-mix(in srgb, var(--label-color), #000 18%);
+  border: 1px solid color-mix(in srgb, var(--label-color), black 18%);
   border-radius: 999px;
   color: var(--label-text);
   font-size: 12px;
@@ -173,7 +173,7 @@
 }
 
 .actions .deleteButton {
-  color: var(--danger-fg, #cf222e);
+  color: var(--danger-fg);
 }
 
 .success,
@@ -182,11 +182,11 @@
 }
 
 .success {
-  color: var(--success-fg, #1a7f37);
+  color: var(--success-fg);
 }
 
 .error {
-  color: var(--danger-fg, #cf222e);
+  color: var(--danger-fg);
 }
 
 @media (max-width: 760px) {

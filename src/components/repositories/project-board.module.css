@@ -6,7 +6,7 @@
 
 .header {
   align-items: flex-start;
-  border-bottom: 1px solid #d8dee4;
+  border-bottom: 1px solid var(--border-muted);
   display: flex;
   gap: 20px;
   justify-content: space-between;
@@ -26,7 +26,7 @@
 }
 
 .titleArea p {
-  color: #636c76;
+  color: var(--fg-muted);
   margin: 0;
   white-space: pre-wrap;
 }
@@ -42,7 +42,7 @@
 }
 
 .stateLine {
-  color: #636c76;
+  color: var(--fg-muted);
   flex-wrap: wrap;
   font-size: 12px;
 }
@@ -50,7 +50,7 @@
 .state {
   align-items: center;
   border-radius: 2em;
-  color: #fff;
+  color: var(--fg-on-emphasis);
   display: inline-flex;
   font-weight: 600;
   gap: 5px;
@@ -58,20 +58,29 @@
 }
 
 .state[data-state="open"] {
-  background: #1f883d;
+  background: var(--success-emphasis);
 }
 
 .state[data-state="closed"] {
-  background: #8250df;
+  background: var(--done-emphasis);
 }
 
 .headerActions {
   flex: 0 0 auto;
 }
 
-.primaryButton,
-.secondaryButton,
-.dangerButton,
+.primaryButton {
+  composes: base primary sizeSmall from "../ui/button.module.css";
+}
+
+.secondaryButton {
+  composes: base secondary sizeSmall from "../ui/button.module.css";
+}
+
+.dangerButton {
+  composes: base danger sizeSmall from "../ui/button.module.css";
+}
+
 .iconButton,
 .addColumnButton,
 .addCardButton {
@@ -89,45 +98,17 @@
   padding: 4px 10px;
 }
 
-.primaryButton {
-  background: #1f883d;
-  border-color: rgba(31, 35, 40, 0.15);
-  color: #fff;
-}
-
-.primaryButton:hover {
-  background: #1a7f37;
-}
-
-.secondaryButton,
-.dangerButton,
-.iconButton {
-  background: #f6f8fa;
-  border-color: #d0d7de;
-  color: #24292f;
-}
-
-.dangerButton {
-  color: #cf222e;
-}
-
-.dangerButton:hover {
-  background: #cf222e;
-  border-color: #cf222e;
-  color: #fff;
-}
-
 .iconButton {
   background: transparent;
   border-color: transparent;
+  color: var(--fg-default);
   font-weight: 400;
   padding: 3px 6px;
 }
 
-.secondaryButton:hover,
 .iconButton:hover {
-  background: #f3f4f6;
-  border-color: rgba(31, 35, 40, 0.15);
+  background: var(--control-bg-hover);
+  border-color: var(--control-border-emphasis);
 }
 
 .primaryButton:disabled,
@@ -139,8 +120,8 @@
 }
 
 .projectForm {
-  background: #f6f8fa;
-  border: 1px solid #d0d7de;
+  background: var(--canvas-subtle);
+  border: 1px solid var(--border);
   border-radius: 6px;
   display: grid;
   gap: 8px;
@@ -165,10 +146,10 @@
 .cardForm textarea,
 .addColumn input,
 .moveControl select {
-  background: #fff;
-  border: 1px solid #d0d7de;
+  background: var(--canvas-default);
+  border: 1px solid var(--border);
   border-radius: 6px;
-  color: #1f2328;
+  color: var(--fg-default);
   font: inherit;
   font-size: 13px;
   padding: 6px 8px;
@@ -183,8 +164,8 @@
 .cardForm textarea:focus,
 .addColumn input:focus,
 .moveControl select:focus {
-  border-color: #0969da;
-  box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.15);
+  border-color: var(--accent-fg);
+  box-shadow: var(--accent-focus-shadow);
   outline: none;
 }
 
@@ -202,13 +183,13 @@
   min-height: 420px;
   overflow-x: auto;
   padding: 4px 2px 18px;
-  scrollbar-color: #afb8c1 transparent;
+  scrollbar-color: var(--counter-bg) transparent;
 }
 
 .column,
 .addColumn {
-  background: #f6f8fa;
-  border: 1px solid #d0d7de;
+  background: var(--canvas-subtle);
+  border: 1px solid var(--border);
   border-radius: 6px;
   flex: 0 0 310px;
   min-width: 0;
@@ -235,9 +216,9 @@
 }
 
 .columnHeader > span {
-  background: #afb8c1;
+  background: var(--counter-bg);
   border-radius: 2em;
-  color: #24292f;
+  color: var(--fg-default);
   font-size: 11px;
   line-height: 18px;
   min-width: 20px;
@@ -251,10 +232,10 @@
 }
 
 .menu {
-  background: #fff;
-  border: 1px solid #d0d7de;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
   border-radius: 6px;
-  box-shadow: 0 8px 24px rgba(140, 149, 159, 0.2);
+  box-shadow: var(--shadow-popover);
   display: grid;
   min-width: 150px;
   padding: 4px 0;
@@ -267,7 +248,7 @@
 .menu button {
   background: transparent;
   border: 0;
-  color: #24292f;
+  color: var(--fg-default);
   cursor: pointer;
   font: inherit;
   font-size: 12px;
@@ -276,12 +257,12 @@
 }
 
 .menu button:hover {
-  background: #0969da;
-  color: #fff;
+  background: var(--accent-emphasis);
+  color: var(--fg-on-emphasis);
 }
 
 .menu .dangerAction {
-  color: #cf222e;
+  color: var(--danger-fg);
 }
 
 .cards {
@@ -290,17 +271,17 @@
 }
 
 .noCards {
-  color: #636c76;
+  color: var(--fg-muted);
   font-size: 12px;
   margin: 12px 4px;
   text-align: center;
 }
 
 .card {
-  background: #fff;
-  border: 1px solid #d0d7de;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
   border-radius: 6px;
-  box-shadow: 0 1px 0 rgba(31, 35, 40, 0.04);
+  box-shadow: var(--shadow-card);
   display: grid;
   gap: 7px;
   padding: 10px;
@@ -312,22 +293,22 @@
 
 .cardKind {
   align-items: center;
-  color: #636c76;
+  color: var(--fg-muted);
   display: inline-flex;
   font-size: 11px;
   gap: 5px;
 }
 
 .cardKind[data-kind="issue"] svg {
-  color: #1a7f37;
+  color: var(--success-fg);
 }
 
 .cardKind[data-kind="merge_request"] svg {
-  color: #8250df;
+  color: var(--done-fg);
 }
 
 .cardTitle {
-  color: #1f2328;
+  color: var(--fg-default);
   font-size: 13px;
   font-weight: 600;
   overflow-wrap: anywhere;
@@ -335,12 +316,12 @@
 }
 
 a.cardTitle:hover {
-  color: #0969da;
+  color: var(--accent-fg);
   text-decoration: underline;
 }
 
 .cardBody {
-  color: #636c76;
+  color: var(--fg-muted);
   font-size: 12px;
   margin: 0;
   max-height: 7em;
@@ -349,7 +330,7 @@ a.cardTitle:hover {
 }
 
 .card small {
-  color: #636c76;
+  color: var(--fg-muted);
   font-size: 11px;
 }
 
@@ -362,8 +343,8 @@ a.cardTitle:hover {
 
 .inlineForm,
 .cardForm {
-  background: #fff;
-  border: 1px solid #d0d7de;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
   border-radius: 6px;
   padding: 10px;
 }
@@ -372,15 +353,15 @@ a.cardTitle:hover {
 .addColumnButton {
   background: transparent;
   border-color: transparent;
-  color: #636c76;
+  color: var(--fg-muted);
   justify-content: flex-start;
   width: 100%;
 }
 
 .addCardButton:hover,
 .addColumnButton:hover {
-  background: #eaeef2;
-  color: #24292f;
+  background: var(--neutral-muted);
+  color: var(--fg-default);
 }
 
 .addColumn {
@@ -393,7 +374,7 @@ a.cardTitle:hover {
 
 .moveControl {
   align-items: center;
-  border-top: 1px solid #d8dee4;
+  border-top: 1px solid var(--border-muted);
   display: flex;
   gap: 8px;
   justify-content: space-between;
@@ -401,7 +382,7 @@ a.cardTitle:hover {
 }
 
 .moveControl span {
-  color: #636c76;
+  color: var(--fg-muted);
   font-size: 11px;
 }
 

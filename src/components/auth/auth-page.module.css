@@ -87,9 +87,9 @@
 }
 
 .password {
-  border-color: var(--success-border);
-  background: var(--success-border);
-  color: #ffffff;
+  border-color: var(--success-emphasis);
+  background: var(--success-emphasis);
+  color: var(--fg-on-emphasis);
 }
 
 .password:hover {
