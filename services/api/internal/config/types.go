@@ -21,11 +21,14 @@ type Config struct {
 	MaxRepositoriesPerOrganization    int
 	MaxRepositorySizeBytes            int64
 	AuthMode                          string
+	PasswordAuthEnabled               bool
+	PasswordRegistrationEnabled       bool
 	OIDCIssuer                        string
 	OIDCAudience                      string
 	OIDCClientID                      string
 	OIDCClientSecret                  string
 	OIDCRedirectURL                   string
+	OIDCIDPHintParameter              string
 	PublicOrigin                      string
 	PublicAPIURL                      string
 	PublicGraphQLURL                  string

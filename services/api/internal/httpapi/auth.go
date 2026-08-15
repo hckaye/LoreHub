@@ -129,7 +129,16 @@ func (api *API) login(writer http.ResponseWriter, request *http.Request) {
 		writeProblem(writer, http.StatusBadRequest, "invalid_auth_request", "The login provider is not configured")
 		return
 	}
-	if !api.interactiveAuthenticationAvailable() {
+	if !api.oidcLoginAvailable() {
+		if api.passwordAuthenticationAvailable() {
+			target := "/auth/start?" + url.Values{"return_to": {returnTo}}.Encode()
+			if prompt == auth.RegistrationPrompt {
+				target += "&prompt=" + auth.RegistrationPrompt
+			}
+			writer.Header().Set("Cache-Control", "no-store")
+			http.Redirect(writer, request, target, http.StatusFound)
+			return
+		}
 		writeProblem(writer, http.StatusServiceUnavailable, "authentication_unavailable",
 			"Interactive authentication is not configured")
 		return
@@ -195,7 +204,7 @@ func (api *API) requestedLoginProvider(query url.Values) (string, bool) {
 		return "", false
 	}
 	provider := strings.ToLower(strings.TrimSpace(values[0]))
-	if provider == "password" {
+	if provider == "password" || provider == "sso" {
 		return "", true
 	}
 	for _, configured := range api.loginProviders {
@@ -207,7 +216,7 @@ func (api *API) requestedLoginProvider(query url.Values) (string, bool) {
 }
 
 func (api *API) callback(writer http.ResponseWriter, request *http.Request) {
-	if !api.interactiveAuthenticationAvailable() {
+	if !api.oidcLoginAvailable() {
 		writeProblem(writer, http.StatusServiceUnavailable, "authentication_unavailable",
 			"Interactive authentication is not configured")
 		return
@@ -376,6 +385,10 @@ func (api *API) validCSRF(request *http.Request, expectedDigest []byte) bool {
 	if csrfToken == "" || len(csrfToken) > 512 || !api.secrets.Matches(csrfToken, expectedDigest) {
 		return false
 	}
+	return api.requestOriginAllowed(request)
+}
+
+func (api *API) requestOriginAllowed(request *http.Request) bool {
 	origin := request.Header.Get("Origin")
 	if origin == "" {
 		return true
@@ -393,6 +406,11 @@ func (api *API) validCSRF(request *http.Request, expectedDigest []byte) bool {
 }
 
 func (api *API) interactiveAuthenticationAvailable() bool {
+	return (api.oidcLoginAvailable() || api.passwordAuthenticationAvailable()) &&
+		api.sessionStore != nil && api.secrets != nil
+}
+
+func (api *API) oidcLoginAvailable() bool {
 	return api.loginProvider != nil && api.loginStore != nil && api.sessionStore != nil && api.secrets != nil
 }
 

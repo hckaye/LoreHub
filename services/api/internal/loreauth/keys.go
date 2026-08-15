@@ -209,7 +209,7 @@ func NewTokenService(
 		return nil, errors.New("Lore JWT lifetime must be between five and ten minutes")
 	}
 	if idp == "" {
-		idp = "keycloak"
+		idp = "lorehub"
 	}
 	return &TokenService{keys: keys, issuer: issuer, audiences: audiences,
 		environment: environment, idp: idp, lifetime: lifetime}, nil

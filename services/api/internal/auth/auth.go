@@ -53,6 +53,9 @@ type OIDCConfig struct {
 	Audience     string
 	ClientSecret string
 	RedirectURL  string
+	// IDPHintParameter is the query parameter used to deep-link a brokered
+	// identity provider, for example kc_idp_hint on Keycloak.
+	IDPHintParameter string
 }
 
 type OIDCAuthenticator struct {

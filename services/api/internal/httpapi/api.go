@@ -192,6 +192,8 @@ type API struct {
 	loginStore              auth.LoginTransactionStore
 	sessionStore            auth.SessionStore
 	cleanupStore            auth.CleanupStore
+	passwordAuth            PasswordAuthStore
+	passwordRegistration    bool
 	secrets                 *auth.SecretCodec
 	publicOrigin            string
 	cookie                  sessionCookieConfig

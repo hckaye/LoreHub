@@ -13,7 +13,8 @@ import (
 )
 
 type providerResponse struct {
-	ID string `json:"id"`
+	ID   string `json:"id"`
+	Kind string `json:"kind"`
 }
 
 func (api *API) providers(writer http.ResponseWriter, _ *http.Request) {
@@ -22,9 +23,19 @@ func (api *API) providers(writer http.ResponseWriter, _ *http.Request) {
 			"Interactive authentication is not configured")
 		return
 	}
-	providers := []providerResponse{{ID: "password"}}
-	for _, provider := range api.loginProviders {
-		providers = append(providers, providerResponse{ID: provider})
+	providers := make([]providerResponse, 0, len(api.loginProviders)+2)
+	if api.passwordAuthenticationAvailable() {
+		providers = append(providers, providerResponse{ID: "password", Kind: "form"})
+	}
+	if api.oidcLoginAvailable() {
+		if !api.passwordAuthenticationAvailable() {
+			providers = append(providers, providerResponse{ID: "password", Kind: "redirect"})
+		} else {
+			providers = append(providers, providerResponse{ID: "sso", Kind: "redirect"})
+		}
+		for _, provider := range api.loginProviders {
+			providers = append(providers, providerResponse{ID: provider, Kind: "redirect"})
+		}
 	}
 	writeJSON(writer, http.StatusOK, map[string]any{"providers": providers})
 }
