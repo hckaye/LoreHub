@@ -3,7 +3,6 @@ package httpapi
 import (
 	"context"
 	"errors"
-	"fmt"
 	"html"
 	"log/slog"
 	"net/http"
@@ -671,7 +670,7 @@ func (api *API) InternalPolicyHandler() http.Handler {
 			writeProblem(writer, http.StatusForbidden, "policy_denied", "The Lore operation is not authorized")
 			return
 		}
-		if api.denyOversizedBranchPush(writer, input) {
+		if api.denyOversizedBranchPush(writer, request, input) {
 			return
 		}
 		if input.Operation == authz.OperationBranchCreate {
@@ -696,35 +695,6 @@ func (api *API) InternalPolicyHandler() http.Handler {
 		return api.authenticateLoreHookServer(mux)
 	}
 	return mux
-}
-
-func (api *API) denyOversizedBranchPush(writer http.ResponseWriter, input policyRequest) bool {
-	if !isBranchPushPolicy(input) || input.RevisionTreeSize == nil || api.maxRepositorySizeBytes <= 0 {
-		return false
-	}
-	if *input.RevisionTreeSize <= uint64(api.maxRepositorySizeBytes) {
-		return false
-	}
-	api.logLorePolicyDecision(input, false, nil)
-	writeJSON(writer, http.StatusForbidden, map[string]any{
-		"allowed": false,
-		"code":    "repository_size_limit",
-		"message": repositorySizeLimitMessage(api.maxRepositorySizeBytes, *input.RevisionTreeSize),
-	})
-	return true
-}
-
-func isBranchPushPolicy(input policyRequest) bool {
-	return input.Operation == authz.OperationBranchPush ||
-		input.HookPoint == "BranchPush" || input.HookPoint == authz.OperationBranchPush
-}
-
-func repositorySizeLimitMessage(limitBytes int64, pushedBytes uint64) string {
-	return fmt.Sprintf(
-		"The repository size limit is %.1f MB; the pushed revision is %.1f MB",
-		float64(limitBytes)/(1024*1024),
-		float64(pushedBytes)/(1024*1024),
-	)
 }
 
 func (api *API) logLorePolicyDecision(input policyRequest, allowed bool, err error) {

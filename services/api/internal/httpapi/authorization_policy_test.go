@@ -198,6 +198,46 @@ func TestInternalPolicyHandlerAllowsBranchPushWithoutRevisionTreeSize(t *testing
 	}
 }
 
+func TestInternalPolicyHandlerUsesLiveRepositorySizeLimit(t *testing.T) {
+	store := &policyStoreWithSizeLimit{policyCaptureStore: &policyCaptureStore{}, sizeBytes: 1}
+	handler := NewInternalPolicyHandlerWithSizeLimit(store, 0)
+	oversized := httptest.NewRequest(http.MethodPost, "/internal/lore/policy", strings.NewReader(`{
+		"userId":"user-a",
+		"resourceId":"urc-0123456789abcdef0123456789abcdef",
+		"operation":"branch_push",
+		"revision_tree_size":2
+	}`))
+	oversized.Header.Set("Content-Type", "application/json")
+	denied := httptest.NewRecorder()
+	handler.ServeHTTP(denied, oversized)
+	if denied.Code != http.StatusForbidden {
+		t.Fatalf("live oversized push status = %d, body = %s", denied.Code, denied.Body.String())
+	}
+
+	store.sizeBytes = 0
+	allowedRequest := httptest.NewRequest(http.MethodPost, "/internal/lore/policy", strings.NewReader(`{
+		"userId":"user-a",
+		"resourceId":"urc-0123456789abcdef0123456789abcdef",
+		"operation":"branch_push",
+		"revision_tree_size":2
+	}`))
+	allowedRequest.Header.Set("Content-Type", "application/json")
+	allowed := httptest.NewRecorder()
+	handler.ServeHTTP(allowed, allowedRequest)
+	if allowed.Code != http.StatusOK {
+		t.Fatalf("live unlimited push status = %d, body = %s", allowed.Code, allowed.Body.String())
+	}
+}
+
+type policyStoreWithSizeLimit struct {
+	*policyCaptureStore
+	sizeBytes int64
+}
+
+func (store *policyStoreWithSizeLimit) EffectiveMaxRepositorySizeBytes(context.Context) (int64, error) {
+	return store.sizeBytes, nil
+}
+
 func TestInternalPolicyHandlerIgnoresRevisionTreeSizeForOtherHookPoints(t *testing.T) {
 	store := &policyCaptureStore{}
 	handler := NewInternalPolicyHandlerWithSizeLimit(store, 1)

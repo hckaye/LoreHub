@@ -26,6 +26,11 @@ plane. A push that would exceed the limit is rejected before the branch updates.
 client shows the server's message. Data already uploaded for a rejected push remains in the Lore
 store until an administrator obliterates it.
 
+## Instance admin overrides
+
+The three API limits can also be overridden from the instance admin settings screen. A database
+override wins over the environment value. Clearing the override returns to the environment default.
+
 ## Upload quota on the Lore Server
 
 A build-time patch adds an `[upload_quota]` section to the Lore Server config in

@@ -82,6 +82,7 @@ func run(logger *slog.Logger) error {
 		DefaultEntitlements:            settings.DefaultOrganizationEntitlements,
 		MaxOrganizationsPerUser:        settings.MaxOrganizationsPerUser,
 		MaxRepositoriesPerOrganization: settings.MaxRepositoriesPerOrganization,
+		MaxRepositorySizeBytes:         settings.MaxRepositorySizeBytes,
 	})
 	if _, err := store.EnsureInstanceLoreServer(rootContext, settings.LorePublicURL); err != nil {
 		return err
@@ -342,6 +343,11 @@ func run(logger *slog.Logger) error {
 		httpapi.WithInstanceAdminUsernames(settings.InstanceAdminUsernames),
 		httpapi.WithInstanceAdminEnabled(settings.InstanceAdminEnabled),
 		httpapi.WithInstanceSettings(store, settings.HostedLoreServerEnabled),
+		httpapi.WithResourceLimitDefaults(
+			settings.MaxOrganizationsPerUser,
+			settings.MaxRepositoriesPerOrganization,
+			settings.MaxRepositorySizeBytes,
+		),
 		httpapi.WithConfiguredLoginProviders(settings.IdentityProviders),
 		httpapi.WithCollaboration(collaborationStore),
 		httpapi.WithReviewThreads(reviewthreads.NewStore(pool)),
