@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"fmt"
 	"html"
 	"log/slog"
 	"net/http"
@@ -597,13 +598,15 @@ func (api *API) declareRepositoryLink(writer http.ResponseWriter, request *http.
 }
 
 type policyRequest struct {
-	UserID           string `json:"userId"`
-	ResourceID       string `json:"resourceId"`
-	Operation        string `json:"operation"`
-	BranchID         string `json:"branchId"`
-	BranchName       string `json:"branchName"`
-	ProposedRevision string `json:"proposedRevision"`
-	ClientIP         string `json:"clientIp"`
+	UserID           string  `json:"userId"`
+	ResourceID       string  `json:"resourceId"`
+	Operation        string  `json:"operation"`
+	BranchID         string  `json:"branchId"`
+	BranchName       string  `json:"branchName"`
+	ProposedRevision string  `json:"proposedRevision"`
+	ClientIP         string  `json:"clientIp"`
+	HookPoint        string  `json:"hook_point"`
+	RevisionTreeSize *uint64 `json:"revision_tree_size"`
 }
 
 type loreObservationStore interface {
@@ -668,6 +671,9 @@ func (api *API) InternalPolicyHandler() http.Handler {
 			writeProblem(writer, http.StatusForbidden, "policy_denied", "The Lore operation is not authorized")
 			return
 		}
+		if api.denyOversizedBranchPush(writer, input) {
+			return
+		}
 		if input.Operation == authz.OperationBranchCreate {
 			preparer, ok := api.authorization.(loreBranchCreationPreparer)
 			if !ok || input.BranchID == "" || input.BranchName == "" ||
@@ -692,6 +698,35 @@ func (api *API) InternalPolicyHandler() http.Handler {
 	return mux
 }
 
+func (api *API) denyOversizedBranchPush(writer http.ResponseWriter, input policyRequest) bool {
+	if !isBranchPushPolicy(input) || input.RevisionTreeSize == nil || api.maxRepositorySizeBytes <= 0 {
+		return false
+	}
+	if *input.RevisionTreeSize <= uint64(api.maxRepositorySizeBytes) {
+		return false
+	}
+	api.logLorePolicyDecision(input, false, nil)
+	writeJSON(writer, http.StatusForbidden, map[string]any{
+		"allowed": false,
+		"code":    "repository_size_limit",
+		"message": repositorySizeLimitMessage(api.maxRepositorySizeBytes, *input.RevisionTreeSize),
+	})
+	return true
+}
+
+func isBranchPushPolicy(input policyRequest) bool {
+	return input.Operation == authz.OperationBranchPush ||
+		input.HookPoint == "BranchPush" || input.HookPoint == authz.OperationBranchPush
+}
+
+func repositorySizeLimitMessage(limitBytes int64, pushedBytes uint64) string {
+	return fmt.Sprintf(
+		"The repository size limit is %.1f MB; the pushed revision is %.1f MB",
+		float64(limitBytes)/(1024*1024),
+		float64(pushedBytes)/(1024*1024),
+	)
+}
+
 func (api *API) logLorePolicyDecision(input policyRequest, allowed bool, err error) {
 	if api.logger == nil {
 		return
@@ -711,11 +746,19 @@ func (api *API) logLorePolicyDecision(input policyRequest, allowed bool, err err
 }
 
 func NewInternalPolicyHandler(store AuthorizationStore, loggers ...*slog.Logger) http.Handler {
+	return NewInternalPolicyHandlerWithSizeLimit(store, 0, loggers...)
+}
+
+func NewInternalPolicyHandlerWithSizeLimit(
+	store AuthorizationStore,
+	maxRepositorySizeBytes int64,
+	loggers ...*slog.Logger,
+) http.Handler {
 	var logger *slog.Logger
 	if len(loggers) > 0 {
 		logger = loggers[0]
 	}
-	api := &API{authorization: store, logger: logger}
+	api := &API{authorization: store, logger: logger, maxRepositorySizeBytes: maxRepositorySizeBytes}
 	if hookServers, ok := store.(loreHookServerStore); ok {
 		api.loreHookServers = hookServers
 	}

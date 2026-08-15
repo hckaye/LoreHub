@@ -80,6 +80,8 @@ func run(logger *slog.Logger) error {
 		NotificationEmailAvailable:     settings.NotificationEmailEnabled,
 		HostedLoreServerDefaultEnabled: settings.HostedLoreServerEnabled,
 		DefaultEntitlements:            settings.DefaultOrganizationEntitlements,
+		MaxOrganizationsPerUser:        settings.MaxOrganizationsPerUser,
+		MaxRepositoriesPerOrganization: settings.MaxRepositoriesPerOrganization,
 	})
 	if _, err := store.EnsureInstanceLoreServer(rootContext, settings.LorePublicURL); err != nil {
 		return err
@@ -357,6 +359,7 @@ func run(logger *slog.Logger) error {
 		httpapi.WithLegacyLoreIdentityAllowed(settings.AllowLegacyLoreIdentity),
 		httpapi.WithLoreCredentials(loreCredentials),
 		httpapi.WithRepositoryDeletion(settings.RepositoryDeletionRetention),
+		httpapi.WithMaxRepositorySizeBytes(settings.MaxRepositorySizeBytes),
 		httpapi.WithOperationalEndpoints(httpapi.OperationalOptions{
 			MetricsToken:      settings.MetricsToken,
 			RateLimitRequests: settings.RateLimitRequests,
@@ -389,7 +392,9 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	policyHandler := httpapi.NewInternalPolicyHandler(store, logger)
+	policyHandler := httpapi.NewInternalPolicyHandlerWithSizeLimit(
+		store, settings.MaxRepositorySizeBytes, logger,
+	)
 	policyServer := &http.Server{
 		Addr: settings.PolicyAddress, Handler: policyHandler, TLSConfig: policyTLS,
 		ReadHeaderTimeout: 2 * time.Second, ReadTimeout: 2 * time.Second, WriteTimeout: 2 * time.Second,

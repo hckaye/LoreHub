@@ -79,6 +79,9 @@ func (store *Store) BeginRepositoryProvisioning(
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return Repository{}, fmt.Errorf("find existing repository provisioning state: %w", err)
 	}
+	if err := store.rejectIfRepositoryLimitReached(ctx, transaction, organizationID); err != nil {
+		return Repository{}, err
+	}
 	server, err := resolveServerForNewRepository(
 		ctx, transaction, organizationID, strings.TrimSpace(explicitServerID),
 		store.hostedLoreServerDefaultEnabled,

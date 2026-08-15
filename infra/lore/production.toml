@@ -16,6 +16,10 @@ jwt_audience = ["@AUTH_AUDIENCE@"]
 [server.quic]
 verify_client_certs = false
 
+[upload_quota]
+enabled = true
+default_bytes = 33554432
+
 [server.auth.jwk]
 endpoint = "@INTERNAL_JWKS_ENDPOINT@"
 

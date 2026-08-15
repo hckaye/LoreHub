@@ -1,6 +1,10 @@
 [server.quic]
 verify_client_certs = false
 
+[upload_quota]
+enabled = true
+default_bytes = 1073741824
+
 [server.quic.certificate]
 cert_file = "/etc/lore/integration-tls/server.crt"
 pkey_file = "/etc/lore/integration-tls/server.key"

@@ -12,10 +12,16 @@ FROM lore-source AS lore-tests
 
 COPY infra/lore/branch-name-hook-context.patch /tmp/branch-name-hook-context.patch
 COPY infra/lore/auth-backend-url.patch /tmp/auth-backend-url.patch
+COPY infra/lore/upload-quota.patch /tmp/upload-quota.patch
+COPY infra/lore/branch-push-size-context.patch /tmp/branch-push-size-context.patch
 RUN git apply --unidiff-zero --check /tmp/branch-name-hook-context.patch \
     && git apply --unidiff-zero /tmp/branch-name-hook-context.patch \
     && git apply --check /tmp/auth-backend-url.patch \
-    && git apply /tmp/auth-backend-url.patch
+    && git apply /tmp/auth-backend-url.patch \
+    && git apply --check /tmp/upload-quota.patch \
+    && git apply /tmp/upload-quota.patch \
+    && git apply --check /tmp/branch-push-size-context.patch \
+    && git apply /tmp/branch-push-size-context.patch
 COPY infra/lore/lorehub_policy_hook.rs /src/lore/lore-server/src/hooks/lorehub_policy.rs
 COPY infra/lore/lorehub_policy_tls_test_support.rs \
     /src/lore/lore-server/src/hooks/lorehub_policy/tls_test_support.rs
@@ -40,10 +46,16 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 
 COPY infra/lore/branch-name-hook-context.patch /tmp/branch-name-hook-context.patch
 COPY infra/lore/auth-backend-url.patch /tmp/auth-backend-url.patch
+COPY infra/lore/upload-quota.patch /tmp/upload-quota.patch
+COPY infra/lore/branch-push-size-context.patch /tmp/branch-push-size-context.patch
 RUN git apply --unidiff-zero --check /tmp/branch-name-hook-context.patch \
     && git apply --unidiff-zero /tmp/branch-name-hook-context.patch \
     && git apply --check /tmp/auth-backend-url.patch \
-    && git apply /tmp/auth-backend-url.patch
+    && git apply /tmp/auth-backend-url.patch \
+    && git apply --check /tmp/upload-quota.patch \
+    && git apply /tmp/upload-quota.patch \
+    && git apply --check /tmp/branch-push-size-context.patch \
+    && git apply /tmp/branch-push-size-context.patch
 COPY infra/lore/lorehub_policy_hook.rs /src/lore/lore-server/src/hooks/lorehub_policy.rs
 COPY infra/lore/lorehub_policy_tls_test_support.rs \
     /src/lore/lore-server/src/hooks/lorehub_policy/tls_test_support.rs
