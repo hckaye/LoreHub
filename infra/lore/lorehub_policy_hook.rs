@@ -43,6 +43,8 @@ struct PolicyRequest {
     branch_name: Option<String>,
     #[serde(rename = "proposedRevision")]
     proposed_revision: Option<String>,
+    #[serde(rename = "revision_tree_size")]
+    revision_tree_size: Option<u64>,
     #[serde(rename = "clientIp")]
     client_ip: Option<String>,
 }
@@ -64,6 +66,14 @@ struct ObservationRequest {
 #[derive(Deserialize)]
 struct PolicyResponse {
     allowed: bool,
+    code: Option<String>,
+    message: Option<String>,
+}
+
+enum PolicyRequestError {
+    Denied,
+    RepositorySizeLimit(String),
+    Failure,
 }
 
 type RuntimeJob = Box<dyn FnOnce(&Runtime) + Send + 'static>;
@@ -156,10 +166,8 @@ impl LoreHubPolicyHook {
         }
     }
 
-    fn request(&self, context: &HookContext) -> Result<(), String> {
-        let user_id = context
-            .user()
-            .ok_or_else(|| "missing authenticated user".to_string())?;
+    fn request(&self, context: &HookContext) -> Result<(), PolicyRequestError> {
+        let user_id = context.user().ok_or(PolicyRequestError::Failure)?;
         let request = PolicyRequest {
             user_id: user_id.to_string(),
             resource_id: format!("urc-{}", context.repository()),
@@ -167,10 +175,12 @@ impl LoreHubPolicyHook {
             branch_id: context.branch().map(branch_id),
             branch_name: context.get_metadata("branch_name").map(ToString::to_string),
             proposed_revision: context.revision().map(|revision| revision.to_string()),
+            revision_tree_size: context
+                .get_metadata("revision_tree_size")
+                .and_then(|value| value.parse().ok()),
             client_ip: context.get_metadata("client_ip").map(ToString::to_string),
         };
-        let body = serde_json::to_vec(&request)
-            .map_err(|_| "could not serialize policy request".to_string())?;
+        let body = serde_json::to_vec(&request).map_err(|_| PolicyRequestError::Failure)?;
         let client = self.client.clone();
         let endpoint = self.policy_endpoint.clone();
         self.runtime
@@ -182,24 +192,37 @@ impl LoreHubPolicyHook {
                         .body(body)
                         .send()
                         .await
-                        .map_err(|_| "policy endpoint unavailable".to_string())?;
-                    if !response.status().is_success() {
-                        return Err("policy denied the Lore operation".to_string());
-                    }
+                        .map_err(|_| PolicyRequestError::Failure)?;
+                    let status_is_success = response.status().is_success();
                     let body = response
                         .bytes()
                         .await
-                        .map_err(|_| "policy response was invalid".to_string())?;
-                    let decision: PolicyResponse = serde_json::from_slice(&body)
-                        .map_err(|_| "policy response was invalid".to_string())?;
+                        .map_err(|_| PolicyRequestError::Failure)?;
+                    let decision: PolicyResponse = match serde_json::from_slice(&body) {
+                        Ok(decision) => decision,
+                        Err(_) => {
+                            return Err(if status_is_success {
+                                PolicyRequestError::Failure
+                            } else {
+                                PolicyRequestError::Denied
+                            });
+                        }
+                    };
                     if !decision.allowed {
-                        return Err("policy denied the Lore operation".to_string());
+                        if decision.code.as_deref() == Some("repository_size_limit") {
+                            return Err(PolicyRequestError::RepositorySizeLimit(
+                                decision.message.unwrap_or_else(|| {
+                                    "Repository size limit exceeded".to_string()
+                                }),
+                            ));
+                        }
+                        return Err(PolicyRequestError::Denied);
                     }
                     Ok(())
                 },
                 self.request_timeout,
             )
-            .and_then(|result| result)
+            .map_err(|_| PolicyRequestError::Failure)?
     }
 
     async fn post_request(&self, context: &HookContext) -> Result<(), HookError> {
@@ -260,13 +283,21 @@ impl Hook for LoreHubPolicyHook {
     }
 
     fn pre_handler(&self, context: &HookContext) -> Result<(), HookError> {
-        self.request(context).map_err(|_| {
-            HookError::rejected(
+        match self.request(context) {
+            Ok(()) => Ok(()),
+            Err(PolicyRequestError::RepositorySizeLimit(message)) => Err(HookError::rejected(
                 self.name(),
-                "LoreHub policy could not authorize this operation",
-                StatusCode::PermissionDenied,
-            )
-        })
+                message,
+                StatusCode::FailedPrecondition,
+            )),
+            Err(PolicyRequestError::Denied | PolicyRequestError::Failure) => {
+                Err(HookError::rejected(
+                    self.name(),
+                    "LoreHub policy could not authorize this operation",
+                    StatusCode::PermissionDenied,
+                ))
+            }
+        }
     }
 
     async fn post_handler(&self, context: &HookContext) -> Result<(), HookError> {
@@ -593,6 +624,42 @@ mod tests {
                 .pre_handler(&context(HookPoint::BranchPush))
                 .is_err()
         );
+    }
+
+    #[test]
+    fn repository_size_limit_denial_preserves_the_policy_message() {
+        let (endpoint, _) = response_server(
+            "403 Forbidden",
+            r#"{"allowed":false,"code":"repository_size_limit","message":"repository is over its limit"}"#,
+            Duration::ZERO,
+        );
+        let policy_hook = hook(endpoint, "http://127.0.0.1:1/observation".to_string());
+        let error = policy_hook
+            .pre_handler(&context(HookPoint::BranchPush))
+            .expect_err("a size-limited push must be rejected");
+        assert!(error.to_string().contains("repository is over its limit"));
+    }
+
+    #[test]
+    fn policy_request_uses_snake_case_revision_tree_size() {
+        let (endpoint, received) = response_server("200 OK", r#"{"allowed":true}"#, Duration::ZERO);
+        let policy_hook = hook(endpoint, "http://127.0.0.1:1/observation".to_string());
+        let context = HookContext::builder()
+            .correlation_id("hook-test")
+            .hook_point(HookPoint::BranchPush)
+            .repository(RepositoryId::default())
+            .user("user-test")
+            .branch(BranchId::default())
+            .revision(Hash::default())
+            .metadata("revision_tree_size", "12345")
+            .build();
+        policy_hook
+            .pre_handler(&context)
+            .expect("an authorized push succeeds");
+        let request = received.recv().expect("receive policy request");
+        let request = String::from_utf8_lossy(&request);
+        assert!(request.contains("\"revision_tree_size\":12345"));
+        assert!(!request.contains("revisionTreeSize"));
     }
 
     #[test]

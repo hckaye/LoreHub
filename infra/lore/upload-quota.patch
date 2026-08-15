@@ -1,0 +1,895 @@
+diff --git a/lore-server/config/default.toml b/lore-server/config/default.toml
+index dcd0fe51e264ca7f613cbea7e2ddb966e07e164c..97fac4b03d40282289317d473ecc73305bc53726 100644
+--- a/lore-server/config/default.toml
++++ b/lore-server/config/default.toml
+@@ -85,6 +85,12 @@ mode = "local"
+ [mutable_store]
+ mode = "local"
+ 
++[upload_quota]
++enabled = false
++default_bytes = 0
++state_path = "/data/upload-quota.json"
++flush_seconds = 10
++
+ [lock_store]
+ mode = "local"
+ 
+diff --git a/lore-server/src/grpc/server.rs b/lore-server/src/grpc/server.rs
+index 4fd445d5a16c9af2186d3b0d23c7f440f3221a15..1e900d1d136451a0094f719efb1fa59b581d7de0 100644
+--- a/lore-server/src/grpc/server.rs
++++ b/lore-server/src/grpc/server.rs
+@@ -63,6 +63,7 @@ use crate::legacy::rpc::environment_service_server::EnvironmentServiceServer;
+ use crate::legacy::rpc::repository_service_server::RepositoryServiceServer;
+ use crate::legacy::rpc::revision_service_server::RevisionServiceServer;
+ use crate::legacy::rpc::storage_service_server::StorageServiceServer;
++use crate::protocol::storage::quota::RepoQuota;
+ 
+ // Why Tower, why?
+ // Just try to make this type alias match the 'router' type in GrpcServerBuilder.
+@@ -454,6 +455,7 @@ impl GrpcServerBuilder<WantsHttp2Config> {
+             service_settings,
+             user_agent_filter,
+             forwarded_requests,
++            upload_quota: None,
+         })
+     }
+ }
+@@ -476,9 +478,15 @@ pub struct MaybeJwtVerifier {
+     service_settings: Option<GrpcPublicServicesSettings>,
+     user_agent_filter: Arc<UserAgentFilter>,
+     forwarded_requests: Option<Arc<dyn ForwardedRequests>>,
++    upload_quota: Option<Arc<RepoQuota>>,
+ }
+ 
+ impl GrpcServerBuilder<MaybeJwtVerifier> {
++    pub fn with_upload_quota(mut self, upload_quota: Option<Arc<RepoQuota>>) -> Self {
++        self.0.upload_quota = upload_quota;
++        self
++    }
++
+     fn make_lock_service(
+         services_settings: &Option<GrpcPublicServicesSettings>,
+         inner: LoreLockService,
+@@ -504,7 +512,8 @@ impl GrpcServerBuilder<MaybeJwtVerifier> {
+             self.0.immutable_store.clone(),
+             self.0.local_store.clone(),
+             self.0.mutable_store.clone(),
+-        );
++        )
++        .with_upload_quota(self.0.upload_quota.clone());
+         let history_step_size = self
+             .0
+             .feature
+diff --git a/lore-server/src/grpc/storage/v1/copy.rs b/lore-server/src/grpc/storage/v1/copy.rs
+index 8776ad1be9a8ecee4882d7e9e0668a944788b979..68f9de2208bcb066e54fbee8790f86e23b2aa9fe 100644
+--- a/lore-server/src/grpc/storage/v1/copy.rs
++++ b/lore-server/src/grpc/storage/v1/copy.rs
+@@ -43,6 +43,7 @@ use crate::grpc::rpc_code_to_str;
+ use crate::protocol::storage::copy::handle_copy;
+ use crate::protocol::storage::messages::LoreResponse;
+ use crate::protocol::storage::messages::MessageHandleError;
++use crate::protocol::storage::quota::RepoQuota;
+ use crate::telemetry::StorageProtocol;
+ use crate::telemetry::Transport;
+ use crate::util::setup_execution;
+@@ -56,6 +57,7 @@ const METRICS_STREAMING_MESSAGE_HANDLER_LATENCY: &str = "stream.message.handler.
+ pub async fn handler(
+     request: Request<Streaming<storage_v1::CopyRequest>>,
+     immutable_store: Arc<dyn lore_storage::ImmutableStore>,
++    upload_quota: Option<Arc<RepoQuota>>,
+     instrument_provider: &impl InstrumentProvider,
+ ) -> Result<Response<CopyResponseStream>, Status> {
+     let destination_repository = get_repository(request.metadata())?;
+@@ -85,6 +87,7 @@ pub async fn handler(
+                     };
+ 
+                     let immutable_store = immutable_store.clone();
++                    let upload_quota = upload_quota.clone();
+                     let tx = tx.clone();
+                     let correlation_id = correlation_id.clone();
+                     let user_id = user_id.clone();
+@@ -161,6 +164,7 @@ pub async fn handler(
+                                             user_id,
+                                             None,
+                                             immutable_store,
++                                            upload_quota,
+                                         )
+                                         .await
+                                         {
+diff --git a/lore-server/src/grpc/storage/v1/put.rs b/lore-server/src/grpc/storage/v1/put.rs
+index 39daa671969f72ff760c26f44a5ccdbb3a98551e..428d46ccba7a10ac69cbf6850221665788e8be4c 100644
+--- a/lore-server/src/grpc/storage/v1/put.rs
++++ b/lore-server/src/grpc/storage/v1/put.rs
+@@ -41,6 +41,7 @@ use crate::grpc::rpc_code_to_str;
+ use crate::protocol::storage::messages::LoreResponse;
+ use crate::protocol::storage::put::UnvalidatedPut;
+ use crate::protocol::storage::put::handle_put;
++use crate::protocol::storage::quota::RepoQuota;
+ use crate::telemetry::StorageProtocol;
+ use crate::telemetry::Transport;
+ use crate::util::setup_execution;
+@@ -54,6 +55,7 @@ const METRICS_STREAMING_MESSAGE_HANDLER_LATENCY: &str = "stream.message.handler.
+ pub async fn handler(
+     request: Request<Streaming<storage_v1::PutRequest>>,
+     immutable_store: Arc<dyn lore_storage::ImmutableStore>,
++    upload_quota: Option<Arc<RepoQuota>>,
+     instrument_provider: &impl InstrumentProvider,
+ ) -> Result<Response<PutResponseStream>, Status> {
+     let repository = get_repository(request.metadata())?;
+@@ -84,6 +86,7 @@ pub async fn handler(
+                     };
+ 
+                     let immutable_store = immutable_store.clone();
++                    let upload_quota = upload_quota.clone();
+                     let tx = tx.clone();
+                     let correlation_id = correlation_id.clone();
+                     let user_id = user_id.clone();
+@@ -140,6 +143,7 @@ pub async fn handler(
+                                         correlation_id,
+                                         user_id,
+                                         immutable_store,
++                                        upload_quota,
+                                     )
+                                     .await
+                                     {
+diff --git a/lore-server/src/grpc/storage/v1/service.rs b/lore-server/src/grpc/storage/v1/service.rs
+index 5e259ef04fdc04925031e79d524f3dc932b2a0e2..933284bbea7000ed6c441daa088c0aff0910bd71 100644
+--- a/lore-server/src/grpc/storage/v1/service.rs
++++ b/lore-server/src/grpc/storage/v1/service.rs
+@@ -47,7 +47,13 @@ impl StorageServiceV1 for LoreStorageService {
+         &self,
+         request: Request<Streaming<storage_v1::PutRequest>>,
+     ) -> Result<Response<Self::PutStream>, Status> {
+-        put::handler(request, self.immutable_store().clone(), self).await
++        put::handler(
++            request,
++            self.immutable_store().clone(),
++            self.upload_quota(),
++            self,
++        )
++        .await
+     }
+ 
+     async fn query(
+@@ -63,7 +69,13 @@ impl StorageServiceV1 for LoreStorageService {
+         &self,
+         request: Request<Streaming<storage_v1::CopyRequest>>,
+     ) -> Result<Response<Self::CopyStream>, Status> {
+-        copy::handler(request, self.immutable_store().clone(), self).await
++        copy::handler(
++            request,
++            self.immutable_store().clone(),
++            self.upload_quota(),
++            self,
++        )
++        .await
+     }
+ 
+     async fn verify(
+diff --git a/lore-server/src/grpc/storage_service.rs b/lore-server/src/grpc/storage_service.rs
+index 937c103aedc83265f7e0fd43fbd57fe497a5dddf..121e1415290d552f4b1c027dd08e3b444677914f 100644
+--- a/lore-server/src/grpc/storage_service.rs
++++ b/lore-server/src/grpc/storage_service.rs
+@@ -55,6 +55,7 @@ use crate::protocol::storage::messages::LoreResponse;
+ use crate::protocol::storage::messages::Message;
+ use crate::protocol::storage::messages::MessageHandleError;
+ use crate::protocol::storage::put::UnvalidatedPut;
++use crate::protocol::storage::quota::RepoQuota;
+ use crate::protocol::storage::requests::*;
+ use crate::telemetry::StorageProtocol;
+ use crate::telemetry::Transport;
+@@ -74,6 +75,7 @@ pub struct LoreStorageService {
+     immutable_store: Arc<dyn lore_storage::ImmutableStore>,
+     local_store: Arc<dyn lore_storage::ImmutableStore>,
+     mutable_store: Arc<dyn lore_storage::MutableStore>,
++    upload_quota: Option<Arc<RepoQuota>>,
+ }
+ 
+ impl LoreStorageService {
+@@ -86,9 +88,19 @@ impl LoreStorageService {
+             immutable_store,
+             local_store,
+             mutable_store,
++            upload_quota: None,
+         }
+     }
+ 
++    pub fn with_upload_quota(mut self, upload_quota: Option<Arc<RepoQuota>>) -> Self {
++        self.upload_quota = upload_quota;
++        self
++    }
++
++    pub fn upload_quota(&self) -> Option<Arc<RepoQuota>> {
++        self.upload_quota.clone()
++    }
++
+     pub fn local_immutable_store(&self) -> &Arc<dyn lore_storage::ImmutableStore> {
+         &self.local_store
+     }
+diff --git a/lore-server/src/protocol/storage.rs b/lore-server/src/protocol/storage.rs
+index fe5c3d513117ae3fc8f8958a32b8ec72d066d695..0f6508b3149b35d8863d978ee39b6e8ad865121a 100644
+--- a/lore-server/src/protocol/storage.rs
++++ b/lore-server/src/protocol/storage.rs
+@@ -16,6 +16,7 @@ pub mod mutable_store_handler;
+ pub mod ping;
+ pub mod put;
+ pub mod query;
++pub mod quota;
+ pub mod session;
+ pub mod verify;
+ 
+diff --git a/lore-server/src/protocol/storage/copy.rs b/lore-server/src/protocol/storage/copy.rs
+index c9a102354760ce9c774f7dc464818bcb8ffa43e5..3d25970abf6a2058f3fed61fea390de0c8efcdb0 100644
+--- a/lore-server/src/protocol/storage/copy.rs
++++ b/lore-server/src/protocol/storage/copy.rs
+@@ -10,6 +10,8 @@ use lore_base::types::Context;
+ use lore_base::types::Hash;
+ use lore_revision::lore::RepositoryId;
+ use lore_storage::ImmutableStore;
++use lore_storage::StoreError;
++use lore_storage::StoreMatch;
+ use tracing::warn;
+ 
+ use crate::auth::jwt::AuthorizationToken;
+@@ -22,6 +24,7 @@ use crate::protocol::storage::messages::Message;
+ use crate::protocol::storage::messages::MessageHandleError;
+ use crate::protocol::storage::messages::MessageParseError;
+ use crate::protocol::storage::messages::Response;
++use crate::protocol::storage::quota::RepoQuota;
+ use crate::util::setup_execution;
+ 
+ #[derive(Clone, Debug, PartialEq)]
+@@ -94,6 +97,7 @@ pub async fn handle_copy(
+     user_id: String,
+     session_map: Option<&crate::protocol::storage::session::SessionMap>,
+     immutable_store: Arc<dyn ImmutableStore>,
++    upload_quota: Option<Arc<RepoQuota>>,
+ ) -> Result<LoreResponse, MessageHandleError> {
+     if let Some(session_map) = session_map
+         && !session_map.is_repository_authorized(source_repository)
+@@ -107,6 +111,34 @@ pub async fn handle_copy(
+ 
+     LORE_CONTEXT
+         .scope(execution, async move {
++            let payload_size = match immutable_store
++                .clone()
++                .query(source_repository, source_address, StoreMatch::MatchFull)
++                .await
++            {
++                Ok(result) if result.match_made == StoreMatch::MatchFull => {
++                    result.fragment.size_payload as u64
++                }
++                Ok(_) => return Err(MessageHandleError::FragmentNotFound),
++                Err(err) if err.is_address_not_found() => {
++                    return Err(MessageHandleError::FragmentNotFound);
++                }
++                Err(StoreError::SlowDown(_)) => return Err(MessageHandleError::SlowDown),
++                Err(err) => {
++                    warn!(error = ?err, "Failed to query source fragment for copy");
++                    return Err(MessageHandleError::StoreFailure);
++                }
++            };
++
++            let charged_quota = if let Some(quota) = upload_quota.as_ref() {
++                if !quota.try_charge(destination_repository, payload_size) {
++                    return Err(MessageHandleError::Oversized);
++                }
++                Some(quota.clone())
++            } else {
++                None
++            };
++
+             match immutable_store
+                 .copy(
+                     source_repository,
+@@ -118,8 +150,22 @@ pub async fn handle_copy(
+                 .await
+             {
+                 Ok(()) => Ok(LoreResponse::Copy(CopyResponse::default())),
+-                Err(err) if err.is_address_not_found() => Err(MessageHandleError::FragmentNotFound),
++                Err(err) if err.is_address_not_found() => {
++                    if let Some(quota) = charged_quota {
++                        quota.refund(destination_repository, payload_size);
++                    }
++                    Err(MessageHandleError::FragmentNotFound)
++                }
++                Err(StoreError::SlowDown(_)) => {
++                    if let Some(quota) = charged_quota {
++                        quota.refund(destination_repository, payload_size);
++                    }
++                    Err(MessageHandleError::SlowDown)
++                }
+                 Err(err) => {
++                    if let Some(quota) = charged_quota {
++                        quota.refund(destination_repository, payload_size);
++                    }
+                     warn!(error = ?err, "Failed to copy fragment");
+                     Err(MessageHandleError::StoreFailure)
+                 }
+@@ -146,6 +192,9 @@ impl Message for Copy {
+ 
+         let user_id = get_user_id_from_context(&context);
+         let correlation_id = context.get::<CorrelationId>().unwrap_or_default();
++        let upload_quota = context
++            .get::<Arc<RepoQuota>>()
++            .map(|quota| quota.as_ref().clone());
+         handle_copy(
+             self.source_repository,
+             self.source_address,
+@@ -158,6 +207,7 @@ impl Message for Copy {
+             user_id,
+             None, // urc/0.2 path: no SessionMap, auth check done above via AuthorizationToken
+             immutable_store,
++            upload_quota,
+         )
+         .await
+     }
+diff --git a/lore-server/src/protocol/storage/put.rs b/lore-server/src/protocol/storage/put.rs
+index 02ff00eb97657252f7b7a94892b02aa6e97b77c4..1ccbcdc7c7036d499d376a93c44b69a317a5d8f4 100644
+--- a/lore-server/src/protocol/storage/put.rs
++++ b/lore-server/src/protocol/storage/put.rs
+@@ -30,6 +30,7 @@ use crate::protocol::storage::messages::Message;
+ use crate::protocol::storage::messages::MessageHandleError;
+ use crate::protocol::storage::messages::MessageParseError;
+ use crate::protocol::storage::messages::Response;
++use crate::protocol::storage::quota::RepoQuota;
+ use crate::util::setup_execution;
+ 
+ #[derive(Clone, Debug, PartialEq)]
+@@ -225,6 +226,7 @@ pub async fn handle_put(
+     correlation_id: String,
+     user_id: String,
+     immutable_store: Arc<dyn ImmutableStore>,
++    upload_quota: Option<Arc<RepoQuota>>,
+ ) -> Result<LoreResponse, MessageHandleError> {
+     let execution = setup_execution(module_path!(), correlation_id, user_id);
+ 
+@@ -251,6 +253,16 @@ pub async fn handle_put(
+             put.validate_fragment()?;
+             put.validate_hash()?;
+ 
++            let payload_size = fragment.size_payload as u64;
++            let charged_quota = if let Some(quota) = upload_quota.as_ref() {
++                if !quota.try_charge(repository, payload_size) {
++                    return Err(MessageHandleError::Oversized);
++                }
++                Some(quota.clone())
++            } else {
++                None
++            };
++
+             let mut fragment = fragment;
+             fragment.flags &= !FragmentFlags::PayloadStored;
+ 
+@@ -262,8 +274,16 @@ pub async fn handle_put(
+                     debug!("Successfully stored fragment for address: {}", address);
+                     Ok(LoreResponse::Put(PutResponse::default()))
+                 }
+-                Err(StoreError::SlowDown(_)) => Err(MessageHandleError::SlowDown),
++                Err(StoreError::SlowDown(_)) => {
++                    if let Some(quota) = charged_quota {
++                        quota.refund(repository, payload_size);
++                    }
++                    Err(MessageHandleError::SlowDown)
++                }
+                 Err(err) => {
++                    if let Some(quota) = charged_quota {
++                        quota.refund(repository, payload_size);
++                    }
+                     warn!(error = ?err, {ADDRESS} = %address, "Failed to put fragment for address");
+                     Err(MessageHandleError::StoreFailure)
+                 }
+@@ -284,12 +304,16 @@ impl Message for Put {
+             .get_or::<RepositoryId, MessageHandleError>(MessageHandleError::NotConnected)?;
+         let user_id = get_user_id_from_context(&context);
+         let correlation_id = context.get::<CorrelationId>().unwrap_or_default();
++        let upload_quota = context
++            .get::<Arc<RepoQuota>>()
++            .map(|quota| quota.as_ref().clone());
+         handle_put(
+             self,
+             repository,
+             correlation_id.to_string(),
+             user_id,
+             immutable_store,
++            upload_quota,
+         )
+         .await
+     }
+diff --git a/lore-server/src/protocol/storage/quota.rs b/lore-server/src/protocol/storage/quota.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..eb902f53a4a29cf57a2106c82c719f3a55f1444b
+--- /dev/null
++++ b/lore-server/src/protocol/storage/quota.rs
+@@ -0,0 +1,178 @@
++// SPDX-FileCopyrightText: 2026 Epic Games, Inc.
++// SPDX-License-Identifier: MIT
++use std::collections::BTreeMap;
++use std::fs;
++use std::io;
++use std::path::PathBuf;
++use std::sync::Arc;
++use std::sync::Mutex;
++use std::sync::atomic::AtomicU64;
++use std::sync::atomic::Ordering;
++use std::time::Duration;
++
++use dashmap::DashMap;
++use lore_revision::lore::RepositoryId;
++use tokio::sync::watch;
++use tokio::task::JoinHandle;
++use tracing::warn;
++
++/// Process-wide per-repository accounting for client-uploaded immutable bytes.
++pub struct RepoQuota {
++    used: DashMap<RepositoryId, AtomicU64>,
++    limit: u64,
++    state_path: PathBuf,
++    persist_lock: Mutex<()>,
++}
++
++impl RepoQuota {
++    pub fn new(limit: u64, state_path: impl Into<PathBuf>) -> Self {
++        let quota = Self {
++            used: DashMap::new(),
++            limit,
++            state_path: state_path.into(),
++            persist_lock: Mutex::new(()),
++        };
++        quota.load();
++        quota
++    }
++
++    /// Atomically reserve bytes if the repository remains within its limit.
++    pub fn try_charge(&self, repository: RepositoryId, bytes: u64) -> bool {
++        let entry = self
++            .used
++            .entry(repository)
++            .or_insert_with(|| AtomicU64::new(0));
++        let mut current = entry.load(Ordering::Acquire);
++
++        loop {
++            let Some(next) = current.checked_add(bytes) else {
++                return false;
++            };
++            if next > self.limit {
++                return false;
++            }
++            match entry.compare_exchange_weak(current, next, Ordering::AcqRel, Ordering::Acquire) {
++                Ok(_) => return true,
++                Err(observed) => current = observed,
++            }
++        }
++    }
++
++    /// Return a reservation when the store write that followed it failed.
++    pub fn refund(&self, repository: RepositoryId, bytes: u64) {
++        let Some(entry) = self.used.get(&repository) else {
++            return;
++        };
++        let mut current = entry.load(Ordering::Acquire);
++
++        loop {
++            let next = current.saturating_sub(bytes);
++            match entry.compare_exchange_weak(current, next, Ordering::AcqRel, Ordering::Acquire) {
++                Ok(_) => return,
++                Err(observed) => current = observed,
++            }
++        }
++    }
++
++    /// Restore previously persisted per-repository usage, if the state file exists.
++    pub fn load(&self) {
++        let contents = match fs::read(&self.state_path) {
++            Ok(contents) => contents,
++            Err(error) if error.kind() == io::ErrorKind::NotFound => return,
++            Err(error) => {
++                warn!(
++                    path = %self.state_path.display(),
++                    error = ?error,
++                    "Could not load upload quota state"
++                );
++                return;
++            }
++        };
++
++        let state: BTreeMap<String, u64> = match serde_json::from_slice(&contents) {
++            Ok(state) => state,
++            Err(error) => {
++                warn!(
++                    path = %self.state_path.display(),
++                    error = ?error,
++                    "Could not parse upload quota state"
++                );
++                return;
++            }
++        };
++
++        for (repository, bytes) in state {
++            match repository.parse() {
++                Ok(repository) => {
++                    self.used.insert(repository, AtomicU64::new(bytes));
++                }
++                Err(error) => warn!(
++                    repository,
++                    error = ?error,
++                    "Ignoring invalid repository in upload quota state"
++                ),
++            }
++        }
++    }
++
++    /// Persist a snapshot of the current usage. Errors are returned to the caller so periodic
++    /// and shutdown callers can log them without making quota enforcement fail open or closed.
++    pub fn persist(&self) -> io::Result<()> {
++        let _guard = self
++            .persist_lock
++            .lock()
++            .unwrap_or_else(|error| error.into_inner());
++        let state = self
++            .used
++            .iter()
++            .map(|entry| {
++                (
++                    entry.key().to_string(),
++                    entry.value().load(Ordering::Acquire),
++                )
++            })
++            .collect::<BTreeMap<_, _>>();
++        let contents = serde_json::to_vec_pretty(&state).map_err(io::Error::other)?;
++
++        if let Some(parent) = self.state_path.parent() {
++            fs::create_dir_all(parent)?;
++        }
++        fs::write(&self.state_path, contents)
++    }
++
++    pub fn spawn_flush_task(
++        quota: Arc<Self>,
++        mut shutdown_rx: watch::Receiver<bool>,
++        flush_seconds: u64,
++    ) -> JoinHandle<()> {
++        let interval_duration = Duration::from_secs(flush_seconds.max(1));
++        tokio::spawn(async move {
++            let mut interval = tokio::time::interval(interval_duration);
++            loop {
++                tokio::select! {
++                    _ = interval.tick() => {
++                        if let Err(error) = quota.persist() {
++                            warn!(
++                                path = %quota.state_path.display(),
++                                error = ?error,
++                                "Could not persist upload quota state"
++                            );
++                        }
++                    }
++                    changed = shutdown_rx.changed() => {
++                        if changed.is_err() || *shutdown_rx.borrow() {
++                            if let Err(error) = quota.persist() {
++                                warn!(
++                                    path = %quota.state_path.display(),
++                                    error = ?error,
++                                    "Could not persist upload quota state during shutdown"
++                                );
++                            }
++                            break;
++                        }
++                    }
++                }
++            }
++        })
++    }
++}
+diff --git a/lore-server/src/quic/storage_service.rs b/lore-server/src/quic/storage_service.rs
+index 0fcd8afd331ab71b737bda029c312b555a1b7ec2..d7ff28966a62ebeb6283fdb3311ab1b2a49a6dc1 100644
+--- a/lore-server/src/quic/storage_service.rs
++++ b/lore-server/src/quic/storage_service.rs
+@@ -37,6 +37,7 @@ use crate::protocol::storage::messages::Message;
+ use crate::protocol::storage::messages::MessageHandleError;
+ use crate::protocol::storage::messages::MessageParseError;
+ use crate::protocol::storage::messages::Response;
++use crate::protocol::storage::quota::RepoQuota;
+ use crate::protocol::storage::requests;
+ use crate::quic::NO_CONNECTION_ID;
+ use crate::quic::NO_CORRELATION_ID;
+@@ -369,6 +370,7 @@ pub struct StorageService {
+     immutable_store: Arc<dyn ImmutableStore>,
+     local_store: Arc<dyn ImmutableStore>,
+     mutable_store: Arc<dyn MutableStore>,
++    upload_quota: Option<Arc<RepoQuota>>,
+ }
+ 
+ impl StorageService {
+@@ -383,8 +385,14 @@ impl StorageService {
+             immutable_store,
+             local_store,
+             mutable_store,
++            upload_quota: None,
+         }
+     }
++
++    pub fn with_upload_quota(mut self, upload_quota: Option<Arc<RepoQuota>>) -> Self {
++        self.upload_quota = upload_quota;
++        self
++    }
+ }
+ 
+ #[async_trait]
+@@ -410,6 +418,9 @@ impl QuicService for StorageService {
+         context: Arc<AttributeMap>,
+         request: Self::ParsedRequestType,
+     ) -> Result<Vec<Bytes>, Self::RequestHandlerError> {
++        if let Some(upload_quota) = self.upload_quota.as_ref() {
++            context.insert(upload_quota.clone());
++        }
+         let lore_response = match request {
+             ParsedStorageRequest::Connect(request) => {
+                 request
+diff --git a/lore-server/src/quic/storage_service_v4.rs b/lore-server/src/quic/storage_service_v4.rs
+index fcaea983be1e090bc79b71c87a98c88b1c2246cf..38b199913363fe39feafec05be63ae60aa6573a3 100644
+--- a/lore-server/src/quic/storage_service_v4.rs
++++ b/lore-server/src/quic/storage_service_v4.rs
+@@ -32,6 +32,7 @@ use crate::protocol::storage::mutable_load::handle_mutable_load;
+ use crate::protocol::storage::mutable_store_handler::handle_mutable_store;
+ use crate::protocol::storage::put::handle_put;
+ use crate::protocol::storage::query::handle_query;
++use crate::protocol::storage::quota::RepoQuota;
+ use crate::protocol::storage::session::SessionError;
+ use crate::protocol::storage::session::SessionMap;
+ use crate::protocol::storage::verify::handle_verify;
+@@ -90,6 +91,7 @@ pub struct StorageServiceV4 {
+     local_store: Arc<dyn ImmutableStore>,
+     mutable_store: Arc<dyn MutableStore>,
+     session_map: Arc<SessionMap>,
++    upload_quota: Option<Arc<RepoQuota>>,
+ }
+ 
+ impl StorageServiceV4 {
+@@ -105,8 +107,14 @@ impl StorageServiceV4 {
+             local_store,
+             mutable_store,
+             session_map: Arc::new(SessionMap::default()),
++            upload_quota: None,
+         }
+     }
++
++    pub fn with_upload_quota(mut self, upload_quota: Option<Arc<RepoQuota>>) -> Self {
++        self.upload_quota = upload_quota;
++        self
++    }
+ }
+ 
+ #[async_trait]
+@@ -272,6 +280,7 @@ impl QuicService for StorageServiceV4 {
+                             correlation_id,
+                             user_id,
+                             self.immutable_store.clone(),
++                            self.upload_quota.clone(),
+                         )
+                         .await
+                     }
+@@ -303,6 +312,7 @@ impl QuicService for StorageServiceV4 {
+                             user_id,
+                             Some(&session_map),
+                             self.immutable_store.clone(),
++                            self.upload_quota.clone(),
+                         )
+                         .await
+                     }
+diff --git a/lore-server/src/server.rs b/lore-server/src/server.rs
+index 989fb956894e91c1b84e325c022984bb0247da8d..a76c934ddd8ea747fcd088b9fad83f8651c2244d 100644
+--- a/lore-server/src/server.rs
++++ b/lore-server/src/server.rs
+@@ -79,6 +79,7 @@ use crate::plugins;
+ use crate::plugins::PluginRegistry;
+ use crate::plugins::traits::NotificationPluginContext;
+ use crate::protocol::attribute_map::AttributeMap;
++use crate::protocol::storage::quota::RepoQuota;
+ use crate::quic::StreamDataHandler;
+ use crate::quic::StreamHandlerFactory;
+ use crate::quic::quinn::QuinnConfigBuilder;
+@@ -420,6 +421,7 @@ async fn launch_grpc_server(
+     hook_dispatcher: Arc<HookDispatcher>,
+     user_agent_filter: Arc<UserAgentFilter>,
+     forwarded_requests: Option<Arc<dyn ForwardedRequests>>,
++    upload_quota: Option<Arc<RepoQuota>>,
+     mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
+ ) -> Result<()> {
+     let grpc_settings = settings
+@@ -493,6 +495,7 @@ async fn launch_grpc_server(
+             user_agent_filter,
+             forwarded_requests,
+         )
++        .with_upload_quota(upload_quota)
+         .with_jwt_verifier(jwt_verifier)?
+         .serve(addr, async move {
+             let _ = shutdown_rx.wait_for(|&v| v).await;
+@@ -681,6 +684,7 @@ impl QuicPublicStreamHandler {
+         local_store: Arc<dyn ImmutableStore>,
+         mutable_store: Arc<dyn MutableStore>,
+         jwt_verifier: Option<JwtVerifier>,
++        upload_quota: Option<Arc<RepoQuota>>,
+         process_limit: usize,
+         handler_duration_timeout: Option<Duration>,
+     ) -> Self {
+@@ -690,14 +694,16 @@ impl QuicPublicStreamHandler {
+             |immutable_store: Arc<dyn ImmutableStore>,
+              local_store: Arc<dyn ImmutableStore>,
+              mutable_store: Arc<dyn MutableStore>,
+-             jwt_verifier: Option<JwtVerifier>| {
++             jwt_verifier: Option<JwtVerifier>,
++             upload_quota: Option<Arc<RepoQuota>>| {
+                 Box::new(move |context: Arc<AttributeMap>| {
+                     let storage_protocol = StorageService::new(
+                         Arc::new(jwt_verifier.clone()),
+                         immutable_store.clone(),
+                         local_store.clone(),
+                         mutable_store.clone(),
+-                    );
++                    )
++                    .with_upload_quota(upload_quota.clone());
+                     Box::new(StreamHandler::new(
+                         Arc::new(storage_protocol),
+                         context,
+@@ -714,6 +720,7 @@ impl QuicPublicStreamHandler {
+                 local_store.clone(),
+                 mutable_store.clone(),
+                 jwt_verifier.clone(),
++                upload_quota.clone(),
+             ),
+         );
+         {
+@@ -721,6 +728,7 @@ impl QuicPublicStreamHandler {
+             let local_store = local_store.clone();
+             let mutable_store = mutable_store.clone();
+             let jwt_verifier = jwt_verifier.clone();
++            let upload_quota = upload_quota.clone();
+             service_store.add_service(
+                 StorageClient::ALPN,
+                 Box::new(move |context: Arc<AttributeMap>| {
+@@ -729,7 +737,8 @@ impl QuicPublicStreamHandler {
+                         immutable_store.clone(),
+                         local_store.clone(),
+                         mutable_store.clone(),
+-                    );
++                    )
++                    .with_upload_quota(upload_quota.clone());
+                     Box::new(StreamHandler::new(
+                         Arc::new(v4_service),
+                         context,
+@@ -1770,7 +1779,21 @@ async fn async_main(settings: (Settings, StringHash), config: ServerConfig) -> R
+         None
+     };
+ 
++    let upload_quota = settings.upload_quota.enabled.then(|| {
++        Arc::new(RepoQuota::new(
++            settings.upload_quota.default_bytes,
++            settings.upload_quota.state_path.clone(),
++        ))
++    });
++
+     let (shutdown_tx, _shutdown_rx) = tokio::sync::watch::channel(false);
++    let upload_quota_flush_task = upload_quota.as_ref().map(|quota| {
++        RepoQuota::spawn_flush_task(
++            quota.clone(),
++            _shutdown_rx.clone(),
++            settings.upload_quota.flush_seconds,
++        )
++    });
+     let mut endpoints = JoinSet::new();
+ 
+     // Spawn signal listener outside the endpoint JoinSet so the drain
+@@ -1816,6 +1839,7 @@ async fn async_main(settings: (Settings, StringHash), config: ServerConfig) -> R
+             let notification = notification.clone();
+             let user_agent_filter = user_agent_filter.clone();
+             let forwarded_requests = forwarded_requests.clone();
++            let upload_quota = upload_quota.clone();
+             let shutdown_rx = _shutdown_rx.clone();
+ 
+             let local_immutable_store = local_store().unwrap_or_else(|| {
+@@ -1835,6 +1859,7 @@ async fn async_main(settings: (Settings, StringHash), config: ServerConfig) -> R
+                 hook_dispatcher.clone(),
+                 user_agent_filter,
+                 forwarded_requests,
++                upload_quota,
+                 shutdown_rx,
+             )
+         });
+@@ -1893,6 +1918,7 @@ async fn async_main(settings: (Settings, StringHash), config: ServerConfig) -> R
+             let mutable_store = mutable_store.clone();
+             let settings = settings.clone();
+             let jwt_verifier = jwt_verifier.clone();
++            let upload_quota = upload_quota.clone();
+             let shutdown_rx = _shutdown_rx.clone();
+ 
+             let quic_settings = settings
+@@ -1924,6 +1950,7 @@ async fn async_main(settings: (Settings, StringHash), config: ServerConfig) -> R
+                     local_immutable_store,
+                     mutable_store,
+                     jwt_verifier,
++                    upload_quota,
+                     quic_settings
+                         .connection_message_limit
+                         .unwrap_or(DEFAULT_PROCESS_LIMIT),
+@@ -2069,7 +2096,20 @@ async fn async_main(settings: (Settings, StringHash), config: ServerConfig) -> R
+     });
+ 
+     up_gauge.record(1, &up_attributes);
+-    wait_for_shutdown(endpoints, shutdown_tx, connection_close_timeout).await?;
++    let shutdown_result = wait_for_shutdown(endpoints, shutdown_tx, connection_close_timeout).await;
++    if let Some(flush_task) = upload_quota_flush_task {
++        let _ = flush_task.await;
++    }
++    if let Some(upload_quota) = upload_quota.as_ref()
++        && let Err(error) = upload_quota.persist()
++    {
++        warn!(
++            path = %settings.upload_quota.state_path,
++            error = ?error,
++            "Could not persist upload quota state after shutdown"
++        );
++    }
++    shutdown_result?;
+     up_gauge.record(0, &up_attributes);
+ 
+     info!("Flushing stores");
+diff --git a/lore-server/src/settings.rs b/lore-server/src/settings.rs
+index 3184b361afc55caa9c1f9a34ade47c6cbf2cacb1..8fc4f2a1ad49317b5344a61df224fdbcf7bae338 100644
+--- a/lore-server/src/settings.rs
++++ b/lore-server/src/settings.rs
+@@ -34,6 +34,8 @@ pub struct Settings {
+     pub environment: Option<EnvironmentConfig>,
+     pub immutable_store: ImmutableStoreSettings,
+     pub mutable_store: MutableStoreSettings,
++    #[serde(default)]
++    pub upload_quota: UploadQuotaSettings,
+     pub lock_store: Option<LockStoreSettings>,
+     pub telemetry: Option<TelemetryConfig>,
+     pub server: ServerSettings,
+@@ -56,6 +58,7 @@ impl std::fmt::Debug for Settings {
+             .field("environment", &self.environment)
+             .field("immutable_store", &self.immutable_store)
+             .field("mutable_store", &self.mutable_store)
++            .field("upload_quota", &self.upload_quota)
+             .field("lock_store", &self.lock_store)
+             .field("telemetry", &self.telemetry)
+             .field("server", &self.server)
+@@ -218,6 +221,37 @@ fn trace_config_error_to_config(err: TraceConfigError) -> config::ConfigError {
+ /// Server-related settings
+ ///
+ 
++#[derive(Clone, Debug, Deserialize)]
++pub struct UploadQuotaSettings {
++    #[serde(default)]
++    pub enabled: bool,
++    #[serde(default)]
++    pub default_bytes: u64,
++    #[serde(default = "default_upload_quota_state_path")]
++    pub state_path: String,
++    #[serde(default = "default_upload_quota_flush_seconds")]
++    pub flush_seconds: u64,
++}
++
++impl Default for UploadQuotaSettings {
++    fn default() -> Self {
++        Self {
++            enabled: false,
++            default_bytes: 0,
++            state_path: default_upload_quota_state_path(),
++            flush_seconds: default_upload_quota_flush_seconds(),
++        }
++    }
++}
++
++fn default_upload_quota_state_path() -> String {
++    "/data/upload-quota.json".to_string()
++}
++
++fn default_upload_quota_flush_seconds() -> u64 {
++    10
++}
++
+ #[derive(Clone, Debug, Deserialize)]
+ //#[serde(deny_unknown_fields)]
+ pub struct AuthSettings {
