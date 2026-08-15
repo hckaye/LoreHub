@@ -1,0 +1,100 @@
+diff --git a/lore-server/src/grpc/handlers/branch_push.rs b/lore-server/src/grpc/handlers/branch_push.rs
+index 0cc52d03b3943802d0cc01fe343013d2be40972c..9bb42af6c40a574676e7c01d254f4535b1849eea 100644
+--- a/lore-server/src/grpc/handlers/branch_push.rs
++++ b/lore-server/src/grpc/handlers/branch_push.rs
+@@ -126,6 +126,26 @@ pub async fn handler(
+ 
+     LORE_CONTEXT
+         .scope(execution, async move {
++            let revision_tree_size = match State::deserialize(repository.clone(), revision).await {
++                Ok(state) => match state.tree(repository.clone()).await {
++                    Ok(tree) => Some(tree.size),
++                    Err(error) => {
++                        warn!(
++                            error = ?error,
++                            "Could not compute incoming revision tree size for policy hook"
++                        );
++                        None
++                    }
++                },
++                Err(error) => {
++                    warn!(
++                        error = ?error,
++                        "Could not load incoming revision for policy hook"
++                    );
++                    None
++                }
++            };
++
+             let mut ctx_builder = HookContext::builder()
+                 .correlation_id(correlation_id.clone())
+                 .hook_point(HookPoint::BranchPush)
+@@ -134,6 +154,10 @@ pub async fn handler(
+                 .branch(branch)
+                 .revision(revision);
+ 
++            if let Some(size) = revision_tree_size {
++                ctx_builder = ctx_builder.metadata("revision_tree_size", size.to_string());
++            }
++
+             if let Some(ip) = client_ip {
+                 ctx_builder = ctx_builder.metadata("client_ip", ip);
+             }
+diff --git a/lore-server/src/grpc/revision/v1/branch_push.rs b/lore-server/src/grpc/revision/v1/branch_push.rs
+index db11de7cb4ec06bf7a249c5e85c573e46c594ecd..4f9fd726caee8739e7acfc5b3a18cddc2946b676 100644
+--- a/lore-server/src/grpc/revision/v1/branch_push.rs
++++ b/lore-server/src/grpc/revision/v1/branch_push.rs
+@@ -12,6 +12,7 @@ use lore_revision::lore::BranchId;
+ use lore_revision::lore::RepositoryId;
+ use lore_revision::notification::NotificationSender;
+ use lore_revision::repository::RepositoryContext;
++use lore_revision::state::State;
+ use lore_telemetry::InstrumentProvider;
+ use lore_telemetry::tracing::fields::BRANCH_ID;
+ use lore_telemetry::tracing::fields::REVISION;
+@@ -23,6 +24,7 @@ use tracing::Level;
+ use tracing::debug;
+ use tracing::info;
+ use tracing::span;
++use tracing::warn;
+ 
+ use crate::grpc::ServerResultExt;
+ use crate::grpc::extract_correlation_id;
+@@ -107,6 +109,26 @@ pub async fn handler(
+ 
+     LORE_CONTEXT
+         .scope(execution, async move {
++            let revision_tree_size = match State::deserialize(repository.clone(), revision).await {
++                Ok(state) => match state.tree(repository.clone()).await {
++                    Ok(tree) => Some(tree.size),
++                    Err(error) => {
++                        warn!(
++                            error = ?error,
++                            "Could not compute incoming revision tree size for policy hook"
++                        );
++                        None
++                    }
++                },
++                Err(error) => {
++                    warn!(
++                        error = ?error,
++                        "Could not load incoming revision for policy hook"
++                    );
++                    None
++                }
++            };
++
+             let mut ctx_builder = HookContext::builder()
+                 .correlation_id(correlation_id.clone())
+                 .hook_point(HookPoint::BranchPush)
+@@ -115,6 +137,10 @@ pub async fn handler(
+                 .branch(branch_id)
+                 .revision(revision);
+ 
++            if let Some(size) = revision_tree_size {
++                ctx_builder = ctx_builder.metadata("revision_tree_size", size.to_string());
++            }
++
+             if let Some(ip) = client_ip {
+                 ctx_builder = ctx_builder.metadata("client_ip", ip);
+             }

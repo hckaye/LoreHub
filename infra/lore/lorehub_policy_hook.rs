@@ -43,6 +43,8 @@ struct PolicyRequest {
     branch_name: Option<String>,
     #[serde(rename = "proposedRevision")]
     proposed_revision: Option<String>,
+    #[serde(rename = "revisionTreeSize")]
+    revision_tree_size: Option<u64>,
     #[serde(rename = "clientIp")]
     client_ip: Option<String>,
 }
@@ -64,6 +66,14 @@ struct ObservationRequest {
 #[derive(Deserialize)]
 struct PolicyResponse {
     allowed: bool,
+    code: Option<String>,
+    message: Option<String>,
+}
+
+enum PolicyRequestError {
+    Denied,
+    RepositorySizeLimit(String),
+    Failure,
 }
 
 type RuntimeJob = Box<dyn FnOnce(&Runtime) + Send + 'static>;
@@ -156,10 +166,8 @@ impl LoreHubPolicyHook {
         }
     }
 
-    fn request(&self, context: &HookContext) -> Result<(), String> {
-        let user_id = context
-            .user()
-            .ok_or_else(|| "missing authenticated user".to_string())?;
+    fn request(&self, context: &HookContext) -> Result<(), PolicyRequestError> {
+        let user_id = context.user().ok_or(PolicyRequestError::Failure)?;
         let request = PolicyRequest {
             user_id: user_id.to_string(),
             resource_id: format!("urc-{}", context.repository()),
@@ -167,10 +175,12 @@ impl LoreHubPolicyHook {
             branch_id: context.branch().map(branch_id),
             branch_name: context.get_metadata("branch_name").map(ToString::to_string),
             proposed_revision: context.revision().map(|revision| revision.to_string()),
+            revision_tree_size: context
+                .get_metadata("revision_tree_size")
+                .and_then(|value| value.parse().ok()),
             client_ip: context.get_metadata("client_ip").map(ToString::to_string),
         };
-        let body = serde_json::to_vec(&request)
-            .map_err(|_| "could not serialize policy request".to_string())?;
+        let body = serde_json::to_vec(&request).map_err(|_| PolicyRequestError::Failure)?;
         let client = self.client.clone();
         let endpoint = self.policy_endpoint.clone();
         self.runtime
@@ -182,24 +192,31 @@ impl LoreHubPolicyHook {
                         .body(body)
                         .send()
                         .await
-                        .map_err(|_| "policy endpoint unavailable".to_string())?;
+                        .map_err(|_| PolicyRequestError::Failure)?;
                     if !response.status().is_success() {
-                        return Err("policy denied the Lore operation".to_string());
+                        return Err(PolicyRequestError::Failure);
                     }
                     let body = response
                         .bytes()
                         .await
-                        .map_err(|_| "policy response was invalid".to_string())?;
-                    let decision: PolicyResponse = serde_json::from_slice(&body)
-                        .map_err(|_| "policy response was invalid".to_string())?;
+                        .map_err(|_| PolicyRequestError::Failure)?;
+                    let decision: PolicyResponse =
+                        serde_json::from_slice(&body).map_err(|_| PolicyRequestError::Failure)?;
                     if !decision.allowed {
-                        return Err("policy denied the Lore operation".to_string());
+                        if decision.code.as_deref() == Some("repository_size_limit") {
+                            return Err(PolicyRequestError::RepositorySizeLimit(
+                                decision.message.unwrap_or_else(|| {
+                                    "Repository size limit exceeded".to_string()
+                                }),
+                            ));
+                        }
+                        return Err(PolicyRequestError::Denied);
                     }
                     Ok(())
                 },
                 self.request_timeout,
             )
-            .and_then(|result| result)
+            .map_err(|_| PolicyRequestError::Failure)?
     }
 
     async fn post_request(&self, context: &HookContext) -> Result<(), HookError> {
@@ -260,13 +277,21 @@ impl Hook for LoreHubPolicyHook {
     }
 
     fn pre_handler(&self, context: &HookContext) -> Result<(), HookError> {
-        self.request(context).map_err(|_| {
-            HookError::rejected(
+        match self.request(context) {
+            Ok(()) => Ok(()),
+            Err(PolicyRequestError::RepositorySizeLimit(message)) => Err(HookError::rejected(
                 self.name(),
-                "LoreHub policy could not authorize this operation",
-                StatusCode::PermissionDenied,
-            )
-        })
+                message,
+                StatusCode::FailedPrecondition,
+            )),
+            Err(PolicyRequestError::Denied | PolicyRequestError::Failure) => {
+                Err(HookError::rejected(
+                    self.name(),
+                    "LoreHub policy could not authorize this operation",
+                    StatusCode::PermissionDenied,
+                ))
+            }
+        }
     }
 
     async fn post_handler(&self, context: &HookContext) -> Result<(), HookError> {
