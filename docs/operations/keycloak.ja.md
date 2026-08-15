@@ -2,7 +2,10 @@
 
 [English](keycloak.md) | [日本語](keycloak.ja.md)
 
-Keycloakはメールアドレスとパスワードによる認証、social identity providerとの連携、アカウント管理を担当します。
+Keycloakの利用は任意です。既定の構成ではLoreHub本体の内蔵ログイン（メールアドレスとパスワード）を使います。
+詳細は[ログインとIDの管理](../architecture/identity.ja.md)を参照してください。同梱のKeycloakは、ソーシャル
+ログイン（Google、GitHub、Facebook、X）を使う場合や、社内のSAML/LDAP IdPの前段に置くブローカーとして使う場合に
+起動します。OIDCに対応した他のプロバイダーでも同じ手順で接続できます。このガイドは同梱のKeycloakを扱います。
 
 ## 構成の概要
 
@@ -16,13 +19,24 @@ Keycloakはメールアドレスとパスワードによる認証、social ident
 
 ## 初回セットアップ
 
-Docker Composeは永続化すべきシークレットを安全に自動生成できないため、専用スクリプトで生成します。
-生成された値はgit管理外の `.env` に書き込まれ、ログには一切出力されません。
+KeycloakのサービスはComposeの `keycloak` プロファイルに入っていて、既定では起動しません。シークレットを生成し、
+APIをKeycloakのissuerに向けてから、プロファイル付きで起動します。生成された値はgit管理外の `.env` に
+書き込まれ、ログには一切出力されません。
 
 ```bash
 scripts/setup-secrets.sh
-docker compose -f infra/compose.yaml up --build
+cat >>.env <<'CONF'
+LOREHUB_OIDC_ISSUER=http://keycloak.localhost:8280/realms/lorehub
+LOREHUB_OIDC_AUDIENCE=lorehub-api
+LOREHUB_OIDC_CLIENT_ID=lorehub-web
+LOREHUB_OIDC_REDIRECT_URL=http://localhost:3000/auth/callback
+LOREHUB_OIDC_LOGOUT_REDIRECT_URL=http://localhost:3000/
+CONF
+docker compose -f infra/compose.yaml --profile keycloak up --build
 ```
+
+APIは起動時にOIDC discoveryを最大90秒リトライするため、Keycloakと同時に起動しても待ち合わせできます。
+`LOREHUB_OIDC_*` を空に戻すと、内蔵のパスワードログインに戻ります。
 
 起動後のエンドポイント:
 
@@ -75,14 +89,14 @@ docker compose -f infra/compose.yaml up --build
 ## Go APIとOIDC issuerの関係
 
 Go APIは `LOREHUB_OIDC_ISSUER` を使ってOIDC discoveryを取得し、トークンのissuer・audience・署名・有効期限を
-検証します。ブラウザログインを使うCompose既定値は `LOREHUB_AUTH_MODE=interactive`、issuerは
+検証します。前述のプロファイル構成では `LOREHUB_AUTH_MODE=interactive`、issuerは
 `http://keycloak.localhost:8280/realms/lorehub`、audienceは `lorehub-api`、クライアントIDは `lorehub-web` です。
-APIはKeycloakのhealthcheckとbootstrap完了を待ってから起動します。
+APIはKeycloakコンテナに依存せず、Keycloakの起動中はdiscoveryをリトライします。
 
 `LOREHUB_AUTH_MODE=disabled` を明示すると、APIの認証を無効にした既存の開発挙動を選べます。既存のBearer
 クライアントだけを使う場合は `LOREHUB_AUTH_MODE=bearer` とissuer、audienceを設定します。Keycloakを使わない
-場合は、APIをホストで起動するか、`LOREHUB_AUTH_MODE=disabled docker compose -f infra/compose.yaml run --rm
---no-deps api` のようにComposeの依存サービスを外してください。
+場合の特別な手順はありません。`LOREHUB_OIDC_*` を空のままにしてプロファイルを起動しなければ、APIは内蔵の
+パスワードログインを提供します。
 
 ### ローカルDockerでのdiscovery到達性の注意
 

@@ -44,11 +44,22 @@ logoutには`POST /auth/logout`を使います。Issue、pull request、organiza
 
 ## Loginとregistration
 
-ログインは`/auth/login?return_to=<relative-path>`から開始します。return pathはencode前に検証します。絶対URL、
+`/{locale}/auth/login`と`/{locale}/auth/register`のログイン画面は`GET /api/v1/auth/providers`を読み、
+そのインストールで使える手段を表示します。内蔵のパスワードフォーム（`kind: "form"`）、外部OIDCプロバイダーへの
+リンク（`kind: "redirect"`）、またはその両方です。return pathはencode前に検証します。絶対URL、
 protocol-relative URL、backslashを使ったpathは`/`へ置き換えます。
 
-アカウント登録には`/auth/login?return_to=<relative-path>&prompt=create`を使います。`prompt=create`はKeycloakの
-registration画面を開くOIDC queryです。identity providerでregistrationが無効な場合は、そのerrorを画面に表示します。
+パスワードフォームはsame-origin proxy経由で`POST /auth/password/login`と`POST /auth/password/register`へJSONを
+送ります。これらのendpointはcontent typeが`application/json`であることと`Origin`の一致を要求し、成功時に
+session cookieを設定します。エラーは`invalid_credentials`、`account_locked`、`username_taken`、`email_taken`、
+`weak_password`、`registration_disabled`などのproblem codeで返り、フォームが辞書の文言に対応付けます。
+provider応答の`passwordRegistration`がfalseの場合、登録画面はフォームの代わりに登録停止の案内を表示します。
+
+外部OIDCへのログインは従来どおり`/auth/login?return_to=<relative-path>`から開始します。アカウント登録は
+`prompt=create`を付けます。これはKeycloakなどのOIDCプロバイダーがregistration画面を開くqueryです。OIDC
+プロバイダーが未設定の場合、APIは`/auth/login`を`/auth/start`へリダイレクトします。`/auth/start`はlocaleを
+判定してログイン画面へ転送する小さなroute handlerです。identity provider側でregistrationが無効な場合は、
+そのerrorを画面に表示します。
 
 ## Local proxyの設定
 

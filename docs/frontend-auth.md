@@ -47,12 +47,23 @@ the server.
 
 ## Login and registration
 
-Sign-in starts at `/auth/login?return_to=<relative-path>`. The return path is checked before it is encoded;
-absolute URLs, protocol-relative URLs, and backslash-based paths fall back to `/`.
+The branded pages at `/{locale}/auth/login` and `/{locale}/auth/register` read `GET /api/v1/auth/providers` and
+render what the installation offers: the built-in password form (`kind: "form"`), links to an external OIDC provider
+(`kind: "redirect"`), or both. The return path is checked before it is encoded; absolute URLs, protocol-relative
+URLs, and backslash-based paths fall back to `/`.
 
-The sign-up link uses `/auth/login?return_to=<relative-path>&prompt=create`. `prompt=create` is the documented Keycloak
-OIDC query used to open the provider registration screen. If the deployed identity provider does not enable
-registration, the provider error is shown on the sign-up page.
+The password form posts JSON to `POST /auth/password/login` and `POST /auth/password/register` through the
+same-origin proxy. These endpoints require the `application/json` content type and a matching `Origin`, set the
+session cookie on success, and return problem codes (`invalid_credentials`, `account_locked`, `username_taken`,
+`email_taken`, `weak_password`, `registration_disabled`) that the form maps to dictionary messages. When
+`passwordRegistration` is false in the provider response, the register page shows a closed-registration notice
+instead of the form.
+
+External OIDC sign-in still starts at `/auth/login?return_to=<relative-path>`; the sign-up variant appends
+`prompt=create`, which OIDC providers such as Keycloak use to open their registration screen. When no OIDC provider
+is configured, the API redirects `/auth/login` to `/auth/start`, a small route handler that picks the locale and
+forwards to the branded login page. If the deployed identity provider does not enable registration, the provider
+error is shown on the sign-up page.
 
 ## Local proxy configuration
 

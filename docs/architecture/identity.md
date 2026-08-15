@@ -4,64 +4,81 @@
 
 ## Responsibilities
 
-Keycloak handles email and password accounts and brokers social identity providers. The LoreHub Go API and Next.js
-application use Keycloak as OIDC clients and receive user information through token claims.
+The Go API owns interactive authentication. By default it verifies the email and password accounts stored in the
+LoreHub database. An installation can instead, or additionally, delegate sign-in to an external OIDC provider; the
+API then acts as an OIDC relying party. In both cases the browser holds only an opaque session cookie issued by the
+API, never an access token.
 
 ```text
 Browser
-  └─ Next.js web (lorehub-web, confidential, Authorization Code + PKCE)
-       └─ Keycloak (lorehub realm)
-            ├─ Email and password accounts
-            ├─ Google, GitHub, Facebook, and X identity providers
-            └─ Dedicated PostgreSQL database for authentication data
-  └─ Go API (lorehub-api, bearer-only)
-       └─ Validates token issuer, audience, signature, and expiry
+  └─ Next.js web (same-origin proxy, opaque session cookie)
+       └─ Go API
+            ├─ Built-in sign-in: users and user_passwords tables in PostgreSQL
+            └─ External OIDC (optional): Authorization Code + PKCE against LOREHUB_OIDC_ISSUER
+                 └─ Keycloak, ZITADEL, Okta, Entra ID, or another broker
+                      └─ absorbs SAML, LDAP, and social identity providers
 ```
 
-## Data separation
+LoreHub itself speaks exactly one federation protocol: OIDC. It does not implement SAML, LDAP, or per-vendor social
+login. A company whose identity provider only offers SAML or LDAP runs a broker such as Keycloak or ZITADEL and
+points `LOREHUB_OIDC_ISSUER` at the broker; LoreHub does not know or care what sits behind it.
 
-Keycloak uses a dedicated PostgreSQL service named `keycloak-postgres`. Authentication data and LoreHub application
-data have separate databases and backup schedules. Keycloak has no access to the LoreHub application database.
+## Identity model
 
-## OIDC clients
+A person is a row in `users`. Sign-in methods link to it through `user_identities`, keyed by `(issuer, subject)`:
 
-- `lorehub-web` is a confidential client that uses Authorization Code Flow with PKCE S256. Password grants are
-  disabled. Its access token audience includes `lorehub-api`.
-- `lorehub-api` is a bearer-only resource server. It validates access tokens against
-  `LOREHUB_OIDC_AUDIENCE=lorehub-api` and does not start login flows.
+- Built-in password accounts use the fixed issuer `lorehub` and the user's ID as the subject.
+- External OIDC accounts use the provider's issuer URL and its `sub` claim. LoreHub provisions the user on first
+  sign-in.
 
-## Token and session lifetimes
+Email addresses are profile attributes, not identity keys. Two identities are never linked automatically because they
+share an email address.
 
-The realm configuration in `infra/keycloak/realm-lorehub.json` sets these limits:
+## Built-in password sign-in
 
-- Access token: 300 seconds
-- SSO session: 1,800 seconds idle and 28,800 seconds maximum
-- Refresh token revocation: enabled with no reuse
-- Offline session idle timeout: 30 days
+- Password hashes use argon2id and live in `user_passwords`, separate from profile data. Sign-in accepts the email
+  address or the username.
+- Passwords must contain at least 12 characters, uppercase and lowercase letters, a number, and a symbol, and cannot
+  contain the username or email address.
+- After five consecutive failures the account locks; the wait starts at 30 seconds, doubles per further failure, and
+  caps at 15 minutes. A missing account costs the same verification time as a wrong password.
+- Self-registration is enabled by default. Set `LOREHUB_AUTH_PASSWORD_REGISTRATION=disabled` to restrict an
+  installation to existing accounts.
+- Login and registration requests must be same-origin JSON posts; the API rejects cross-site form-shaped requests.
+- Changing a password requires the current password and a valid session with its CSRF token, and revokes every other
+  session of that user.
+- The built-in store does not keep password history and does not verify email addresses. Installations that require
+  either delegate sign-in to an external OIDC provider that enforces them.
 
-## Password and brute-force protection
+## External OIDC provider
 
-- Passwords must contain at least 12 characters, uppercase and lowercase letters, a number, and a symbol. They cannot
-  contain the username or email address, and the previous three passwords cannot be reused.
-- Brute-force protection locks an account after five failed attempts and increases the wait time up to 900 seconds.
-- Email addresses are used as login names. Self-registration is enabled. Production installations must configure SMTP
-  and enable email verification.
+Set these values to delegate interactive sign-in:
 
-## Social identity provider provisioning
+```env
+LOREHUB_OIDC_ISSUER=https://auth.example.com
+LOREHUB_OIDC_AUDIENCE=lorehub-api
+LOREHUB_OIDC_CLIENT_ID=lorehub-web
+LOREHUB_OIDC_CLIENT_SECRET=...
+LOREHUB_OIDC_REDIRECT_URL=https://lorehub.example.com/auth/callback
+```
 
-Social provider credentials are supplied through environment variables. `infra/keycloak/bootstrap.sh` creates or
-updates a provider only when both its client ID and client secret are present. Removing credentials disables the
-provider; restoring them enables it again. Provisioning is idempotent. External access tokens are not stored, and
-provider email claims are not trusted until verified.
+The API reads OIDC discovery from the issuer and runs Authorization Code Flow with PKCE S256. ID tokens are verified
+against the client ID and bearer access tokens against `LOREHUB_OIDC_AUDIENCE`. Sessions stay server-side exactly as
+with built-in sign-in.
 
-X uses a generic OAuth v2 provider with the official X OAuth 2.0 endpoints. It does not use the Twitter broker that is
-deprecated in Keycloak 26.7. See the [Keycloak operations guide](../operations/keycloak.md) for configuration details.
+When the issuer is a broker that fronts several providers, the sign-in page can deep-link a specific one. The query
+parameter used for the hint defaults to Keycloak's `kc_idp_hint` and can be changed with
+`LOREHUB_OIDC_IDP_HINT_PARAM`.
+
+Configuring an OIDC provider turns built-in password sign-in off unless `LOREHUB_AUTH_PASSWORD=enabled` keeps both
+active side by side. The bundled Keycloak Compose profile remains available for social sign-in and as a reference
+broker; see the [Keycloak operations guide](../operations/keycloak.md).
 
 ## Authentication modes
 
-`LOREHUB_AUTH_MODE=interactive` is the default Compose mode. It enables browser sign-in and uses
-`http://keycloak.localhost:8280/realms/lorehub` as the issuer. Use `LOREHUB_AUTH_MODE=bearer` for API clients that only
-send bearer tokens. `LOREHUB_AUTH_MODE=disabled` is limited to local development without sign-in.
+`LOREHUB_AUTH_MODE=interactive` is the default Compose mode and enables browser sign-in with the built-in store, an
+external OIDC provider, or both. Use `LOREHUB_AUTH_MODE=bearer` for API clients that only send bearer tokens; it
+requires an OIDC issuer and audience. `LOREHUB_AUTH_MODE=disabled` is limited to local development without sign-in.
 
 These modes apply to the LoreHub application. Lore Server still validates short-lived JWTs issued by the API and
 scoped to `urc-{repository_id}`. The [repository authorization guide](../operations/control-plane-authorization.md)

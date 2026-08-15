@@ -4,62 +4,80 @@
 
 ## 役割
 
-メールアドレスとパスワードによる認証、social identity providerとの連携はKeycloakが担当します。LoreHubの
-Go APIとNext.jsアプリケーションはOIDC clientとしてKeycloakを利用し、token claimからユーザー情報を受け取ります。
+対話的な認証はGo APIが担当します。既定では、LoreHubのデータベースに保存したメールアドレスとパスワードの
+アカウントを検証します。外部のOIDCプロバイダーにログインを委譲することもでき、その場合APIはOIDC relying party
+として動作します。どちらの場合も、ブラウザが持つのはAPIが発行した推測不能なsession cookieだけで、access token
+は渡しません。
 
 ```text
 Browser
-  └─ Next.js web (lorehub-web, confidential, Authorization Code + PKCE)
-       └─ Keycloak (lorehub realm)
-            ├─ Email and password accounts
-            ├─ Google, GitHub, Facebook, and X identity providers
-            └─ Dedicated PostgreSQL database for authentication data
-  └─ Go API (lorehub-api, bearer-only)
-       └─ Validates token issuer, audience, signature, and expiry
+  └─ Next.js web (same-origin proxy, opaque session cookie)
+       └─ Go API
+            ├─ 内蔵ログイン: PostgreSQLのusersとuser_passwords
+            └─ 外部OIDC (任意): LOREHUB_OIDC_ISSUERに対するAuthorization Code + PKCE
+                 └─ Keycloak / ZITADEL / Okta / Entra ID などのブローカー
+                      └─ SAML、LDAP、ソーシャルログインを吸収
 ```
 
-## データの分離
+LoreHub本体が話す連携プロトコルはOIDCだけです。SAML、LDAP、各社固有のソーシャルログインは実装しません。
+IdPがSAMLやLDAPしか提供しない会社は、KeycloakやZITADELのようなブローカーを立てて`LOREHUB_OIDC_ISSUER`を
+そのブローカーに向けます。LoreHubはブローカーの先に何があるかを知る必要がありません。
 
-Keycloakは`keycloak-postgres`という専用のPostgreSQL serviceを使います。認証データとLoreHubのアプリケーション
-データは、databaseとbackupを分けて管理します。KeycloakからLoreHubのアプリケーションdatabaseには接続できません。
+## IDモデル
 
-## OIDC client
+利用者は`users`の1行です。ログイン手段は`(issuer, subject)`をキーとする`user_identities`で紐付けます。
 
-- `lorehub-web`はAuthorization Code FlowとPKCE S256を使うconfidential clientです。password grantは無効です。
-  access tokenのaudienceには`lorehub-api`が含まれます。
-- `lorehub-api`はbearer-only resource serverです。access tokenを
-  `LOREHUB_OIDC_AUDIENCE=lorehub-api`に対して検証し、ログイン処理は開始しません。
+- 内蔵パスワードアカウントは固定のissuer `lorehub`とユーザーIDをsubjectに使います。
+- 外部OIDCアカウントはプロバイダーのissuer URLと`sub` claimを使います。初回ログイン時にユーザーを自動作成します。
 
-## Tokenとsessionの有効期間
+メールアドレスはプロフィール属性で、IDのキーではありません。メールアドレスが同じでも、IDを自動で
+リンクすることはありません。
 
-`infra/keycloak/realm-lorehub.json`では次の値を設定しています。
+## 内蔵パスワードログイン
 
-- access token: 300秒
-- SSO session: idle 1,800秒、最大28,800秒
-- refresh tokenの失効: 有効、再利用なし
-- offline sessionのidle timeout: 30日
+- パスワードハッシュはargon2idで、プロフィールとは別の`user_passwords`に保存します。ログインには
+  メールアドレスまたはユーザー名を使えます。
+- パスワードは12文字以上とし、大文字、小文字、数字、記号を含めます。ユーザー名とメールアドレスは含められません。
+- ログインに5回連続で失敗するとアカウントをロックします。待機時間は30秒から始まり、失敗のたびに倍増して
+  最大15分になります。存在しないアカウントでも、パスワード誤りと同じ検証時間がかかるようにしています。
+- 自己登録は既定で有効です。既存アカウントだけに制限するには`LOREHUB_AUTH_PASSWORD_REGISTRATION=disabled`を
+  設定します。
+- ログインと登録のリクエストはsame-originのJSON POSTに限定し、外部サイトのフォームから送れる形のリクエストは
+  拒否します。
+- パスワード変更には現在のパスワードと、CSRF tokenを含む有効なsessionが必要です。変更するとその利用者の他の
+  sessionをすべて失効させます。
+- 内蔵ストアはパスワード履歴の再利用チェックとメールアドレス確認を行いません。これらが必要なインストールでは、
+  それらを強制できる外部OIDCプロバイダーにログインを委譲してください。
 
-## パスワードと総当たり対策
+## 外部OIDCプロバイダー
 
-- パスワードは12文字以上とし、大文字、小文字、数字、記号を含めます。ユーザー名とメールアドレスは使用できず、
-  過去3回のパスワードも再利用できません。
-- ログインに5回失敗するとアカウントをロックし、待機時間を最大900秒まで段階的に延長します。
-- メールアドレスをログイン名として使い、自己登録を許可します。本番環境ではSMTPを設定し、メール確認を有効にします。
+次の値を設定すると、対話的ログインを外部に委譲します。
 
-## Social identity providerの設定
+```env
+LOREHUB_OIDC_ISSUER=https://auth.example.com
+LOREHUB_OIDC_AUDIENCE=lorehub-api
+LOREHUB_OIDC_CLIENT_ID=lorehub-web
+LOREHUB_OIDC_CLIENT_SECRET=...
+LOREHUB_OIDC_REDIRECT_URL=https://lorehub.example.com/auth/callback
+```
 
-social providerの認証情報は環境変数で渡します。`infra/keycloak/bootstrap.sh`はclient IDとclient secretが揃った
-providerだけを作成または更新します。認証情報を削除するとproviderを無効化し、元に戻すと再び有効化します。
-この処理は繰り返し実行できます。外部access tokenは保存せず、providerのemail claimは確認が取れるまで信頼しません。
+APIはissuerからOIDC discoveryを読み、PKCE S256付きのAuthorization Code Flowを実行します。ID tokenはclient ID、
+bearer access tokenは`LOREHUB_OIDC_AUDIENCE`に対して検証します。sessionの扱いは内蔵ログインと同じで、
+サーバー側に保持します。
 
-Xとの連携には、X公式のOAuth 2.0 endpointを指定した汎用OAuth v2 providerを使います。Keycloak 26.7で非推奨の
-Twitter brokerは使いません。設定方法は[Keycloak運用ガイド](../operations/keycloak.ja.md)を参照してください。
+issuerが複数プロバイダーを束ねるブローカーの場合、ログイン画面から特定のプロバイダーへ直接遷移できます。
+そのヒントに使うqueryパラメーター名の既定値はKeycloakの`kc_idp_hint`で、`LOREHUB_OIDC_IDP_HINT_PARAM`で
+変更できます。
+
+OIDCプロバイダーを設定すると、内蔵パスワードログインは既定で無効になります。`LOREHUB_AUTH_PASSWORD=enabled`を
+設定すると両方を並行して有効にできます。同梱のKeycloak Composeプロファイルは、ソーシャルログインと参照実装の
+ブローカーとして引き続き使えます。[Keycloak運用ガイド](../operations/keycloak.ja.md)を参照してください。
 
 ## 認証mode
 
-Composeの既定値は`LOREHUB_AUTH_MODE=interactive`です。ブラウザからのログインを有効にし、issuerには
-`http://keycloak.localhost:8280/realms/lorehub`を使います。bearer tokenだけを送るAPI clientでは
-`LOREHUB_AUTH_MODE=bearer`を使います。`LOREHUB_AUTH_MODE=disabled`は、ログインを使わないローカル開発専用です。
+Composeの既定値は`LOREHUB_AUTH_MODE=interactive`です。内蔵ログイン、外部OIDC、またはその両方でブラウザからの
+ログインを有効にします。bearer tokenだけを送るAPI clientでは`LOREHUB_AUTH_MODE=bearer`を使います。このmodeには
+OIDCのissuerとaudienceが必要です。`LOREHUB_AUTH_MODE=disabled`は、ログインを使わないローカル開発専用です。
 
 これらのmodeはLoreHubアプリケーションに適用されます。Lore Serverは、APIが発行する短命JWTを引き続き検証します。
 JWTは`urc-{repository_id}`に限定されます。Lore UCS認証、JWKS、鍵の更新、TLS、保護branch hookについては、

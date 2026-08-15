@@ -2,7 +2,10 @@
 
 [English](keycloak.md) | [日本語](keycloak.ja.md)
 
-Keycloak handles email and password sign-in, social identity providers, and account management.
+Keycloak is optional. The default stack uses LoreHub's built-in email and password sign-in; see
+[Sign-in and identity management](../architecture/identity.md). Start the bundled Keycloak when you want social
+identity providers (Google, GitHub, Facebook, X) or a broker in front of a corporate SAML or LDAP identity provider.
+Any other OIDC-capable provider works the same way; this guide covers the bundled one.
 
 ## Services
 
@@ -15,12 +18,23 @@ Keycloak handles email and password sign-in, social identity providers, and acco
 
 ## Initial setup
 
-Generate persistent local secrets before starting Compose:
+The Keycloak services sit behind the `keycloak` Compose profile and do not start by default. Generate persistent
+local secrets, point the API at the Keycloak issuer, and start the stack with the profile:
 
 ```bash
 scripts/setup-secrets.sh
-docker compose -f infra/compose.yaml up --build
+cat >>.env <<'CONF'
+LOREHUB_OIDC_ISSUER=http://keycloak.localhost:8280/realms/lorehub
+LOREHUB_OIDC_AUDIENCE=lorehub-api
+LOREHUB_OIDC_CLIENT_ID=lorehub-web
+LOREHUB_OIDC_REDIRECT_URL=http://localhost:3000/auth/callback
+LOREHUB_OIDC_LOGOUT_REDIRECT_URL=http://localhost:3000/
+CONF
+docker compose -f infra/compose.yaml --profile keycloak up --build
 ```
+
+The API retries OIDC discovery for up to 90 seconds at startup, so it tolerates Keycloak booting in parallel.
+Removing the `LOREHUB_OIDC_*` values returns the installation to built-in password sign-in.
 
 Local endpoints:
 
@@ -73,17 +87,14 @@ For production, set `LOREHUB_PUBLIC_ORIGIN`, `LOREHUB_OIDC_REDIRECT_URL`, and
 ## Go API and the OIDC issuer
 
 The Go API reads OIDC discovery from `LOREHUB_OIDC_ISSUER` and verifies the token issuer, audience, signature, and
-expiry. Compose uses `LOREHUB_AUTH_MODE=interactive`, issuer
-`http://keycloak.localhost:8280/realms/lorehub`, audience `lorehub-api`, and client ID `lorehub-web`. The API waits for
-the Keycloak health check and bootstrap completion before starting.
+expiry. With the profile configuration above, Compose uses `LOREHUB_AUTH_MODE=interactive`, issuer
+`http://keycloak.localhost:8280/realms/lorehub`, audience `lorehub-api`, and client ID `lorehub-web`. The API does
+not depend on the Keycloak containers; it retries discovery while Keycloak boots.
 
 Use `LOREHUB_AUTH_MODE=bearer` with an issuer and audience for bearer-only API clients. Use
-`LOREHUB_AUTH_MODE=disabled` only for local development without authentication. To run the API without Keycloak in
-Compose, remove its service dependencies explicitly:
-
-```bash
-LOREHUB_AUTH_MODE=disabled docker compose -f infra/compose.yaml run --rm --no-deps api
-```
+`LOREHUB_AUTH_MODE=disabled` only for local development without authentication. Running the API without Keycloak
+needs no special steps: leave the `LOREHUB_OIDC_*` values empty and the profile stopped, and the API serves the
+built-in password sign-in.
 
 ### OIDC discovery from local Docker
 

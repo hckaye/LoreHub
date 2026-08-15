@@ -23,7 +23,6 @@ docker compose -f infra/compose.yaml up --build
 - Web: <http://localhost:3000>
 - API health: <http://localhost:8080/health/ready>
 - Lore Server health: <http://localhost:41339/health_check>
-- Keycloak管理画面: <http://keycloak.localhost:8280/admin/master/console>
 - ローカルメール受信画面: <http://localhost:8025>
 
 データを残したまま停止するには、次を実行します。
@@ -55,8 +54,12 @@ LoreHubは開発中です。GitHubとGitLabにあるすべての画面やAPIに�
 
 ## ログイン方法を追加する
 
-Email/Passwordはローカルの初期設定で使えます。Google、GitHub、Facebook、Xは、各サービスのclient IDと
-client secretを`.env`に追加するとログイン画面に表示されます。設定手順とcallback URLは
+Email/PasswordのログインはLoreHub本体に組み込まれていて、ローカルの初期設定でそのまま使えます。アカウントと
+パスワードハッシュはLoreHubのデータベースに保存されます。外部のIDプロバイダーを使う場合は、`.env`の
+`LOREHUB_OIDC_ISSUER`などの`LOREHUB_OIDC_*`を、OIDCに対応した任意のプロバイダー（同梱のKeycloakプロファイル、
+ZITADEL、Okta、Entra ID、社内のブローカーなど）に向けます。SAMLやLDAPしか話せないIdPを使う会社は、Keycloakや
+ZITADELのようなブローカーを前段に置き、LoreHubからはそのブローカーを指定します。Google、GitHub、Facebook、Xの
+ログインは同梱のKeycloakプロファイル経由で使えます。設定手順とcallback URLは
 [Keycloak運用ガイド](docs/operations/keycloak.ja.md)を参照してください。
 
 ## GitHub Actions互換CIを起動する
