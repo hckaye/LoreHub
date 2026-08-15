@@ -9,11 +9,15 @@ import (
 )
 
 func (store *Store) enforceOrganizationLimit(ctx context.Context, tx pgx.Tx, userID string) error {
-	if store.maxOrganizationsPerUser <= 0 {
+	limit, err := store.organizationsPerUserLimit(ctx, tx)
+	if err != nil {
+		return err
+	}
+	if limit <= 0 {
 		return nil
 	}
 	var lockedUserID string
-	err := tx.QueryRow(ctx, `
+	err = tx.QueryRow(ctx, `
 		SELECT id FROM users WHERE id = $1 AND status = 'active' FOR UPDATE
 	`, userID).Scan(&lockedUserID)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -29,7 +33,7 @@ func (store *Store) enforceOrganizationLimit(ctx context.Context, tx pgx.Tx, use
 	if err != nil {
 		return fmt.Errorf("count user organizations: %w", err)
 	}
-	if count >= store.maxOrganizationsPerUser {
+	if int64(count) >= limit {
 		return ErrOrganizationLimit
 	}
 	return nil
@@ -40,7 +44,11 @@ func (store *Store) lockOrganizationAndEnforceRepositoryLimit(
 	tx pgx.Tx,
 	organizationID string,
 ) error {
-	if store.maxRepositoriesPerOrganization <= 0 {
+	limit, err := store.repositoriesPerOrganizationLimit(ctx, tx)
+	if err != nil {
+		return err
+	}
+	if limit <= 0 {
 		return nil
 	}
 	var lockedOrganizationID string
@@ -49,7 +57,7 @@ func (store *Store) lockOrganizationAndEnforceRepositoryLimit(
 	`, organizationID).Scan(&lockedOrganizationID); err != nil {
 		return fmt.Errorf("lock organization repository quota: %w", err)
 	}
-	return store.rejectIfRepositoryLimitReached(ctx, tx, organizationID)
+	return store.rejectIfRepositoryCountReached(ctx, tx, organizationID, limit)
 }
 
 func (store *Store) rejectIfRepositoryLimitReached(
@@ -57,7 +65,20 @@ func (store *Store) rejectIfRepositoryLimitReached(
 	tx pgx.Tx,
 	organizationID string,
 ) error {
-	if store.maxRepositoriesPerOrganization <= 0 {
+	limit, err := store.repositoriesPerOrganizationLimit(ctx, tx)
+	if err != nil {
+		return err
+	}
+	return store.rejectIfRepositoryCountReached(ctx, tx, organizationID, limit)
+}
+
+func (store *Store) rejectIfRepositoryCountReached(
+	ctx context.Context,
+	tx pgx.Tx,
+	organizationID string,
+	limit int64,
+) error {
+	if limit <= 0 {
 		return nil
 	}
 	var count int
@@ -70,8 +91,38 @@ func (store *Store) rejectIfRepositoryLimitReached(
 	if err != nil {
 		return fmt.Errorf("count organization repositories: %w", err)
 	}
-	if count >= store.maxRepositoriesPerOrganization {
+	if int64(count) >= limit {
 		return ErrRepositoryLimit
 	}
 	return nil
+}
+
+func (store *Store) organizationsPerUserLimit(ctx context.Context, query instanceSettingsQuery) (int64, error) {
+	override, err := readMaxOrganizationsPerUserOverride(ctx, query)
+	if err != nil {
+		return 0, err
+	}
+	return effectiveInt64Override(override, int64(store.maxOrganizationsPerUser)), nil
+}
+
+func (store *Store) repositoriesPerOrganizationLimit(
+	ctx context.Context,
+	query instanceSettingsQuery,
+) (int64, error) {
+	override, err := readMaxRepositoriesPerOrganizationOverride(ctx, query)
+	if err != nil {
+		return 0, err
+	}
+	return effectiveInt64Override(override, int64(store.maxRepositoriesPerOrganization)), nil
+}
+
+func (store *Store) maxRepositorySizeBytesLimit(
+	ctx context.Context,
+	query instanceSettingsQuery,
+) (int64, error) {
+	override, err := readMaxRepositorySizeBytesOverride(ctx, query)
+	if err != nil {
+		return 0, err
+	}
+	return effectiveInt64Override(override, store.maxRepositorySizeBytes), nil
 }

@@ -7,6 +7,8 @@ import {
   hostedLoreServerChoice,
   hostedLoreServerOverride,
   normalizeAdminSettings,
+  overrideInputValue,
+  parseOverrideInput,
 } from "../src/lib/admin-settings";
 import { updateAdminSettings } from "../src/lib/admin-settings-client";
 
@@ -14,6 +16,15 @@ const settings = {
   hostedLoreServerEnabled: true,
   hostedLoreServerOverride: null,
   hostedLoreServerDefault: true,
+  maxOrganizationsPerUser: 0,
+  maxOrganizationsPerUserOverride: null,
+  maxOrganizationsPerUserDefault: 0,
+  maxRepositoriesPerOrganization: 0,
+  maxRepositoriesPerOrganizationOverride: null,
+  maxRepositoriesPerOrganizationDefault: 0,
+  maxRepositorySizeBytes: 0,
+  maxRepositorySizeBytesOverride: null,
+  maxRepositorySizeBytesDefault: 0,
 };
 
 test("admin settings map radio choices onto the override field", () => {
@@ -23,18 +34,31 @@ test("admin settings map radio choices onto the override field", () => {
   assert.equal(hostedLoreServerOverride("default"), null);
   assert.equal(hostedLoreServerOverride("enabled"), true);
   assert.equal(hostedLoreServerOverride("disabled"), false);
-  assert.deepEqual(adminSettingsInput(null), { hostedLoreServerOverride: null });
+  assert.deepEqual(adminSettingsInput({ hostedLoreServerOverride: null }), { hostedLoreServerOverride: null });
 });
 
-test("admin settings payloads require booleans and a nullable override", () => {
+test("admin settings payloads require booleans, integers, and nullable overrides", () => {
   assert.deepEqual(normalizeAdminSettings(settings), settings);
   assert.deepEqual(normalizeAdminSettings({ ...settings, hostedLoreServerOverride: false }), {
     ...settings,
     hostedLoreServerOverride: false,
   });
+  assert.deepEqual(normalizeAdminSettings({ ...settings, maxOrganizationsPerUserOverride: 3 }), {
+    ...settings,
+    maxOrganizationsPerUserOverride: 3,
+  });
   assert.equal(normalizeAdminSettings({ ...settings, hostedLoreServerOverride: "true" }), null);
   assert.equal(normalizeAdminSettings({ ...settings, hostedLoreServerEnabled: "yes" }), null);
+  assert.equal(normalizeAdminSettings({ ...settings, maxOrganizationsPerUserOverride: 1.5 }), null);
+  assert.equal(normalizeAdminSettings({ ...settings, maxRepositorySizeBytes: 1.5 }), null);
   assert.equal(normalizeAdminSettings({ hostedLoreServerEnabled: true }), null);
+});
+
+test("empty resource-limit inputs follow the environment default", () => {
+  assert.equal(overrideInputValue(null), "");
+  assert.equal(overrideInputValue(0), "0");
+  assert.equal(parseOverrideInput(""), null);
+  assert.equal(parseOverrideInput("10485760"), 10485760);
 });
 
 test("saving instance settings puts the admin override with CSRF", async () => {
@@ -45,7 +69,7 @@ test("saving instance settings puts the admin override with CSRF", async () => {
     return Response.json({ ...settings, hostedLoreServerOverride: false, hostedLoreServerEnabled: false });
   };
   try {
-    const result = await updateAdminSettings(false, "csrf");
+    const result = await updateAdminSettings({ hostedLoreServerOverride: false }, "csrf");
     assert.equal(result.ok, true);
     assert.equal(request?.input, "/api/v1/admin/settings");
     assert.equal(request?.init?.method, "PUT");
@@ -64,9 +88,43 @@ test("clearing the hosted Lore server override sends JSON null", async () => {
     return Response.json(settings);
   };
   try {
-    const result = await updateAdminSettings(null, "csrf");
+    const result = await updateAdminSettings({ hostedLoreServerOverride: null }, "csrf");
     assert.equal(result.ok, true);
     assert.equal(body, '{"hostedLoreServerOverride":null}');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("saving resource-limit overrides puts integers and JSON nulls", async () => {
+  const originalFetch = globalThis.fetch;
+  let body = "";
+  globalThis.fetch = async (_input, init) => {
+    body = String(init?.body);
+    return Response.json({
+      ...settings,
+      maxOrganizationsPerUser: 1,
+      maxOrganizationsPerUserOverride: 1,
+      maxRepositoriesPerOrganizationOverride: null,
+      maxRepositorySizeBytesOverride: 10485760,
+      maxRepositorySizeBytes: 10485760,
+    });
+  };
+  try {
+    const result = await updateAdminSettings(
+      {
+        maxOrganizationsPerUserOverride: 1,
+        maxRepositoriesPerOrganizationOverride: null,
+        maxRepositorySizeBytesOverride: 10485760,
+      },
+      "csrf",
+    );
+    assert.equal(result.ok, true);
+    assert.deepEqual(JSON.parse(body), {
+      maxOrganizationsPerUserOverride: 1,
+      maxRepositoriesPerOrganizationOverride: null,
+      maxRepositorySizeBytesOverride: 10485760,
+    });
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -86,7 +144,9 @@ test("the instance settings surface offers GitHub radio options and a primary sa
   const source = await readFile("src/components/admin/instance-settings.tsx", "utf8");
   assert.match(source, /updateAdminSettings/);
   assert.match(source, /type="radio"/);
+  assert.match(source, /type="number"/);
   assert.match(source, /mutationFailureMessage/);
   assert.match(source, /styles\.primaryButton/);
   assert.match(source, /settings-form\.module\.css/);
+  assert.match(source, /maxRepositorySizeBytes/);
 });

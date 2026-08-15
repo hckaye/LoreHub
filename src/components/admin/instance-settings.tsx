@@ -7,6 +7,8 @@ import {
   hostedLoreServerChoice,
   hostedLoreServerOverride,
   isHostedLoreServerChoice,
+  overrideInputValue,
+  parseOverrideInput,
   type AdminSettings,
   type HostedLoreServerChoice,
 } from "@/lib/admin-settings";
@@ -28,6 +30,15 @@ export function InstanceSettings(props: InstanceSettingsProps) {
   const [choice, setChoice] = useState<HostedLoreServerChoice>(
     hostedLoreServerChoice(props.initialSettings.hostedLoreServerOverride),
   );
+  const [organizationsOverride, setOrganizationsOverride] = useState(
+    overrideInputValue(props.initialSettings.maxOrganizationsPerUserOverride),
+  );
+  const [repositoriesOverride, setRepositoriesOverride] = useState(
+    overrideInputValue(props.initialSettings.maxRepositoriesPerOrganizationOverride),
+  );
+  const [sizeOverride, setSizeOverride] = useState(
+    overrideInputValue(props.initialSettings.maxRepositorySizeBytesOverride),
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -39,7 +50,15 @@ export function InstanceSettings(props: InstanceSettingsProps) {
     setError("");
     setNotice("");
     setSaving(true);
-    const result = await updateAdminSettings(hostedLoreServerOverride(choice), props.session.csrfToken);
+    const result = await updateAdminSettings(
+      {
+        hostedLoreServerOverride: hostedLoreServerOverride(choice),
+        maxOrganizationsPerUserOverride: parseOverrideInput(organizationsOverride),
+        maxRepositoriesPerOrganizationOverride: parseOverrideInput(repositoriesOverride),
+        maxRepositorySizeBytesOverride: parseOverrideInput(sizeOverride),
+      },
+      props.session.csrfToken,
+    );
     setSaving(false);
     if (!result.ok) {
       setError(result.kind === "invalid" ? copy.saveFailed : mutationFailureMessage(result.kind, props.dictionary));
@@ -47,6 +66,9 @@ export function InstanceSettings(props: InstanceSettingsProps) {
     }
     setSettings(result.data);
     setChoice(hostedLoreServerChoice(result.data.hostedLoreServerOverride));
+    setOrganizationsOverride(overrideInputValue(result.data.maxOrganizationsPerUserOverride));
+    setRepositoriesOverride(overrideInputValue(result.data.maxRepositoriesPerOrganizationOverride));
+    setSizeOverride(overrideInputValue(result.data.maxRepositorySizeBytesOverride));
     setNotice(copy.saved);
   }
 
@@ -87,10 +109,64 @@ export function InstanceSettings(props: InstanceSettingsProps) {
         />
       </div>
       <p className={styles.help}>{copy.explanation}</p>
+      <h2 className={styles.subhead}>{copy.resourceLimits}</h2>
+      <LimitField
+        defaultLabel={copy.maxOrganizationsPerUserDefault.replace(
+          "{value}",
+          String(settings.maxOrganizationsPerUserDefault),
+        )}
+        help={copy.maxOrganizationsPerUserHelp}
+        label={copy.maxOrganizationsPerUser}
+        onChange={setOrganizationsOverride}
+        value={organizationsOverride}
+      />
+      <LimitField
+        defaultLabel={copy.maxRepositoriesPerOrganizationDefault.replace(
+          "{value}",
+          String(settings.maxRepositoriesPerOrganizationDefault),
+        )}
+        help={copy.maxRepositoriesPerOrganizationHelp}
+        label={copy.maxRepositoriesPerOrganization}
+        onChange={setRepositoriesOverride}
+        value={repositoriesOverride}
+      />
+      <LimitField
+        defaultLabel={copy.maxRepositorySizeBytesDefault.replace(
+          "{value}",
+          String(settings.maxRepositorySizeBytesDefault),
+        )}
+        help={copy.maxRepositorySizeBytesHelp}
+        label={copy.maxRepositorySizeBytes}
+        onChange={setSizeOverride}
+        value={sizeOverride}
+      />
       <button className={styles.primaryButton} disabled={saving} type="submit">
         {saving ? copy.saving : copy.save}
       </button>
     </form>
+  );
+}
+
+function LimitField({
+  defaultLabel,
+  help,
+  label,
+  onChange,
+  value,
+}: {
+  defaultLabel: string;
+  help: string;
+  label: string;
+  onChange: (value: string) => void;
+  value: string;
+}) {
+  return (
+    <label className={styles.field}>
+      <span>{label}</span>
+      <input min={0} onChange={(event) => onChange(event.target.value)} step={1} type="number" value={value} />
+      <p className={styles.help}>{defaultLabel}</p>
+      <p className={styles.help}>{help}</p>
+    </label>
   );
 }
 
