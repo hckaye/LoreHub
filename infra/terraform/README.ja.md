@@ -12,7 +12,7 @@ Terraform の設定はデプロイ方法ごとの preset に分けています�
 
 ## 利用できる preset
 
-- `hetzner-single-node`(Hetzner Cloud): Postgres、Lore Server、web、API、Keycloak、runner を 1 台の `cx32` に
+- `hetzner-single-node`(Hetzner Cloud): Postgres、Lore Server、web、API、Keycloak、runner を 1 台の `cx33` に
   置く小規模な公開テスト用です。高可用構成ではありません。
 
 preset 間で再利用できるものは `modules/` に置きます。現在の `hetzner-single-node` は、SSH key、firewall、server を

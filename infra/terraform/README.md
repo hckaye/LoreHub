@@ -13,7 +13,7 @@ service placement. Shared resources that are used by more than one preset belong
 ## Available presets
 
 - `hetzner-single-node` (Hetzner Cloud): a small public test deployment with Postgres, Lore Server, web, API,
-  Keycloak, and runners on one `cx32` server. It is not highly available.
+  Keycloak, and runners on one `cx33` server. It is not highly available.
 
 Presets share `modules/` where reuse makes sense. The current `hetzner-single-node` preset uses
 `modules/hetzner-server` for the SSH key, firewall, and server resources. A future multi-instance or non-Hetzner

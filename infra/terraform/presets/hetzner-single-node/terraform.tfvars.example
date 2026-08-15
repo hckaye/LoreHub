@@ -1,5 +1,5 @@
 name                  = "lorehub-single-node"
-server_type           = "cx32"
+server_type           = "cx33"
 location              = "fsn1"
 ssh_public_key        = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... admin@example"
 admin_cidrs           = ["203.0.113.10/32"]

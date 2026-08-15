@@ -12,7 +12,7 @@ variable "name" {
 variable "server_type" {
   description = "Hetzner Cloud server type."
   type        = string
-  default     = "cx32"
+  default     = "cx33"
 }
 
 variable "image" {
