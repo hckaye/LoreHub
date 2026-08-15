@@ -5,15 +5,15 @@ service placement. Shared resources that are used by more than one preset belong
 
 ## Directory layout
 
-| Path | Purpose |
-| --- | --- |
+| Path       | Purpose                                                        |
+| ---------- | -------------------------------------------------------------- |
 | `presets/` | Complete deployment choices that can be applied independently. |
-| `modules/` | Reusable Terraform resources used by presets. |
+| `modules/` | Reusable Terraform resources used by presets.                  |
 
 ## Available presets
 
-| Preset | Provider | Intended audience and scale |
-| --- | --- | --- |
+| Preset                | Provider      | Intended audience and scale                                                                                                                  |
+| --------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | `hetzner-single-node` | Hetzner Cloud | A small public test deployment with Postgres, Lore Server, web, API, Keycloak, and runners on one `cx32` server. It is not highly available. |
 
 Presets share `modules/` where reuse makes sense. The current `hetzner-single-node` preset uses

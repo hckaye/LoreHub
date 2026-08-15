@@ -20,11 +20,11 @@ so protect the state and the `terraform.tfvars` file.
 
 ## Ingress modes
 
-| Mode | Configuration | Result |
-| --- | --- | --- |
-| Direct public ingress | `enable_public_ingress = true` and an empty tunnel token | The firewall allows TCP 80 and 443. cloud-init installs Nginx for the web and Keycloak hostnames. |
-| Cloudflare Tunnel | Set `cloudflared_tunnel_token` to a non-empty token | cloud-init installs `cloudflared` and a systemd service. Nginx listens on local HTTP for the tunnel. The firewall keeps 80 and 443 closed, even if `enable_public_ingress` is true. |
-| SSH only | Keep both settings disabled | The firewall allows SSH only. Use SSH port forwarding for the host-published Compose ports. |
+| Mode                  | Configuration                                            | Result                                                                                                                                                                              |
+| --------------------- | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Direct public ingress | `enable_public_ingress = true` and an empty tunnel token | The firewall allows TCP 80 and 443. cloud-init installs Nginx for the web and Keycloak hostnames.                                                                                   |
+| Cloudflare Tunnel     | Set `cloudflared_tunnel_token` to a non-empty token      | cloud-init installs `cloudflared` and a systemd service. Nginx listens on local HTTP for the tunnel. The firewall keeps 80 and 443 closed, even if `enable_public_ingress` is true. |
+| SSH only              | Keep both settings disabled                              | The firewall allows SSH only. Use SSH port forwarding for the host-published Compose ports.                                                                                         |
 
 The firewall does not expose the other Compose-published ports. Configure the required Lore client and policy network
 access separately if the deployment needs external Lore clients. The preset does not create DNS records or a Cloudflare
