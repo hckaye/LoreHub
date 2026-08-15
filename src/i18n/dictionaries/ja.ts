@@ -967,6 +967,8 @@ const ja = {
       "このインスタンスではホステッドLoreサーバーが無効になっています。セルフホステッドのLore Serverを登録するか、",
       "インスタンス管理者にホステッドサービスの有効化を依頼してください。",
     ),
+    organizationLimit: "作成できる組織の上限に達しています。",
+    repositoryLimit: "この組織はリポジトリの上限に達しています。",
   },
   footer: {
     sourceOfTruth: "LoreHubはLoreバージョン管理システムに対応しています。",

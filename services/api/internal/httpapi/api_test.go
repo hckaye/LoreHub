@@ -121,6 +121,27 @@ type unhealthy struct{}
 
 func (unhealthy) Ping(context.Context) error { return errors.New("dependency unavailable") }
 
+func TestPlatformErrorMapsResourceLimits(t *testing.T) {
+	api := &API{logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	for _, testCase := range []struct {
+		err  error
+		code string
+	}{
+		{platform.ErrOrganizationLimit, "organization_limit"},
+		{platform.ErrRepositoryLimit, "repository_limit"},
+	} {
+		response := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, "/api/v1/organizations", nil)
+		api.platformError(response, request, "test", testCase.err)
+		if response.Code != http.StatusConflict {
+			t.Fatalf("%s status = %d, want 409, body = %s", testCase.code, response.Code, response.Body.String())
+		}
+		if !strings.Contains(response.Body.String(), testCase.code) {
+			t.Fatalf("%s body = %s", testCase.code, response.Body.String())
+		}
+	}
+}
+
 func TestReadyReflectsServiceDependencies(t *testing.T) {
 	for name, testCase := range map[string]struct {
 		health HealthChecker

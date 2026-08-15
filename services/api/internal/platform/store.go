@@ -17,18 +17,22 @@ import (
 )
 
 var (
-	ErrNotFound      = errors.New("resource not found")
-	ErrForbidden     = errors.New("operation is not permitted")
-	ErrConflict      = errors.New("resource already exists")
-	ErrInvalidInput  = errors.New("input is invalid")
-	slugPattern      = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$`)
-	partitionPattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
+	ErrNotFound          = errors.New("resource not found")
+	ErrForbidden         = errors.New("operation is not permitted")
+	ErrConflict          = errors.New("resource already exists")
+	ErrInvalidInput      = errors.New("input is invalid")
+	ErrOrganizationLimit = errors.New("this user has reached the organization limit")
+	ErrRepositoryLimit   = errors.New("this organization has reached its repository limit")
+	slugPattern          = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$`)
+	partitionPattern     = regexp.MustCompile(`^[0-9a-f]{32}$`)
 )
 
 type Store struct {
 	pool                           *pgxpool.Pool
 	notificationEmailAvailable     bool
 	hostedLoreServerDefaultEnabled bool
+	maxOrganizationsPerUser        int
+	maxRepositoriesPerOrganization int
 	// Features every new organization is granted, for installations that
 	// operate their own Lore Server and runners.
 	defaultEntitlements []string
@@ -39,6 +43,8 @@ type StoreSettings struct {
 	NotificationEmailAvailable     bool
 	HostedLoreServerDefaultEnabled bool
 	DefaultEntitlements            []string
+	MaxOrganizationsPerUser        int
+	MaxRepositoriesPerOrganization int
 }
 
 func NewStore(pool *pgxpool.Pool) *Store {
@@ -63,6 +69,8 @@ func NewStoreWithSettings(pool *pgxpool.Pool, settings StoreSettings) *Store {
 		notificationEmailAvailable:     settings.NotificationEmailAvailable,
 		hostedLoreServerDefaultEnabled: settings.HostedLoreServerDefaultEnabled,
 		defaultEntitlements:            features,
+		maxOrganizationsPerUser:        settings.MaxOrganizationsPerUser,
+		maxRepositoriesPerOrganization: settings.MaxRepositoriesPerOrganization,
 	}
 }
 
@@ -224,6 +232,10 @@ func (store *Store) CreateOrganization(
 	}
 	defer func() { _ = transaction.Rollback(context.WithoutCancel(ctx)) }()
 
+	if err := store.enforceOrganizationLimit(ctx, transaction, actor.ID); err != nil {
+		return Organization{}, err
+	}
+
 	_, err = transaction.Exec(ctx, `
 		INSERT INTO organizations (
 			id, slug, display_name, description, visibility, created_by, created_at, updated_at
@@ -286,6 +298,9 @@ func (store *Store) RegisterRepository(
 	defer func() { _ = transaction.Rollback(context.WithoutCancel(ctx)) }()
 	organizationID, err := requireLoreServerOrganizationRole(ctx, transaction, actor.ID, organizationSlug, false)
 	if err != nil {
+		return Repository{}, err
+	}
+	if err := store.lockOrganizationAndEnforceRepositoryLimit(ctx, transaction, organizationID); err != nil {
 		return Repository{}, err
 	}
 	server, err := resolveServerForNewRepository(

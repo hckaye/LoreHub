@@ -222,12 +222,19 @@ type API struct {
 	hostedLoreServerDefault bool
 	globalWorkItems         GlobalWorkItemStore
 	deletionRetention       time.Duration
+	maxRepositorySizeBytes  int64
 	operations              *operationalState
 }
 
 func WithRepositoryDeletion(retention time.Duration) Option {
 	return func(api *API) {
 		api.deletionRetention = retention
+	}
+}
+
+func WithMaxRepositorySizeBytes(limit int64) Option {
+	return func(api *API) {
+		api.maxRepositorySizeBytes = limit
 	}
 }
 
@@ -834,6 +841,10 @@ func (api *API) platformError(writer http.ResponseWriter, request *http.Request,
 		writeProblem(writer, http.StatusForbidden, "forbidden", "This operation is not permitted")
 	case errors.Is(err, platform.ErrConflict):
 		writeProblem(writer, http.StatusConflict, "conflict", "The resource already exists")
+	case errors.Is(err, platform.ErrOrganizationLimit):
+		writeProblem(writer, http.StatusConflict, "organization_limit", err.Error())
+	case errors.Is(err, platform.ErrRepositoryLimit):
+		writeProblem(writer, http.StatusConflict, "repository_limit", err.Error())
 	case errors.Is(err, platform.ErrInvalidInput):
 		writeProblem(writer, http.StatusBadRequest, "invalid_input", "The request contains invalid values")
 	default:
