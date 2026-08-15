@@ -11,7 +11,7 @@ Docker Composeは通知メールをMailpitへ送信します。サービスを�
 メールを確認できます。
 
 ```bash
-scripts/setup-keycloak-secrets.sh
+scripts/setup-secrets.sh
 docker compose -f infra/compose.yaml up --build
 ```
 

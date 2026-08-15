@@ -20,7 +20,7 @@ Docker Composeは永続化すべきシークレットを安全に自動生成で
 生成された値はgit管理外の `.env` に書き込まれ、ログには一切出力されません。
 
 ```bash
-scripts/setup-keycloak-secrets.sh
+scripts/setup-secrets.sh
 docker compose -f infra/compose.yaml up --build
 ```
 
@@ -31,7 +31,7 @@ docker compose -f infra/compose.yaml up --build
 - LoreHubレルム: <http://keycloak.localhost:8280/realms/lorehub>
 - OIDC discovery: <http://keycloak.localhost:8280/realms/lorehub/.well-known/openid-configuration>
 
-`scripts/setup-keycloak-secrets.sh` は `POSTGRES_PASSWORD`、`KEYCLOAK_ADMIN_PASSWORD`、
+`scripts/setup-secrets.sh` は `POSTGRES_PASSWORD`、`KEYCLOAK_ADMIN_PASSWORD`、
 `KEYCLOAK_DB_PASSWORD`、`LOREHUB_OIDC_CLIENT_SECRET`、`LOREHUB_AUTH_SECRET`、
 `LOREHUB_ACTIONS_SECRET_KEY`、`LOREHUB_WEBHOOK_SECRET_KEY` を生成します。
 既存の空欄は埋めますが、既存の値は保持します。ローテーションするときだけ `--force` を使います。

@@ -12,7 +12,7 @@ Docker Compose sends notification email to Mailpit. Start the stack and open <ht
 captured messages.
 
 ```bash
-scripts/setup-keycloak-secrets.sh
+scripts/setup-secrets.sh
 docker compose -f infra/compose.yaml up --build
 ```
 

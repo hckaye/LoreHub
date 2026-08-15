@@ -9,7 +9,7 @@ path, matched route, status, and duration. Send container logs to the deployment
 ## Prometheus metrics
 
 The API exposes Prometheus text metrics at `GET /metrics`. The endpoint requires the bearer token in
-`LOREHUB_METRICS_TOKEN`. `scripts/setup-keycloak-secrets.sh` generates this value.
+`LOREHUB_METRICS_TOKEN`. `scripts/setup-secrets.sh` generates this value.
 
 ```bash
 set -a

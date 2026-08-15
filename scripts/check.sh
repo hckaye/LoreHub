@@ -4,7 +4,7 @@ set -eu
 npm run format:check
 npm run limits
 npm run keycloak:check
-npm run keycloak:test
+npm run secrets:test
 npm run backup:test
 npm run compose:test
 npm run lint

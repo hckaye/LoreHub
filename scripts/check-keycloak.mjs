@@ -57,16 +57,20 @@ expect(
 expect(!compose.includes("LOREHUB_LORE_AUTH_URL:-ucs-auth://"), "Lore AuthURL must not have a hardcoded default");
 expect(!compose.includes("LOREHUB_LORE_AUTH_JWKS_URL:-http://"), "Lore JWKS URL must not have a hardcoded default");
 expect(
-  /LOREHUB_OIDC_ISSUER: \$\{LOREHUB_OIDC_ISSUER:-http:\/\/keycloak\.localhost:8280\/realms\/lorehub\}/.test(compose),
-  "API must use the local Keycloak issuer",
+  /LOREHUB_OIDC_ISSUER: \$\{LOREHUB_OIDC_ISSUER:-\}/.test(compose),
+  "the API OIDC issuer must default to empty so built-in password sign-in is the default",
 );
 expect(
-  /LOREHUB_OIDC_AUDIENCE: \$\{LOREHUB_OIDC_AUDIENCE:-lorehub-api\}/.test(compose),
-  "API audience must be lorehub-api",
+  /LOREHUB_OIDC_AUDIENCE: \$\{LOREHUB_OIDC_AUDIENCE:-\}/.test(compose),
+  "the API OIDC audience must default to empty",
 );
 expect(
-  /LOREHUB_OIDC_CLIENT_ID: \$\{LOREHUB_OIDC_CLIENT_ID:-lorehub-web\}/.test(compose),
-  "API client ID must be lorehub-web",
+  /LOREHUB_AUTH_PASSWORD: \$\{LOREHUB_AUTH_PASSWORD:-\}/.test(compose),
+  "the API must accept the LOREHUB_AUTH_PASSWORD switch",
+);
+expect(
+  /LOREHUB_AUTH_PASSWORD_REGISTRATION: \$\{LOREHUB_AUTH_PASSWORD_REGISTRATION:-\}/.test(compose),
+  "the API must accept the LOREHUB_AUTH_PASSWORD_REGISTRATION switch",
 );
 expect(/LOREHUB_OIDC_REDIRECT_URL:/.test(compose), "API must receive the OIDC redirect URL");
 expect(/LOREHUB_PUBLIC_ORIGIN:/.test(compose), "API must receive the public origin");
@@ -76,7 +80,15 @@ expect(
   /keycloak\.localhost:host-gateway/.test(compose),
   "API must resolve the public Keycloak hostname through the host",
 );
-expect(/keycloak:\s*\n\s*condition: service_healthy/.test(compose), "API must wait for Keycloak health");
+const keycloakProfileCount = (compose.match(/^\s{4}profiles: \["keycloak"\]$/gm) ?? []).length;
+expect(
+  keycloakProfileCount === 3,
+  "keycloak, keycloak-postgres, and keycloak-bootstrap must sit behind the keycloak profile",
+);
+expect(
+  !/depends_on:[\s\S]{0,200}keycloak:/.test(compose.match(/\n  api:[\s\S]*?\n  web:/)?.[0] ?? ""),
+  "the API must not depend on the optional keycloak profile services",
+);
 expect(!compose.includes("LOREHUB_OIDC_PUBLIC_ORIGIN"), "the obsolete OIDC public-origin variable must be absent");
 expect(/--import-realm/.test(compose), "Keycloak must start with --import-realm");
 expect(/--http-enabled=true/.test(compose), "Keycloak must explicitly enable HTTP for local");
@@ -87,8 +99,8 @@ expect(/KC_DB_PASSWORD:/.test(compose), "Keycloak DB password must come from the
 expect(!/--db-password=/.test(compose), "Keycloak DB password must not be exposed in the process arguments");
 expect(/LOREHUB_OIDC_CLIENT_SECRET/.test(compose), "Keycloak must receive LOREHUB_OIDC_CLIENT_SECRET for realm import");
 expect(
-  /KEYCLOAK_DB_PASSWORD:\?KEYCLOAK_DB_PASSWORD is required/.test(compose),
-  "Keycloak DB password must be required",
+  /KEYCLOAK_DB_PASSWORD:-/.test(compose),
+  "the Keycloak DB password must interpolate without blocking the default stack",
 );
 expect(
   !/POSTGRES_DB: lorehub/.test(compose.match(/keycloak-postgres:[\s\S]*?(?=\n  [a-z]|\nvolumes:)/)?.[0] ?? ""),

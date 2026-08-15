@@ -11,7 +11,7 @@ take cues from GitHub and GitLab, while version control operations use Lore.
 Install Docker Engine or Docker Desktop with Docker Compose, then run:
 
 ```bash
-scripts/setup-keycloak-secrets.sh
+scripts/setup-secrets.sh
 docker compose -f infra/compose.yaml up --build
 ```
 

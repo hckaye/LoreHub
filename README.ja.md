@@ -11,7 +11,7 @@ pull request、review、release、GitHub Actions互換CIを一つのWebアプリ
 Docker EngineまたはDocker DesktopとDocker Composeをインストールし、次を実行します。
 
 ```bash
-scripts/setup-keycloak-secrets.sh
+scripts/setup-secrets.sh
 docker compose -f infra/compose.yaml up --build
 ```
 
