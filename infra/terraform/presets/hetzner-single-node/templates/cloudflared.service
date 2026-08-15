@@ -1,0 +1,13 @@
+[Unit]
+Description=Cloudflare Tunnel for LoreHub
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/cloudflared tunnel run --token-file /etc/cloudflared/lorehub.token
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
