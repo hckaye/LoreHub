@@ -20,11 +20,13 @@ state と `terraform.tfvars` を保護してください。
 
 ## ingress mode
 
-| mode              | 設定                                                         | 結果                                                                                                                                                                                 |
-| ----------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 直接公開          | `enable_public_ingress = true`、かつ tunnel token を空にする | firewall が TCP 80 と 443 を許可します。cloud-init が web と Keycloak 用の Nginx を設定します。                                                                                      |
-| Cloudflare Tunnel | `cloudflared_tunnel_token` に空でない token を設定する       | cloud-init が `cloudflared` と systemd service を設定します。Nginx は Tunnel 用に local HTTP で待ち受けます。`enable_public_ingress` が true でも firewall の 80 と 443 は閉じます。 |
-| SSH のみ          | 両方を無効にする                                             | firewall は SSH だけを許可します。server が公開する Compose port には SSH port forwarding を使います。                                                                               |
+- 直接公開: `enable_public_ingress = true` にして tunnel token を空にします。firewall が TCP 80 と 443 を
+  許可します。cloud-init が web と Keycloak 用の Nginx を設定します。
+- Cloudflare Tunnel: `cloudflared_tunnel_token` に空でない token を設定します。cloud-init が `cloudflared` と
+  systemd service を設定します。Nginx は Tunnel 用に local HTTP で待ち受けます。`enable_public_ingress` が
+  true でも firewall の 80 と 443 は閉じます。
+- SSH のみ: 両方を無効にします。firewall は SSH だけを許可します。server が公開する Compose port には
+  SSH port forwarding を使います。
 
 firewall は Compose が公開するその他の port を開けません。外部 Lore client が必要な場合は、必要な Lore client と
 policy の network access を別途設定してください。この preset は DNS record や Cloudflare Tunnel route を作成しません。

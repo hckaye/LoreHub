@@ -20,11 +20,13 @@ so protect the state and the `terraform.tfvars` file.
 
 ## Ingress modes
 
-| Mode                  | Configuration                                            | Result                                                                                                                                                                              |
-| --------------------- | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Direct public ingress | `enable_public_ingress = true` and an empty tunnel token | The firewall allows TCP 80 and 443. cloud-init installs Nginx for the web and Keycloak hostnames.                                                                                   |
-| Cloudflare Tunnel     | Set `cloudflared_tunnel_token` to a non-empty token      | cloud-init installs `cloudflared` and a systemd service. Nginx listens on local HTTP for the tunnel. The firewall keeps 80 and 443 closed, even if `enable_public_ingress` is true. |
-| SSH only              | Keep both settings disabled                              | The firewall allows SSH only. Use SSH port forwarding for the host-published Compose ports.                                                                                         |
+- Direct public ingress: set `enable_public_ingress = true` and keep the tunnel token empty. The firewall allows
+  TCP 80 and 443. cloud-init installs Nginx for the web and Keycloak hostnames.
+- Cloudflare Tunnel: set `cloudflared_tunnel_token` to a non-empty token. cloud-init installs `cloudflared` and a
+  systemd service. Nginx listens on local HTTP for the tunnel. The firewall keeps 80 and 443 closed, even if
+  `enable_public_ingress` is true.
+- SSH only: keep both settings disabled. The firewall allows SSH only. Use SSH port forwarding for the
+  host-published Compose ports.
 
 The firewall does not expose the other Compose-published ports. Configure the required Lore client and policy network
 access separately if the deployment needs external Lore clients. The preset does not create DNS records or a Cloudflare
@@ -69,7 +71,8 @@ stops the Compose stack during shutdown.
    names to `http://127.0.0.1:80` on the server. Terraform does not create or verify these records.
 
 2. Place the production TLS files in `tls_source_dir`. The commands below use the default
-   `/etc/lorehub/tls-source`; replace that path when `tls_source_dir` is different. The directory must contain non-empty `ca.crt`, `ca.key`,
+   `/etc/lorehub/tls-source`; replace that path when `tls_source_dir` is different. The directory must contain
+   non-empty `ca.crt`, `ca.key`,
    `server.crt`, `server.key`, `lore-client.crt`, and `lore-client.key`. The server certificate must cover the names in
    `LOREHUB_TLS_SERVER_NAMES`, which are derived from `root_domain` and `internal_domain` unless overridden. The
    local development files under `infra/.local-tls` are not production material. The default SAN list includes the
