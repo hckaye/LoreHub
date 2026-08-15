@@ -73,7 +73,8 @@ stops the Compose stack during shutdown.
    `server.crt`, `server.key`, `lore-client.crt`, and `lore-client.key`. The server certificate must cover the names in
    `LOREHUB_TLS_SERVER_NAMES`, which are derived from `root_domain` and `internal_domain` unless overridden. The
    local development files under `infra/.local-tls` are not production material. The default SAN list includes the
-   public origin host, the Lore root host, the Keycloak host, the Lore host, and the internal API host. Restart the LoreHub service after
+   public origin host, the Lore root host, the Keycloak host, the Lore host, and the internal API host.
+   Restart the LoreHub service after
    copying the files so `tls-init` can create the shared TLS volume. Direct mode also restarts Nginx.
 
    ```bash
