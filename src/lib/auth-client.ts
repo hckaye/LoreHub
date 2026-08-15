@@ -74,6 +74,39 @@ export async function postLogout(csrfToken: string): Promise<MutationResult<null
   }
 }
 
+export async function postPasswordLogin(input: {
+  identifier: string;
+  password: string;
+}): Promise<MutationResult<{ authenticated: boolean }>> {
+  return credentialMutation("/auth/password/login", input);
+}
+
+export async function postPasswordRegister(input: {
+  username: string;
+  email: string;
+  password: string;
+  locale: string;
+}): Promise<MutationResult<{ authenticated: boolean }>> {
+  return credentialMutation("/auth/password/register", input);
+}
+
+async function credentialMutation(path: string, input: unknown): Promise<MutationResult<{ authenticated: boolean }>> {
+  try {
+    const response = await fetch(path, {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(input),
+    });
+    return await readMutationResponse<{ authenticated: boolean }>(response);
+  } catch {
+    return { ok: false, kind: "unavailable", code: "network_error" };
+  }
+}
+
 export function classifyMutationStatus(status: number): MutationFailureKind {
   if (status === 401) {
     return "unauthorized";

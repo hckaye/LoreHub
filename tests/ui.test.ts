@@ -20,10 +20,11 @@ test("global shell exposes labelled navigation and search controls", async () =>
   assert.match(source, /aria-controls="primary-navigation"/);
 });
 
-test("auth UI only renders provider links from the configured provider response", async () => {
+test("auth UI renders the password form and provider links from the configured response", async () => {
   const source = await readText("src/components/auth/auth-page.tsx");
-  assert.match(source, /providers\.map/);
+  assert.match(source, /redirectProviders\.map/);
   assert.match(source, /providerLoginUrl/);
+  assert.match(source, /PasswordForm/);
   assert.match(source, /role="alert"/);
 });
 

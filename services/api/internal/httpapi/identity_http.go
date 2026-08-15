@@ -37,7 +37,10 @@ func (api *API) providers(writer http.ResponseWriter, _ *http.Request) {
 			providers = append(providers, providerResponse{ID: provider, Kind: "redirect"})
 		}
 	}
-	writeJSON(writer, http.StatusOK, map[string]any{"providers": providers})
+	writeJSON(writer, http.StatusOK, map[string]any{
+		"providers":            providers,
+		"passwordRegistration": api.passwordAuthenticationAvailable() && api.passwordRegistration,
+	})
 }
 
 func (api *API) dashboard(writer http.ResponseWriter, request *http.Request) {

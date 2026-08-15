@@ -27,7 +27,7 @@ export default async function LoginPage({ params, searchParams }: LoginPageProps
     <AuthPage
       dictionary={dictionary}
       locale={value}
-      providers={providerResult.ok ? providerResult.data : null}
+      directory={providerResult.ok ? providerResult.data : null}
       register={false}
       returnTo={safeReturnTo(returnTo)}
     />

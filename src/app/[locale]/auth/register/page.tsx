@@ -27,7 +27,7 @@ export default async function RegisterPage({ params, searchParams }: RegisterPag
     <AuthPage
       dictionary={dictionary}
       locale={value}
-      providers={providerResult.ok ? providerResult.data : null}
+      directory={providerResult.ok ? providerResult.data : null}
       register
       returnTo={safeReturnTo(returnTo)}
     />

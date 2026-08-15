@@ -101,6 +101,23 @@
   color: inherit;
 }
 
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 2px 0;
+  color: var(--fg-muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.divider::before,
+.divider::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--border);
+}
+
 .note {
   margin: 14px 0 0;
   color: var(--fg-muted);
