@@ -343,12 +343,13 @@ func TestPasswordRegistrationValidatesInputAndCreatesSession(t *testing.T) {
 	}
 	cookieNamed(t, response.Result().Cookies(), "lorehub_session")
 
+	duplicateBody := `{"username":"bob","email":"bob@example.com","password":"Sufficient-1Password"}`
 	passwordStore.createError = platform.ErrUsernameTaken
-	if response := register(`{"username":"bob","email":"bob@example.com","password":"Sufficient-1Password"}`); response.Code != http.StatusConflict {
+	if response := register(duplicateBody); response.Code != http.StatusConflict {
 		t.Fatalf("duplicate username returned %d", response.Code)
 	}
 	passwordStore.createError = platform.ErrEmailTaken
-	if response := register(`{"username":"bob","email":"bob@example.com","password":"Sufficient-1Password"}`); response.Code != http.StatusConflict {
+	if response := register(duplicateBody); response.Code != http.StatusConflict {
 		t.Fatalf("duplicate email returned %d", response.Code)
 	}
 }
