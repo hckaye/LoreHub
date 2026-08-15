@@ -127,6 +127,7 @@ vulnerabilities. [GitHub Actions](.github/workflows/ci.yml) runs the same checks
 - [File locks](docs/file-locks.md)
 - [Backup and recovery](docs/operations/backup-and-recovery.md)
 - [Metrics and rate limiting](docs/operations/observability.md)
+- [Resource limits](docs/resource-limits.md)
 - [Keycloak, social sign-in, and email](docs/operations/keycloak.md)
 - [Notification email](docs/operations/email-notifications.md)
 - [GitHub Actions compatibility and runner operations](docs/runner-actions.md)
