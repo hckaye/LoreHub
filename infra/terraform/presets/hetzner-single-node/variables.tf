@@ -49,8 +49,14 @@ variable "admin_cidrs" {
   }
 }
 
+variable "enable_lore_data_volume" {
+  description = "Attach a paid Hetzner Cloud volume for /var/lib/lorehub. Off by default."
+  type        = bool
+  default     = false
+}
+
 variable "volume_size_gb" {
-  description = "Size of the attached Lore data volume in GB."
+  description = "Size in GB of the optional Lore data volume. Used when enable_lore_data_volume is true."
   type        = number
   default     = 10
 

@@ -9,8 +9,8 @@ output "server_ipv6" {
 }
 
 output "volume_device_path" {
-  description = "Stable Linux device path of the attached Lore data volume."
-  value       = hcloud_volume.lore_data.linux_device
+  description = "Linux device path of the optional Lore data volume. Empty when the volume is disabled."
+  value       = coalesce(one(hcloud_volume.lore_data[*].linux_device), "")
 }
 
 output "ssh_command" {

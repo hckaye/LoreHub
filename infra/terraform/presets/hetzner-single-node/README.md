@@ -1,11 +1,22 @@
 # Hetzner single-node preset
 
-This preset creates one Ubuntu 24.04 Hetzner Cloud server, one 10 GB ext4 volume, one SSH key resource, and one
-firewall. The Compose stack places Postgres, Keycloak, LoreHub API, web, Lore Server, and the runner services on the
-same server. The Lore Server data volume is mounted from the attached volume at `/var/lib/lorehub`.
+This preset creates one Ubuntu 24.04 Hetzner Cloud server, one SSH key resource, and one firewall. The Compose stack
+places Postgres, Keycloak, LoreHub API, web, Lore Server, and the runner services on the same server.
 
-The preset is for a small public test deployment. It is not highly available. Postgres and the other named Compose
-volumes remain on the server's primary disk. The attached volume limits the Lore data area, but it is not a backup.
+Application data lives in Docker named volumes on the server's included disk. Lore Server files are bind-mounted from
+`/var/lib/lorehub/lore-data` on that disk. App redeploys keep those volumes. Replacing or destroying the server is the
+operation that deletes the data. The server resource ignores user-data and image changes, and it sets
+`prevent_destroy`, so a normal apply will not recreate the host.
+
+An extra Hetzner Cloud volume is off by default. Set `enable_lore_data_volume = true` only when a separate disk is
+needed. Extra volume storage is about €0.057 per GB per month, so the default 10 GB volume is about €0.57 per month.
+Treat those figures as approximate. When the volume is enabled, it is mounted at `/var/lib/lorehub` and the Compose
+bind for `lore-data` stays the same.
+
+The preset is for a small public test deployment. It is not highly available. The server disk is not a backup.
+
+If a previous apply already created a volume, set `enable_lore_data_volume = true` before the next apply so Terraform
+does not delete it.
 
 ## Requirements
 
@@ -41,7 +52,8 @@ Tunnel route.
    ```
 
 2. Set `ssh_public_key`, `admin_cidrs`, `root_domain`, `public_origin_url`, and the Keycloak SMTP values. Set
-   `instance_admin_usernames` if the initial account is known. Choose one ingress mode.
+   `instance_admin_usernames` if the initial account is known. Choose one ingress mode. Leave
+   `enable_lore_data_volume` false unless a paid extra volume is required.
 
 3. Export the Hetzner token and initialize Terraform.
 
@@ -58,11 +70,29 @@ Tunnel route.
    terraform apply
    ```
 
-5. Save the `server_ipv4`, `server_ipv6`, `volume_device_path`, `ssh_command`, and `url_summary` outputs.
+5. Save the `server_ipv4`, `server_ipv6`, `ssh_command`, and `url_summary` outputs. Save `volume_device_path` when
+   the extra volume is enabled.
 
-The server user-data waits for the attached volume, formats a new volume as ext4 when necessary, writes `/etc/fstab`,
-and refuses to start the stack unless `/var/lib/lorehub` is mounted. A systemd unit runs the Compose command on boot and
-stops the Compose stack during shutdown.
+When `enable_lore_data_volume` is true, user-data waits for the attached volume, formats a new volume as ext4 when
+necessary, writes `/etc/fstab`, and refuses to start the stack unless `/var/lib/lorehub` is mounted. When the extra
+volume is disabled, `/var/lib/lorehub/lore-data` is a directory on the server disk. A systemd unit runs the Compose
+command on boot and stops the Compose stack during shutdown.
+
+## Redeploy the application
+
+From this directory, after apply:
+
+```bash
+./redeploy.sh
+./redeploy.sh main
+```
+
+The helper reads the server IP from `terraform output` and runs `lorehub-redeploy [git-ref]` over SSH. On the server
+the script fetches `/opt/lorehub`, checks out the ref (default: the Git ref configured at first boot), reapplies the
+production env overrides, and restarts `lorehub.service`. That restart runs `docker compose up --detach --build`.
+Named volumes stay on the server disk.
+
+Use this for application updates. Do not replace the server to ship a new Git ref.
 
 ## Manual setup after apply
 
@@ -113,8 +143,8 @@ stops the Compose stack during shutdown.
 5. Create the first LoreHub account. If its username was not in `instance_admin_usernames` before apply, edit
    `LOREHUB_INSTANCE_ADMIN_USERNAMES` in `/opt/lorehub/.env` over SSH and restart `lorehub.service`.
 
-6. Set up backups by following `docs/operations/backup-and-recovery.md`. A Hetzner volume and the server's primary disk
-   do not replace database and object recovery copies.
+6. Set up backups by following `docs/operations/backup-and-recovery.md`. The server disk, and an extra Hetzner volume
+   if one is attached, do not replace database and object recovery copies.
 
 ## SSH-only access
 
@@ -134,6 +164,11 @@ direct ingress or Tunnel for normal browser access.
 
 ## Change the preset
 
-Change values in `terraform.tfvars` and run `terraform apply` again. Changes to cloud-init are applied automatically
-only when the server resource receives new user-data. For environment-only changes on an existing server, edit
-`/opt/lorehub/.env` and restart `lorehub.service`, or replace the server deliberately after preserving backups.
+Change values in `terraform.tfvars` and run `terraform apply` again. The server ignores `user_data` and `image`
+changes, because cloud-init runs only on first boot and replacing the server would destroy data. For application
+updates, run `./redeploy.sh`. For environment-only changes on an existing server, edit `/opt/lorehub/.env` and
+restart `lorehub.service`.
+
+`prevent_destroy` is hardcoded on the server resource. Terraform cannot set it from a variable. To destroy the
+server, set `prevent_destroy` to `false` in `infra/terraform/modules/hetzner-server/main.tf`, then run
+`terraform destroy`.

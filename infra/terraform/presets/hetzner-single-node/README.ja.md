@@ -1,11 +1,21 @@
 # Hetzner single-node preset
 
-この preset は、Ubuntu 24.04 の Hetzner Cloud server 1 台、ext4 の 10 GB volume 1 台、SSH key resource 1 個、
-firewall 1 個を作成します。Postgres、Keycloak、LoreHub API、web、Lore Server、runner は同じ server 上の Compose
-stack で動作します。Lore Server のデータは接続した volume を `/var/lib/lorehub` に mount します。
+この preset は、Ubuntu 24.04 の Hetzner Cloud server 1 台、SSH key resource 1 個、firewall 1 個を作成します。
+Postgres、Keycloak、LoreHub API、web、Lore Server、runner は同じ server 上の Compose stack で動作します。
 
-小規模な公開テスト用の構成です。高可用構成ではありません。Postgres とその他の Compose named volume は server
-の primary disk に残ります。接続 volume は Lore data の容量を制限しますが、backup にはなりません。
+アプリケーションデータは、server 付属 disk 上の Docker named volume に置きます。Lore Server の file は、同じ disk
+の `/var/lib/lorehub/lore-data` から bind-mount します。アプリの redeploy ではこれらの volume は残ります。データを
+消す操作は、server の置き換えまたは destroy だけです。server resource は user-data と image の変更を無視し、
+`prevent_destroy` を設定するため、通常の apply では host を作り直しません。
+
+追加の Hetzner Cloud volume は default でオフです。別 disk が必要なときだけ `enable_lore_data_volume = true` に
+します。追加 volume はおおよそ €0.057 / GB / 月で、default の 10 GB ならおおよそ €0.57 / 月です。この金額は目安
+です。volume を有効にすると `/var/lib/lorehub` に mount し、`lore-data` の Compose bind は変わりません。
+
+小規模な公開テスト用の構成です。高可用構成ではありません。server disk は backup ではありません。
+
+以前の apply で volume を作成済みの場合は、次の apply の前に `enable_lore_data_volume = true` を設定し、Terraform が
+volume を削除しないようにしてください。
 
 ## 必要なもの
 
@@ -40,7 +50,8 @@ policy の network access を別途設定してください。この preset は 
    ```
 
 2. `ssh_public_key`、`admin_cidrs`、`root_domain`、`public_origin_url`、Keycloak SMTP の値を設定します。最初の
-   account が決まっている場合は `instance_admin_usernames` に設定します。ingress mode を 1 つ選びます。
+   account が決まっている場合は `instance_admin_usernames` に設定します。ingress mode を 1 つ選びます。有料の追加
+   volume が不要なら `enable_lore_data_volume` は false のままにします。
 
 3. Hetzner token を export して Terraform を初期化します。
 
@@ -57,11 +68,29 @@ policy の network access を別途設定してください。この preset は 
    terraform apply
    ```
 
-5. `server_ipv4`、`server_ipv6`、`volume_device_path`、`ssh_command`、`url_summary` の output を保存します。
+5. `server_ipv4`、`server_ipv6`、`ssh_command`、`url_summary` の output を保存します。追加 volume を有効にした場合は
+   `volume_device_path` も保存します。
 
-server の user-data は接続した volume が現れるまで待ち、新しい volume なら ext4 に format し、`/etc/fstab` に
-書き込みます。`/var/lib/lorehub` が mount されていない場合は stack を起動しません。systemd unit が boot 時に Compose
-command を実行し、shutdown 時に Compose stack を停止します。
+`enable_lore_data_volume` が true のとき、user-data は接続した volume が現れるまで待ち、新しい volume なら ext4 に
+format し、`/etc/fstab` に書き込みます。`/var/lib/lorehub` が mount されていない場合は stack を起動しません。追加
+volume が無効のとき、`/var/lib/lorehub/lore-data` は server disk 上の directory です。systemd unit が boot 時に
+Compose command を実行し、shutdown 時に Compose stack を停止します。
+
+## アプリケーションの redeploy
+
+apply 後、この directory で次を実行します。
+
+```bash
+./redeploy.sh
+./redeploy.sh main
+```
+
+helper は `terraform output` から server IP を読み、SSH で `lorehub-redeploy [git-ref]` を実行します。server 上の
+script は `/opt/lorehub` を fetch し、指定した ref を checkout します（省略時は first boot 時に設定した Git ref）。
+production の env override を再適用し、`lorehub.service` を restart します。restart は
+`docker compose up --detach --build` を実行します。named volume は server disk に残ります。
+
+アプリケーションの更新にはこれを使います。新しい Git ref を入れるために server を置き換えないでください。
 
 ## apply 後に行う作業
 
@@ -110,8 +139,8 @@ command を実行し、shutdown 時に Compose stack を停止します。
 5. 最初の LoreHub account を作成します。apply 前に username を `instance_admin_usernames` に入れていなかった場合は、
    SSH で `/opt/lorehub/.env` の `LOREHUB_INSTANCE_ADMIN_USERNAMES` を編集し、`lorehub.service` を restart します。
 
-6. `docs/operations/backup-and-recovery.md` に従って backup を設定します。Hetzner volume と server の primary disk
-   だけでは database と object の recovery copy になりません。
+6. `docs/operations/backup-and-recovery.md` に従って backup を設定します。server disk と、接続している場合の
+   Hetzner volume だけでは、database と object の recovery copy になりません。
 
 ## SSH のみで接続する場合
 
@@ -131,6 +160,11 @@ production URL は、完全な production authentication flow のために、引
 
 ## preset の変更
 
-`terraform.tfvars` を変更して、もう一度 `terraform apply` を実行します。cloud-init の変更は、server resource に新しい
-user-data が渡された場合だけ自動で適用されます。既存 server の環境変数だけを変更する場合は、`/opt/lorehub/.env` を
-編集して `lorehub.service` を restart するか、backup を保持して server を意図的に置き換えます。
+`terraform.tfvars` を変更して、もう一度 `terraform apply` を実行します。server は `user_data` と `image` の変更を
+無視します。cloud-init は first boot だけで動き、server を置き換えるとデータが消えるためです。アプリケーションの
+更新は `./redeploy.sh` を使います。既存 server の環境変数だけを変更する場合は、`/opt/lorehub/.env` を編集して
+`lorehub.service` を restart します。
+
+`prevent_destroy` は server resource にハードコードしています。Terraform では変数から設定できません。server を
+destroy するには、`infra/terraform/modules/hetzner-server/main.tf` で `prevent_destroy` を `false` にしてから
+`terraform destroy` を実行します。
