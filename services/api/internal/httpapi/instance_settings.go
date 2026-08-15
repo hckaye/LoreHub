@@ -148,13 +148,14 @@ func (api *API) readInstanceSettings(
 		hostedEnabled = *hostedOverride
 	}
 	return instanceSettingsResponse{
-		HostedLoreServerEnabled:                hostedEnabled,
-		HostedLoreServerOverride:               hostedOverride,
-		HostedLoreServerDefault:                api.hostedLoreServerDefault,
-		MaxOrganizationsPerUser:                effectiveInt64(organizationsOverride, api.maxOrganizationsPerUserDefault),
-		MaxOrganizationsPerUserOverride:        organizationsOverride,
-		MaxOrganizationsPerUserDefault:         api.maxOrganizationsPerUserDefault,
-		MaxRepositoriesPerOrganization:         effectiveInt64(repositoriesOverride, api.maxRepositoriesPerOrganizationDefault),
+		HostedLoreServerEnabled:         hostedEnabled,
+		HostedLoreServerOverride:        hostedOverride,
+		HostedLoreServerDefault:         api.hostedLoreServerDefault,
+		MaxOrganizationsPerUser:         effectiveInt64(organizationsOverride, api.maxOrganizationsPerUserDefault),
+		MaxOrganizationsPerUserOverride: organizationsOverride,
+		MaxOrganizationsPerUserDefault:  api.maxOrganizationsPerUserDefault,
+		MaxRepositoriesPerOrganization: effectiveInt64(
+			repositoriesOverride, api.maxRepositoriesPerOrganizationDefault),
 		MaxRepositoriesPerOrganizationOverride: repositoriesOverride,
 		MaxRepositoriesPerOrganizationDefault:  api.maxRepositoriesPerOrganizationDefault,
 		MaxRepositorySizeBytes:                 effectiveInt64(sizeOverride, api.maxRepositorySizeBytes),
