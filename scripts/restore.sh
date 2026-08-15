@@ -12,7 +12,7 @@ restore_environment=false
 start_services=false
 runner_profile=false
 postgres_image=postgres:18.4-alpine
-volume_names="lore-data api-data auth-signing auth-tls auth-ca-state runner-data keycloak-data"
+supported_volume_names="lore-data api-data auth-signing auth-tls auth-ca-state runner-data keycloak-data"
 
 usage() {
   cat >&2 <<'EOF'
@@ -92,9 +92,22 @@ manifest_value() {
 
 [ "$(manifest_value format_version)" = 1 ] || fail "unsupported backup format"
 [ "$(manifest_value status)" = complete ] || fail "backup is incomplete"
-[ "$(manifest_value volumes)" = "$volume_names" ] || fail "backup volume list is not supported"
+volume_names=$(manifest_value volumes)
+[ -n "$volume_names" ] || fail "backup volume list is missing"
+keycloak_included=false
+for volume_name in $volume_names; do
+  case " $supported_volume_names " in
+    *" $volume_name "*) ;;
+    *) fail "backup volume list is not supported: $volume_name" ;;
+  esac
+  [ "$volume_name" = keycloak-data ] && keycloak_included=true
+done
 
-for required_file in lorehub.pgdump keycloak.pgdump environment.env; do
+required_files="lorehub.pgdump environment.env"
+if [ "$keycloak_included" = true ]; then
+  required_files="$required_files keycloak.pgdump"
+fi
+for required_file in $required_files; do
   [ -f "$backup_path/$required_file" ] || fail "backup file not found: $required_file"
 done
 for volume_name in $volume_names; do
@@ -122,7 +135,7 @@ compose() {
 }
 
 compose config -q
-compose --profile runner down --remove-orphans
+compose --profile runner --profile keycloak down --remove-orphans
 docker image inspect "$postgres_image" >/dev/null 2>&1 || docker pull "$postgres_image"
 
 for volume_name in $volume_names; do
@@ -138,31 +151,42 @@ for volume_name in $volume_names; do
     sh "$volume_name"
 done
 
-compose up --detach --wait postgres keycloak-postgres
+if [ "$keycloak_included" = true ]; then
+  compose --profile keycloak up --detach --wait postgres keycloak-postgres
+else
+  compose up --detach --wait postgres
+fi
 # POSTGRES_USER and POSTGRES_DB expand inside each database container.
 # shellcheck disable=SC2016
 compose exec -T postgres sh -c \
   'dropdb --if-exists --force -U "$POSTGRES_USER" "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" "$POSTGRES_DB"'
 # shellcheck disable=SC2016
-compose exec -T keycloak-postgres sh -c \
-  'dropdb --if-exists --force -U "$POSTGRES_USER" "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" "$POSTGRES_DB"'
-# shellcheck disable=SC2016
 compose exec -T postgres sh -c \
   'exec pg_restore --no-owner --no-acl --exit-on-error -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
   <"$backup_path/lorehub.pgdump"
-# shellcheck disable=SC2016
-compose exec -T keycloak-postgres sh -c \
-  'exec pg_restore --no-owner --no-acl --exit-on-error -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
-  <"$backup_path/keycloak.pgdump"
+if [ "$keycloak_included" = true ]; then
+  # shellcheck disable=SC2016
+  compose exec -T keycloak-postgres sh -c \
+    'dropdb --if-exists --force -U "$POSTGRES_USER" "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" "$POSTGRES_DB"'
+  # shellcheck disable=SC2016
+  compose exec -T keycloak-postgres sh -c \
+    'exec pg_restore --no-owner --no-acl --exit-on-error -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
+    <"$backup_path/keycloak.pgdump"
+fi
 
+profile_arguments=""
+if [ "$runner_profile" = true ]; then
+  profile_arguments="$profile_arguments --profile runner"
+fi
+if [ "$keycloak_included" = true ]; then
+  profile_arguments="$profile_arguments --profile keycloak"
+fi
 if [ "$start_services" = true ]; then
-  if [ "$runner_profile" = true ]; then
-    compose --profile runner up --detach --wait
-  else
-    compose up --detach --wait
-  fi
+  # profile_arguments contains only fixed flag words assembled above.
+  # shellcheck disable=SC2086
+  compose $profile_arguments up --detach --wait
   echo "Restore completed and services started for project: $project_name"
 else
   echo "Restore completed for project: $project_name"
-  echo "Only postgres and keycloak-postgres are running. Validate the restored data before starting the other services."
+  echo "Only the restored database services are running. Validate the data before starting the other services."
 fi
