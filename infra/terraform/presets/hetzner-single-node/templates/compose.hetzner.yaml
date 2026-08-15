@@ -1,0 +1,12 @@
+services:
+  lore:
+    volumes:
+      - lore-data:/data
+
+volumes:
+  lore-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/lib/lorehub/lore-data
