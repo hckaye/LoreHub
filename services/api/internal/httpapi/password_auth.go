@@ -6,6 +6,7 @@ import (
 	"mime"
 	"net/http"
 	"net/mail"
+	"net/url"
 	"strings"
 	"time"
 
@@ -22,12 +23,26 @@ type PasswordAuthStore interface {
 	ClearPasswordFailures(ctx context.Context, userID string) error
 	SetPassword(ctx context.Context, userID string, passwordHash string) error
 	RevokeOtherSessions(ctx context.Context, userID string, keepTokenDigest []byte, now time.Time) error
+	CreatePasswordReset(ctx context.Context, userID string, tokenDigest []byte, expiresAt time.Time) error
+	PasswordResetUser(ctx context.Context, tokenDigest []byte, now time.Time) (string, error)
+	ConsumePasswordReset(ctx context.Context, tokenDigest []byte, now time.Time) (string, error)
+}
+
+// PasswordResetSender delivers the password reset email for built-in accounts.
+type PasswordResetSender interface {
+	SendPasswordReset(ctx context.Context, recipient string, locale string, resetURL string) error
 }
 
 func WithPasswordAuthentication(store PasswordAuthStore, registration bool) Option {
 	return func(api *API) {
 		api.passwordAuth = store
 		api.passwordRegistration = registration
+	}
+}
+
+func WithPasswordReset(sender PasswordResetSender) Option {
+	return func(api *API) {
+		api.passwordResetSender = sender
 	}
 }
 
@@ -258,6 +273,151 @@ func (api *API) changePassword(writer http.ResponseWriter, request *http.Request
 	}
 	writer.Header().Set("Cache-Control", "no-store")
 	writeJSON(writer, http.StatusOK, map[string]bool{"updated": true})
+}
+
+const passwordResetTTL = time.Hour
+
+func (api *API) passwordResetAvailable() bool {
+	return api.passwordAuthenticationAvailable() && api.passwordResetSender != nil
+}
+
+func (api *API) passwordResetRequest(writer http.ResponseWriter, request *http.Request) {
+	if !api.passwordResetAvailable() {
+		writeProblem(writer, http.StatusServiceUnavailable, "reset_unavailable",
+			"Password reset email is not configured on this installation")
+		return
+	}
+	if !api.allowJSONCredentialRequest(writer, request) {
+		return
+	}
+	var input struct {
+		Email string `json:"email"`
+	}
+	if !decodeJSON(writer, request, &input) {
+		return
+	}
+	email := strings.ToLower(strings.TrimSpace(input.Email))
+	writer.Header().Set("Cache-Control", "no-store")
+	if !validRegistrationEmail(email) {
+		writeJSON(writer, http.StatusOK, map[string]bool{"requested": true})
+		return
+	}
+	now := time.Now().UTC()
+	api.cleanupAuthentication(request.Context(), now)
+	credential, err := api.passwordAuth.PasswordCredential(request.Context(), email)
+	if errors.Is(err, platform.ErrNotFound) || err == nil && credential.Email != email {
+		writeJSON(writer, http.StatusOK, map[string]bool{"requested": true})
+		return
+	}
+	if err != nil {
+		api.internalError(writer, request, "look up password credential", err)
+		return
+	}
+	user, err := api.store.ActiveUser(request.Context(), credential.UserID)
+	if err != nil {
+		writeJSON(writer, http.StatusOK, map[string]bool{"requested": true})
+		return
+	}
+	token, err := api.secrets.NewSessionToken()
+	if err != nil {
+		api.internalError(writer, request, "generate password reset token", err)
+		return
+	}
+	if err := api.passwordAuth.CreatePasswordReset(
+		request.Context(), user.ID, api.secrets.Digest(token), now.Add(passwordResetTTL),
+	); err != nil {
+		api.internalError(writer, request, "create password reset", err)
+		return
+	}
+	locale := user.Locale
+	if locale != "ja" {
+		locale = "en"
+	}
+	resetURL := api.publicOrigin + "/" + locale + "/auth/reset?token=" + url.QueryEscape(token)
+	sender := api.passwordResetSender
+	logger := api.logger
+	go func() {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(request.Context()), 30*time.Second)
+		defer cancel()
+		if err := sender.SendPasswordReset(ctx, credential.Email, locale, resetURL); err != nil {
+			logger.Error("send password reset email", "error", err)
+		}
+	}()
+	writeJSON(writer, http.StatusOK, map[string]bool{"requested": true})
+}
+
+func (api *API) passwordReset(writer http.ResponseWriter, request *http.Request) {
+	if !api.passwordAuthenticationAvailable() {
+		writeProblem(writer, http.StatusServiceUnavailable, "authentication_unavailable",
+			"Password authentication is not configured")
+		return
+	}
+	if !api.allowJSONCredentialRequest(writer, request) {
+		return
+	}
+	var input struct {
+		Token       string `json:"token"`
+		NewPassword string `json:"newPassword"`
+	}
+	if !decodeJSON(writer, request, &input) {
+		return
+	}
+	token := strings.TrimSpace(input.Token)
+	if token == "" || len(token) > 512 {
+		writeProblem(writer, http.StatusBadRequest, "invalid_reset_token",
+			"The password reset link is invalid or has expired")
+		return
+	}
+	now := time.Now().UTC()
+	tokenDigest := api.secrets.Digest(token)
+	userID, err := api.passwordAuth.PasswordResetUser(request.Context(), tokenDigest, now)
+	if errors.Is(err, platform.ErrNotFound) {
+		writeProblem(writer, http.StatusBadRequest, "invalid_reset_token",
+			"The password reset link is invalid or has expired")
+		return
+	}
+	if err != nil {
+		api.internalError(writer, request, "look up password reset", err)
+		return
+	}
+	user, err := api.store.ActiveUser(request.Context(), userID)
+	if err != nil {
+		writeProblem(writer, http.StatusBadRequest, "invalid_reset_token",
+			"The password reset link is invalid or has expired")
+		return
+	}
+	credential, err := api.passwordAuth.PasswordCredentialForUser(request.Context(), userID)
+	if err != nil {
+		writeProblem(writer, http.StatusBadRequest, "invalid_reset_token",
+			"The password reset link is invalid or has expired")
+		return
+	}
+	if err := auth.ValidatePassword(input.NewPassword, user.Username, credential.Email); err != nil {
+		writeProblem(writer, http.StatusBadRequest, "weak_password",
+			"Passwords need at least 12 characters with uppercase and lowercase letters, a number, and a symbol, "+
+				"and cannot contain the username or email address")
+		return
+	}
+	if _, err := api.passwordAuth.ConsumePasswordReset(request.Context(), tokenDigest, now); err != nil {
+		writeProblem(writer, http.StatusBadRequest, "invalid_reset_token",
+			"The password reset link is invalid or has expired")
+		return
+	}
+	passwordHash, err := auth.HashPassword(input.NewPassword)
+	if err != nil {
+		api.internalError(writer, request, "hash password", err)
+		return
+	}
+	if err := api.passwordAuth.SetPassword(request.Context(), userID, passwordHash); err != nil {
+		api.internalError(writer, request, "update password", err)
+		return
+	}
+	if err := api.passwordAuth.RevokeOtherSessions(request.Context(), userID, nil, now); err != nil {
+		api.internalError(writer, request, "revoke sessions after reset", err)
+		return
+	}
+	writer.Header().Set("Cache-Control", "no-store")
+	writeJSON(writer, http.StatusOK, map[string]bool{"reset": true})
 }
 
 // completePasswordAuthentication rotates any existing session and issues a new

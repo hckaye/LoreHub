@@ -58,6 +58,8 @@ func (api *API) registerCoreRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /auth/logout", api.logout)
 	mux.HandleFunc("POST /auth/password/login", api.passwordLogin)
 	mux.HandleFunc("POST /auth/password/register", api.passwordRegister)
+	mux.HandleFunc("POST /auth/password/reset-request", api.passwordResetRequest)
+	mux.HandleFunc("POST /auth/password/reset", api.passwordReset)
 	mux.HandleFunc("PUT /api/v1/auth/password", api.changePassword)
 	mux.HandleFunc("GET /api/v1/auth/session", api.session)
 	mux.HandleFunc("GET /api/v1/auth/providers", api.providers)

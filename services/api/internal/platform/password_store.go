@@ -187,6 +187,80 @@ func (store *Store) SetPassword(ctx context.Context, userID string, passwordHash
 	return nil
 }
 
+func (store *Store) CreatePasswordReset(
+	ctx context.Context,
+	userID string,
+	tokenDigest []byte,
+	expiresAt time.Time,
+) error {
+	transaction, err := store.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin password reset: %w", err)
+	}
+	defer func() { _ = transaction.Rollback(context.WithoutCancel(ctx)) }()
+
+	if _, err := transaction.Exec(ctx, `
+		DELETE FROM password_resets
+		WHERE user_id = $1 AND used_at IS NULL
+	`, userID); err != nil {
+		return fmt.Errorf("replace password resets: %w", err)
+	}
+	if _, err := transaction.Exec(ctx, `
+		INSERT INTO password_resets (id, user_id, token_digest, expires_at)
+		VALUES ($1, $2, $3, $4)
+	`, uuid.New(), userID, tokenDigest, expiresAt); err != nil {
+		return fmt.Errorf("create password reset: %w", err)
+	}
+	if err := transaction.Commit(ctx); err != nil {
+		return fmt.Errorf("commit password reset: %w", err)
+	}
+	return nil
+}
+
+func (store *Store) PasswordResetUser(
+	ctx context.Context,
+	tokenDigest []byte,
+	now time.Time,
+) (string, error) {
+	var userID string
+	err := store.pool.QueryRow(ctx, `
+		SELECT r.user_id
+		FROM password_resets r
+		JOIN users u ON u.id = r.user_id
+		WHERE r.token_digest = $1 AND r.used_at IS NULL AND r.expires_at > $2 AND u.status = 'active'
+	`, tokenDigest, now).Scan(&userID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("find password reset: %w", err)
+	}
+	return userID, nil
+}
+
+func (store *Store) ConsumePasswordReset(
+	ctx context.Context,
+	tokenDigest []byte,
+	now time.Time,
+) (string, error) {
+	var userID string
+	err := store.pool.QueryRow(ctx, `
+		UPDATE password_resets r
+		SET used_at = $2
+		FROM users u
+		WHERE r.token_digest = $1 AND r.used_at IS NULL AND r.expires_at > $2
+			AND u.id = r.user_id AND u.status = 'active'
+		RETURNING r.user_id
+	`, tokenDigest, now).Scan(&userID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("consume password reset: %w", err)
+	}
+	return userID, nil
+}
+
 func (store *Store) RevokeOtherSessions(
 	ctx context.Context,
 	userID string,

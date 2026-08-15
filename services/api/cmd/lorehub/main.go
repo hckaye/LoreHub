@@ -266,6 +266,7 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	var notificationEmailWorker *notificationemail.Worker
+	var passwordResetSender httpapi.PasswordResetSender
 	if settings.NotificationEmailEnabled {
 		sender, err := notificationemail.NewSMTPSender(notificationemail.SMTPConfig{
 			Host:        settings.SMTPHost,
@@ -294,6 +295,13 @@ func run(logger *slog.Logger) error {
 		)
 		if err != nil {
 			return err
+		}
+		if settings.PasswordAuthEnabled {
+			mailer, err := notificationemail.NewPasswordResetMailer(sender)
+			if err != nil {
+				return err
+			}
+			passwordResetSender = mailer
 		}
 	}
 	collaborationStore := collab.NewStore(pool)
@@ -350,6 +358,7 @@ func run(logger *slog.Logger) error {
 		httpapi.WithConfiguredLoginProviders(settings.IdentityProviders),
 		httpapi.WithPasswordAuthentication(passwordAuthStore(store, settings),
 			settings.PasswordRegistrationEnabled),
+		httpapi.WithPasswordReset(passwordResetSender),
 		httpapi.WithCollaboration(collaborationStore),
 		httpapi.WithReviewThreads(reviewthreads.NewStore(pool)),
 		httpapi.WithBranchObservations(store),

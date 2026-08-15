@@ -40,6 +40,7 @@ func (api *API) providers(writer http.ResponseWriter, _ *http.Request) {
 	writeJSON(writer, http.StatusOK, map[string]any{
 		"providers":            providers,
 		"passwordRegistration": api.passwordAuthenticationAvailable() && api.passwordRegistration,
+		"passwordReset":        api.passwordResetAvailable(),
 	})
 }
 

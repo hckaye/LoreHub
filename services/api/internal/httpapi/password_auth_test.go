@@ -1,12 +1,14 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -24,6 +26,10 @@ type fakePasswordStore struct {
 	createError     error
 	setPasswordHash string
 	revokedOthers   int
+	resetUserID     string
+	resetDigest     []byte
+	resetExpiresAt  time.Time
+	resetConsumed   bool
 }
 
 func (store *fakePasswordStore) CreatePasswordUser(
@@ -92,6 +98,43 @@ func (store *fakePasswordStore) RevokeOtherSessions(
 	return nil
 }
 
+func (store *fakePasswordStore) CreatePasswordReset(
+	_ context.Context,
+	userID string,
+	tokenDigest []byte,
+	expiresAt time.Time,
+) error {
+	store.resetUserID = userID
+	store.resetDigest = append([]byte(nil), tokenDigest...)
+	store.resetExpiresAt = expiresAt
+	return nil
+}
+
+func (store *fakePasswordStore) PasswordResetUser(
+	_ context.Context,
+	tokenDigest []byte,
+	now time.Time,
+) (string, error) {
+	if store.resetDigest == nil || store.resetConsumed || now.After(store.resetExpiresAt) ||
+		!bytes.Equal(tokenDigest, store.resetDigest) {
+		return "", platform.ErrNotFound
+	}
+	return store.resetUserID, nil
+}
+
+func (store *fakePasswordStore) ConsumePasswordReset(
+	ctx context.Context,
+	tokenDigest []byte,
+	now time.Time,
+) (string, error) {
+	userID, err := store.PasswordResetUser(ctx, tokenDigest, now)
+	if err != nil {
+		return "", err
+	}
+	store.resetConsumed = true
+	return userID, nil
+}
+
 func newPasswordTestHandler(
 	passwordStore *fakePasswordStore,
 	authenticationStore *fakeAuthenticationStore,
@@ -126,6 +169,26 @@ func newPasswordTestHandler(
 		}),
 		WithPasswordAuthentication(passwordStore, registration),
 	)
+}
+
+type fakeResetSender struct {
+	recipient string
+	locale    string
+	resetURL  string
+	sent      chan struct{}
+}
+
+func (sender *fakeResetSender) SendPasswordReset(
+	_ context.Context,
+	recipient string,
+	locale string,
+	resetURL string,
+) error {
+	sender.recipient = recipient
+	sender.locale = locale
+	sender.resetURL = resetURL
+	close(sender.sent)
+	return nil
 }
 
 func jsonRequest(method string, path string, body string) *http.Request {
@@ -356,6 +419,112 @@ func TestChangePasswordRequiresSessionCSRFAndCurrentPassword(t *testing.T) {
 	}
 	if passwordStore.setPasswordHash == "" || passwordStore.revokedOthers != 1 {
 		t.Fatalf("password change did not persist and revoke other sessions: %#v", passwordStore)
+	}
+}
+
+func TestPasswordResetFlowUpdatesPasswordOnce(t *testing.T) {
+	codec, _ := auth.NewSecretCodec("test authentication secret")
+	passwordHash, _ := auth.HashPassword("Sufficient-1Password")
+	passwordStore := &fakePasswordStore{
+		credential: platform.PasswordCredential{
+			UserID:       "user-1",
+			Email:        "alice@example.com",
+			PasswordHash: passwordHash,
+		},
+		hasCredential: true,
+	}
+	resetSender := &fakeResetSender{sent: make(chan struct{})}
+	handler := New(
+		fakeStore{user: platform.User{
+			ID: "user-1", Username: "alice", DisplayName: "Alice", Email: "alice@example.com", Locale: "en",
+		}},
+		fakeLore{},
+		auth.DisabledAuthenticator{},
+		healthy{},
+		"",
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		WithAuthentication(AuthOptions{
+			LoginStore:   &fakeAuthenticationStore{},
+			SessionStore: &fakeAuthenticationStore{},
+			CleanupStore: &fakeAuthenticationStore{},
+			Secrets:      codec,
+			PublicOrigin: "https://app.example",
+			SessionTTL:   time.Hour,
+			SessionCookie: SessionCookieOptions{
+				Name: "lorehub_session", Path: "/", Secure: true,
+			},
+		}),
+		WithPasswordAuthentication(passwordStore, true),
+		WithPasswordReset(resetSender),
+	)
+
+	unknownResponse := httptest.NewRecorder()
+	handler.ServeHTTP(unknownResponse, jsonRequest(http.MethodPost, "/auth/password/reset-request",
+		`{"email":"missing@example.com"}`))
+	if unknownResponse.Code != http.StatusOK {
+		t.Fatalf("unknown email reset request returned %d", unknownResponse.Code)
+	}
+	if passwordStore.resetDigest != nil {
+		t.Fatal("unknown email created a reset token")
+	}
+
+	requestResponse := httptest.NewRecorder()
+	handler.ServeHTTP(requestResponse, jsonRequest(http.MethodPost, "/auth/password/reset-request",
+		`{"email":"ALICE@example.com"}`))
+	if requestResponse.Code != http.StatusOK {
+		t.Fatalf("reset request returned %d: %s", requestResponse.Code, requestResponse.Body)
+	}
+	select {
+	case <-resetSender.sent:
+	case <-time.After(2 * time.Second):
+		t.Fatal("reset email was not sent")
+	}
+	if resetSender.recipient != "alice@example.com" || resetSender.locale != "en" {
+		t.Fatalf("unexpected reset email target: %#v", resetSender)
+	}
+	resetURL, err := url.Parse(resetSender.resetURL)
+	if err != nil || resetURL.Host != "app.example" || resetURL.Path != "/en/auth/reset" {
+		t.Fatalf("unexpected reset URL: %q", resetSender.resetURL)
+	}
+	token := resetURL.Query().Get("token")
+	if token == "" || bytes.Equal(passwordStore.resetDigest, []byte(token)) {
+		t.Fatal("reset token missing or stored without a digest")
+	}
+
+	weakResponse := httptest.NewRecorder()
+	handler.ServeHTTP(weakResponse, jsonRequest(http.MethodPost, "/auth/password/reset",
+		`{"token":"`+token+`","newPassword":"weak"}`))
+	if weakResponse.Code != http.StatusBadRequest || passwordStore.resetConsumed {
+		t.Fatalf("weak password consumed the reset token: status=%d consumed=%t", weakResponse.Code,
+			passwordStore.resetConsumed)
+	}
+
+	resetResponse := httptest.NewRecorder()
+	handler.ServeHTTP(resetResponse, jsonRequest(http.MethodPost, "/auth/password/reset",
+		`{"token":"`+token+`","newPassword":"Another-2Password!"}`))
+	if resetResponse.Code != http.StatusOK {
+		t.Fatalf("reset returned %d: %s", resetResponse.Code, resetResponse.Body)
+	}
+	if passwordStore.setPasswordHash == "" || passwordStore.revokedOthers != 1 {
+		t.Fatalf("reset did not persist and revoke sessions: %#v", passwordStore)
+	}
+
+	replayResponse := httptest.NewRecorder()
+	handler.ServeHTTP(replayResponse, jsonRequest(http.MethodPost, "/auth/password/reset",
+		`{"token":"`+token+`","newPassword":"Another-3Password!"}`))
+	if replayResponse.Code != http.StatusBadRequest {
+		t.Fatalf("replayed reset token returned %d", replayResponse.Code)
+	}
+}
+
+func TestPasswordResetRequestRequiresConfiguredSender(t *testing.T) {
+	codec, _ := auth.NewSecretCodec("test authentication secret")
+	handler := newPasswordTestHandler(&fakePasswordStore{}, &fakeAuthenticationStore{}, codec, true)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, jsonRequest(http.MethodPost, "/auth/password/reset-request",
+		`{"email":"alice@example.com"}`))
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("reset request without a sender returned %d", response.Code)
 	}
 }
 
