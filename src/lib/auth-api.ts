@@ -55,7 +55,11 @@ export async function getAuthProviders(): Promise<APIResult<AuthProviderDirector
     });
     return {
       ok: true,
-      data: { providers, passwordRegistration: payload.passwordRegistration === true },
+      data: {
+        providers,
+        passwordRegistration: payload.passwordRegistration === true,
+        passwordReset: payload.passwordReset === true,
+      },
     };
   } catch {
     return { ok: false, reason: "unavailable" };

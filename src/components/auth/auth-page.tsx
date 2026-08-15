@@ -91,10 +91,12 @@ function AuthOptions({ dictionary, directory, locale, register, returnTo }: Auth
             passwordRequirements: dictionary.authPage.form.passwordRequirements,
             submitSignIn: dictionary.authPage.form.submitSignIn,
             submitRegister: dictionary.authPage.form.submitRegister,
+            forgotPassword: dictionary.authPage.form.forgotPassword,
             errors: dictionary.authPage.form.errors,
           }}
           locale={locale}
           register={register}
+          resetAvailable={directory.passwordReset}
           returnTo={returnTo}
         />
       ) : null}

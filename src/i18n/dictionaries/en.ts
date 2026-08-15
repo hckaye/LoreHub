@@ -3,6 +3,7 @@ import { actionsEnvironments } from "./actions-environments";
 import { actionsSettings } from "./actions-settings";
 import { assignees } from "./assignees";
 import { auditLog } from "./audit-log";
+import { auth } from "./auth";
 import { codeBrowser } from "./code-browser";
 import { commentPagination } from "./comment-pagination";
 import { commitHistory } from "./commit-history";
@@ -490,50 +491,7 @@ const en = {
     maintainer: "Maintainer",
     add: "Add member",
   },
-  authPage: {
-    signInTitle: "Sign in to LoreHub",
-    signInDescription: "Sign in with your email address and password or a configured identity provider.",
-    registerTitle: "Create a LoreHub account",
-    registerDescription:
-      "Create an account with an email address and password or through a configured identity provider.",
-    alreadyHaveAccount: "Already have an account?",
-    needAccount: "Need an account?",
-    continueWith: "Continue with {provider}",
-    orDivider: "or",
-    registrationClosed: "Self-registration is disabled on this installation. Ask an administrator for an account.",
-    configuredNote: "The administrator of this installation configures the available sign-in methods.",
-    unavailableTitle: "Sign-in is unavailable",
-    unavailableBody: "The authentication service is not available. Try again when it has recovered.",
-    backToHome: "Back to home",
-    form: {
-      identifierLabel: "Email or username",
-      usernameLabel: "Username",
-      emailLabel: "Email",
-      passwordLabel: "Password",
-      passwordRequirements: "At least 12 characters with uppercase and lowercase letters, a number, and a symbol.",
-      submitSignIn: "Sign in",
-      submitRegister: "Create account",
-      errors: {
-        invalid_credentials: "The email address, username, or password is incorrect.",
-        account_locked: "Too many failed attempts locked the account temporarily. Try again later.",
-        username_taken: "The username is already taken.",
-        email_taken: "The email address is already registered.",
-        weak_password: "The password does not meet the requirements below.",
-        invalid_username: "Usernames use 2 to 63 lowercase letters, numbers, and hyphens.",
-        invalid_email: "The email address is invalid.",
-        registration_disabled: "Self-registration is disabled on this installation.",
-        unavailable: "Sign-in is temporarily unavailable. Try again in a moment.",
-      },
-    },
-    providers: {
-      password: "email and password",
-      sso: "single sign-on",
-      google: "Google",
-      github: "GitHub",
-      facebook: "Facebook",
-      x: "X",
-    },
-  },
+  authPage: auth.en,
   actionsPage: {
     title: "Actions",
     description: "Inspect workflow-compatible runs executed for Lore branch updates.",

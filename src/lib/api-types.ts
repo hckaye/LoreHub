@@ -220,6 +220,7 @@ export type AuthProvider = {
 export type AuthProviderDirectory = {
   providers: AuthProvider[];
   passwordRegistration: boolean;
+  passwordReset: boolean;
 };
 
 export type AuthUser = {

@@ -3,6 +3,7 @@ import { actionsEnvironments } from "./actions-environments";
 import { actionsSettings } from "./actions-settings";
 import { assignees } from "./assignees";
 import { auditLog } from "./audit-log";
+import { auth } from "./auth";
 import { codeBrowser } from "./code-browser";
 import { commentPagination } from "./comment-pagination";
 import { commitHistory } from "./commit-history";
@@ -553,69 +554,7 @@ const ja = {
     maintainer: "メンテナー",
     add: "メンバーを追加",
   },
-  authPage: {
-    signInTitle: "LoreHubにログイン",
-    // prettier-ignore
-    signInDescription: concat(
-      "メールアドレスとパスワード、または設定済みのIDプロバイダーで",
-      "ログインします。",
-    ),
-    registerTitle: "LoreHubアカウントを作成",
-    // prettier-ignore
-    registerDescription: concat(
-      "メールアドレスとパスワード、または設定済みのIDプロバイダーで",
-      "アカウントを作成します。",
-    ),
-    alreadyHaveAccount: "すでにアカウントをお持ちですか？",
-    needAccount: "アカウントが必要ですか？",
-    continueWith: "{provider}で続ける",
-    orDivider: "または",
-    // prettier-ignore
-    registrationClosed: concat(
-      "このLoreHubでは新規登録が無効になっています。",
-      "アカウントの発行は管理者に依頼してください。",
-    ),
-    configuredNote: "利用できるログイン方法は、このLoreHubの管理者が設定します。",
-    unavailableTitle: "ログインを利用できません",
-    unavailableBody: "認証サービスを利用できません。復旧してから再試行してください。",
-    backToHome: "ホームに戻る",
-    form: {
-      identifierLabel: "メールアドレスまたはユーザー名",
-      usernameLabel: "ユーザー名",
-      emailLabel: "メールアドレス",
-      passwordLabel: "パスワード",
-      // prettier-ignore
-      passwordRequirements: concat(
-        "12文字以上で、大文字・小文字・数字・記号を",
-        "それぞれ含めてください。",
-      ),
-      submitSignIn: "ログイン",
-      submitRegister: "アカウントを作成",
-      errors: {
-        invalid_credentials: "メールアドレス、ユーザー名、またはパスワードが正しくありません。",
-        // prettier-ignore
-        account_locked: concat(
-          "ログイン失敗が続いたため、アカウントを一時的にロックしました。",
-          "しばらく待ってから再試行してください。",
-        ),
-        username_taken: "このユーザー名はすでに使われています。",
-        email_taken: "このメールアドレスはすでに登録されています。",
-        weak_password: "パスワードが下記の要件を満たしていません。",
-        invalid_username: "ユーザー名には2〜63文字の小文字英数字とハイフンを使います。",
-        invalid_email: "メールアドレスが正しくありません。",
-        registration_disabled: "このLoreHubでは新規登録が無効になっています。",
-        unavailable: "現在ログインを利用できません。しばらく待ってから再試行してください。",
-      },
-    },
-    providers: {
-      password: "メールアドレスとパスワード",
-      sso: "シングルサインオン",
-      google: "Googleアカウント",
-      github: "GitHubアカウント",
-      facebook: "Facebookアカウント",
-      x: "Xアカウント",
-    },
-  },
+  authPage: auth.ja,
   actionsPage: {
     title: "Actions",
     // prettier-ignore

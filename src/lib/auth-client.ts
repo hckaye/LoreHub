@@ -90,6 +90,17 @@ export async function postPasswordRegister(input: {
   return credentialMutation("/auth/password/register", input);
 }
 
+export async function postPasswordResetRequest(input: { email: string }): Promise<MutationResult<unknown>> {
+  return credentialMutation("/auth/password/reset-request", input);
+}
+
+export async function postPasswordReset(input: {
+  token: string;
+  newPassword: string;
+}): Promise<MutationResult<unknown>> {
+  return credentialMutation("/auth/password/reset", input);
+}
+
 async function credentialMutation(path: string, input: unknown): Promise<MutationResult<{ authenticated: boolean }>> {
   try {
     const response = await fetch(path, {

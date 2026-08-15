@@ -15,6 +15,7 @@ export type PasswordFormCopy = {
   passwordRequirements: string;
   submitSignIn: string;
   submitRegister: string;
+  forgotPassword: string;
   errors: {
     invalid_credentials: string;
     account_locked: string;
@@ -55,10 +56,11 @@ type PasswordFormProps = {
   copy: PasswordFormCopy;
   locale: "en" | "ja";
   register: boolean;
+  resetAvailable: boolean;
   returnTo: string;
 };
 
-export function PasswordForm({ copy, locale, register, returnTo }: PasswordFormProps) {
+export function PasswordForm({ copy, locale, register, resetAvailable, returnTo }: PasswordFormProps) {
   const [identifier, setIdentifier] = useState("");
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
@@ -147,6 +149,11 @@ export function PasswordForm({ copy, locale, register, returnTo }: PasswordFormP
         />
       </label>
       {register ? <p className={styles.requirements}>{copy.passwordRequirements}</p> : null}
+      {!register && resetAvailable ? (
+        <p className={styles.forgot}>
+          <a href={`/${locale}/auth/reset`}>{copy.forgotPassword}</a>
+        </p>
+      ) : null}
       <button className={styles.submit} disabled={submitting} type="submit">
         {register ? copy.submitRegister : copy.submitSignIn}
       </button>
