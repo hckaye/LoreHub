@@ -187,7 +187,7 @@ Composeのrunnerも`LOREHUB_ENV`を継承します。runnerはブラウザや外
 AuthURL、TLS、Actions暗号鍵、CI service principal、PostgreSQLの本番値が必要です。設定が
 足りないrunnerは起動せず、CI checkoutも専用service principalの短命tokenを発行できない限り失敗します。
 
-復旧時は、Lore data store、LoreHub PostgreSQL、Keycloak PostgreSQL、署名鍵、TLS秘密鍵を別々に復元します。Loreの各
+復旧時は、Lore data store、LoreHub PostgreSQL、Keycloak PostgreSQL（任意のKeycloakプロファイル利用時）、署名鍵、TLS秘密鍵を別々に復元します。Loreの各
 repository IDと`repositories.lore_repository_id`が一致すること、active/failedの
 provisioning状態、監査とoutboxを確認してからAPIを公開します。署名鍵を失った場合は新しいkidで鍵を発行して旧tokenを短く
 失効させます。CAを失った場合は新しいCAと証明書を作り、Lore、API、hook、利用者のtrust storeを同じ停止計画で更新します。

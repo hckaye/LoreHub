@@ -6,7 +6,8 @@ Production deployments use the following permission, token, key, TLS, and recove
 
 ## Repository boundaries
 
-LoreHub PostgreSQL stores users, Keycloak associations, organizations, teams, roles, repository policies, audit events,
+LoreHub PostgreSQL stores users, external identity provider associations, organizations, teams, roles, repository
+policies, audit events,
 and provisioning state. Lore Server stores revisions, branches, files, and locks.
 
 `repositories.lore_repository_id` maps a LoreHub repository to a Lore partition. It is a unique lowercase 32-character
@@ -184,7 +185,8 @@ browser or external API requests. Production runner startup still requires the m
 Auth URL, TLS, Actions encryption key, CI service principal, and PostgreSQL. CI checkout fails unless the runner can
 issue its scoped service-principal token.
 
-Recovery restores Lore storage, LoreHub PostgreSQL, Keycloak PostgreSQL, signing keys, and TLS keys separately. Before
+Recovery restores Lore storage, LoreHub PostgreSQL, Keycloak PostgreSQL (when the optional Keycloak profile is in
+use), signing keys, and TLS keys separately. Before
 opening the API, verify each Lore repository ID against `repositories.lore_repository_id`, provisioning state, audit
 events, and outbox events. A lost signing key is replaced under a new key ID so old tokens expire quickly. Replacing a
 lost CA requires a coordinated update of Lore, API, hook, and user trust stores.

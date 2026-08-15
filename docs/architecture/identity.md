@@ -47,6 +47,9 @@ share an email address.
 - Login and registration requests must be same-origin JSON posts; the API rejects cross-site form-shaped requests.
 - Changing a password requires the current password and a valid session with its CSRF token, and revokes every other
   session of that user.
+- Forgotten passwords are reset through a single-use emailed link that expires after 60 minutes. Reset email uses
+  the notification email SMTP settings; when email delivery is not configured, the sign-in page hides the reset
+  entry. A completed reset revokes every session of the account.
 - The built-in store does not keep password history and does not verify email addresses. Installations that require
   either delegate sign-in to an external OIDC provider that enforces them.
 

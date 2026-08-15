@@ -130,7 +130,7 @@ format、ファイル長制限、lint、型検査、test、production build、�
 - [バックアップと復元](docs/operations/backup-and-recovery.ja.md)
 - [メトリクスとアクセス制限](docs/operations/observability.ja.md)
 - [リソース制限](docs/resource-limits.ja.md)
-- [Keycloak、ソーシャルログイン、メール](docs/operations/keycloak.ja.md)
+- [任意のOIDCプロバイダーとしてのKeycloakとソーシャルログイン](docs/operations/keycloak.ja.md)
 - [通知メール](docs/operations/email-notifications.ja.md)
 - [GitHub Actions互換範囲とrunner運用](docs/runner-actions.ja.md)
 
