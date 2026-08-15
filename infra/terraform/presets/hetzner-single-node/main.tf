@@ -54,16 +54,21 @@ locals {
     public_ingress_enabled = local.public_ingress_enabled
   })
 
+  volume_device_path = coalesce(one(hcloud_volume.lore_data[*].linux_device), "")
+
   cloud_init = templatefile("${path.module}/templates/cloud-init.yaml.tftpl", {
+    lorehub_lib = templatefile("${path.module}/templates/lorehub-node.sh.tftpl", {
+      repository_url = jsonencode(var.repository_url)
+      repository_ref = jsonencode(var.repository_ref)
+    })
     bootstrap_script = templatefile("${path.module}/templates/bootstrap.sh.tftpl", {
-      repository_url             = jsonencode(var.repository_url)
-      repository_ref             = jsonencode(var.repository_ref)
-      volume_device_path         = jsonencode(hcloud_volume.lore_data.linux_device)
+      volume_device_path         = jsonencode(local.volume_device_path)
       tls_source_dir             = jsonencode(var.tls_source_dir)
       public_ingress_enabled     = local.public_ingress_enabled
       cloudflared_tunnel_enabled = local.cloudflared_tunnel_enabled
       cloudflared_tunnel_token   = jsonencode(var.cloudflared_tunnel_token)
     })
+    redeploy_script     = file("${path.module}/templates/lorehub-redeploy.sh")
     compose_override    = file("${path.module}/templates/compose.hetzner.yaml")
     production_env      = local.production_env
     nginx_config        = local.nginx_config
@@ -73,6 +78,7 @@ locals {
 }
 
 resource "hcloud_volume" "lore_data" {
+  count    = var.enable_lore_data_volume ? 1 : 0
   name     = "${var.name}-lore-data"
   size     = var.volume_size_gb
   location = var.location
@@ -95,7 +101,8 @@ module "server" {
 }
 
 resource "hcloud_volume_attachment" "lore_data" {
+  count     = var.enable_lore_data_volume ? 1 : 0
   server_id = module.server.id
-  volume_id = hcloud_volume.lore_data.id
+  volume_id = hcloud_volume.lore_data[0].id
   automount = false
 }

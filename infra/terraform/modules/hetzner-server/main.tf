@@ -43,4 +43,13 @@ resource "hcloud_server" "this" {
   }
 
   shutdown_before_deletion = true
+
+  lifecycle {
+    # cloud-init only runs on first boot. Changing user_data or image must not
+    # replace the server and destroy data on the included disk.
+    ignore_changes = [user_data, image]
+    # prevent_destroy cannot reference variables. Keep this true; edit it
+    # deliberately before terraform destroy.
+    prevent_destroy = true
+  }
 }

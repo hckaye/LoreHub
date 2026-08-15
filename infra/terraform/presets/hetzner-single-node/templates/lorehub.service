@@ -10,6 +10,7 @@ Type=oneshot
 WorkingDirectory=/opt/lorehub
 ExecStartPre=/usr/local/sbin/lorehub-node-bootstrap
 ExecStart=/usr/bin/docker compose --env-file .env -f infra/compose.yaml -f compose.hetzner.yaml up --detach --build
+# Named volumes hold application data. Do not pass --volumes to compose down.
 ExecStop=-/usr/bin/docker compose --env-file .env -f infra/compose.yaml -f compose.hetzner.yaml down
 RemainAfterExit=yes
 TimeoutStartSec=0

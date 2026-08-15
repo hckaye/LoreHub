@@ -1,10 +1,20 @@
 #cloud-config
 write_files:
+  - path: /usr/local/lib/lorehub-node.sh
+    owner: root:root
+    permissions: "0644"
+    content: |
+      ${replace(lorehub_lib, "\n", "\n      ")}
   - path: /usr/local/sbin/lorehub-node-bootstrap
     owner: root:root
     permissions: "0750"
     content: |
       ${replace(bootstrap_script, "\n", "\n      ")}
+  - path: /usr/local/sbin/lorehub-redeploy
+    owner: root:root
+    permissions: "0750"
+    content: |
+      ${replace(redeploy_script, "\n", "\n      ")}
   - path: /etc/lorehub-compose.hetzner.yaml
     owner: root:root
     permissions: "0644"

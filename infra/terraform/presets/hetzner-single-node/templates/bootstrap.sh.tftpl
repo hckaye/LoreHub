@@ -1,27 +1,16 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-readonly APP_DIR=/opt/lorehub
-readonly ENV_FILE=$${APP_DIR}/.env
-readonly ENV_OVERRIDES=/etc/lorehub-production.env
-readonly COMPOSE_OVERRIDE=/etc/lorehub-compose.hetzner.yaml
+LOREHUB_LOG_PREFIX=lorehub-bootstrap
+# shellcheck disable=SC1091
+source /usr/local/lib/lorehub-node.sh
+
 readonly VOLUME_DEVICE=${volume_device_path}
 readonly MOUNT_POINT=/var/lib/lorehub
 readonly TLS_SOURCE_DIR=${tls_source_dir}
-readonly REPOSITORY_URL=${repository_url}
-readonly REPOSITORY_REF=${repository_ref}
 readonly PUBLIC_INGRESS_ENABLED=${public_ingress_enabled}
 readonly CLOUDFLARED_TUNNEL_ENABLED=${cloudflared_tunnel_enabled}
 readonly CLOUDFLARED_TUNNEL_TOKEN=${cloudflared_tunnel_token}
-
-log() {
-  printf '[lorehub-bootstrap] %s\n' "$*"
-}
-
-fail() {
-  printf '[lorehub-bootstrap] ERROR: %s\n' "$*" >&2
-  exit 1
-}
 
 install_base_packages() {
   if command -v git >/dev/null 2>&1 && command -v curl >/dev/null 2>&1 &&
@@ -101,6 +90,11 @@ wait_for_volume() {
 }
 
 mount_lore_data() {
+  if [[ -z "$VOLUME_DEVICE" ]]; then
+    install -d -m 0750 "$MOUNT_POINT/lore-data"
+    return
+  fi
+
   wait_for_volume
 
   local filesystem
@@ -122,54 +116,6 @@ mount_lore_data() {
   fi
   mountpoint --quiet "$MOUNT_POINT" || fail "$MOUNT_POINT is not mounted"
   install -d -m 0750 "$MOUNT_POINT/lore-data"
-}
-
-clone_repository() {
-  if [[ ! -e "$APP_DIR" ]]; then
-    install -d -m 0755 "$(dirname "$APP_DIR")"
-    log "Cloning LoreHub at $REPOSITORY_REF"
-    git clone --depth 1 --single-branch --branch "$REPOSITORY_REF" \
-      "$REPOSITORY_URL" "$APP_DIR"
-  elif [[ ! -d "$APP_DIR/.git" ]]; then
-    fail "$APP_DIR exists but is not a Git checkout"
-  fi
-}
-
-update_env_key() {
-  local key=$1
-  local value=$2
-  local temporary
-  temporary=$(mktemp "$${ENV_FILE}.tmp.XXXXXX")
-  awk -v key="$key" -v value="$value" '
-    index($0, key "=") == 1 { print key "=" value; found = 1; next }
-    { print }
-    END { if (!found) print key "=" value }
-  ' "$ENV_FILE" >"$temporary"
-  chmod 0600 "$temporary"
-  mv "$temporary" "$ENV_FILE"
-}
-
-apply_env_overrides() {
-  local line key value
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    case "$line" in
-      "" | \#*) continue ;;
-    esac
-    key=$${line%%=*}
-    value=$${line#*=}
-    [[ -n "$key" ]] || fail "empty key in $ENV_OVERRIDES"
-    update_env_key "$key" "$value"
-  done <"$ENV_OVERRIDES"
-}
-
-prepare_environment() {
-  [[ -s "$APP_DIR/.env.example" ]] || fail "$APP_DIR/.env.example is missing"
-  if [[ ! -e "$ENV_FILE" ]]; then
-    install -m 0600 "$APP_DIR/.env.example" "$ENV_FILE"
-  fi
-  "$APP_DIR/scripts/setup-keycloak-secrets.sh" --env-file "$ENV_FILE"
-  apply_env_overrides
-  install -m 0644 "$COMPOSE_OVERRIDE" "$APP_DIR/compose.hetzner.yaml"
 }
 
 configure_nginx() {
