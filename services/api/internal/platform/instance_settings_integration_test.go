@@ -106,3 +106,142 @@ func TestInstanceSettingsAndHostedLoreServerEnforcementIntegration(t *testing.T)
 		t.Fatalf("cleared hosted Lore server override = %v, error=%v", override, err)
 	}
 }
+
+func TestResourceLimitOverridesBeatEnvironmentDefaults(t *testing.T) {
+	pool, _ := identityIntegrationStore(t)
+	ctx := context.Background()
+	suffix := strings.ReplaceAll(uuid.NewString(), "-", "")[:10]
+	actor := platformTestUser("limit-override-" + suffix)
+	mustIdentityExec(t, pool, `INSERT INTO users (id, username, display_name) VALUES ($1, $2, $3)`,
+		actor.ID, actor.Username, actor.DisplayName)
+	t.Cleanup(func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM instance_settings WHERE key IN ($1, $2, $3)`,
+			maxOrganizationsPerUserSettingKey, maxRepositoriesPerOrganizationSettingKey,
+			maxRepositorySizeBytesSettingKey)
+		_, _ = pool.Exec(ctx, `DELETE FROM organizations WHERE created_by = $1`, actor.ID)
+		_, _ = pool.Exec(ctx, `DELETE FROM users WHERE id = $1`, actor.ID)
+	})
+	store := NewStoreWithSettings(pool, StoreSettings{
+		MaxOrganizationsPerUser:        2,
+		MaxRepositoriesPerOrganization: 2,
+		MaxRepositorySizeBytes:         10485760,
+	})
+	mustIdentityExec(t, pool, `DELETE FROM instance_settings WHERE key IN ($1, $2, $3)`,
+		maxOrganizationsPerUserSettingKey, maxRepositoriesPerOrganizationSettingKey,
+		maxRepositorySizeBytesSettingKey)
+
+	if override, err := store.GetMaxOrganizationsPerUserOverride(ctx); err != nil || override != nil {
+		t.Fatalf("missing organization override = %v, error=%v", override, err)
+	}
+	if size, err := store.EffectiveMaxRepositorySizeBytes(ctx); err != nil || size != 10485760 {
+		t.Fatalf("default repository size = %d, error=%v", size, err)
+	}
+
+	negative := int64(-1)
+	if err := store.SetMaxOrganizationsPerUserOverride(ctx, actor, &negative); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("negative organization override error = %v, want invalid input", err)
+	}
+	if err := store.SetMaxRepositoriesPerOrganizationOverride(ctx, actor, &negative); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("negative repository override error = %v, want invalid input", err)
+	}
+	if err := store.SetMaxRepositorySizeBytesOverride(ctx, actor, &negative); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("negative size override error = %v, want invalid input", err)
+	}
+
+	one := int64(1)
+	if err := store.SetMaxOrganizationsPerUserOverride(ctx, actor, &one); err != nil {
+		t.Fatalf("set organization override: %v", err)
+	}
+	if _, err := store.CreateOrganization(ctx, actor, CreateOrganizationInput{
+		Slug: "limit-override-a-" + suffix, DisplayName: "First", Visibility: "public",
+	}); err != nil {
+		t.Fatalf("first organization: %v", err)
+	}
+	if _, err := store.CreateOrganization(ctx, actor, CreateOrganizationInput{
+		Slug: "limit-override-b-" + suffix, DisplayName: "Second", Visibility: "public",
+	}); !errors.Is(err, ErrOrganizationLimit) {
+		t.Fatalf("second organization error = %v, want organization limit", err)
+	}
+
+	if err := store.SetMaxOrganizationsPerUserOverride(ctx, actor, nil); err != nil {
+		t.Fatalf("clear organization override: %v", err)
+	}
+	if _, err := store.CreateOrganization(ctx, actor, CreateOrganizationInput{
+		Slug: "limit-override-c-" + suffix, DisplayName: "Third", Visibility: "public",
+	}); err != nil {
+		t.Fatalf("cleared organization override: %v", err)
+	}
+
+	unlimited := int64(0)
+	if err := store.SetMaxOrganizationsPerUserOverride(ctx, actor, &unlimited); err != nil {
+		t.Fatalf("set unlimited organization override: %v", err)
+	}
+	if _, err := store.CreateOrganization(ctx, actor, CreateOrganizationInput{
+		Slug: "limit-override-d-" + suffix, DisplayName: "Fourth", Visibility: "public",
+	}); err != nil {
+		t.Fatalf("unlimited organization override: %v", err)
+	}
+
+	size := int64(2048)
+	if err := store.SetMaxRepositorySizeBytesOverride(ctx, actor, &size); err != nil {
+		t.Fatalf("set size override: %v", err)
+	}
+	effective, err := store.EffectiveMaxRepositorySizeBytes(ctx)
+	if err != nil || effective != 2048 {
+		t.Fatalf("overridden repository size = %d, error=%v", effective, err)
+	}
+	if err := store.SetMaxRepositorySizeBytesOverride(ctx, actor, nil); err != nil {
+		t.Fatalf("clear size override: %v", err)
+	}
+	effective, err = store.EffectiveMaxRepositorySizeBytes(ctx)
+	if err != nil || effective != 10485760 {
+		t.Fatalf("cleared repository size = %d, error=%v", effective, err)
+	}
+}
+
+func TestRepositoryLimitOverrideTakesEffectWithoutRestart(t *testing.T) {
+	pool, base := identityIntegrationStore(t)
+	ctx := context.Background()
+	actor, organization := resourceLimitOrganization(t, base, "repo-override")
+	t.Cleanup(func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM instance_settings WHERE key = $1`,
+			maxRepositoriesPerOrganizationSettingKey)
+	})
+	store := NewStoreWithSettings(pool, StoreSettings{MaxRepositoriesPerOrganization: 2})
+	mustIdentityExec(t, pool, `DELETE FROM instance_settings WHERE key = $1`,
+		maxRepositoriesPerOrganizationSettingKey)
+	server := insertLoreServerFixture(t, pool, organization.ID, "repo-override-"+organization.Slug)
+	firstID := strings.ReplaceAll(uuid.NewString(), "-", "")
+	secondID := strings.ReplaceAll(uuid.NewString(), "-", "")
+
+	if _, err := store.RegisterRepository(ctx, actor, organization.Slug, RegisterRepositoryInput{
+		Slug: "imported-a", DisplayName: "Imported A", Visibility: "private",
+		LoreRepositoryID: firstID, LoreURL: server.PublicURL + "/" + firstID,
+		LoreServerID: server.ID, DefaultBranch: "main",
+	}); err != nil {
+		t.Fatalf("first imported repository: %v", err)
+	}
+
+	one := int64(1)
+	if err := store.SetMaxRepositoriesPerOrganizationOverride(ctx, actor, &one); err != nil {
+		t.Fatalf("set repository override: %v", err)
+	}
+	if _, err := store.RegisterRepository(ctx, actor, organization.Slug, RegisterRepositoryInput{
+		Slug: "imported-b", DisplayName: "Imported B", Visibility: "private",
+		LoreRepositoryID: secondID, LoreURL: server.PublicURL + "/" + secondID,
+		LoreServerID: server.ID, DefaultBranch: "main",
+	}); !errors.Is(err, ErrRepositoryLimit) {
+		t.Fatalf("second imported repository error = %v, want repository limit", err)
+	}
+
+	if err := store.SetMaxRepositoriesPerOrganizationOverride(ctx, actor, nil); err != nil {
+		t.Fatalf("clear repository override: %v", err)
+	}
+	if _, err := store.RegisterRepository(ctx, actor, organization.Slug, RegisterRepositoryInput{
+		Slug: "imported-b", DisplayName: "Imported B", Visibility: "private",
+		LoreRepositoryID: secondID, LoreURL: server.PublicURL + "/" + secondID,
+		LoreServerID: server.ID, DefaultBranch: "main",
+	}); err != nil {
+		t.Fatalf("cleared repository override: %v", err)
+	}
+}

@@ -33,6 +33,7 @@ type Store struct {
 	hostedLoreServerDefaultEnabled bool
 	maxOrganizationsPerUser        int
 	maxRepositoriesPerOrganization int
+	maxRepositorySizeBytes         int64
 	// Features every new organization is granted, for installations that
 	// operate their own Lore Server and runners.
 	defaultEntitlements []string
@@ -45,6 +46,7 @@ type StoreSettings struct {
 	DefaultEntitlements            []string
 	MaxOrganizationsPerUser        int
 	MaxRepositoriesPerOrganization int
+	MaxRepositorySizeBytes         int64
 }
 
 func NewStore(pool *pgxpool.Pool) *Store {
@@ -71,6 +73,7 @@ func NewStoreWithSettings(pool *pgxpool.Pool, settings StoreSettings) *Store {
 		defaultEntitlements:            features,
 		maxOrganizationsPerUser:        settings.MaxOrganizationsPerUser,
 		maxRepositoriesPerOrganization: settings.MaxRepositoriesPerOrganization,
+		maxRepositorySizeBytes:         settings.MaxRepositorySizeBytes,
 	}
 }
 
