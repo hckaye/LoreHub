@@ -159,6 +159,20 @@ func LoadFor(command string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	maxOrganizationsPerUser, err := nonNegativeIntSetting("LOREHUB_MAX_ORGANIZATIONS_PER_USER", 0)
+	if err != nil {
+		return Config{}, err
+	}
+	maxRepositoriesPerOrganization, err := nonNegativeIntSetting(
+		"LOREHUB_MAX_REPOSITORIES_PER_ORGANIZATION", 0,
+	)
+	if err != nil {
+		return Config{}, err
+	}
+	maxRepositorySizeBytes, err := nonNegativeInt64Setting("LOREHUB_MAX_REPOSITORY_SIZE_BYTES", 0)
+	if err != nil {
+		return Config{}, err
+	}
 	logMaxBytes, err := byteSetting("LOREHUB_RUNNER_LOG_MAX_BYTES", 10<<20)
 	if err != nil {
 		return Config{}, err
@@ -279,6 +293,9 @@ func LoadFor(command string) (Config, error) {
 		RateLimitRequests:                 rateLimitRequests,
 		RateLimitWindow:                   rateLimitWindow,
 		RateLimitTrustedProxyCIDRs:        rateLimitTrustedProxyCIDRs,
+		MaxOrganizationsPerUser:           maxOrganizationsPerUser,
+		MaxRepositoriesPerOrganization:    maxRepositoriesPerOrganization,
+		MaxRepositorySizeBytes:            maxRepositorySizeBytes,
 		AuthMode:                          authMode,
 		OIDCIssuer:                        oidcIssuer,
 		OIDCAudience:                      oidcAudience,

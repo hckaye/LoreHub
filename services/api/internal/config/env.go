@@ -76,3 +76,27 @@ func intSetting(key string, fallback int) (int, error) {
 	}
 	return parsed, nil
 }
+
+func nonNegativeIntSetting(key string, fallback int) (int, error) {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback, nil
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed < 0 {
+		return 0, fmt.Errorf("%s must be a non-negative integer", key)
+	}
+	return parsed, nil
+}
+
+func nonNegativeInt64Setting(key string, fallback int64) (int64, error) {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback, nil
+	}
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || parsed < 0 {
+		return 0, fmt.Errorf("%s must be a non-negative integer", key)
+	}
+	return parsed, nil
+}

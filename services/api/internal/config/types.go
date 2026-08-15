@@ -17,6 +17,9 @@ type Config struct {
 	RateLimitRequests                 int
 	RateLimitWindow                   time.Duration
 	RateLimitTrustedProxyCIDRs        []netip.Prefix
+	MaxOrganizationsPerUser           int
+	MaxRepositoriesPerOrganization    int
+	MaxRepositorySizeBytes            int64
 	AuthMode                          string
 	OIDCIssuer                        string
 	OIDCAudience                      string

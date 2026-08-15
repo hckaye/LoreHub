@@ -67,6 +67,70 @@ func TestLoadParsesInstanceAdministrationAndHostedLoreServerSettings(t *testing.
 	}
 }
 
+func TestLoadDefaultsResourceLimitsToUnlimited(t *testing.T) {
+	setRequiredEnvironment(t)
+
+	settings, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.MaxOrganizationsPerUser != 0 || settings.MaxRepositoriesPerOrganization != 0 ||
+		settings.MaxRepositorySizeBytes != 0 {
+		t.Fatalf("resource limits = %d/%d/%d, want 0", settings.MaxOrganizationsPerUser,
+			settings.MaxRepositoriesPerOrganization, settings.MaxRepositorySizeBytes)
+	}
+}
+
+func TestLoadParsesResourceLimits(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("LOREHUB_MAX_ORGANIZATIONS_PER_USER", "3")
+	t.Setenv("LOREHUB_MAX_REPOSITORIES_PER_ORGANIZATION", "5")
+	t.Setenv("LOREHUB_MAX_REPOSITORY_SIZE_BYTES", "10485760")
+
+	settings, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.MaxOrganizationsPerUser != 3 || settings.MaxRepositoriesPerOrganization != 5 ||
+		settings.MaxRepositorySizeBytes != 10485760 {
+		t.Fatalf("resource limits = %d/%d/%d", settings.MaxOrganizationsPerUser,
+			settings.MaxRepositoriesPerOrganization, settings.MaxRepositorySizeBytes)
+	}
+}
+
+func TestLoadAcceptsExplicitZeroResourceLimits(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("LOREHUB_MAX_ORGANIZATIONS_PER_USER", "0")
+	t.Setenv("LOREHUB_MAX_REPOSITORIES_PER_ORGANIZATION", "0")
+	t.Setenv("LOREHUB_MAX_REPOSITORY_SIZE_BYTES", "0")
+
+	settings, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.MaxOrganizationsPerUser != 0 || settings.MaxRepositoriesPerOrganization != 0 ||
+		settings.MaxRepositorySizeBytes != 0 {
+		t.Fatalf("explicit zero resource limits = %d/%d/%d", settings.MaxOrganizationsPerUser,
+			settings.MaxRepositoriesPerOrganization, settings.MaxRepositorySizeBytes)
+	}
+}
+
+func TestLoadRejectsInvalidResourceLimits(t *testing.T) {
+	for _, key := range []string{
+		"LOREHUB_MAX_ORGANIZATIONS_PER_USER",
+		"LOREHUB_MAX_REPOSITORIES_PER_ORGANIZATION",
+		"LOREHUB_MAX_REPOSITORY_SIZE_BYTES",
+	} {
+		t.Run(key, func(t *testing.T) {
+			setRequiredEnvironment(t)
+			t.Setenv(key, "-1")
+			if _, err := Load(); err == nil || !strings.Contains(err.Error(), key) {
+				t.Fatalf("invalid %s was accepted: %v", key, err)
+			}
+		})
+	}
+}
+
 func TestLoadRejectsInvalidInstanceAdministrationAndHostedLoreServerSettings(t *testing.T) {
 	for _, key := range []string{
 		"LOREHUB_HOSTED_LORE_SERVER_ENABLED",
@@ -706,6 +770,9 @@ func setRequiredEnvironment(t *testing.T) {
 	t.Setenv("LOREHUB_RATE_LIMIT_REQUESTS", "")
 	t.Setenv("LOREHUB_RATE_LIMIT_WINDOW", "")
 	t.Setenv("LOREHUB_RATE_LIMIT_TRUSTED_PROXY_CIDRS", "")
+	t.Setenv("LOREHUB_MAX_ORGANIZATIONS_PER_USER", "")
+	t.Setenv("LOREHUB_MAX_REPOSITORIES_PER_ORGANIZATION", "")
+	t.Setenv("LOREHUB_MAX_REPOSITORY_SIZE_BYTES", "")
 	for _, name := range []string{
 		"LOREHUB_LORE_AUTH_ISSUER", "LOREHUB_LORE_AUTH_AUDIENCE", "LOREHUB_LORE_ROOT_DOMAIN",
 		"LOREHUB_LORE_AUTH_JWKS_URL", "LOREHUB_LORE_AUTH_URL", "LOREHUB_LORE_AUTH_LOGIN_URL",

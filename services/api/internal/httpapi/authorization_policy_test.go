@@ -140,6 +140,83 @@ func TestInternalPolicyHandlerPreservesBranchName(t *testing.T) {
 	}
 }
 
+func TestInternalPolicyHandlerDeniesOversizedBranchPush(t *testing.T) {
+	store := &policyCaptureStore{}
+	handler := NewInternalPolicyHandlerWithSizeLimit(store, 10*1024*1024)
+	request := httptest.NewRequest(http.MethodPost, "/internal/lore/policy", strings.NewReader(`{
+		"userId":"user-a",
+		"resourceId":"urc-0123456789abcdef0123456789abcdef",
+		"operation":"branch_push",
+		"revision_tree_size":15728640
+	}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("oversized push status = %d, body = %s", response.Code, response.Body.String())
+	}
+	body := response.Body.String()
+	if !strings.Contains(body, `"code":"repository_size_limit"`) &&
+		!strings.Contains(body, `"code": "repository_size_limit"`) {
+		t.Fatalf("oversized push body missing code: %s", body)
+	}
+	if !strings.Contains(body, "10.0 MB") || !strings.Contains(body, "15.0 MB") {
+		t.Fatalf("oversized push body missing sizes: %s", body)
+	}
+}
+
+func TestInternalPolicyHandlerAllowsBranchPushWithinSizeLimit(t *testing.T) {
+	store := &policyCaptureStore{}
+	handler := NewInternalPolicyHandlerWithSizeLimit(store, 10*1024*1024)
+	request := httptest.NewRequest(http.MethodPost, "/internal/lore/policy", strings.NewReader(`{
+		"userId":"user-a",
+		"resourceId":"urc-0123456789abcdef0123456789abcdef",
+		"operation":"branch_push",
+		"revision_tree_size":10485760
+	}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("in-limit push status = %d, body = %s", response.Code, response.Body.String())
+	}
+}
+
+func TestInternalPolicyHandlerAllowsBranchPushWithoutRevisionTreeSize(t *testing.T) {
+	store := &policyCaptureStore{}
+	handler := NewInternalPolicyHandlerWithSizeLimit(store, 10*1024*1024)
+	request := httptest.NewRequest(http.MethodPost, "/internal/lore/policy", strings.NewReader(`{
+		"userId":"user-a",
+		"resourceId":"urc-0123456789abcdef0123456789abcdef",
+		"operation":"branch_push"
+	}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("missing tree size status = %d, body = %s", response.Code, response.Body.String())
+	}
+}
+
+func TestInternalPolicyHandlerIgnoresRevisionTreeSizeForOtherHookPoints(t *testing.T) {
+	store := &policyCaptureStore{}
+	handler := NewInternalPolicyHandlerWithSizeLimit(store, 1)
+	request := httptest.NewRequest(http.MethodPost, "/internal/lore/policy", strings.NewReader(`{
+		"userId":"user-a",
+		"resourceId":"urc-0123456789abcdef0123456789abcdef",
+		"operation":"branch_create",
+		"branchId":"branch-id",
+		"branchName":"feature/size",
+		"revision_tree_size":999999
+	}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("branch create status = %d, body = %s", response.Code, response.Body.String())
+	}
+}
+
 func TestInternalObservationRecordsBranchCreation(t *testing.T) {
 	store := &policyCaptureStore{}
 	handler := NewInternalPolicyHandler(store)

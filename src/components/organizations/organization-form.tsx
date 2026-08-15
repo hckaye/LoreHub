@@ -51,7 +51,7 @@ export function OrganizationForm({ dictionary, locale, session }: OrganizationFo
       return;
     }
     setPending(false);
-    setFailure(mutationFailureMessage(result.kind, dictionary));
+    setFailure(mutationFailureMessage(result.kind, dictionary, result.code));
     setRequiresLogin(result.kind === "unauthorized");
   }
 
