@@ -193,18 +193,23 @@ func run(logger *slog.Logger) error {
 	}
 	switch settings.AuthMode {
 	case config.AuthModeInteractive:
-		provider, err := auth.NewOIDCProvider(rootContext, auth.OIDCConfig{
-			Issuer:       settings.OIDCIssuer,
-			ClientID:     settings.OIDCClientID,
-			Audience:     settings.OIDCAudience,
-			ClientSecret: settings.OIDCClientSecret,
-			RedirectURL:  settings.OIDCRedirectURL,
-		})
-		if err != nil {
-			return err
+		if settings.OIDCIssuer != "" {
+			provider, err := newOIDCProviderWithRetry(rootContext, logger, auth.OIDCConfig{
+				Issuer:           settings.OIDCIssuer,
+				ClientID:         settings.OIDCClientID,
+				Audience:         settings.OIDCAudience,
+				ClientSecret:     settings.OIDCClientSecret,
+				RedirectURL:      settings.OIDCRedirectURL,
+				IDPHintParameter: settings.OIDCIDPHintParameter,
+			})
+			if err != nil {
+				return err
+			}
+			authenticator = provider
+			loginProvider = provider
+		} else {
+			authenticator = auth.DisabledAuthenticator{}
 		}
-		authenticator = provider
-		loginProvider = provider
 		loginStore = store
 		sessionStore = store
 		cleanupStore = store
@@ -262,6 +267,7 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	var notificationEmailWorker *notificationemail.Worker
+	var passwordResetSender httpapi.PasswordResetSender
 	if settings.NotificationEmailEnabled {
 		sender, err := notificationemail.NewSMTPSender(notificationemail.SMTPConfig{
 			Host:        settings.SMTPHost,
@@ -290,6 +296,13 @@ func run(logger *slog.Logger) error {
 		)
 		if err != nil {
 			return err
+		}
+		if settings.PasswordAuthEnabled {
+			mailer, err := notificationemail.NewPasswordResetMailer(sender)
+			if err != nil {
+				return err
+			}
+			passwordResetSender = mailer
 		}
 	}
 	collaborationStore := collab.NewStore(pool)
@@ -349,6 +362,9 @@ func run(logger *slog.Logger) error {
 			settings.MaxRepositorySizeBytes,
 		),
 		httpapi.WithConfiguredLoginProviders(settings.IdentityProviders),
+		httpapi.WithPasswordAuthentication(passwordAuthStore(store, settings),
+			settings.PasswordRegistrationEnabled),
+		httpapi.WithPasswordReset(passwordResetSender),
 		httpapi.WithCollaboration(collaborationStore),
 		httpapi.WithReviewThreads(reviewthreads.NewStore(pool)),
 		httpapi.WithBranchObservations(store),
@@ -691,4 +707,36 @@ func configuredJobTokenIssuer(
 		settings.LoreAuthIssuer,
 		settings.ActionsJobTokenAudience,
 	)
+}
+
+func passwordAuthStore(store *platform.Store, settings config.Config) httpapi.PasswordAuthStore {
+	if !settings.PasswordAuthEnabled {
+		return nil
+	}
+	return store
+}
+
+// newOIDCProviderWithRetry keeps retrying OIDC discovery for a short time so
+// the API can start alongside an identity provider that is still booting.
+func newOIDCProviderWithRetry(
+	ctx context.Context,
+	logger *slog.Logger,
+	oidcConfig auth.OIDCConfig,
+) (*auth.OIDCProvider, error) {
+	deadline := time.Now().Add(90 * time.Second)
+	for {
+		provider, err := auth.NewOIDCProvider(ctx, oidcConfig)
+		if err == nil {
+			return provider, nil
+		}
+		if time.Now().After(deadline) || ctx.Err() != nil {
+			return nil, err
+		}
+		logger.Warn("OIDC discovery failed; retrying", "issuer", oidcConfig.Issuer, "error", err)
+		select {
+		case <-ctx.Done():
+			return nil, err
+		case <-time.After(3 * time.Second):
+		}
+	}
 }

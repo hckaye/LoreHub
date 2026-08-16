@@ -164,6 +164,12 @@ func (store *Store) CleanupExpiredAuthentication(ctx context.Context, now time.T
 	`, now); err != nil {
 		return fmt.Errorf("clean sessions: %w", err)
 	}
+	if _, err := transaction.Exec(ctx, `
+		DELETE FROM password_resets
+		WHERE expires_at <= $1 OR (used_at IS NOT NULL AND used_at <= $1 - interval '1 hour')
+	`, now); err != nil {
+		return fmt.Errorf("clean password resets: %w", err)
+	}
 	if err := transaction.Commit(ctx); err != nil {
 		return fmt.Errorf("commit authentication cleanup: %w", err)
 	}

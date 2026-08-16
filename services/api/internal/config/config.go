@@ -134,7 +134,25 @@ func LoadFor(command string) (Config, error) {
 		os.Getenv("LOREHUB_OIDC_CLIENT_ID"),
 		os.Getenv("LOREHUB_OIDC_CLIENT_SECRET"),
 		os.Getenv("LOREHUB_OIDC_REDIRECT_URL"),
+		os.Getenv("LOREHUB_AUTH_PASSWORD"),
 	)
+	passwordAuthEnabled, err := enabledSetting(
+		"LOREHUB_AUTH_PASSWORD",
+		authMode == AuthModeInteractive && oidcClientID == "",
+	)
+	if err != nil {
+		return Config{}, err
+	}
+	if authMode != AuthModeInteractive {
+		passwordAuthEnabled = false
+	}
+	passwordRegistrationEnabled, err := enabledSetting(
+		"LOREHUB_AUTH_PASSWORD_REGISTRATION",
+		passwordAuthEnabled,
+	)
+	if err != nil {
+		return Config{}, err
+	}
 	cookieSecure, err := cookieSecureSetting(environment)
 	if err != nil {
 		return Config{}, err
@@ -297,11 +315,14 @@ func LoadFor(command string) (Config, error) {
 		MaxRepositoriesPerOrganization:    maxRepositoriesPerOrganization,
 		MaxRepositorySizeBytes:            maxRepositorySizeBytes,
 		AuthMode:                          authMode,
+		PasswordAuthEnabled:               passwordAuthEnabled,
+		PasswordRegistrationEnabled:       passwordRegistrationEnabled,
 		OIDCIssuer:                        oidcIssuer,
 		OIDCAudience:                      oidcAudience,
 		OIDCClientID:                      oidcClientID,
 		OIDCClientSecret:                  os.Getenv("LOREHUB_OIDC_CLIENT_SECRET"),
 		OIDCRedirectURL:                   os.Getenv("LOREHUB_OIDC_REDIRECT_URL"),
+		OIDCIDPHintParameter:              envOrDefault("LOREHUB_OIDC_IDP_HINT_PARAM", "kc_idp_hint"),
 		PublicOrigin:                      publicOrigin,
 		PublicAPIURL:                      publicAPIURL,
 		PublicGraphQLURL:                  publicGraphQLURL,
@@ -352,7 +373,7 @@ func LoadFor(command string) (Config, error) {
 		LoreRootDomain:                    loreRootDomain,
 		LoreAuthJWKSURL:                   loreAuthJWKSURL,
 		LoreAuthEnvironment:               envOrDefault("LOREHUB_LORE_AUTH_ENVIRONMENT", environment),
-		LoreAuthIDP:                       envOrDefault("LOREHUB_LORE_AUTH_IDP", "keycloak"),
+		LoreAuthIDP:                       envOrDefault("LOREHUB_LORE_AUTH_IDP", "lorehub"),
 		LoreAuthTokenTTL:                  durationOrDefault("LOREHUB_LORE_AUTH_TOKEN_TTL", 5*time.Minute),
 		LoreAuthSessionTTL:                durationOrDefault("LOREHUB_LORE_AUTH_SESSION_TTL", 5*time.Minute),
 		LoreAuthLoginURL:                  loreAuthLoginURL,
@@ -451,26 +472,6 @@ func loadMigrationConfig() (Config, error) {
 	return Config{DatabaseURL: databaseURL, DatabaseTimeout: databaseTimeout}, nil
 }
 
-func authModeFromEnvironment(
-	requested string,
-	issuer string,
-	audience string,
-	clientID string,
-	clientSecret string,
-	redirectURL string,
-) string {
-	if requested != "" {
-		return strings.ToLower(strings.TrimSpace(requested))
-	}
-	if clientID != "" || clientSecret != "" || redirectURL != "" {
-		return AuthModeInteractive
-	}
-	if issuer != "" || audience != "" {
-		return AuthModeBearer
-	}
-	return AuthModeDisabled
-}
-
 func validate(config Config, command string) error {
 	if config.DatabaseURL == "" {
 		return errors.New("DATABASE_URL is required")
@@ -560,13 +561,19 @@ func validate(config Config, command string) error {
 	if err := validateCookie(config); err != nil {
 		return err
 	}
-	if config.AuthMode == AuthModeBearer || config.AuthMode == AuthModeInteractive {
+	if config.AuthMode == AuthModeBearer ||
+		config.AuthMode == AuthModeInteractive && interactiveOIDCConfigured(config) {
 		if config.OIDCIssuer == "" || config.OIDCAudience == "" {
-			return errors.New("OIDC issuer and audience are required for bearer or interactive authentication")
+			return errors.New("OIDC issuer and audience are required for bearer or OIDC interactive authentication")
 		}
 		if err := validateURL("LOREHUB_OIDC_ISSUER", config.OIDCIssuer, config.Environment, false); err != nil {
 			return err
 		}
+	}
+	if config.AuthMode == AuthModeInteractive && !interactiveOIDCConfigured(config) &&
+		!config.PasswordAuthEnabled {
+		return errors.New(
+			"interactive authentication needs LOREHUB_AUTH_PASSWORD=enabled or an OIDC configuration")
 	}
 	if command == "serve" && config.Environment == "production" && config.AuthMode == AuthModeDisabled {
 		return errors.New("LOREHUB_AUTH_MODE=disabled is limited to an isolated local profile")
@@ -731,14 +738,19 @@ func validate(config Config, command string) error {
 	if command != "serve" || config.AuthMode != AuthModeInteractive {
 		return validateRunner(config)
 	}
+	if config.PublicOrigin == "" {
+		return errors.New("LOREHUB_PUBLIC_ORIGIN is required when interactive authentication is enabled")
+	}
+	if !interactiveOIDCConfigured(config) {
+		return validateRunner(config)
+	}
 	for name, value := range map[string]string{
 		"LOREHUB_OIDC_CLIENT_ID":     config.OIDCClientID,
 		"LOREHUB_OIDC_CLIENT_SECRET": config.OIDCClientSecret,
 		"LOREHUB_OIDC_REDIRECT_URL":  config.OIDCRedirectURL,
-		"LOREHUB_PUBLIC_ORIGIN":      config.PublicOrigin,
 	} {
 		if value == "" {
-			return fmt.Errorf("%s is required when interactive authentication is enabled", name)
+			return fmt.Errorf("%s is required when OIDC interactive authentication is enabled", name)
 		}
 	}
 	if err := validateURL("LOREHUB_OIDC_REDIRECT_URL", config.OIDCRedirectURL, config.Environment, false); err != nil {

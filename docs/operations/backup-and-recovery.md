@@ -19,11 +19,12 @@ the `lorehub` Compose project name.
 
 The backup contains:
 
-- Logical dumps of the LoreHub and Keycloak PostgreSQL databases
+- Logical dumps of the LoreHub PostgreSQL database, and of the Keycloak database when the optional Keycloak profile
+  is running
 - Lore repository storage
 - API state, signing keys, TLS keys, and CA state
 - Runner repository caches, logs, and artifacts
-- Keycloak auxiliary data
+- Keycloak auxiliary data when the optional Keycloak profile is running
 - A copy of the environment file, including its secrets
 - The creation time, Compose project name, and source commit in `manifest.txt`
 
@@ -73,8 +74,7 @@ Check the restored data before making the API available:
 2. Open the restored Lore storage with Lore and confirm that each database value in `repositories.lore_repository_id`
    refers to the expected repository.
 3. Inspect recent audit and outbox records for unfinished repository creation, deletion, or migration work.
-4. Start the services and check `/health/ready`, sign-in through Keycloak, repository browsing, and one read-only Lore
-   operation.
+4. Start the services and check `/health/ready`, sign-in, repository browsing, and one read-only Lore operation.
 
 Start the core services after validation:
 

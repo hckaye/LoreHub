@@ -19,11 +19,11 @@ scripts/backup.sh --output /srv/backups/lorehub-2026-08-14
 
 バックアップには次のデータが入ります。
 
-- LoreHub用とKeycloak用のPostgreSQL論理バックアップ
+- LoreHub用PostgreSQLの論理バックアップ。任意のKeycloakプロファイルが起動している場合はKeycloak用も含む
 - Loreリポジトリの保存領域
 - APIの保存データ、署名鍵、TLS鍵、CAの状態
 - runnerのリポジトリcache、log、artifact
-- Keycloakの補助データ
+- Keycloakの補助データ（任意のKeycloakプロファイル起動時のみ）
 - 秘密値を含む環境設定ファイルのコピー
 - `manifest.txt`に記録した作成日時、Compose project名、source commit
 
@@ -72,7 +72,7 @@ APIを公開する前に、復元したデータを確認します。
 2. 復元したLoreの保存領域をLoreで開き、`repositories.lore_repository_id`の各値が想定したリポジトリを指すか
    確認します。
 3. 最近の監査記録と送信待ち記録を調べ、リポジトリの作成、削除、移行が途中で残っていないか確認します。
-4. サービスを起動し、`/health/ready`、Keycloakでのログイン、リポジトリ閲覧、Loreの読み取り操作を確認します。
+4. サービスを起動し、`/health/ready`、ログイン、リポジトリ閲覧、Loreの読み取り操作を確認します。
 
 確認後に基本サービスを起動します。
 

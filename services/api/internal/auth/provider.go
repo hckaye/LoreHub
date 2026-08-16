@@ -12,9 +12,10 @@ import (
 
 type OIDCProvider struct {
 	OIDCAuthenticator
-	idTokenVerifier *oidc.IDTokenVerifier
-	oauthConfig     oauth2.Config
-	oidcProvider    *oidc.Provider
+	idTokenVerifier  *oidc.IDTokenVerifier
+	oauthConfig      oauth2.Config
+	oidcProvider     *oidc.Provider
+	idpHintParameter string
 }
 
 func NewOIDCProvider(ctx context.Context, config OIDCConfig) (*OIDCProvider, error) {
@@ -31,13 +32,18 @@ func newOIDCProvider(ctx context.Context, config OIDCConfig) (*OIDCProvider, err
 	}
 	idTokenVerifier := provider.Verifier(&oidc.Config{ClientID: config.ClientID})
 	accessTokenVerifier := provider.Verifier(&oidc.Config{ClientID: config.Audience})
+	idpHintParameter := config.IDPHintParameter
+	if idpHintParameter == "" {
+		idpHintParameter = "kc_idp_hint"
+	}
 	return &OIDCProvider{
 		OIDCAuthenticator: OIDCAuthenticator{
 			issuer:              config.Issuer,
 			accessTokenVerifier: accessTokenVerifier,
 		},
-		idTokenVerifier: idTokenVerifier,
-		oidcProvider:    provider,
+		idTokenVerifier:  idTokenVerifier,
+		oidcProvider:     provider,
+		idpHintParameter: idpHintParameter,
 		oauthConfig: oauth2.Config{
 			ClientID:     config.ClientID,
 			ClientSecret: config.ClientSecret,
@@ -70,7 +76,7 @@ func (provider *OIDCProvider) AuthorizationURLForProvider(
 		oauth2.SetAuthURLParam("nonce", nonce),
 	}
 	if providerHint != "" {
-		options = append(options, oauth2.SetAuthURLParam("kc_idp_hint", providerHint))
+		options = append(options, oauth2.SetAuthURLParam(provider.idpHintParameter, providerHint))
 	}
 	if prompt == RegistrationPrompt {
 		options = append(options, oauth2.SetAuthURLParam("prompt", RegistrationPrompt))

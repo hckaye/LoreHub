@@ -1,5 +1,5 @@
 #!/bin/sh
-# Isolated behavior test for setup-keycloak-secrets.sh. Secret values stay in
+# Isolated behavior test for setup-secrets.sh. Secret values stay in
 # shell variables and are never included in test output.
 set -eu
 
@@ -46,7 +46,7 @@ else
   file_mode() { stat -c '%a' "$1"; }
 fi
 
-output=$("${root}/scripts/setup-keycloak-secrets.sh" --env-file "$env_file")
+output=$("${root}/scripts/setup-secrets.sh" --env-file "$env_file")
 assert_no_secret_output "$output"
 test "$(file_mode "$env_file")" = 600
 for key in POSTGRES_PASSWORD KEYCLOAK_ADMIN_PASSWORD KEYCLOAK_DB_PASSWORD \
@@ -73,7 +73,7 @@ printf '%s\n' \
   'POSTGRES_PASSWORD=preserve-me' \
   'NON_SECRET_SETTING=keep-me' >"$env_file"
 chmod 644 "$env_file"
-output=$("${root}/scripts/setup-keycloak-secrets.sh" --env-file "$env_file")
+output=$("${root}/scripts/setup-secrets.sh" --env-file "$env_file")
 assert_no_secret_output "$output"
 test "$(file_mode "$env_file")" = 600
 test "$(value_for POSTGRES_PASSWORD)" = preserve-me
@@ -100,7 +100,7 @@ test "$(value_for LOREHUB_WEBHOOK_SECRET_KEY_ID)" = local-webhooks-v1
 test "$(value_for LOREHUB_LORES_TOKEN_KEY_ID)" = local-lores-v1
 
 preserved=$(value_for POSTGRES_PASSWORD)
-output=$("${root}/scripts/setup-keycloak-secrets.sh" --env-file "$env_file" --force)
+output=$("${root}/scripts/setup-secrets.sh" --env-file "$env_file" --force)
 assert_no_secret_output "$output"
 forced=$(value_for POSTGRES_PASSWORD)
 test "$forced" != "$preserved"

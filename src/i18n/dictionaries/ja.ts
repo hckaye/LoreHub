@@ -3,6 +3,7 @@ import { actionsEnvironments } from "./actions-environments";
 import { actionsSettings } from "./actions-settings";
 import { assignees } from "./assignees";
 import { auditLog } from "./audit-log";
+import { auth } from "./auth";
 import { codeBrowser } from "./code-browser";
 import { commentPagination } from "./comment-pagination";
 import { commitHistory } from "./commit-history";
@@ -553,30 +554,7 @@ const ja = {
     maintainer: "メンテナー",
     add: "メンバーを追加",
   },
-  authPage: {
-    signInTitle: "LoreHubにログイン",
-    // prettier-ignore
-    signInDescription: concat(
-      "設定済みのIDプロバイダーを使って、",
-      "LoreHubアカウントにアクセスします。",
-    ),
-    registerTitle: "LoreHubアカウントを作成",
-    registerDescription: "設定済みのIDプロバイダーでアカウントを作成します。",
-    alreadyHaveAccount: "すでにアカウントをお持ちですか？",
-    needAccount: "アカウントが必要ですか？",
-    continueWith: "{provider}で続ける",
-    configuredNote: "認証は設定済みのIDプロバイダーが行います。",
-    unavailableTitle: "ログインを利用できません",
-    unavailableBody: "IDプロバイダーを利用できません。復旧してから再試行してください。",
-    backToHome: "ホームに戻る",
-    providers: {
-      password: "メールアドレスとパスワード",
-      google: "Googleアカウント",
-      github: "GitHubアカウント",
-      facebook: "Facebookアカウント",
-      x: "Xアカウント",
-    },
-  },
+  authPage: auth.ja,
   actionsPage: {
     title: "Actions",
     // prettier-ignore

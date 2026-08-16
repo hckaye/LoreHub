@@ -11,7 +11,7 @@ take cues from GitHub and GitLab, while version control operations use Lore.
 Install Docker Engine or Docker Desktop with Docker Compose, then run:
 
 ```bash
-scripts/setup-keycloak-secrets.sh
+scripts/setup-secrets.sh
 docker compose -f infra/compose.yaml up --build
 ```
 
@@ -23,7 +23,6 @@ The local services are available at:
 - Web: <http://localhost:3000>
 - API health: <http://localhost:8080/health/ready>
 - Lore Server health: <http://localhost:41339/health_check>
-- Keycloak administration: <http://keycloak.localhost:8280/admin/master/console>
 - Captured local email: <http://localhost:8025>
 
 Stop the services without deleting their data:
@@ -56,9 +55,13 @@ LoreHub is under active development. It does not yet provide every screen or API
 
 ## Configure sign-in providers
 
-Email and password sign-in works with the default local configuration. Google, GitHub, Facebook, and X appear on the
-sign-in page after their client IDs and client secrets are added to `.env`. See the
-[Keycloak operations guide](docs/operations/keycloak.md) for setup steps and callback URLs.
+Email and password sign-in is built into LoreHub and works with the default local configuration; accounts and password
+hashes live in the LoreHub database. To use an external identity provider instead, set `LOREHUB_OIDC_ISSUER` and the
+other `LOREHUB_OIDC_*` values in `.env` to any OIDC-capable provider: the bundled Keycloak profile, ZITADEL, Okta,
+Entra ID, or a corporate broker. Companies whose identity provider only speaks SAML or LDAP put a broker such as
+Keycloak or ZITADEL in front and point LoreHub at the broker. Google, GitHub, Facebook, and X sign-in go through the
+bundled Keycloak profile; see the [Keycloak operations guide](docs/operations/keycloak.md) for setup steps and
+callback URLs.
 
 ## Run GitHub Actions-compatible CI
 
@@ -128,7 +131,7 @@ vulnerabilities. [GitHub Actions](.github/workflows/ci.yml) runs the same checks
 - [Backup and recovery](docs/operations/backup-and-recovery.md)
 - [Metrics and rate limiting](docs/operations/observability.md)
 - [Resource limits](docs/resource-limits.md)
-- [Keycloak, social sign-in, and email](docs/operations/keycloak.md)
+- [Keycloak as an optional OIDC provider and social sign-in](docs/operations/keycloak.md)
 - [Notification email](docs/operations/email-notifications.md)
 - [GitHub Actions compatibility and runner operations](docs/runner-actions.md)
 

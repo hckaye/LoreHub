@@ -9,7 +9,7 @@ route、status、処理時間が入ります。container logを運用環境のlo
 ## Prometheusメトリクス
 
 APIの`GET /metrics`はPrometheus text形式のメトリクスを返します。アクセスには`LOREHUB_METRICS_TOKEN`を
-Bearer tokenとして指定します。`scripts/setup-keycloak-secrets.sh`がこの値を生成します。
+Bearer tokenとして指定します。`scripts/setup-secrets.sh`がこの値を生成します。
 
 ```bash
 set -a

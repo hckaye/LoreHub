@@ -21,15 +21,10 @@ test.describe.serial("LoreHub browser smoke test", () => {
     const issueTitle = `Browser smoke ${suffix}`;
 
     await page.goto("/en/auth/register?return_to=%2Fen%2Forganizations%2Fnew");
-    await page.getByRole("link", { name: "Continue with email and password" }).click();
-    await expect(page).toHaveURL(/\/realms\/lorehub\//u);
-
-    await page.locator("#email").fill(email);
-    await page.locator("#firstName").fill("Browser");
-    await page.locator("#lastName").fill("Test");
-    await page.locator("#password").fill(password);
-    await page.locator("#password-confirm").fill(password);
-    await page.locator('input[type="submit"]').click();
+    await page.locator('input[name="username"]').fill(`user-${suffix}`);
+    await page.locator('input[name="email"]').fill(email);
+    await page.locator('input[name="password"]').fill(password);
+    await page.getByRole("button", { name: "Create account" }).click();
 
     await expect(page).toHaveURL(/\/en\/organizations\/new$/u);
     await page.locator("#organization-slug").fill(organization);

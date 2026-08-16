@@ -2,7 +2,7 @@ import "server-only";
 
 import { cookies } from "next/headers";
 
-import type { APIResult, AuthProvider, AuthSession, AuthUser } from "./api-types";
+import type { APIResult, AuthProvider, AuthProviderDirectory, AuthSession, AuthUser } from "./api-types";
 
 const apiOrigin = process.env.LOREHUB_API_URL ?? "http://127.0.0.1:8080";
 
@@ -30,7 +30,7 @@ export async function getAuthSession(): Promise<AuthSession> {
   }
 }
 
-export async function getAuthProviders(): Promise<APIResult<AuthProvider[]>> {
+export async function getAuthProviders(): Promise<APIResult<AuthProviderDirectory>> {
   try {
     const response = await fetch(new URL("/api/v1/auth/providers", apiOrigin), {
       cache: "no-store",
@@ -44,16 +44,23 @@ export async function getAuthProviders(): Promise<APIResult<AuthProvider[]>> {
     if (!isRecord(payload) || !Array.isArray(payload.providers)) {
       return { ok: false, reason: "unavailable" };
     }
-    const providers = payload.providers.flatMap((value) => {
+    const providers = payload.providers.flatMap<AuthProvider>((value) => {
       if (!isRecord(value) || typeof value.id !== "string") {
         return [];
       }
       if (!isProviderID(value.id)) {
         return [];
       }
-      return [{ id: value.id }];
+      return [{ id: value.id, kind: value.kind === "form" ? "form" : "redirect" }];
     });
-    return { ok: true, data: providers };
+    return {
+      ok: true,
+      data: {
+        providers,
+        passwordRegistration: payload.passwordRegistration === true,
+        passwordReset: payload.passwordReset === true,
+      },
+    };
   } catch {
     return { ok: false, reason: "unavailable" };
   }
@@ -137,5 +144,5 @@ function readString(value: unknown): string | null {
 }
 
 function isProviderID(value: string): value is AuthProvider["id"] {
-  return ["password", "google", "github", "facebook", "x"].includes(value);
+  return ["password", "sso", "google", "github", "facebook", "x"].includes(value);
 }

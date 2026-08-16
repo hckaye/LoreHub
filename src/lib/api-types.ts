@@ -213,7 +213,14 @@ export type DashboardData = {
 };
 
 export type AuthProvider = {
-  id: "password" | "google" | "github" | "facebook" | "x";
+  id: "password" | "sso" | "google" | "github" | "facebook" | "x";
+  kind: "form" | "redirect";
+};
+
+export type AuthProviderDirectory = {
+  providers: AuthProvider[];
+  passwordRegistration: boolean;
+  passwordReset: boolean;
 };
 
 export type AuthUser = {

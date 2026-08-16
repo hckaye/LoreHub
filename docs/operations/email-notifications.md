@@ -12,7 +12,7 @@ Docker Compose sends notification email to Mailpit. Start the stack and open <ht
 captured messages.
 
 ```bash
-scripts/setup-keycloak-secrets.sh
+scripts/setup-secrets.sh
 docker compose -f infra/compose.yaml up --build
 ```
 
@@ -49,5 +49,7 @@ LoreHub retries a failed delivery after 30 seconds and doubles the delay up to o
 resume a delivery after its ownership period expires. A delivery stops after the configured attempt limit. The API
 logs the delivery ID and attempt number without logging the message body or SMTP password.
 
-Account verification and password reset email use Keycloak's SMTP settings. Configure them separately as described in
-the [Keycloak operations guide](keycloak.md#email-verification-password-reset-and-smtp).
+Password reset email for built-in accounts uses the same `LOREHUB_SMTP_*` settings and is available while
+`LOREHUB_NOTIFICATION_EMAIL_ENABLED=true`; without SMTP the sign-in page hides the reset entry. When the optional
+Keycloak profile handles sign-in, account verification and password reset email use Keycloak's own SMTP settings as
+described in the [Keycloak operations guide](keycloak.md#email-verification-password-reset-and-smtp).

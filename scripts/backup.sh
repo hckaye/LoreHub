@@ -8,7 +8,8 @@ env_file="$repository_root/.env"
 project_name=${COMPOSE_PROJECT_NAME:-lorehub}
 output_path=
 postgres_image=postgres:18.4-alpine
-volume_names="lore-data api-data auth-signing auth-tls auth-ca-state runner-data keycloak-data"
+# keycloak-data is appended when the optional keycloak profile is running.
+volume_names="lore-data api-data auth-signing auth-tls auth-ca-state runner-data"
 
 usage() {
   echo "usage: scripts/backup.sh [--env-file PATH] [--output DIRECTORY] [--project-name NAME]" >&2
@@ -69,10 +70,12 @@ compose() {
 
 compose config -q
 running_services=$(compose ps --services --filter status=running)
-for required_service in postgres keycloak-postgres; do
-  printf '%s\n' "$running_services" | grep -qx "$required_service" ||
-    fail "$required_service must be running"
-done
+printf '%s\n' "$running_services" | grep -qx postgres || fail "postgres must be running"
+keycloak_active=false
+if printf '%s\n' "$running_services" | grep -qx keycloak-postgres; then
+  keycloak_active=true
+  volume_names="$volume_names keycloak-data"
+fi
 for initialization_service in tls-init keycloak-bootstrap runner-data-init runner-cert-init; do
   if printf '%s\n' "$running_services" | grep -qx "$initialization_service"; then
     fail "$initialization_service is still running; wait for initialization to finish"
@@ -113,10 +116,14 @@ fi
 compose exec -T postgres sh -c \
   'exec pg_dump --format=custom --no-owner --no-acl -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
   >"$output_path/lorehub.pgdump"
-# shellcheck disable=SC2016
-compose exec -T keycloak-postgres sh -c \
-  'exec pg_dump --format=custom --no-owner --no-acl -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
-  >"$output_path/keycloak.pgdump"
+dump_files="$output_path/lorehub.pgdump"
+if [ "$keycloak_active" = true ]; then
+  # shellcheck disable=SC2016
+  compose exec -T keycloak-postgres sh -c \
+    'exec pg_dump --format=custom --no-owner --no-acl -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
+    >"$output_path/keycloak.pgdump"
+  dump_files="$dump_files $output_path/keycloak.pgdump"
+fi
 
 for volume_name in $volume_names; do
   docker volume inspect "${project_name}_${volume_name}" >/dev/null 2>&1 ||
@@ -132,8 +139,9 @@ for volume_name in $volume_names; do
 done
 
 cp "$env_file" "$output_path/environment.env"
-chmod 600 "$output_path/lorehub.pgdump" "$output_path/keycloak.pgdump" \
-  "$output_path/environment.env" "$output_path"/volumes/*.tar.gz
+# dump_files contains only paths assembled above.
+# shellcheck disable=SC2086
+chmod 600 $dump_files "$output_path/environment.env" "$output_path"/volumes/*.tar.gz
 
 created_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 source_commit=$(git -C "$repository_root" rev-parse --verify HEAD 2>/dev/null || echo unknown)

@@ -3,6 +3,7 @@ import { actionsEnvironments } from "./actions-environments";
 import { actionsSettings } from "./actions-settings";
 import { assignees } from "./assignees";
 import { auditLog } from "./audit-log";
+import { auth } from "./auth";
 import { codeBrowser } from "./code-browser";
 import { commentPagination } from "./comment-pagination";
 import { commitHistory } from "./commit-history";
@@ -490,26 +491,7 @@ const en = {
     maintainer: "Maintainer",
     add: "Add member",
   },
-  authPage: {
-    signInTitle: "Sign in to LoreHub",
-    signInDescription: "Use the configured identity provider to access your LoreHub account.",
-    registerTitle: "Create a LoreHub account",
-    registerDescription: "Create an account through the configured identity provider.",
-    alreadyHaveAccount: "Already have an account?",
-    needAccount: "Need an account?",
-    continueWith: "Continue with {provider}",
-    configuredNote: "Authentication is handled by the configured identity provider.",
-    unavailableTitle: "Sign-in is unavailable",
-    unavailableBody: "The identity provider is not available. Try again when it has recovered.",
-    backToHome: "Back to home",
-    providers: {
-      password: "email and password",
-      google: "Google",
-      github: "GitHub",
-      facebook: "Facebook",
-      x: "X",
-    },
-  },
+  authPage: auth.en,
   actionsPage: {
     title: "Actions",
     description: "Inspect workflow-compatible runs executed for Lore branch updates.",

@@ -47,7 +47,7 @@ jobs:
       - run: npm run format:check
       - run: npm run limits
       - run: npm run keycloak:check
-      - run: npm run keycloak:test
+      - run: npm run secrets:test
       - run: npm run backup:test
       - run: npm run lint
       - run: npm run typecheck
@@ -116,7 +116,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-      - run: scripts/setup-keycloak-secrets.sh
+      - run: scripts/setup-secrets.sh
       - run: docker compose --env-file .env -f infra/compose.yaml up --build --detach --wait
       - run: npm run e2e
       - run: scripts/backup.sh --output "$RUNNER_TEMP/lorehub-backup"
