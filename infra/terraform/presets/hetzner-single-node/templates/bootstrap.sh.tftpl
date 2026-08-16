@@ -1,0 +1,171 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+LOREHUB_LOG_PREFIX=lorehub-bootstrap
+# shellcheck disable=SC1091
+source /usr/local/lib/lorehub-node.sh
+
+readonly VOLUME_DEVICE=${volume_device_path}
+readonly MOUNT_POINT=/var/lib/lorehub
+readonly TLS_SOURCE_DIR=${tls_source_dir}
+readonly PUBLIC_INGRESS_ENABLED=${public_ingress_enabled}
+readonly CLOUDFLARED_TUNNEL_ENABLED=${cloudflared_tunnel_enabled}
+readonly CLOUDFLARED_TUNNEL_TOKEN=${cloudflared_tunnel_token}
+
+install_base_packages() {
+  if command -v git >/dev/null 2>&1 && command -v curl >/dev/null 2>&1 &&
+    command -v gpg >/dev/null 2>&1; then
+    return
+  fi
+
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update
+  apt-get install --yes --no-install-recommends \
+    ca-certificates curl git gnupg util-linux
+}
+
+install_docker() {
+  if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+    systemctl enable --now docker.service
+    return
+  fi
+
+  export DEBIAN_FRONTEND=noninteractive
+  install -m 0755 -d /etc/apt/keyrings
+  if [[ ! -s /etc/apt/keyrings/docker.asc ]]; then
+    curl --fail --silent --show-error --location \
+      https://download.docker.com/linux/ubuntu/gpg \
+      --output /etc/apt/keyrings/docker.asc
+    chmod a+r /etc/apt/keyrings/docker.asc
+  fi
+
+  local architecture codename
+  architecture=$(dpkg --print-architecture)
+  codename=$(. /etc/os-release && printf '%s' "$${VERSION_CODENAME}")
+  printf 'deb [arch=%s signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu %s stable\n' \
+    "$architecture" "$codename" >/etc/apt/sources.list.d/docker.list
+
+  apt-get update
+  apt-get install --yes --no-install-recommends \
+    docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  systemctl enable --now docker.service
+}
+
+install_cloudflared() {
+  if command -v cloudflared >/dev/null 2>&1; then
+    return
+  fi
+
+  export DEBIAN_FRONTEND=noninteractive
+  install -m 0755 -d /usr/share/keyrings
+  curl --fail --silent --show-error --location \
+    https://pkg.cloudflare.com/cloudflare-main.gpg \
+    --output /usr/share/keyrings/cloudflare-main.gpg
+  chmod a+r /usr/share/keyrings/cloudflare-main.gpg
+  printf 'deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared any main\n' \
+    >/etc/apt/sources.list.d/cloudflared.list
+  apt-get update
+  apt-get install --yes --no-install-recommends cloudflared
+}
+
+install_nginx() {
+  if command -v nginx >/dev/null 2>&1; then
+    return
+  fi
+
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update
+  apt-get install --yes --no-install-recommends nginx
+}
+
+wait_for_volume() {
+  local attempt
+  for attempt in {1..120}; do
+    if [[ -e "$VOLUME_DEVICE" ]]; then
+      return
+    fi
+    sleep 5
+  done
+  fail "attached volume device $VOLUME_DEVICE did not appear within 10 minutes"
+}
+
+mount_lore_data() {
+  if [[ -z "$VOLUME_DEVICE" ]]; then
+    install -d -m 0750 "$MOUNT_POINT/lore-data"
+    return
+  fi
+
+  wait_for_volume
+
+  local filesystem
+  filesystem=$(blkid -o value -s TYPE "$VOLUME_DEVICE" 2>/dev/null || true)
+  if [[ -z "$filesystem" ]]; then
+    log "Formatting the new Lore data volume as ext4"
+    mkfs.ext4 -F "$VOLUME_DEVICE"
+    filesystem=ext4
+  fi
+  [[ "$filesystem" == ext4 ]] || fail "volume $VOLUME_DEVICE has filesystem $filesystem, expected ext4"
+
+  install -d -m 0750 "$MOUNT_POINT"
+  if ! mountpoint --quiet "$MOUNT_POINT"; then
+    if ! grep --fixed-strings --quiet "$VOLUME_DEVICE $MOUNT_POINT ext4" /etc/fstab; then
+      printf '%s %s ext4 defaults,x-systemd.device-timeout=120s 0 2\n' \
+        "$VOLUME_DEVICE" "$MOUNT_POINT" >>/etc/fstab
+    fi
+    mount "$MOUNT_POINT"
+  fi
+  mountpoint --quiet "$MOUNT_POINT" || fail "$MOUNT_POINT is not mounted"
+  install -d -m 0750 "$MOUNT_POINT/lore-data"
+}
+
+configure_nginx() {
+  if [[ "$PUBLIC_INGRESS_ENABLED" != true && "$CLOUDFLARED_TUNNEL_ENABLED" != true ]]; then
+    systemctl disable --now nginx.service >/dev/null 2>&1 || true
+    return
+  fi
+
+  install -m 0644 /etc/lorehub-nginx.conf /etc/nginx/sites-available/lorehub
+  rm -f /etc/nginx/sites-enabled/default
+  ln -sfn /etc/nginx/sites-available/lorehub /etc/nginx/sites-enabled/lorehub
+  systemctl enable nginx.service >/dev/null
+
+  if [[ "$PUBLIC_INGRESS_ENABLED" == true ]] &&
+    { [[ ! -s "$TLS_SOURCE_DIR/server.crt" ]] || [[ ! -s "$TLS_SOURCE_DIR/server.key" ]]; }; then
+    systemctl stop nginx.service >/dev/null 2>&1 || true
+    log "Nginx is enabled but waits for server.crt and server.key in $TLS_SOURCE_DIR"
+    return
+  fi
+
+  nginx -t
+  systemctl restart nginx.service
+}
+
+configure_cloudflared() {
+  if [[ "$CLOUDFLARED_TUNNEL_ENABLED" == true ]]; then
+    install_cloudflared
+    install -d -m 0750 /etc/cloudflared
+    umask 077
+    printf '%s\n' "$CLOUDFLARED_TUNNEL_TOKEN" >/etc/cloudflared/lorehub.token
+    chmod 0600 /etc/cloudflared/lorehub.token
+    systemctl daemon-reload
+    systemctl enable --now cloudflared.service
+  else
+    systemctl disable --now cloudflared.service >/dev/null 2>&1 || true
+    rm -f /etc/cloudflared/lorehub.token
+  fi
+}
+
+install_base_packages
+install_docker
+if [[ "$PUBLIC_INGRESS_ENABLED" == true || "$CLOUDFLARED_TUNNEL_ENABLED" == true ]]; then
+  install_nginx
+fi
+mount_lore_data
+clone_repository
+prepare_environment
+configure_nginx
+configure_cloudflared
+
+cd "$APP_DIR"
+docker compose --env-file .env -f infra/compose.yaml -f compose.hetzner.yaml config --quiet
+log "LoreHub host preparation is complete"

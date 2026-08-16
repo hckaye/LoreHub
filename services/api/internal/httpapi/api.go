@@ -157,76 +157,84 @@ type EntitlementStore interface {
 type InstanceSettingsStore interface {
 	GetHostedLoreServerOverride(context.Context) (*bool, error)
 	SetHostedLoreServerOverride(context.Context, platform.User, *bool) error
+	GetMaxOrganizationsPerUserOverride(context.Context) (*int64, error)
+	SetMaxOrganizationsPerUserOverride(context.Context, platform.User, *int64) error
+	GetMaxRepositoriesPerOrganizationOverride(context.Context) (*int64, error)
+	SetMaxRepositoriesPerOrganizationOverride(context.Context, platform.User, *int64) error
+	GetMaxRepositorySizeBytesOverride(context.Context) (*int64, error)
+	SetMaxRepositorySizeBytesOverride(context.Context, platform.User, *int64) error
 }
 
 type API struct {
-	store                   Store
-	actions                 ActionsStore
-	actionsEnvironments     ActionsEnvironmentStore
-	actionsExecutionContext ActionsExecutionContextStore
-	actionsSecurity         ActionsSecurityStore
-	actionsJobTokens        runner.JobTokenVerifier
-	lore                    loreclient.Client
-	authenticator           auth.Authenticator
-	health                  HealthChecker
-	loreIdentity            string
-	allowLegacyLoreIdentity bool
-	serviceSubjects         loreclient.ServiceSubjects
-	loreCredentials         loreclient.CredentialProvider
-	managedLoreClient       loreclient.ManagedRepositoryClient
-	authorization           AuthorizationStore
-	loreAuth                *loreauth.Service
-	logger                  *slog.Logger
-	collabStore             collab.Store
-	branchObservations      branchesapi.ObservationStore
-	fileLockUsers           filelocksapi.UserDirectory
-	fileLockObservations    filelocksapi.ObservationStore
-	projectsStore           projectsapi.Store
-	discussionsStore        discussionsapi.Store
-	releasesStore           releasesapi.Store
-	milestonesStore         milestonesapi.Store
-	wikiStore               wikiapi.Store
-	reviewThreadsStore      reviewthreadsapi.Store
-	statusesStore           statusesapi.Store
-	loginProvider           auth.LoginProvider
-	loginStore              auth.LoginTransactionStore
-	sessionStore            auth.SessionStore
-	cleanupStore            auth.CleanupStore
-	passwordAuth            PasswordAuthStore
-	passwordRegistration    bool
-	passwordResetSender     PasswordResetSender
-	secrets                 *auth.SecretCodec
-	publicOrigin            string
-	cookie                  sessionCookieConfig
-	sessionTTL              time.Duration
-	transactionTTL          time.Duration
-	identityStore           IdentityStore
-	loginProviders          []string
-	webhooksStore           webhooksManager
-	personalAccessTokens    PersonalAccessTokenStore
-	entitlements            EntitlementStore
-	runners                 RunnerStore
-	runnerSecrets           *auth.SecretCodec
-	runnerCredentialKeyID   string
-	loreServers             LoreServerStore
-	loresSecrets            *auth.SecretCodec
-	loresTokenKeyID         string
-	loreAllowPrivateServers bool
-	loreServerCertificates  LoreServerCertificateStore
-	loreServerCertIssuer    LoreServerCertificateIssuer
-	loreHookServers         loreHookServerStore
-	runnerControl           RunnerControlStore
-	runnerExecutionContext  runner.ExecutionContextResolver
-	runnerJobTokenIssuer    runner.JobTokenIssuer
-	runnerControlConfig     RunnerControlConfig
-	instanceAdminUsernames  map[string]struct{}
-	instanceAdminEnabled    bool
-	instanceSettings        InstanceSettingsStore
-	hostedLoreServerDefault bool
-	globalWorkItems         GlobalWorkItemStore
-	deletionRetention       time.Duration
-	maxRepositorySizeBytes  int64
-	operations              *operationalState
+	store                                 Store
+	actions                               ActionsStore
+	actionsEnvironments                   ActionsEnvironmentStore
+	actionsExecutionContext               ActionsExecutionContextStore
+	actionsSecurity                       ActionsSecurityStore
+	actionsJobTokens                      runner.JobTokenVerifier
+	lore                                  loreclient.Client
+	authenticator                         auth.Authenticator
+	health                                HealthChecker
+	loreIdentity                          string
+	allowLegacyLoreIdentity               bool
+	serviceSubjects                       loreclient.ServiceSubjects
+	loreCredentials                       loreclient.CredentialProvider
+	managedLoreClient                     loreclient.ManagedRepositoryClient
+	authorization                         AuthorizationStore
+	loreAuth                              *loreauth.Service
+	logger                                *slog.Logger
+	collabStore                           collab.Store
+	branchObservations                    branchesapi.ObservationStore
+	fileLockUsers                         filelocksapi.UserDirectory
+	fileLockObservations                  filelocksapi.ObservationStore
+	projectsStore                         projectsapi.Store
+	discussionsStore                      discussionsapi.Store
+	releasesStore                         releasesapi.Store
+	milestonesStore                       milestonesapi.Store
+	wikiStore                             wikiapi.Store
+	reviewThreadsStore                    reviewthreadsapi.Store
+	statusesStore                         statusesapi.Store
+	loginProvider                         auth.LoginProvider
+	loginStore                            auth.LoginTransactionStore
+	sessionStore                          auth.SessionStore
+	cleanupStore                          auth.CleanupStore
+	passwordAuth                          PasswordAuthStore
+	passwordRegistration                  bool
+	passwordResetSender                   PasswordResetSender
+	secrets                               *auth.SecretCodec
+	publicOrigin                          string
+	cookie                                sessionCookieConfig
+	sessionTTL                            time.Duration
+	transactionTTL                        time.Duration
+	identityStore                         IdentityStore
+	loginProviders                        []string
+	webhooksStore                         webhooksManager
+	personalAccessTokens                  PersonalAccessTokenStore
+	entitlements                          EntitlementStore
+	runners                               RunnerStore
+	runnerSecrets                         *auth.SecretCodec
+	runnerCredentialKeyID                 string
+	loreServers                           LoreServerStore
+	loresSecrets                          *auth.SecretCodec
+	loresTokenKeyID                       string
+	loreAllowPrivateServers               bool
+	loreServerCertificates                LoreServerCertificateStore
+	loreServerCertIssuer                  LoreServerCertificateIssuer
+	loreHookServers                       loreHookServerStore
+	runnerControl                         RunnerControlStore
+	runnerExecutionContext                runner.ExecutionContextResolver
+	runnerJobTokenIssuer                  runner.JobTokenIssuer
+	runnerControlConfig                   RunnerControlConfig
+	instanceAdminUsernames                map[string]struct{}
+	instanceAdminEnabled                  bool
+	instanceSettings                      InstanceSettingsStore
+	hostedLoreServerDefault               bool
+	globalWorkItems                       GlobalWorkItemStore
+	deletionRetention                     time.Duration
+	maxOrganizationsPerUserDefault        int64
+	maxRepositoriesPerOrganizationDefault int64
+	maxRepositorySizeBytes                int64
+	operations                            *operationalState
 }
 
 func WithRepositoryDeletion(retention time.Duration) Option {
@@ -238,6 +246,18 @@ func WithRepositoryDeletion(retention time.Duration) Option {
 func WithMaxRepositorySizeBytes(limit int64) Option {
 	return func(api *API) {
 		api.maxRepositorySizeBytes = limit
+	}
+}
+
+func WithResourceLimitDefaults(
+	maxOrganizationsPerUser int,
+	maxRepositoriesPerOrganization int,
+	maxRepositorySizeBytes int64,
+) Option {
+	return func(api *API) {
+		api.maxOrganizationsPerUserDefault = int64(maxOrganizationsPerUser)
+		api.maxRepositoriesPerOrganizationDefault = int64(maxRepositoriesPerOrganization)
+		api.maxRepositorySizeBytes = maxRepositorySizeBytes
 	}
 }
 

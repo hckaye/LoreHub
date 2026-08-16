@@ -1,0 +1,35 @@
+name                  = "lorehub-single-node"
+server_type           = "cx33"
+location              = "fsn1"
+ssh_public_key        = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... admin@example"
+admin_cidrs           = ["203.0.113.10/32"]
+# Paid extra volume for /var/lib/lorehub. Default is false; data stays on the
+# included server disk. Extra volume storage is about EUR 0.057 per GB per month.
+enable_lore_data_volume = false
+volume_size_gb          = 10
+
+root_domain       = "lorehub.example.com"
+public_origin_url = "https://lorehub.example.com"
+
+# Set this before apply when the first LoreHub user should be an instance admin.
+instance_admin_usernames = ["admin-user"]
+
+max_organizations_per_user        = 1
+max_repositories_per_organization = 1
+max_repository_size_bytes         = 10485760
+
+# Direct public mode. Set true only after the DNS and TLS checklist is ready.
+enable_public_ingress = false
+
+# Tunnel mode takes precedence over enable_public_ingress and keeps 80/443
+# closed in the Hetzner firewall. Keep the token in a protected tfvars file.
+cloudflared_tunnel_token = ""
+
+# Keycloak production bootstrap requires an SMTP host and sender.
+keycloak_smtp_host = "smtp.example.com"
+keycloak_smtp_from = "lorehub@example.com"
+# Set keycloak_smtp_auth = true and provide the username and password when
+# the SMTP relay requires authentication.
+keycloak_smtp_auth     = false
+keycloak_smtp_starttls = true
+keycloak_smtp_ssl      = false
