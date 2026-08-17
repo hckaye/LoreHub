@@ -283,7 +283,7 @@ func translatePasswordConstraintError(operation string, err error) error {
 		switch pgErr.ConstraintName {
 		case "users_username_unique":
 			return ErrUsernameTaken
-		case "user_passwords_email_unique":
+		case "users_email_unique", "user_passwords_email_unique":
 			return ErrEmailTaken
 		}
 		return fmt.Errorf("%s: %w", operation, ErrConflict)
