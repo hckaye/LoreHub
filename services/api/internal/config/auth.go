@@ -11,14 +11,13 @@ func authModeFromEnvironment(
 	issuer string,
 	audience string,
 	clientID string,
-	clientSecret string,
 	redirectURL string,
 	passwordAuth string,
 ) string {
 	if requested != "" {
 		return strings.ToLower(strings.TrimSpace(requested))
 	}
-	if clientID != "" || clientSecret != "" || redirectURL != "" {
+	if clientID != "" || redirectURL != "" {
 		return AuthModeInteractive
 	}
 	if strings.EqualFold(strings.TrimSpace(passwordAuth), "enabled") {
@@ -34,7 +33,7 @@ func authModeFromEnvironment(
 // makes an external OIDC provider part of the interactive configuration.
 func interactiveOIDCConfigured(config Config) bool {
 	return config.OIDCIssuer != "" || config.OIDCAudience != "" || config.OIDCClientID != "" ||
-		config.OIDCClientSecret != "" || config.OIDCRedirectURL != ""
+		config.OIDCRedirectURL != ""
 }
 
 func enabledSetting(name string, defaultValue bool) (bool, error) {

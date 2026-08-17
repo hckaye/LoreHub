@@ -26,6 +26,21 @@ func TestPasswordAuthenticationIsDefaultForInteractiveWithoutOIDC(t *testing.T) 
 	}
 }
 
+func TestPasswordAuthenticationDefaultIgnoresStandaloneOIDCClientSecret(t *testing.T) {
+	setInteractiveEnvironment(t)
+	t.Setenv("LOREHUB_AUTH_MODE", "interactive")
+	t.Setenv("LOREHUB_OIDC_CLIENT_SECRET", "secret")
+
+	settings, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.AuthMode != AuthModeInteractive || !settings.PasswordAuthEnabled ||
+		!settings.PasswordRegistrationEnabled {
+		t.Fatalf("standalone OIDC client secret changed password defaults: %+v", settings)
+	}
+}
+
 func TestPasswordAuthenticationImpliesInteractiveMode(t *testing.T) {
 	setInteractiveEnvironment(t)
 	t.Setenv("LOREHUB_AUTH_PASSWORD", "enabled")
