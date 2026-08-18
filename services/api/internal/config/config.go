@@ -132,7 +132,6 @@ func LoadFor(command string) (Config, error) {
 		oidcIssuer,
 		oidcAudience,
 		os.Getenv("LOREHUB_OIDC_CLIENT_ID"),
-		os.Getenv("LOREHUB_OIDC_CLIENT_SECRET"),
 		os.Getenv("LOREHUB_OIDC_REDIRECT_URL"),
 		os.Getenv("LOREHUB_AUTH_PASSWORD"),
 	)
