@@ -1,6 +1,16 @@
 import { expect, test } from "@playwright/test";
 
 test.describe.serial("LoreHub browser smoke test", () => {
+  test("language redirect honors Accept-Language quality values", async ({ page }) => {
+    await page.setExtraHTTPHeaders({ "Accept-Language": "en-US,en;q=0.9,ja;q=0.1" });
+    await page.goto("/");
+    await expect(page).toHaveURL(/\/en$/u);
+
+    await page.setExtraHTTPHeaders({ "Accept-Language": "en;q=0.4,ja-JP;q=0.9" });
+    await page.goto("/");
+    await expect(page).toHaveURL(/\/ja$/u);
+  });
+
   test("public pages render in English and Japanese", async ({ page }) => {
     await page.goto("/en");
     await expect(page).toHaveTitle(/LoreHub/u);
@@ -10,6 +20,16 @@ test.describe.serial("LoreHub browser smoke test", () => {
     await page.goto("/ja");
     await expect(page.locator("html")).toHaveAttribute("lang", "ja");
     await expect(page.getByRole("heading", { level: 1, name: "探す" })).toBeVisible();
+  });
+
+  test("invalid password login reports an error without leaving the page", async ({ page }) => {
+    await page.goto("/en/auth/login");
+    await page.locator('input[name="identifier"]').fill("missing@example.test");
+    await page.locator('input[name="password"]').fill("Incorrect-Password-42!");
+    await page.getByRole("button", { name: "Sign in" }).click();
+
+    await expect(page).toHaveURL(/\/en\/auth\/login/u);
+    await expect(page.getByRole("alert")).toBeVisible();
   });
 
   test("a new user can create an organization, repository, and issue", async ({ page }) => {

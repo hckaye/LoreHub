@@ -2,6 +2,8 @@ import "server-only";
 
 import { NextRequest } from "next/server";
 
+import { createUpstreamRequestInit } from "./api-proxy-request";
+
 const hopByHopHeaders = [
   "connection",
   "keep-alive",
@@ -38,15 +40,7 @@ export async function proxyAPIRequest(
   headers.set("x-forwarded-host", request.headers.get("host") ?? request.nextUrl.host);
   headers.set("x-forwarded-proto", request.nextUrl.protocol.replace(":", ""));
 
-  const init: RequestInit = {
-    cache: "no-store",
-    headers,
-    method: request.method,
-    redirect: "manual",
-  };
-  if (request.method !== "GET" && request.method !== "HEAD") {
-    init.body = await request.arrayBuffer();
-  }
+  const init = createUpstreamRequestInit(request, headers);
 
   try {
     const upstream = await fetch(upstreamURL, init);

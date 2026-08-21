@@ -7,6 +7,7 @@ import {
   deleteJsonWithBody,
   patchJson,
   postJson,
+  postPasswordLogin,
   putJson,
 } from "../src/lib/auth-client";
 
@@ -17,6 +18,17 @@ test("mutation status maps authentication and API failures", () => {
   assert.equal(classifyMutationStatus(412), "conflict");
   assert.equal(classifyMutationStatus(422), "invalid");
   assert.equal(classifyMutationStatus(503), "unavailable");
+});
+
+test("password login rejects a successful response with an invalid contract", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => Response.json({ authenticated: "yes" });
+  try {
+    const result = await postPasswordLogin({ identifier: "user", password: "password" });
+    assert.deepEqual(result, { ok: false, kind: "unavailable", code: "invalid_response" });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("PATCH sends an optimistic concurrency header", async () => {

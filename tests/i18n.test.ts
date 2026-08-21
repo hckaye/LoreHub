@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { defaultLocale, isLocale, locales } from "../src/i18n/config";
+import { defaultLocale, isLocale, localeFromAcceptLanguage, locales } from "../src/i18n/config";
 import en from "../src/i18n/dictionaries/en";
 import ja from "../src/i18n/dictionaries/ja";
 
@@ -14,6 +14,19 @@ test("all configured locales are accepted", () => {
 test("unknown locale is rejected", () => {
   assert.equal(isLocale("fr"), false);
   assert.equal(defaultLocale, "en");
+});
+
+test("Accept-Language quality values select the preferred supported locale", () => {
+  assert.equal(localeFromAcceptLanguage("en-US,en;q=0.9,ja;q=0.1"), "en");
+  assert.equal(localeFromAcceptLanguage("en;q=0.4,ja-JP;q=0.9"), "ja");
+  assert.equal(localeFromAcceptLanguage("fr-FR,ja;q=0.8,en;q=0.7"), "ja");
+  assert.equal(localeFromAcceptLanguage("fr-FR,*;q=0.5"), defaultLocale);
+});
+
+test("invalid or disabled language preferences do not override the default", () => {
+  assert.equal(localeFromAcceptLanguage(null), defaultLocale);
+  assert.equal(localeFromAcceptLanguage("ja;q=0,en;q=0"), defaultLocale);
+  assert.equal(localeFromAcceptLanguage("ja;q=invalid,en;q=0.5"), "en");
 });
 
 test("English and Japanese dictionaries have the same complete key set", () => {

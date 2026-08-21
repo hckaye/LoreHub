@@ -1,6 +1,7 @@
 import "server-only";
 
 import { cookies } from "next/headers";
+import type { ZodType } from "zod";
 
 import { adminSettingsPath, normalizeAdminSettings, type AdminSettings } from "./admin-settings";
 import type {
@@ -72,6 +73,16 @@ import { parseIssueCommentPage, parseMergeRequestCommentPage } from "./comment-p
 import type { CommentPage } from "./comment-page-types";
 import { conversationCommentPageSize } from "./comment-pagination";
 import { parseRevisionStatusResponse } from "./commit-status-client";
+import {
+  branchOverviewSchema,
+  ciRunPageSchema,
+  ciWorkflowPageSchema,
+  dashboardSchema,
+  organizationViewSchema,
+  repositoryListSchema,
+  repositorySchema,
+  userProfileSchema,
+} from "./core-api-contract";
 import { entitlementsPath, normalizeEntitlementList, type Entitlement } from "./entitlements";
 import { normalizeFileLockPage, type FileLockPage } from "./file-locks";
 import { normalizeGlobalWorkItemPage, type GlobalWorkItemPage, type GlobalWorkItemQuery } from "./global-work-items";
@@ -112,7 +123,7 @@ export type {
 const apiOrigin = process.env.LOREHUB_API_URL ?? "http://127.0.0.1:8080";
 
 export function getDashboard(): Promise<APIResult<DashboardData>> {
-  return request("/api/v1/dashboard");
+  return request("/api/v1/dashboard", dashboardSchema);
 }
 
 export function getGlobalIssues(query: GlobalWorkItemQuery): Promise<APIResult<GlobalWorkItemPage>> {
@@ -165,13 +176,11 @@ export async function getSearchResults(
 }
 
 export function getUserProfile(username: string): Promise<APIResult<UserProfile>> {
-  return request(`/api/v1/users/${encodeURIComponent(username)}`);
+  return request(`/api/v1/users/${encodeURIComponent(username)}`, userProfileSchema);
 }
 
 export async function getUserRepositories(username: string): Promise<APIResult<Repository[]>> {
-  const result = await request<{ repositories: Repository[] }>(
-    `/api/v1/users/${encodeURIComponent(username)}/repositories`,
-  );
+  const result = await request(`/api/v1/users/${encodeURIComponent(username)}/repositories`, repositoryListSchema);
   return result.ok ? { ok: true, data: result.data.repositories } : result;
 }
 
@@ -192,7 +201,7 @@ export async function getPersonalAccessTokens(): Promise<APIResult<PersonalAcces
 }
 
 export function getOrganization(slug: string): Promise<APIResult<OrganizationView>> {
-  return request(`/api/v1/organizations/${encodeURIComponent(slug)}`);
+  return request(`/api/v1/organizations/${encodeURIComponent(slug)}`, organizationViewSchema);
 }
 
 export async function getRunners(target: RunnerTarget): Promise<APIResult<Runner[]>> {
@@ -246,9 +255,7 @@ export function getRepositoryInsights(
 }
 
 export async function getOrganizationRepositories(slug: string): Promise<APIResult<Repository[]>> {
-  const result = await request<{ repositories: Repository[] }>(
-    `/api/v1/organizations/${encodeURIComponent(slug)}/repositories`,
-  );
+  const result = await request(`/api/v1/organizations/${encodeURIComponent(slug)}/repositories`, repositoryListSchema);
   return result.ok ? { ok: true, data: result.data.repositories } : result;
 }
 
@@ -273,16 +280,19 @@ export async function getPublicRepositories(query = ""): Promise<APIResult<Repos
   if (query.trim()) {
     search.set("q", query.trim());
   }
-  const result = await request<{ repositories: Repository[] }>(`/api/v1/explore/repositories?${search.toString()}`);
+  const result = await request(`/api/v1/explore/repositories?${search.toString()}`, repositoryListSchema);
   return result.ok ? { ok: true, data: result.data.repositories } : result;
 }
 
 export function getPublicRepository(owner: string, repository: string): Promise<APIResult<Repository>> {
-  return request(`/api/v1/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}`);
+  return request(
+    `/api/v1/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}`,
+    repositorySchema,
+  );
 }
 
 export function getRepositorySettings(owner: string, repository: string): Promise<APIResult<Repository>> {
-  return request(repositoryPath(owner, repository, "/settings"));
+  return request(repositoryPath(owner, repository, "/settings"), repositorySchema);
 }
 
 export async function getBranches(owner: string, repository: string): Promise<APIResult<Branch[]>> {
@@ -291,7 +301,10 @@ export async function getBranches(owner: string, repository: string): Promise<AP
 }
 
 export function getBranchOverview(owner: string, repository: string): Promise<APIResult<BranchOverview>> {
-  return request(`/api/v1/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/branches`);
+  return request(
+    `/api/v1/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/branches`,
+    branchOverviewSchema,
+  );
 }
 
 export async function getBranchRules(owner: string, repository: string): Promise<APIResult<BranchRule[]>> {
@@ -307,11 +320,11 @@ export async function getCIRuns(owner: string, repository: string): Promise<APIR
 }
 
 export async function getActionWorkflows(owner: string, repository: string): Promise<APIResult<CIWorkflowPage>> {
-  return request(repositoryPath(owner, repository, "/actions/workflows"));
+  return request(repositoryPath(owner, repository, "/actions/workflows"), ciWorkflowPageSchema);
 }
 
 export async function getActionRuns(owner: string, repository: string): Promise<APIResult<CIRunPage>> {
-  return request(repositoryPath(owner, repository, "/actions/runs?per_page=50"));
+  return request(repositoryPath(owner, repository, "/actions/runs?per_page=50"), ciRunPageSchema);
 }
 
 export async function getDeployments(owner: string, repository: string): Promise<APIResult<Deployment[]>> {
@@ -726,7 +739,7 @@ function commentPageSearch(page: number): string {
   });
 }
 
-async function request<T>(path: string): Promise<APIResult<T>> {
+async function request<T>(path: string, schema?: ZodType<T>): Promise<APIResult<T>> {
   const signal = AbortSignal.timeout(4_000);
   try {
     const cookieHeader = (await cookies()).toString();
@@ -754,7 +767,14 @@ async function request<T>(path: string): Promise<APIResult<T>> {
     if (!response.ok) {
       return { ok: false, reason: "unavailable" };
     }
-    return { ok: true, data: (await response.json()) as T };
+    const payload = (await response.json()) as unknown;
+    if (!schema) {
+      return { ok: true, data: payload as T };
+    }
+    const parsed = schema.safeParse(payload);
+    return parsed.success
+      ? { ok: true, data: parsed.data }
+      : { ok: false, reason: "unavailable", code: "invalid_response" };
   } catch {
     return { ok: false, reason: "unavailable" };
   }

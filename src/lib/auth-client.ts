@@ -1,10 +1,12 @@
 "use client";
 
-import type { APIResult } from "./api-types";
+import { z } from "zod";
 
 export type MutationFailureKind = "unauthorized" | "forbidden" | "invalid" | "conflict" | "unavailable";
 
 export type MutationResult<T> = { ok: true; data: T } | { ok: false; kind: MutationFailureKind; code: string | null };
+
+const authenticatedResponseSchema = z.object({ authenticated: z.boolean() }).loose();
 
 export async function postJson<T>(
   path: string,
@@ -78,7 +80,7 @@ export async function postPasswordLogin(input: {
   identifier: string;
   password: string;
 }): Promise<MutationResult<{ authenticated: boolean }>> {
-  return credentialMutation("/auth/password/login", input);
+  return credentialMutation("/auth/password/login", input, authenticatedResponseSchema);
 }
 
 export async function postPasswordRegister(input: {
@@ -87,7 +89,7 @@ export async function postPasswordRegister(input: {
   password: string;
   locale: string;
 }): Promise<MutationResult<{ authenticated: boolean }>> {
-  return credentialMutation("/auth/password/register", input);
+  return credentialMutation("/auth/password/register", input, authenticatedResponseSchema);
 }
 
 export async function postPasswordResetRequest(input: { email: string }): Promise<MutationResult<unknown>> {
@@ -101,7 +103,11 @@ export async function postPasswordReset(input: {
   return credentialMutation("/auth/password/reset", input);
 }
 
-async function credentialMutation(path: string, input: unknown): Promise<MutationResult<{ authenticated: boolean }>> {
+async function credentialMutation(
+  path: string,
+  input: unknown,
+  schema?: z.ZodType<{ authenticated: boolean }>,
+): Promise<MutationResult<{ authenticated: boolean }>> {
   try {
     const response = await fetch(path, {
       method: "POST",
@@ -112,7 +118,7 @@ async function credentialMutation(path: string, input: unknown): Promise<Mutatio
       },
       body: JSON.stringify(input),
     });
-    return await readMutationResponse<{ authenticated: boolean }>(response);
+    return await readMutationResponse(response, schema);
   } catch {
     return { ok: false, kind: "unavailable", code: "network_error" };
   }
@@ -134,21 +140,19 @@ export function classifyMutationStatus(status: number): MutationFailureKind {
   return "unavailable";
 }
 
-export function apiResultToMutation<T>(result: APIResult<T>): MutationResult<T> {
-  if (result.ok) {
-    return result;
-  }
-  const kind =
-    result.reason === "unauthorized" ? "unauthorized" : result.reason === "forbidden" ? "forbidden" : "invalid";
-  return { ok: false, kind, code: result.code ?? result.reason };
-}
-
-async function readMutationResponse<T>(response: Response): Promise<MutationResult<T>> {
+async function readMutationResponse<T>(response: Response, schema?: z.ZodType<T>): Promise<MutationResult<T>> {
   if (response.ok) {
     if (response.status === 204) {
       return { ok: true, data: null as T };
     }
-    return { ok: true, data: (await response.json()) as T };
+    const payload = (await response.json()) as unknown;
+    if (!schema) {
+      return { ok: true, data: payload as T };
+    }
+    const parsed = schema.safeParse(payload);
+    return parsed.success
+      ? { ok: true, data: parsed.data }
+      : { ok: false, kind: "unavailable", code: "invalid_response" };
   }
   return { ok: false, kind: classifyMutationStatus(response.status), code: await readProblemCode(response) };
 }

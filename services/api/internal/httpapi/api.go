@@ -165,78 +165,6 @@ type InstanceSettingsStore interface {
 	SetMaxRepositorySizeBytesOverride(context.Context, platform.User, *int64) error
 }
 
-type API struct {
-	store                                 Store
-	actions                               ActionsStore
-	actionsEnvironments                   ActionsEnvironmentStore
-	actionsExecutionContext               ActionsExecutionContextStore
-	actionsSecurity                       ActionsSecurityStore
-	actionsJobTokens                      runner.JobTokenVerifier
-	lore                                  loreclient.Client
-	authenticator                         auth.Authenticator
-	health                                HealthChecker
-	loreIdentity                          string
-	allowLegacyLoreIdentity               bool
-	serviceSubjects                       loreclient.ServiceSubjects
-	loreCredentials                       loreclient.CredentialProvider
-	managedLoreClient                     loreclient.ManagedRepositoryClient
-	authorization                         AuthorizationStore
-	loreAuth                              *loreauth.Service
-	logger                                *slog.Logger
-	collabStore                           collab.Store
-	branchObservations                    branchesapi.ObservationStore
-	fileLockUsers                         filelocksapi.UserDirectory
-	fileLockObservations                  filelocksapi.ObservationStore
-	projectsStore                         projectsapi.Store
-	discussionsStore                      discussionsapi.Store
-	releasesStore                         releasesapi.Store
-	milestonesStore                       milestonesapi.Store
-	wikiStore                             wikiapi.Store
-	reviewThreadsStore                    reviewthreadsapi.Store
-	statusesStore                         statusesapi.Store
-	loginProvider                         auth.LoginProvider
-	loginStore                            auth.LoginTransactionStore
-	sessionStore                          auth.SessionStore
-	cleanupStore                          auth.CleanupStore
-	passwordAuth                          PasswordAuthStore
-	passwordRegistration                  bool
-	passwordResetSender                   PasswordResetSender
-	secrets                               *auth.SecretCodec
-	publicOrigin                          string
-	cookie                                sessionCookieConfig
-	sessionTTL                            time.Duration
-	transactionTTL                        time.Duration
-	identityStore                         IdentityStore
-	loginProviders                        []string
-	webhooksStore                         webhooksManager
-	personalAccessTokens                  PersonalAccessTokenStore
-	entitlements                          EntitlementStore
-	runners                               RunnerStore
-	runnerSecrets                         *auth.SecretCodec
-	runnerCredentialKeyID                 string
-	loreServers                           LoreServerStore
-	loresSecrets                          *auth.SecretCodec
-	loresTokenKeyID                       string
-	loreAllowPrivateServers               bool
-	loreServerCertificates                LoreServerCertificateStore
-	loreServerCertIssuer                  LoreServerCertificateIssuer
-	loreHookServers                       loreHookServerStore
-	runnerControl                         RunnerControlStore
-	runnerExecutionContext                runner.ExecutionContextResolver
-	runnerJobTokenIssuer                  runner.JobTokenIssuer
-	runnerControlConfig                   RunnerControlConfig
-	instanceAdminUsernames                map[string]struct{}
-	instanceAdminEnabled                  bool
-	instanceSettings                      InstanceSettingsStore
-	hostedLoreServerDefault               bool
-	globalWorkItems                       GlobalWorkItemStore
-	deletionRetention                     time.Duration
-	maxOrganizationsPerUserDefault        int64
-	maxRepositoriesPerOrganizationDefault int64
-	maxRepositorySizeBytes                int64
-	operations                            *operationalState
-}
-
 func WithRepositoryDeletion(retention time.Duration) Option {
 	return func(api *API) {
 		api.deletionRetention = retention
@@ -270,15 +198,47 @@ func New(
 	logger *slog.Logger,
 	options ...Option,
 ) http.Handler {
+	return newAPI(store, lore, authenticator, health, loreIdentity, logger, options...).handler()
+}
+
+func NewConfigured(
+	store Store,
+	lore loreclient.Client,
+	authenticator auth.Authenticator,
+	health HealthChecker,
+	loreIdentity string,
+	logger *slog.Logger,
+	options ...Option,
+) (http.Handler, error) {
+	api := newAPI(store, lore, authenticator, health, loreIdentity, logger, options...)
+	if err := api.validateConfiguredDependencies(); err != nil {
+		return nil, err
+	}
+	return api.handler(), nil
+}
+
+func newAPI(
+	store Store,
+	lore loreclient.Client,
+	authenticator auth.Authenticator,
+	health HealthChecker,
+	loreIdentity string,
+	logger *slog.Logger,
+	options ...Option,
+) *API {
 	api := &API{
-		store:                   store,
-		lore:                    lore,
-		authenticator:           authenticator,
-		health:                  health,
-		loreIdentity:            loreIdentity,
-		logger:                  logger,
-		instanceAdminEnabled:    true,
-		hostedLoreServerDefault: true,
+		coreDependencies: coreDependencies{
+			store:         store,
+			lore:          lore,
+			authenticator: authenticator,
+			health:        health,
+			loreIdentity:  loreIdentity,
+			logger:        logger,
+		},
+		administrationDependencies: administrationDependencies{
+			instanceAdminEnabled:    true,
+			hostedLoreServerDefault: true,
+		},
 	}
 	for _, option := range options {
 		if option != nil {
@@ -288,6 +248,10 @@ func New(
 	if managedClient, ok := lore.(loreclient.ManagedRepositoryClient); ok {
 		api.managedLoreClient = managedClient
 	}
+	return api
+}
+
+func (api *API) handler() http.Handler {
 	mux := http.NewServeMux()
 	api.registerRoutes(mux)
 	return api.recoverPanic(api.securityHeaders(api.requestLog(api.operationalMiddleware(api.recoverPanic(mux)))))

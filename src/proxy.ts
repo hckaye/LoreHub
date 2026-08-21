@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { defaultLocale, isLocale } from "./i18n/config";
+import { isLocale, localeFromAcceptLanguage } from "./i18n/config";
 
 export function proxy(request: NextRequest) {
   const firstSegment = request.nextUrl.pathname.split("/")[1];
@@ -8,8 +8,7 @@ export function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const acceptedLanguages = request.headers.get("accept-language")?.toLowerCase() ?? "";
-  const locale = acceptedLanguages.includes("ja") ? "ja" : defaultLocale;
+  const locale = localeFromAcceptLanguage(request.headers.get("accept-language"));
   const url = request.nextUrl.clone();
   url.pathname = `/${locale}${request.nextUrl.pathname}`;
   return NextResponse.redirect(url);

@@ -306,7 +306,7 @@ func run(logger *slog.Logger) error {
 		}
 	}
 	collaborationStore := collab.NewStore(pool)
-	handler := httpapi.New(
+	handler, err := httpapi.NewConfigured(
 		store,
 		lore,
 		authenticator,
@@ -395,6 +395,9 @@ func run(logger *slog.Logger) error {
 			RepositoryRegistration: settings.LoreRepositoryRegistrationSubject,
 		}),
 	)
+	if err != nil {
+		return fmt.Errorf("configure HTTP API: %w", err)
+	}
 	server := &http.Server{
 		Addr:              settings.HTTPAddress,
 		Handler:           handler,
